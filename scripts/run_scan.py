@@ -40,6 +40,19 @@ and remote-cache sync was either skipped (disabled/incomplete config) or
 succeeded. Nonzero (1) if any source's run_scan() call raised an
 unexpected exception, OR remote caching was explicitly enabled and fully
 configured but the sync attempt itself failed.
+
+Durable-State Phase 4A: main() accepts an optional, default-None
+`edgar_candidate_repository` parameter — additive, no new environment
+variable. Omitted (the CLI's real invocation, `python -m scripts.run_scan`,
+always omits it), every source's run_scan() call is made exactly as
+before this phase — EDGAR's included, with zero extra keyword arguments,
+not merely `candidate_repository=None`. Supplied, only the EDGAR call
+receives it; DART/EDINET's run_scan() calls are never touched. This is a
+synthetic/local-test-only seam — a caller must invoke main() directly
+with a real Python object, matching the same "not reachable from any
+real service entry point in production" discipline as
+edgar_pipeline.py's own Phase 3A seam and edgar_service.py's Phase 4A
+extension of it.
 """
 from __future__ import annotations
 
@@ -49,6 +62,7 @@ from typing import Any
 
 from src.config.settings import Settings, get_settings
 from src.data_access.dart import radar_service
+from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
 from src.data_access.remote_cache.r2_client import build_r2_client
@@ -72,9 +86,20 @@ class SourceResult:
     error: str | None = None  # "ExceptionClassName: message" on failure — never a raw traceback or secret
 
 
-def _run_one_source(source: str, settings: Settings) -> SourceResult:
+def _run_one_source(
+    source: str, settings: Settings, candidate_repository: CandidatePersistence | None = None,
+) -> SourceResult:
     try:
-        report = _SERVICE_MODULES[source].run_scan(settings)
+        # `candidate_repository` is EDGAR-only (Durable-State Phase 4A) —
+        # DART/EDINET's run_scan() don't accept the parameter at all, so
+        # it's never passed to them, and when None it's omitted entirely
+        # for EDGAR too rather than passed as an explicit keyword, so the
+        # default call shape is byte-for-byte what it was before this
+        # phase.
+        kwargs = {}
+        if source == "edgar" and candidate_repository is not None:
+            kwargs["candidate_repository"] = candidate_repository
+        report = _SERVICE_MODULES[source].run_scan(settings, **kwargs)
         return SourceResult(source=source, ok=True, report=report)
     except Exception as exc:  # noqa: BLE001 — an unexpected per-source failure must not crash the other sources'
         return SourceResult(source=source, ok=False, error=f"{type(exc).__name__}: {exc}")
@@ -136,9 +161,15 @@ def _sync_remote_cache(settings: Settings) -> tuple[str, bool]:
         return f"remote cache: sync failed ({type(exc).__name__}) — local data unaffected", False
 
 
-def main() -> int:
+def main(edgar_candidate_repository: CandidatePersistence | None = None) -> int:
     settings = get_settings()
-    results = [_run_one_source(source, settings) for source in _SOURCES]
+    results = [
+        _run_one_source(
+            source, settings,
+            candidate_repository=edgar_candidate_repository if source == "edgar" else None,
+        )
+        for source in _SOURCES
+    ]
     remote_summary, remote_ok = _sync_remote_cache(settings)
 
     print("Radar headless scan summary")

@@ -13,7 +13,17 @@ below, which exercises this guard directly.
 
 No real or realistic credential value appears anywhere in this file —
 every fake value is an obviously-placeholder string used only to prove
-it never leaks into CLI output."""
+it never leaks into CLI output.
+
+Durable-State Phase 4A: main() gained an additive, optional,
+default-None `edgar_candidate_repository` parameter — no new
+environment variable, never read from get_settings(). The tests below
+prove the CLI's real invocation (main() called with no arguments, as
+`python -m scripts.run_scan` always does) makes its EDGAR run_scan()
+call with zero extra keyword arguments — not merely
+`candidate_repository=None` — so the default call shape is unchanged
+byte-for-byte, and that DART/EDINET's run_scan() calls never receive
+this parameter under any circumstance."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -143,6 +153,61 @@ def test_main_reports_errors_by_category_without_failing(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "errors_by_category={'scan_error': 1}" in out
     assert "Company B: DART request timed out." in out
+
+
+# --- Durable-State Phase 4A: optional edgar_candidate_repository ---
+
+
+def test_main_default_call_omits_candidate_repository_from_edgar_run_scan(tmp_path, capsys):
+    settings = _disabled_settings(tmp_path)
+    captured = {}
+
+    def _spy_edgar_run_scan(settings_arg, **kwargs):
+        captured["kwargs"] = kwargs
+        return _fake_report("SEC EDGAR", "bgn_date", "end_date")
+
+    with (
+        patch.object(run_scan, "get_settings", return_value=settings),
+        patch.object(run_scan.radar_service, "run_scan", return_value=_fake_report("OpenDART / DART")),
+        patch.object(run_scan.edgar_service, "run_scan", side_effect=_spy_edgar_run_scan),
+        patch.object(run_scan.edinet_service, "run_scan", return_value=_fake_report("EDINET", "bgn_date", "end_date")),
+    ):
+        exit_code = run_scan.main()  # the CLI's real, argument-free invocation
+
+    assert exit_code == 0
+    assert captured["kwargs"] == {}  # not {"candidate_repository": None} — omitted entirely
+
+
+def test_main_threads_a_supplied_edgar_candidate_repository_to_edgar_only(tmp_path):
+    settings = _disabled_settings(tmp_path)
+    sentinel_repo = object()  # identity check only — a synthetic/local-test-only caller, never the CLI
+    edgar_captured, dart_captured, edinet_captured = {}, {}, {}
+
+    def _spy_edgar_run_scan(settings_arg, **kwargs):
+        edgar_captured["kwargs"] = kwargs
+        return _fake_report("SEC EDGAR", "bgn_date", "end_date")
+
+    def _spy_dart_run_scan(settings_arg, **kwargs):
+        dart_captured["kwargs"] = kwargs
+        return _fake_report("OpenDART / DART")
+
+    def _spy_edinet_run_scan(settings_arg, **kwargs):
+        edinet_captured["kwargs"] = kwargs
+        return _fake_report("EDINET", "bgn_date", "end_date")
+
+    with (
+        patch.object(run_scan, "get_settings", return_value=settings),
+        patch.object(run_scan.radar_service, "run_scan", side_effect=_spy_dart_run_scan),
+        patch.object(run_scan.edgar_service, "run_scan", side_effect=_spy_edgar_run_scan),
+        patch.object(run_scan.edinet_service, "run_scan", side_effect=_spy_edinet_run_scan),
+    ):
+        exit_code = run_scan.main(edgar_candidate_repository=sentinel_repo)
+
+    assert exit_code == 0
+    assert edgar_captured["kwargs"] == {"candidate_repository": sentinel_repo}
+    # DART/EDINET never receive it, even when supplied for EDGAR.
+    assert dart_captured["kwargs"] == {}
+    assert edinet_captured["kwargs"] == {}
 
 
 # --- Intended cache fallback / disabled remote cache still counts as success ---

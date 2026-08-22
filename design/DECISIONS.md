@@ -2931,3 +2931,80 @@ remains exactly as unreached as it was after Phase 3A.
   directory, `.env`, the Streamlit secrets file, or the pre-existing
   legacy database at any point; every test uses `:memory:` SQLite and
   synthetic fixtures only.
+
+## Durable-State Phase 4A — EDGAR repository-injection seam extended to the service/script entrypoints (local/synthetic test-only)
+
+Approved as the first slice of a broader "Persistence Parity and
+Controlled Scan Beta" design (read-only design pass; full plan not
+re-summarized here). This slice is narrowly scoped: extend Phase 3A's
+existing, already-tested `candidate_repository` injection seam on
+`edgar_pipeline.run_pipeline`/`process_single_candidate` **upward**
+through the immediate EDGAR service and local script call chain, for
+synthetic/local tests only — no hosted backend, no live scan path, no
+scheduled workflow, no deployment path, no public-site path, no
+automatic publication path, and no production cutover of any kind.
+
+- **`edgar_pipeline.py` needed no changes** — the seam this phase
+  extends already existed there, built and tested under Phase 3A.
+- **`src/data_access/edgar/edgar_service.py`**: `run_scan()` and
+  `process_candidate_now()` each gained the same additive, optional,
+  default-`None` `candidate_repository` parameter, threaded straight
+  through to `edgar_pipeline.run_pipeline`/`process_single_candidate`'s
+  own parameter of the same name. Omitted — every real caller this
+  phase — behavior is byte-for-byte identical to before: today's JSON
+  `candidate_store.py` path. This is the one real, documented boundary
+  Phase 3A's own module docstring named as unreached ("no real service
+  entry point calls this phase's functions with an injected
+  collaborator at all") — Phase 4A crosses exactly that line, for
+  EDGAR only.
+- **`scripts/run_scan.py`**: `main()` gained an additive, optional,
+  default-`None` `edgar_candidate_repository` parameter — deliberately
+  **not** a new environment variable, never read from `get_settings()`.
+  When omitted (the CLI's real invocation, `python -m scripts.run_scan`,
+  always omits it), each source's `run_scan()` call — EDGAR's included
+  — is made with zero extra keyword arguments, not merely
+  `candidate_repository=None`, so the real invocation's call shape is
+  unchanged byte-for-byte. When supplied, only the EDGAR call receives
+  it; DART's and EDINET's `run_scan()` calls are never touched, proven
+  directly by a spy test rather than assumed from the gating logic
+  alone.
+- **DART/EDINET service entry points are unmodified.** The Phase 3A
+  guard test (`test_no_service_entry_point_exposes_a_candidate_repository_parameter`
+  in `test_candidate_persistence_phase3a.py`) was narrowed to assert
+  this only for `dart/radar_service`/`edinet_service` — it no longer
+  covers `edgar_service`, since that module now legitimately exposes
+  the parameter. That test file's module docstring was corrected to
+  match; no other line in it changed.
+- **Tests**: 7 new in `test_edgar_service.py` — default-omitted-vs-
+  explicitly-supplied pass-through for both `run_scan` and
+  `process_candidate_now` (via a monkeypatched `edgar_pipeline`
+  function, no network); a real end-to-end pair proving a
+  mocked-EDGAR-client `run_scan()` call produces the same one candidate
+  whether left on the default JSON path or given an injected,
+  `tmp_path`-backed SQLite repository (via `backend_factory`), with an
+  explicit assertion that the SQLite path never touches
+  `edgar_candidates.json`; and a real-local-state source guard over
+  this phase's two modified files, matching the pattern already
+  established in `test_backend_factory_phase2b.py`/
+  `test_candidate_persistence_phase3a.py`. 2 new in
+  `test_run_scan_cli.py` — the default-call-omits-the-parameter proof,
+  and the supplied-repository-reaches-EDGAR-only proof (DART/EDINET
+  spies confirm they receive no such keyword). Full suite (1114 tests,
+  +9 net) re-run and passes; zero network calls anywhere in the new
+  tests (either the pipeline-layer function is monkeypatched directly,
+  or `edgar_service._client` is replaced with a `MagicMock`); zero
+  access to the real cache
+  directory, `.env`, the Streamlit secrets file, or the pre-existing
+  legacy database at any point.
+
+**Deliberately not done, per explicit approval scope**: no hosted
+database of any kind provisioned or connected to; no change to
+`src/config/settings.py` (the existing `db_backend`/`state_db_path`
+fields already suffice for a local/synthetic SQLite target); no
+scheduled or `workflow_dispatch`-triggered execution touched; no change
+to DART or EDINET pipelines, services, or scripts; no nested
+transactions, savepoints, dual-write path, or automatic migration of
+any kind — Phase 3B-0's single-outer-transaction candidate-batch
+contract is unmodified and unaffected, since nothing in this phase
+touches `state_db/connection.py`'s `transaction()` helper or
+`candidate_repository.py`'s batch-write path.
