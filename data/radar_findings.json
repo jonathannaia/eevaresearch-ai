@@ -1,6 +1,34 @@
 [
   {
     "niche": "Space",
+    "headline": "Bad weather delays launch of China's historic Chang'e 7 mission to moon's south pole",
+    "summary": "China delayed its Chang'e 7 lunar mission to the moon's south pole due to weather conditions near the launch site, with no new target date announced.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/bad-weather-delays-launch-of-chinas-historic-change-7-mission-to-moons-south-pole",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 23 Aug 2026 13:54:11 +0000",
+    "retrieved_at": "2026-08-23T14:14:45+00:00",
+    "tickers": [],
+    "relevance_reason": "Article concerns a lunar space mission launch delay, directly relevant to Space scope.",
+    "url_hash": "282dba678dcb14a1",
+    "id": "282dba678dcb14a1"
+  },
+  {
+    "niche": "Space",
+    "headline": "How a huge fleet of 17 spacecraft discovered something surprising about solar eruptions",
+    "summary": "A fleet of 17 spacecraft observed a coronal mass ejection from multiple vantage points in the solar system, revealing new information about the extent of solar eruptions.",
+    "source_url": "https://www.space.com/astronomy/sun/how-a-huge-fleet-of-17-spacecraft-discovered-something-surprising-about-solar-eruptions",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 23 Aug 2026 14:00:00 +0000",
+    "retrieved_at": "2026-08-23T14:14:44+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses spacecraft fleet measuring coronal mass ejections, directly relevant to space exploration and observation.",
+    "url_hash": "d2c9d84639bdeb22",
+    "id": "d2c9d84639bdeb22"
+  },
+  {
+    "niche": "Space",
     "headline": "Launching 10,000 tiny 'femtosats' to Saturn? NASA funds 18 futuristic spaceflight ideas",
     "summary": "NASA has selected 18 technology proposals for its Innovative Advanced Concepts awards program, including concepts for deploying thousands of small satellites to Saturn and other advanced spaceflight ideas.",
     "source_url": "https://www.space.com/technology/launching-10-000-tiny-femtosats-to-saturn-nasa-funds-18-futuristic-spaceflight-ideas",
