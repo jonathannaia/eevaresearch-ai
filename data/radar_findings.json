@@ -1,5 +1,19 @@
 [
   {
+    "niche": "Space",
+    "headline": "Launching 10,000 tiny 'femtosats' to Saturn? NASA funds 18 futuristic spaceflight ideas",
+    "summary": "NASA has selected 18 technology proposals for its Innovative Advanced Concepts awards program, including concepts for deploying thousands of small satellites to Saturn and other advanced spaceflight ideas.",
+    "source_url": "https://www.space.com/technology/launching-10-000-tiny-femtosats-to-saturn-nasa-funds-18-futuristic-spaceflight-ideas",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 23 Aug 2026 12:00:00 +0000",
+    "retrieved_at": "2026-08-23T12:21:25+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers NASA funding for futuristic spaceflight concepts including deployment of small satellites, directly relevant to space launch and spacecraft development.",
+    "url_hash": "5d5e52bd15b70866",
+    "id": "5d5e52bd15b70866"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Building data centers is getting easier. Building trust is not",
     "summary": "The article addresses challenges in data center development, noting that building physical infrastructure is becoming easier but gaining community acceptance and trust remains difficult.",
