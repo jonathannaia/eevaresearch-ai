@@ -1,5 +1,19 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Building data centers is getting easier. Building trust is not",
+    "summary": "The article addresses challenges in data center development, noting that building physical infrastructure is becoming easier but gaining community acceptance and trust remains difficult.",
+    "source_url": "https://www.datacenterdynamics.com/en/opinions/building-data-centers-is-getting-easier-building-trust-is-not/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 22 Aug 2026 14:00:31 +0000",
+    "retrieved_at": "2026-08-23T00:45:12+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses data center construction and development, a core AI Buildout infrastructure topic",
+    "url_hash": "9b9f77fdcf78dc24",
+    "id": "9b9f77fdcf78dc24"
+  },
+  {
     "niche": "Space",
     "headline": "How will NASA's astronaut training hub change with commercial space stations?",
     "summary": "NASA and private industry are collaborating on the future of human spaceflight, including commercial space stations, as evidenced by activities at NASA's Johnson Space Center in Houston.",
