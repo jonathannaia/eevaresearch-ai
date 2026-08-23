@@ -3008,3 +3008,97 @@ any kind — Phase 3B-0's single-outer-transaction candidate-batch
 contract is unmodified and unaffected, since nothing in this phase
 touches `state_db/connection.py`'s `transaction()` helper or
 `candidate_repository.py`'s batch-write path.
+
+## Durable-State Phase 4B-0 — Hosted Postgres Design Record
+
+Documentation-only decision step, produced from the read-only Phase 4B
+Postgres compatibility audit. No code, test, configuration, dependency,
+or infrastructure change is part of this phase — this section records
+decisions and constraints only, for later phases to implement against.
+
+**1. Backend strategy**
+Phase 4B uses a separate Postgres implementation behind
+`backend_factory.py`, not a generic dialect abstraction. The existing
+SQLite repositories (`state_db/candidate_repository.py`,
+`state_db/filing_event_repository.py`, `state_db/identifier_repository.py`,
+`state_db/signal_repository.py`), `state_db/connection.py`, its SQLite
+transaction handling, and Phase 3B-0's batch-atomicity code remain
+unchanged — no refactor of existing SQL, placeholders, or the
+`transaction()` helper is in scope for any part of Phase 4B.
+
+**2. Hosted target**
+The intended controlled-beta canonical store is managed Postgres. Neon
+is the preferred provider candidate, subject to a later, separate,
+explicit provisioning approval. No provider account, database, project,
+credential, connection string, or hosted infrastructure of any kind is
+created in this phase. libSQL/Turso remains the documented fallback
+candidate only if a later explicit review rejects or blocks Postgres —
+that fallback is not implemented, designed further, or acted on now.
+
+**3. Data ownership**
+The future Postgres backend is intended to own filing events,
+candidates, state transitions/review history, and resolved identifiers
+— the same six-entity boundary already established in `state_db/schema.py`
+today, minus Signals (see below). Candidate excerpt and translation
+fields remain fields on the candidate record, exactly as today — not a
+separate table. Signals remain derived from `PUBLISHED` candidates on
+read (mirroring `state_db/signal_repository.py`'s existing
+`SqliteSignalRepository` shape) — there is no Signals table and no
+Signal writer in this phase, or planned for any future Postgres
+implementation. The human-review gate (`signal_promotion.py`'s
+`PUBLISHED`-only eligibility check) remains mandatory; no automatic
+promotion or public publishing is introduced by this decision record or
+implied for any later phase it authorizes.
+
+**4. Connection and secret contract**
+`Settings.state_db_url` (`src/config/settings.py`) is the future
+Postgres DSN field, but remains non-operational in this phase — read
+for presence only, exactly as it is today. A real DSN must come only
+from an approved runtime secret/environment mechanism introduced in a
+later, separately-approved phase. A raw DSN, password, hostname,
+username, or any other provider credential must never be committed,
+printed, logged, interpolated into an error message, or added to
+`.env.example` at any point, in this phase or later. No GitHub or
+Streamlit secret/configuration change occurs in Phase 4B-0.
+
+**5. Repository and transaction contract**
+Postgres will use a new, isolated implementation package/repositories
+rather than changing any SQLite repository. That implementation must
+independently prove the full Phase 3B-0 behavior before it is trusted:
+one outer transaction for each candidate batch; the filing-event helper
+(the `_upsert_filing_event_no_transaction`-equivalent) has no
+independent transaction/commit of its own; a mid-batch failure rolls
+back every row created by that batch, including rows for
+earlier-processed candidates in the same batch; and a standalone
+filing-event upsert remains independently atomic outside any batch. No
+savepoints, generic nested-transaction support, automatic retries, or
+refactor of the existing `transaction()` helper are approved by this or
+any decision recorded here.
+
+**6. Local test strategy**
+Before any hosted connection is attempted, the intended test target is
+a disposable local Postgres instance. The exact local runner mechanism,
+driver dependency, and integration-test provisioning all require
+separate, explicit approval — none is decided or authorized here.
+Existing SQLite tests remain unchanged and must continue passing
+unmodified throughout every later phase. Any future Postgres
+equivalence tests must use synthetic fixtures only and must never
+access real cache/state/secrets — the same discipline already
+established in `test_candidate_persistence_phase3a.py` and
+`test_edgar_service.py`.
+
+**7. Explicit non-goals**
+No dependency addition. No code or test implementation. No database
+provision, database connection, schema migration, local container,
+Docker invocation, remote connection, or credentials access. No
+workflow, schedule, deployment, Streamlit, GitHub settings, scan,
+source request, migration, import/export, backup, dual-write, or
+public-site change. No DART or EDINET work of any kind.
+
+**8. Next approval gate**
+The next phase, if approved later, is Phase 4B-1: Postgres
+implementation plan and isolated test-environment decision. It must
+separately authorize any dependency addition, local Postgres test
+target, code/test files, and schema/repository implementation. Hosted
+provider provisioning, secret setup, workflow changes, real scans, and
+deployment remain later, separate approvals beyond even Phase 4B-1.
