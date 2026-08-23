@@ -2,7 +2,7 @@
   "AAOI": {
     "ticker": "AAOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:45:26+00:00",
+    "retrieved_at": "2026-08-23T02:55:15+00:00",
     "errors": [],
     "price": {
       "ticker": "AAOI",
@@ -151,7 +151,7 @@
   "ABCL": {
     "ticker": "ABCL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:45:35+00:00",
+    "retrieved_at": "2026-08-23T02:55:22+00:00",
     "errors": [],
     "price": {
       "ticker": "ABCL",
@@ -300,7 +300,7 @@
   "AEHR": {
     "ticker": "AEHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:45:43+00:00",
+    "retrieved_at": "2026-08-23T02:55:29+00:00",
     "errors": [],
     "price": {
       "ticker": "AEHR",
@@ -449,7 +449,7 @@
   "ARM": {
     "ticker": "ARM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:45:49+00:00",
+    "retrieved_at": "2026-08-23T02:55:35+00:00",
     "errors": [],
     "price": {
       "ticker": "ARM",
@@ -547,7 +547,7 @@
   "AVGO": {
     "ticker": "AVGO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:45:56+00:00",
+    "retrieved_at": "2026-08-23T02:55:41+00:00",
     "errors": [],
     "price": {
       "ticker": "AVGO",
@@ -696,7 +696,7 @@
   "AXTI": {
     "ticker": "AXTI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:02+00:00",
+    "retrieved_at": "2026-08-23T02:55:47+00:00",
     "errors": [],
     "price": {
       "ticker": "AXTI",
@@ -845,7 +845,7 @@
   "BE": {
     "ticker": "BE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:09+00:00",
+    "retrieved_at": "2026-08-23T02:55:52+00:00",
     "errors": [],
     "price": {
       "ticker": "BE",
@@ -994,7 +994,7 @@
   "CLS": {
     "ticker": "CLS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:15+00:00",
+    "retrieved_at": "2026-08-23T02:55:58+00:00",
     "errors": [],
     "price": {
       "ticker": "CLS",
@@ -1143,7 +1143,7 @@
   "COHR": {
     "ticker": "COHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:21+00:00",
+    "retrieved_at": "2026-08-23T02:56:03+00:00",
     "errors": [],
     "price": {
       "ticker": "COHR",
@@ -1292,7 +1292,7 @@
   "CRDO": {
     "ticker": "CRDO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:28+00:00",
+    "retrieved_at": "2026-08-23T02:56:10+00:00",
     "errors": [],
     "price": {
       "ticker": "CRDO",
@@ -1441,7 +1441,7 @@
   "DRAM": {
     "ticker": "DRAM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:34+00:00",
+    "retrieved_at": "2026-08-23T02:56:15+00:00",
     "errors": [
       "valuation: No market cap from Finnhub for 'DRAM'.",
       "insiders: No SEC EDGAR CIK found for ticker 'DRAM' — not a US-listed filer, or the ticker is wrong.",
@@ -1470,7 +1470,7 @@
   "INTC": {
     "ticker": "INTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:39+00:00",
+    "retrieved_at": "2026-08-23T02:56:20+00:00",
     "errors": [],
     "price": {
       "ticker": "INTC",
@@ -1586,7 +1586,7 @@
   "IREN": {
     "ticker": "IREN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:50+00:00",
+    "retrieved_at": "2026-08-23T02:56:29+00:00",
     "errors": [],
     "price": {
       "ticker": "IREN",
@@ -1713,7 +1713,7 @@
   "LITE": {
     "ticker": "LITE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:46:59+00:00",
+    "retrieved_at": "2026-08-23T02:56:38+00:00",
     "errors": [],
     "price": {
       "ticker": "LITE",
@@ -1862,7 +1862,7 @@
   "LPTH": {
     "ticker": "LPTH",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:06+00:00",
+    "retrieved_at": "2026-08-23T02:56:44+00:00",
     "errors": [],
     "price": {
       "ticker": "LPTH",
@@ -2011,7 +2011,7 @@
   "MP": {
     "ticker": "MP",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:13+00:00",
+    "retrieved_at": "2026-08-23T02:56:49+00:00",
     "errors": [],
     "price": {
       "ticker": "MP",
@@ -2160,7 +2160,7 @@
   "MRVL": {
     "ticker": "MRVL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:21+00:00",
+    "retrieved_at": "2026-08-23T02:56:57+00:00",
     "errors": [],
     "price": {
       "ticker": "MRVL",
@@ -2309,7 +2309,7 @@
   "MU": {
     "ticker": "MU",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:29+00:00",
+    "retrieved_at": "2026-08-23T02:57:03+00:00",
     "errors": [],
     "price": {
       "ticker": "MU",
@@ -2458,7 +2458,7 @@
   "MXL": {
     "ticker": "MXL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:35+00:00",
+    "retrieved_at": "2026-08-23T02:57:08+00:00",
     "errors": [],
     "price": {
       "ticker": "MXL",
@@ -2607,7 +2607,7 @@
   "NBIS": {
     "ticker": "NBIS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:40+00:00",
+    "retrieved_at": "2026-08-23T02:57:14+00:00",
     "errors": [],
     "price": {
       "ticker": "NBIS",
@@ -2705,7 +2705,7 @@
   "PLTR": {
     "ticker": "PLTR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:46+00:00",
+    "retrieved_at": "2026-08-23T02:57:20+00:00",
     "errors": [],
     "price": {
       "ticker": "PLTR",
@@ -2854,7 +2854,7 @@
   "RKLB": {
     "ticker": "RKLB",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:53+00:00",
+    "retrieved_at": "2026-08-23T02:57:26+00:00",
     "errors": [],
     "price": {
       "ticker": "RKLB",
@@ -3003,7 +3003,7 @@
   "SIVE": {
     "ticker": "SIVE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:47:59+00:00",
+    "retrieved_at": "2026-08-23T02:57:31+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SIVE'.",
       "valuation: No market cap from Finnhub for 'SIVE'.",
@@ -3022,7 +3022,7 @@
   "SKHY": {
     "ticker": "SKHY",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:03+00:00",
+    "retrieved_at": "2026-08-23T02:57:35+00:00",
     "errors": [],
     "price": {
       "ticker": "SKHY",
@@ -3064,7 +3064,7 @@
   "SMCI": {
     "ticker": "SMCI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:09+00:00",
+    "retrieved_at": "2026-08-23T02:57:41+00:00",
     "errors": [],
     "price": {
       "ticker": "SMCI",
@@ -3157,7 +3157,7 @@
   "SMTC": {
     "ticker": "SMTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:20+00:00",
+    "retrieved_at": "2026-08-23T02:57:50+00:00",
     "errors": [],
     "price": {
       "ticker": "SMTC",
@@ -3306,7 +3306,7 @@
   "SNDK": {
     "ticker": "SNDK",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:27+00:00",
+    "retrieved_at": "2026-08-23T02:57:56+00:00",
     "errors": [],
     "price": {
       "ticker": "SNDK",
@@ -3455,7 +3455,7 @@
   "SOI": {
     "ticker": "SOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:33+00:00",
+    "retrieved_at": "2026-08-23T02:58:02+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SOI'.",
       "insiders: No SEC EDGAR CIK found for ticker 'SOI' — not a US-listed filer, or the ticker is wrong.",
@@ -3482,7 +3482,7 @@
   "SPCX": {
     "ticker": "SPCX",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:37+00:00",
+    "retrieved_at": "2026-08-23T02:58:05+00:00",
     "errors": [],
     "price": {
       "ticker": "SPCX",
@@ -3587,7 +3587,7 @@
   "TSEM": {
     "ticker": "TSEM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:43+00:00",
+    "retrieved_at": "2026-08-23T02:58:11+00:00",
     "errors": [],
     "price": {
       "ticker": "TSEM",
@@ -3685,7 +3685,7 @@
   "USAR": {
     "ticker": "USAR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-23T00:48:50+00:00",
+    "retrieved_at": "2026-08-23T02:58:17+00:00",
     "errors": [],
     "price": {
       "ticker": "USAR",
