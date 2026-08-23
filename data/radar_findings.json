@@ -1,6 +1,20 @@
 [
   {
     "niche": "Space",
+    "headline": "Due to need for 'absolute success,' China delays critical Moon launch to 2027",
+    "summary": "China has postponed its Chang'e 7 Moon mission to 2027, citing the need for 'absolute success' and stating the mission does not currently meet launch conditions.",
+    "source_url": "https://arstechnica.com/space/2026/08/due-to-need-for-absolute-success-china-delays-critical-moon-launch-to-2027/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 23 Aug 2026 14:30:16 +0000",
+    "retrieved_at": "2026-08-23T16:14:56+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly discusses delay of a Chinese lunar mission, which is substantive space exploration news.",
+    "url_hash": "661b4dd315dae6ab",
+    "id": "661b4dd315dae6ab"
+  },
+  {
+    "niche": "Space",
     "headline": "Bad weather delays launch of China's historic Chang'e 7 mission to moon's south pole",
     "summary": "China delayed its Chang'e 7 lunar mission to the moon's south pole due to weather conditions near the launch site, with no new target date announced.",
     "source_url": "https://www.space.com/space-exploration/launches-spacecraft/bad-weather-delays-launch-of-chinas-historic-change-7-mission-to-moons-south-pole",
