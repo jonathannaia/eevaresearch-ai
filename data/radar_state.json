@@ -35,6 +35,7 @@
     "200ee3d054893946",
     "2155a4e825142a89",
     "22271c4b8665a1f5",
+    "2300011249487790",
     "2454fc509008458d",
     "248c74532a4432bf",
     "24fe20a3b48a0eaf",
@@ -78,6 +79,7 @@
     "539ae171d5dfef42",
     "53ea3ef21232043b",
     "5427c7d527706d25",
+    "54609f5ae638d364",
     "54dbf72ca6bd4a91",
     "56042f3fec6fbb67",
     "5614b20bdc285140",
@@ -105,6 +107,7 @@
     "6fd5b3c5ca4ea9ce",
     "72441e0c7c89995d",
     "72bafb98f257c5c2",
+    "72d30ebc1e2f0b30",
     "744ebd52ee08e82a",
     "747941ae108938ab",
     "75ea97a5e8f4803e",
@@ -191,6 +194,7 @@
     "cecabc0429a9bc16",
     "cf69d29de49527b7",
     "cf9e2b68777ee91d",
+    "d05bdac134734a2b",
     "d1c13a6281dcc241",
     "d1c9793a08a75ae7",
     "d1d35ee34d5b17a8",
@@ -226,6 +230,19 @@
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-08-24T14:32:57+00:00",
+      "finished_at": "2026-08-24T14:34:02+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 430,
+      "items_after_freshness_filter": 38,
+      "items_after_keyword_filter": 19,
+      "items_sent_to_llm": 19,
+      "items_saved": 4,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
     {
       "started_at": "2026-08-24T12:28:41+00:00",
       "finished_at": "2026-08-24T12:29:14+00:00",

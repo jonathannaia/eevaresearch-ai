@@ -1,6 +1,101 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "8-K/A filed by Datacentrex, Inc.  (DTCX)  (CIK 0001853825)",
+    "summary": "Datacentrex, Inc. filed an amended 8-K with the SEC. The filing was matched by the search term 'data center capital expenditure,' indicating relevance to data center investment activity.",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/1853825/000149315226039796/ex99-1.htm",
+    "source_name": "SEC EDGAR Full-Text Search — 8-K capex filings",
+    "source_type": "Regulatory Filing",
+    "published_at": "2026-08-24",
+    "retrieved_at": "2026-08-24T14:33:53+00:00",
+    "tickers": [
+      {
+        "ticker": "DTCX",
+        "company_name": "Datacentrex, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Datacentrex is directly engaged in data center operations, which is core to AI infrastructure buildout.",
+    "url_hash": "d05bdac134734a2b",
+    "id": "d05bdac134734a2b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Magnora secures grid connection for Hämeenlinna data center in Finland",
+    "summary": "Magnora has secured a grid connection for its Hämeenlinna data center in Finland and revised the facility's capacity to exceed 120MW.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/magnora-secures-grid-connection-for-h%C3%A4meenlinna-data-center-in-finland/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 12:30:27 +0000",
+    "retrieved_at": "2026-08-24T14:33:15+00:00",
+    "tickers": [],
+    "relevance_reason": "Direct AI infrastructure buildout: data center development with significant power capacity expansion.",
+    "url_hash": "54609f5ae638d364",
+    "id": "54609f5ae638d364"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AEP Ohio secures $18m from data center firms for bill assistance program",
+    "summary": "Meta, QTS, Amazon, SoftBank Energy, and Google have committed $18 million total to an AEP Ohio bill assistance program, indicating continued investment activity by major data center operators.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/aep-ohio-secures-18m-from-data-center-firms-for-bill-assistance-program/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 13:00:37 +0000",
+    "retrieved_at": "2026-08-24T14:33:14+00:00",
+    "tickers": [
+      {
+        "ticker": "META",
+        "company_name": "Meta Platforms",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "GOOGL",
+        "company_name": "Alphabet",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "9984",
+        "company_name": "SoftBank Group",
+        "jurisdiction": "Japan",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Multiple hyperscalers commit funding related to data center operations and infrastructure",
+    "url_hash": "2300011249487790",
+    "id": "2300011249487790"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Switch files to develop data center on former Pittsburgh race track",
+    "summary": "Switch is filing plans to develop a data center on the former Pittsburgh race track site, with three buildings and up to 270MW of generator capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/switch-files-to-develop-data-center-on-former-pittsburgh-race-track/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 14:22:46 +0000",
+    "retrieved_at": "2026-08-24T14:33:10+00:00",
+    "tickers": [
+      {
+        "ticker": "SWCH",
+        "company_name": "Switch",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns data center development, a core AI Buildout infrastructure component.",
+    "url_hash": "72d30ebc1e2f0b30",
+    "id": "72d30ebc1e2f0b30"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "8-K filed by Datacentrex, Inc.  (DTCX)  (CIK 0001853825)",
     "summary": "Datacentrex, Inc. filed an 8-K with the SEC on August 24, 2026, likely containing material information regarding data center capital expenditures.",
     "source_url": "https://www.sec.gov/Archives/edgar/data/1853825/000149315226039786/ex99-1.htm",
