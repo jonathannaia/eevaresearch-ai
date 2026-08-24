@@ -1,5 +1,232 @@
 [
   {
+    "niche": "Space",
+    "headline": "Spirit Electronics Adds Texas Instruments and Microchip Technology Space Grade Components to Online Store Ahead of SmallSat 2026",
+    "summary": "Spirit Electronics, a high-reliability electronics distributor, added space-grade components from Texas Instruments and Microchip Technology to its online store in advance of the SmallSat 2026 conference.",
+    "source_url": "https://spacenews.com/spirit-electronics-adds-texas-instruments-and-microchip-technology-space-grade-components-to-online-store-ahead-of-smallsat-2026/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 15:00:00 +0000",
+    "retrieved_at": "2026-08-24T16:25:59+00:00",
+    "tickers": [
+      {
+        "ticker": "TXN",
+        "company_name": "Texas Instruments",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "MCHP",
+        "company_name": "Microchip Technology",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly addresses space industry supply chain through announcement of space-grade components for satellite applications ahead of SmallSat conference.",
+    "url_hash": "f2f1d7569cc29a09",
+    "id": "f2f1d7569cc29a09"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA Groq 3 LPX Now in Full Production With World-Class Speed for Agentic AI",
+    "summary": "NVIDIA announced that its Groq 3 LPX inference accelerator has entered full production, designed to enable faster token generation for AI agent systems.",
+    "source_url": "https://nvidianews.nvidia.com/news/nvidia-groq-3-lpx-now-in-full-production-with-world-class-speed-for-agentic-ai",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 24 Aug 2026 15:00:00 GMT",
+    "retrieved_at": "2026-08-24T16:25:50+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "GROQ",
+        "company_name": "Groq Inc.",
+        "jurisdiction": "United States",
+        "verified": false
+      },
+      {
+        "ticker": "UE",
+        "company_name": "Ultra Electronics Holdings plc",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "NVIDIA announcement of new AI inference accelerator chip in production directly concerns AI infrastructure and chip supply chain.",
+    "url_hash": "d00d6246caee468c",
+    "id": "d00d6246caee468c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "SpaceXAI Adopts NVIDIA Vera CPU to Accelerate Agentic AI at Massive Scale",
+    "summary": "NVIDIA announced that SpaceXAI will deploy NVIDIA Vera CPUs to accelerate agentic AI applications at scale, marking the first deployment of NVIDIA's CPU designed for AI agents.",
+    "source_url": "https://nvidianews.nvidia.com/news/spacexai-adopts-nvidia-vera-cpu-to-accelerate-agentic-ai-at-massive-scale",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 24 Aug 2026 15:00:00 GMT",
+    "retrieved_at": "2026-08-24T16:25:48+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "NVIDIA is supplying specialized AI accelerator hardware (Vera CPUs) to a major organization for large-scale AI infrastructure deployment, directly relevant to AI Buildout scope.",
+    "url_hash": "cdec39be75cf310d",
+    "id": "cdec39be75cf310d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Up to 30x More Work Per Watt: NVIDIA Vera Rubin NVL72 Sets a New Efficiency Standard for AI Agents",
+    "summary": "NVIDIA introduced the Vera Rubin NVL72 GPU, which achieves up to 30x more work per watt efficiency for agentic AI workloads that consume significantly more tokens than standard chat applications due to their multi-step reasoning and database query processes.",
+    "source_url": "https://blogs.nvidia.com/blog/vera-rubin-nvl72-efficiency-ai-agents/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 24 Aug 2026 15:00:19 GMT",
+    "retrieved_at": "2026-08-24T16:25:46+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Discusses NVIDIA's new AI accelerator hardware (Vera Rubin NVL72) designed for agentic AI workloads, directly relevant to GPU/accelerator chip supply chain for AI infrastructure.",
+    "url_hash": "79a0646933911189",
+    "id": "79a0646933911189"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "With Groq 3 LPX in Full Production, NVIDIA Extends Vera Rubin Inference for Agents",
+    "summary": "NVIDIA announced extensions to its Vera Rubin NVL72 rack-scale system with enhanced token generation capabilities for agentic AI systems as part of its inference infrastructure offerings.",
+    "source_url": "https://blogs.nvidia.com/blog/vera-rubin-lpx-spectrum-x-nvlink-fusion/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 24 Aug 2026 15:00:41 GMT",
+    "retrieved_at": "2026-08-24T16:25:44+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "GROQ",
+        "company_name": "Groq (if publicly traded)",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly addresses AI inference infrastructure and chip/system architecture for hyperscaler deployments",
+    "url_hash": "b4d239e1cc10ea77",
+    "id": "b4d239e1cc10ea77"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "How XPUs Meet a World-Class AI Factory",
+    "summary": "The article discusses how AI factories optimize economics through metrics like tokens per second and tokens per watt, requiring full integrated infrastructure rather than individual accelerators, with emphasis on hyperscalers and AI-native companies building custom XPUs.",
+    "source_url": "https://blogs.nvidia.com/blog/nvlink-fusion-xpu-ai-factory/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 24 Aug 2026 15:00:54 GMT",
+    "retrieved_at": "2026-08-24T16:25:41+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses AI infrastructure economics and custom XPU (accelerator) design for hyperscale AI deployment, directly relevant to AI Buildout scope.",
+    "url_hash": "f21b782b05987822",
+    "id": "f21b782b05987822"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Zerra DC files plans for large data center campus in Queensland, Australia",
+    "summary": "Zerra DC is planning a four-building data center campus in Queensland, Australia, positioned next to a substation and multiple power plants to support significant power requirements.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/zerra-dc-files-plans-for-large-data-center-campus-in-queensland-australia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 14:20:00 +0000",
+    "retrieved_at": "2026-08-24T16:25:36+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center campus development is directly relevant to AI infrastructure buildout scope.",
+    "url_hash": "baf43c348541b811",
+    "id": "baf43c348541b811"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Greenidge Generation rebrands as Vulcan Infrastructure and Power, targets AI/HPC",
+    "summary": "Greenidge Generation has rebranded as Vulcan Infrastructure and Power, shifting its business focus from bitcoin mining to AI and high-performance computing data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/greenidge-generation-rebrands-as-vulcan-infrastructure-and-power-targets-aihpc/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 14:50:33 +0000",
+    "retrieved_at": "2026-08-24T16:25:34+00:00",
+    "tickers": [
+      {
+        "ticker": "GLHG",
+        "company_name": "Vulcan Infrastructure and Power (formerly Greenidge Generation)",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Company is pivoting from bitcoin mining to AI/HPC data centers, directly addressing AI infrastructure buildout.",
+    "url_hash": "767390f51df09f98",
+    "id": "767390f51df09f98"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Sphere 3D plans 50MW data center in Hopkinsville, Kentucky",
+    "summary": "Sphere 3D is planning a 50MW data center in Hopkinsville, Kentucky and considering converting an existing 15MW Bitcoin mining facility to support AI and HPC applications.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/sphere-3d-plans-50mw-data-center-in-hopkinsville-kentucky/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 15:10:32 +0000",
+    "retrieved_at": "2026-08-24T16:25:32+00:00",
+    "tickers": [
+      {
+        "ticker": "ANY",
+        "company_name": "Sphere 3D",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly about AI data center infrastructure buildout and expansion of compute capacity for AI workloads",
+    "url_hash": "58980cd9b2243679",
+    "id": "58980cd9b2243679"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Deploying 800VDC architectures for large-amperage data centers",
+    "summary": "The article discusses 800VDC (800-volt direct current) architectures being deployed to support high-density data center operations, representing an advancement in power delivery systems for next-generation data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/whitepapers/deploying-800vdc-architectures-for-large-amperage-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 15:41:09 +0000",
+    "retrieved_at": "2026-08-24T16:25:30+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure architecture for AI data centers, a core component of AI Buildout scope.",
+    "url_hash": "98053a80a900d220",
+    "id": "98053a80a900d220"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Raeden claims Michigan moratorium unlawfully stopped its Gibraltar data center development",
+    "summary": "Raeden is challenging a Michigan moratorium that stopped its proposal for a 100MW data center in Gibraltar.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/raeden-claims-michigan-moratorium-unlawfully-stopped-its-gibraltar-data-center-development/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 16:07:11 +0000",
+    "retrieved_at": "2026-08-24T16:25:26+00:00",
+    "tickers": [],
+    "relevance_reason": "directly concerns data center development and infrastructure for AI buildout",
+    "url_hash": "e09bf45df7f46527",
+    "id": "e09bf45df7f46527"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "8-K/A filed by Datacentrex, Inc.  (DTCX)  (CIK 0001853825)",
     "summary": "Datacentrex, Inc. filed an amended 8-K with the SEC. The filing was matched by the search term 'data center capital expenditure,' indicating relevance to data center investment activity.",
