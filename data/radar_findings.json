@@ -1,5 +1,124 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "8-K filed by Datacentrex, Inc.  (DTCX)  (CIK 0001853825)",
+    "summary": "Datacentrex, Inc. filed an 8-K with the SEC on August 24, 2026, likely containing material information regarding data center capital expenditures.",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/1853825/000149315226039786/ex99-1.htm",
+    "source_name": "SEC EDGAR Full-Text Search — 8-K capex filings",
+    "source_type": "Regulatory Filing",
+    "published_at": "2026-08-24",
+    "retrieved_at": "2026-08-24T12:29:12+00:00",
+    "tickers": [
+      {
+        "ticker": "DTCX",
+        "company_name": "Datacentrex, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "8-K filing by data center company Datacentrex matching data center capital expenditure search term indicates substantive disclosure related to AI infrastructure capex.",
+    "url_hash": "edfd6fd50b25c907",
+    "id": "edfd6fd50b25c907"
+  },
+  {
+    "niche": "Space",
+    "headline": "Nancy Grace Roman Telescope live updates: NASA readies Roman for launch",
+    "summary": "NASA is preparing the Nancy Grace Roman Space Telescope for launch aboard a SpaceX Falcon Heavy rocket to conduct astronomical observations.",
+    "source_url": "https://www.space.com/news/live/nancy-grace-roman-telescope-live-updates-nasa-readies-roman-for-launch-august-24-2026",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 12:00:00 +0000",
+    "retrieved_at": "2026-08-24T12:29:07+00:00",
+    "tickers": [
+      {
+        "ticker": "SPCE",
+        "company_name": "Virgin Galactic Holdings Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article covers NASA's Nancy Grace Roman Space Telescope and its scheduled launch on SpaceX's Falcon Heavy rocket, directly concerning space launch infrastructure.",
+    "url_hash": "539ae171d5dfef42",
+    "id": "539ae171d5dfef42"
+  },
+  {
+    "niche": "Space",
+    "headline": "Tory Bruno Named Honorary Chair Of World Space Week 2027",
+    "summary": "Tory Bruno, President of National Security at Blue Origin, has been named Honorary Chair of World Space Week 2027 by the World Space Week Association.",
+    "source_url": "https://spacenews.com/tory-bruno-named-honorary-chair-of-world-space-week-2027/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 12:00:00 +0000",
+    "retrieved_at": "2026-08-24T12:29:05+00:00",
+    "tickers": [
+      {
+        "ticker": "BLUE",
+        "company_name": "Blue Origin",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article announces a space industry executive appointment at a major spaceflight company, directly relevant to the Space scope.",
+    "url_hash": "6b98c445c8d19f46",
+    "id": "6b98c445c8d19f46"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia-backed FlexSysAI launches AI workload orchestration platform to reduce stress on the grid",
+    "summary": "Nvidia-backed FlexSysAI has launched an AI workload orchestration platform designed to reduce strain on electrical grids, with initial deployments planned for the Australian market.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nvidia-backed-flexsysai-launches-ai-workload-orchestration-platform-to-reduce-stress-on-the-grid/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 11:05:40 +0000",
+    "retrieved_at": "2026-08-24T12:28:56+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "FlexSysAI's AI workload orchestration platform directly addresses power and cooling infrastructure challenges for AI systems, which falls within AI Buildout scope.",
+    "url_hash": "0f00a1c51302755b",
+    "id": "0f00a1c51302755b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Ireland reconsidering nuclear in response to surging data center power demands - report",
+    "summary": "Ireland's government is reconsidering nuclear power as a potential solution to meet surging electricity demands from data centers. The Taoiseach (Irish Prime Minister) indicated the country is open to nuclear energy.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ireland-reconsidering-nuclear-in-response-to-surging-data-center-power-demands-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 11:12:51 +0000",
+    "retrieved_at": "2026-08-24T12:28:55+00:00",
+    "tickers": [],
+    "relevance_reason": "directly addresses power infrastructure needs for data centers as part of AI buildout",
+    "url_hash": "5d31aa950ed02016",
+    "id": "5d31aa950ed02016"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DXN secures AU$12.2m contract to deliver containerized data center to HPC customer",
+    "summary": "DXN secured an AU$12.2 million contract to deliver a 2MW containerized data center facility to an unnamed HPC customer.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/dxn-secures-au122m-contract-to-deliver-containerized-data-center-to-hpc-customer/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 11:26:38 +0000",
+    "retrieved_at": "2026-08-24T12:28:51+00:00",
+    "tickers": [
+      {
+        "ticker": "DXN",
+        "company_name": "DXN",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly involves containerized data center deployment for high-performance computing infrastructure",
+    "url_hash": "0a8621a8fa3f9857",
+    "id": "0a8621a8fa3f9857"
+  },
+  {
     "niche": "Space",
     "headline": "Due to need for 'absolute success,' China delays critical Moon launch to 2027",
     "summary": "China has postponed its Chang'e 7 Moon mission to 2027, citing the need for 'absolute success' and stating the mission does not currently meet launch conditions.",
