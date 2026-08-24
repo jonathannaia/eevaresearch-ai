@@ -3251,26 +3251,34 @@ strength, horizon, and last-updated; an empty-database `[]` result; and
 `get_signals_for_theme()` excluding both a different-theme PUBLISHED
 signal and a same-theme non-PUBLISHED candidate).
 
-**Execution status, stated precisely**: of the six new tests, only the
-sanitized-configuration-failure test — which needs no real connection —
-was actually run this phase, and it passed, proving `get_signal_repository()`
-fails closed with a sanitized `BackendConfigurationError` (no DSN, host,
-port, or credential in the message) on a malformed/unreachable
-configuration, mirroring the existing `get_candidate_repository()` proof
-from Phase 4B. The other five tests (PUBLISHED-only filtering,
-non-leakage, field preservation, empty-result, theme filtering) require
-the local disposable Postgres container and were **skipped** in this
-session — that container was unavailable, and a subsequent inspection
-found that tracked project files (`tests/_postgres_test_support.py`,
-this document) specify the local test target's *identity* (host, port,
-database name, role) but do not document an unambiguous, executable
-container *lifecycle* procedure — no tracked start command, container
-name, readiness check, password-supply procedure, or cleanup command
-exists. **Phase 4E-1's real local-Postgres execution proof is therefore
-pending, not complete** — these five tests are written and believed
-correct by inspection and by direct analogy to the already-passing,
-already-executed `test_state_db_postgres_signal_repository.py` suite,
-but that belief is not yet confirmed by a real run.
+**Execution status, stated precisely**: at the time these tests were
+written, only the sanitized-configuration-failure test — which needs no
+real connection — had been run, and a subsequent inspection found that
+no tracked project file documented an unambiguous, executable local
+Postgres container *lifecycle* procedure (start command, container
+name, readiness check, password-supply procedure, cleanup command),
+leaving the other five tests skipped. Phase 4F-1 then added that
+missing lifecycle procedure as `scripts/postgres_test_container.sh` — a
+loopback-only, `--rm` disposable container matching the existing
+`tests/_postgres_test_support.py` fixture contract. Using that wrapper,
+Phase 4E-1's local Postgres execution was subsequently run successfully:
+the wrapper started the container (confirmed absent beforehand), the
+container passed its bounded readiness gate, and it ran
+`tests/test_backend_factory_postgres.py`,
+`tests/test_state_db_postgres_signal_repository.py`, and
+`tests/test_state_db_postgres_candidate_repository.py` together, with
+result **35 passed, 0 failed, 0 skipped**. All five of the previously-
+skipped proof points — PUBLISHED-only filtering, non-PUBLISHED
+non-leakage, Signal-field preservation, empty-result behavior, and
+theme-scoped PUBLISHED-only filtering — ran and passed, and the existing
+sanitized-configuration-failure test also remained passed. The container
+used only loopback local Postgres, no Neon or hosted DSN, no production
+database, and no application-runtime path, and was removed afterward via
+the wrapper's cleanup. **Phase 4E-1's local-Postgres execution proof is
+therefore complete** — as a local disposable execution proof only. It is
+not a Neon/hosted-runtime or UI validation, and it does not change
+anything about how or whether Postgres activates in normal application
+behavior.
 
 **No UI, `signals.py`, `container.py`, `backend_factory.py`, service,
 pipeline, environment activation, schema, migration, scheduler,
