@@ -36,6 +36,42 @@ pytest -q
 helpers, and `st.testing.v1.AppTest`-based smoke tests covering every page.
 No test makes a real network call.
 
+### Local Postgres tests
+
+A small number of tests (`tests/test_backend_factory_postgres.py`,
+`tests/test_state_db_postgres_*.py`) exercise the isolated Postgres
+backend (`src/data_access/postgres_state_db/`) against a real Postgres
+connection. This is **local, disposable test infrastructure only** — it
+is not Neon, not any hosted database, and not production infrastructure
+of any kind. Without it, these tests skip cleanly and the rest of the
+suite is unaffected.
+
+`scripts/postgres_test_container.sh` starts exactly one loopback-only
+Postgres container (`127.0.0.1:55432`, container name
+`eevaresearch-postgres-test-phase4b`), runs whatever command you give it
+with a fresh, in-memory-only test password available to that command,
+and always removes the container afterward — no persistent volume is
+ever created, and nothing is retained once the wrapped command exits.
+The password is generated fresh on every run and supplied only through
+the `EEVARESEARCH_PG_TEST_PASSWORD` environment variable for the
+duration of the wrapped command; it is never printed, never written to
+a file, and must never be placed in `.env` or committed anywhere.
+
+Running the script — and therefore starting Docker — is a deliberate
+action each time; the script itself does not authorize or automate
+Docker use. Example usage (illustrative only):
+
+```bash
+scripts/postgres_test_container.sh \
+  .venv/bin/python3 -m pytest tests/test_backend_factory_postgres.py -q
+```
+
+The existing pytest fixtures (`tests/_postgres_test_support.py`) create
+and drop their own isolated schema per test against that one container
+— no separate setup step is needed beyond having the container running
+and the password variable set, both of which the script above handles
+for you.
+
 ## Formatting / linting
 
 No linter is enforced yet in this phase. If you add one, `ruff` (fast,
