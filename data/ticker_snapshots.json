@@ -2,7 +2,7 @@
   "AAOI": {
     "ticker": "AAOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:21+00:00",
+    "retrieved_at": "2026-08-24T22:17:14+00:00",
     "errors": [],
     "price": {
       "ticker": "AAOI",
@@ -151,7 +151,7 @@
   "ABCL": {
     "ticker": "ABCL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:28+00:00",
+    "retrieved_at": "2026-08-24T22:17:21+00:00",
     "errors": [],
     "price": {
       "ticker": "ABCL",
@@ -188,6 +188,17 @@
       "strongSell": 0
     },
     "insider_transactions": [
+      {
+        "ticker": "ABCL",
+        "insider_name": "Hayden Michael R",
+        "role": "Director",
+        "transaction_type": "Buy",
+        "shares": 53613.0,
+        "value_usd": 570442.32,
+        "filing_date": "2026-08-24",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1703057/000162828026058684/xslF345X06/wk-form4_1787606506.xml",
+        "is_mock": false
+      },
       {
         "ticker": "ABCL",
         "insider_name": "Montalbano John S.",
@@ -230,17 +241,6 @@
         "value_usd": 95400.0,
         "filing_date": "2026-05-18",
         "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1703057/000183442326000004/xslF345X06/wk-form4_1779120582.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "ABCL",
-        "insider_name": "Thermopylae Holdings Ltd.",
-        "role": "10% Owner",
-        "transaction_type": "Buy",
-        "shares": 38000.0,
-        "value_usd": 130720.0,
-        "filing_date": "2026-03-02",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1703057/000183444926000004/xslF345X05/wk-form4_1772478998.xml",
         "is_mock": false
       }
     ],
@@ -300,7 +300,7 @@
   "AEHR": {
     "ticker": "AEHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:35+00:00",
+    "retrieved_at": "2026-08-24T22:17:28+00:00",
     "errors": [],
     "price": {
       "ticker": "AEHR",
@@ -449,7 +449,7 @@
   "ARM": {
     "ticker": "ARM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:41+00:00",
+    "retrieved_at": "2026-08-24T22:17:34+00:00",
     "errors": [],
     "price": {
       "ticker": "ARM",
@@ -547,7 +547,7 @@
   "AVGO": {
     "ticker": "AVGO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:47+00:00",
+    "retrieved_at": "2026-08-24T22:17:40+00:00",
     "errors": [],
     "price": {
       "ticker": "AVGO",
@@ -696,7 +696,7 @@
   "AXTI": {
     "ticker": "AXTI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:53+00:00",
+    "retrieved_at": "2026-08-24T22:17:47+00:00",
     "errors": [],
     "price": {
       "ticker": "AXTI",
@@ -845,7 +845,7 @@
   "BE": {
     "ticker": "BE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:20:59+00:00",
+    "retrieved_at": "2026-08-24T22:17:53+00:00",
     "errors": [],
     "price": {
       "ticker": "BE",
@@ -994,7 +994,7 @@
   "CLS": {
     "ticker": "CLS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:05+00:00",
+    "retrieved_at": "2026-08-24T22:17:59+00:00",
     "errors": [],
     "price": {
       "ticker": "CLS",
@@ -1143,7 +1143,7 @@
   "COHR": {
     "ticker": "COHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:10+00:00",
+    "retrieved_at": "2026-08-24T22:18:04+00:00",
     "errors": [],
     "price": {
       "ticker": "COHR",
@@ -1292,7 +1292,7 @@
   "CRDO": {
     "ticker": "CRDO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:16+00:00",
+    "retrieved_at": "2026-08-24T22:18:11+00:00",
     "errors": [],
     "price": {
       "ticker": "CRDO",
@@ -1441,7 +1441,7 @@
   "DRAM": {
     "ticker": "DRAM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:22+00:00",
+    "retrieved_at": "2026-08-24T22:18:17+00:00",
     "errors": [
       "valuation: No market cap from Finnhub for 'DRAM'.",
       "insiders: No SEC EDGAR CIK found for ticker 'DRAM' — not a US-listed filer, or the ticker is wrong.",
@@ -1470,7 +1470,7 @@
   "INTC": {
     "ticker": "INTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:27+00:00",
+    "retrieved_at": "2026-08-24T22:18:22+00:00",
     "errors": [],
     "price": {
       "ticker": "INTC",
@@ -1586,7 +1586,7 @@
   "IREN": {
     "ticker": "IREN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:37+00:00",
+    "retrieved_at": "2026-08-24T22:18:32+00:00",
     "errors": [],
     "price": {
       "ticker": "IREN",
@@ -1713,7 +1713,7 @@
   "LITE": {
     "ticker": "LITE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:46+00:00",
+    "retrieved_at": "2026-08-24T22:18:40+00:00",
     "errors": [],
     "price": {
       "ticker": "LITE",
@@ -1862,7 +1862,7 @@
   "LPTH": {
     "ticker": "LPTH",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:52+00:00",
+    "retrieved_at": "2026-08-24T22:18:47+00:00",
     "errors": [],
     "price": {
       "ticker": "LPTH",
@@ -2011,7 +2011,7 @@
   "MP": {
     "ticker": "MP",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:21:58+00:00",
+    "retrieved_at": "2026-08-24T22:18:52+00:00",
     "errors": [],
     "price": {
       "ticker": "MP",
@@ -2160,7 +2160,7 @@
   "MRVL": {
     "ticker": "MRVL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:05+00:00",
+    "retrieved_at": "2026-08-24T22:19:00+00:00",
     "errors": [],
     "price": {
       "ticker": "MRVL",
@@ -2309,7 +2309,7 @@
   "MU": {
     "ticker": "MU",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:12+00:00",
+    "retrieved_at": "2026-08-24T22:19:07+00:00",
     "errors": [],
     "price": {
       "ticker": "MU",
@@ -2458,7 +2458,7 @@
   "MXL": {
     "ticker": "MXL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:17+00:00",
+    "retrieved_at": "2026-08-24T22:19:12+00:00",
     "errors": [],
     "price": {
       "ticker": "MXL",
@@ -2607,7 +2607,7 @@
   "NBIS": {
     "ticker": "NBIS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:23+00:00",
+    "retrieved_at": "2026-08-24T22:19:18+00:00",
     "errors": [],
     "price": {
       "ticker": "NBIS",
@@ -2705,7 +2705,7 @@
   "PLTR": {
     "ticker": "PLTR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:29+00:00",
+    "retrieved_at": "2026-08-24T22:19:24+00:00",
     "errors": [],
     "price": {
       "ticker": "PLTR",
@@ -2854,7 +2854,7 @@
   "RKLB": {
     "ticker": "RKLB",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:35+00:00",
+    "retrieved_at": "2026-08-24T22:19:31+00:00",
     "errors": [],
     "price": {
       "ticker": "RKLB",
@@ -3003,7 +3003,7 @@
   "SIVE": {
     "ticker": "SIVE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:40+00:00",
+    "retrieved_at": "2026-08-24T22:19:37+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SIVE'.",
       "valuation: No market cap from Finnhub for 'SIVE'.",
@@ -3022,7 +3022,7 @@
   "SKHY": {
     "ticker": "SKHY",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:44+00:00",
+    "retrieved_at": "2026-08-24T22:19:41+00:00",
     "errors": [],
     "price": {
       "ticker": "SKHY",
@@ -3064,7 +3064,7 @@
   "SMCI": {
     "ticker": "SMCI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:22:50+00:00",
+    "retrieved_at": "2026-08-24T22:19:47+00:00",
     "errors": [],
     "price": {
       "ticker": "SMCI",
@@ -3157,7 +3157,7 @@
   "SMTC": {
     "ticker": "SMTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:00+00:00",
+    "retrieved_at": "2026-08-24T22:19:56+00:00",
     "errors": [],
     "price": {
       "ticker": "SMTC",
@@ -3306,7 +3306,7 @@
   "SNDK": {
     "ticker": "SNDK",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:06+00:00",
+    "retrieved_at": "2026-08-24T22:20:02+00:00",
     "errors": [],
     "price": {
       "ticker": "SNDK",
@@ -3455,7 +3455,7 @@
   "SOI": {
     "ticker": "SOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:12+00:00",
+    "retrieved_at": "2026-08-24T22:20:09+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SOI'.",
       "insiders: No SEC EDGAR CIK found for ticker 'SOI' — not a US-listed filer, or the ticker is wrong.",
@@ -3482,7 +3482,7 @@
   "SPCX": {
     "ticker": "SPCX",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:15+00:00",
+    "retrieved_at": "2026-08-24T22:20:13+00:00",
     "errors": [],
     "price": {
       "ticker": "SPCX",
@@ -3587,7 +3587,7 @@
   "TSEM": {
     "ticker": "TSEM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:21+00:00",
+    "retrieved_at": "2026-08-24T22:20:20+00:00",
     "errors": [],
     "price": {
       "ticker": "TSEM",
@@ -3685,7 +3685,7 @@
   "USAR": {
     "ticker": "USAR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T20:23:27+00:00",
+    "retrieved_at": "2026-08-24T22:20:26+00:00",
     "errors": [],
     "price": {
       "ticker": "USAR",

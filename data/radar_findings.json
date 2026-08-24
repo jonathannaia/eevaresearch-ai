@@ -1,6 +1,62 @@
 [
   {
     "niche": "Space",
+    "headline": "NASA Sets Coverage for Roman Space Telescope Launch from Florida",
+    "summary": "NASA and SpaceX are targeting the Nancy Grace Roman Space Telescope launch for no earlier than August 30 aboard a SpaceX Falcon Heavy rocket from Florida.",
+    "source_url": "https://www.nasa.gov/news-release/nasa-sets-coverage-for-roman-space-telescope-launch-from-florida/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Mon, 24 Aug 2026 20:44:58 +0000",
+    "retrieved_at": "2026-08-24T22:16:56+00:00",
+    "tickers": [
+      {
+        "ticker": "SPACEX",
+        "company_name": "Space Exploration Technologies Corp.",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns space launch of a major observatory on a SpaceX Falcon Heavy rocket.",
+    "url_hash": "0370b5d96bd90098",
+    "id": "0370b5d96bd90098"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "XPeng Motors humanoid robot unit Dogotix raises $900M",
+    "summary": "Dogotix, the humanoid robot unit of XPeng Motors, raised $900 million and achieved a $6.3 billion valuation as it prepares to scale robot production.",
+    "source_url": "https://www.therobotreport.com/xpeng-motors-humanoid-robot-unit-dogotix-raises-900m/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 20:07:09 +0000",
+    "retrieved_at": "2026-08-24T22:16:54+00:00",
+    "tickers": [
+      {
+        "ticker": "XPEV",
+        "company_name": "XPeng Motors",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns humanoid robot development and funding by a major automaker's robotics unit.",
+    "url_hash": "9fcc559deea48e7b",
+    "id": "9fcc559deea48e7b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Data Center Construction at Midyear: Demand, Friction, and Building Discipline",
+    "summary": "Data center construction is experiencing strong demand in 2026 but faces obstacles including power availability, labor constraints, and community opposition. The article indicates that overcoming these challenges requires industry innovation and collaborative approaches.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-construction/data-center-construction-at-midyear-demand-friction-and-building-discipline",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 21:16:52 GMT",
+    "retrieved_at": "2026-08-24T22:16:47+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly discusses data center construction challenges and demand, which is core to AI infrastructure buildout scope.",
+    "url_hash": "73a11eb062ec2273",
+    "id": "73a11eb062ec2273"
+  },
+  {
+    "niche": "Space",
     "headline": "SpaceX will set rocket-reuse record on 100th Falcon 9 launch of the year early Aug. 25: Watch it live",
     "summary": "SpaceX is scheduled to conduct its 100th Falcon 9 launch of the year early on August 25, which will set a new rocket-reuse record.",
     "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-starship-record-37th-booster-flight-100-falcon-9-launches",
