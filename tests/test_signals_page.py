@@ -27,6 +27,7 @@ from src.models.models import (
 )
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "signals_page.py"
+_HOSTED_HARNESS = Path(__file__).parent / "apptest_pages" / "signals_page_hosted.py"
 
 
 def _now_iso() -> str:
@@ -362,3 +363,87 @@ def test_demo_signal_still_shows_sample_badge_and_demo_drawer_text():
 
     drawer_text = " ".join(m.value for m in at.markdown)
     assert "EevaResearch Demo Data" in drawer_text
+
+
+# --- Durable-State Phase 4G-1: explicit hosted-collaborator injection seam ---
+#
+# These tests use only the in-process fake SignalRepository defined in
+# signals_page_hosted.py — no CandidatePersistence, candidate-store read,
+# backend_factory, Settings, environment variable, DSN, source client,
+# translation, Docker, database, or network access anywhere below. They
+# never patch or call container.get_repositories()/get_settings().
+
+_LEAK_MARKERS = ("SHOULD_NOT_LEAK_HOST", "SHOULD_NOT_LEAK_DSN", "SHOULD_NOT_LEAK_PASSWORD")
+
+
+def test_signals_default_harness_remains_zero_argument():
+    """Narrow proof the default harness (and therefore app.py's own
+    zero-arg call convention) was not touched by Phase 4G-1 — signals.py
+    still supports being called with no collaborator, and the existing
+    harness file still does exactly that."""
+    harness_source = _HARNESS.read_text()
+    assert "signal_repository" not in harness_source
+    assert "with_chrome(signals.render, \"signals\")()" in harness_source
+
+
+def test_signals_page_hosted_collaborator_renders_explicit_public_signal_fields():
+    at = AppTest.from_file(str(_HOSTED_HARNESS), default_timeout=10)
+    at.session_state["_hosted_fake_mode"] = "normal"
+    at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Hosted Fixture Signal — Memory Capacity Expansion" in all_text
+    assert "Hosted Fixture Issuer Co." in all_text
+    assert "Hosted fixture excerpt text, original language." in all_text
+    for marker in _LEAK_MARKERS:
+        assert marker not in all_text
+
+
+def test_signals_page_hosted_failure_shows_static_state_no_leak_no_fallback():
+    at = AppTest.from_file(str(_HOSTED_HARNESS), default_timeout=10)
+    at.session_state["_hosted_fake_mode"] = "failing"
+    at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Hosted signals are temporarily unavailable." in all_text
+    assert "Try again shortly, or view the standard signal feed." in all_text
+    for marker in _LEAK_MARKERS:
+        assert marker not in all_text
+    assert "connection failed" not in all_text
+    assert "RuntimeError" not in all_text
+    # Structural proof of no fallback: the default JSON-path's own
+    # truthful-empty-state copy and its filter widgets never render at
+    # all, since the injected branch returns before reaching them.
+    assert "No eligible filings yet." not in all_text
+    assert len(at.multiselect) == 0
+
+
+def test_signals_page_hosted_empty_result_distinct_from_hosted_unavailable():
+    at = AppTest.from_file(str(_HOSTED_HARNESS), default_timeout=10)
+    at.session_state["_hosted_fake_mode"] = "empty"
+    at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "No eligible filings yet." in all_text
+    assert "Hosted signals are temporarily unavailable." not in all_text
+
+
+def test_signals_page_hosted_filter_empty_distinct_from_hosted_unavailable_and_empty_result():
+    at = AppTest.from_file(str(_HOSTED_HARNESS), default_timeout=10)
+    at.session_state["_hosted_fake_mode"] = "normal"
+    at.run()
+    assert not at.exception
+
+    # The fixture signal's theme is "memory" — filtering to an unrelated
+    # theme eliminates it, exercising the existing filter-empty state.
+    at.multiselect(key="signals-filter-theme").set_value(["AI Buildout"])
+    at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "No signals match the current filters." in all_text
+    assert "No eligible filings yet." not in all_text
+    assert "Hosted signals are temporarily unavailable." not in all_text

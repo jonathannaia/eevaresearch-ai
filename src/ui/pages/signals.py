@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import streamlit as st
 
 from src.data_access.container import get_repositories
+from src.data_access.interfaces import SignalRepository
 from src.logic.unread import is_unread
 from src.ui.components.cards import signal_card
 from src.ui.components.empty_state import empty_state
@@ -32,10 +33,29 @@ def _clear_filters() -> None:
         st.session_state[key] = []
 
 
-def render() -> None:
+def render(signal_repository: SignalRepository | None = None) -> None:
     ctx = get_repositories()
     themes = {t.slug: t.name for t in ctx.theme_repository.get_all_themes()}
-    signals = ctx.signal_repository.get_all_signals()
+    signals_repo = signal_repository if signal_repository is not None else ctx.signal_repository
+
+    # Durable-State Phase 4G-1: an explicitly injected collaborator is the
+    # only path that can fail here (the default JSON path has no
+    # documented failure mode in production use and stays unguarded,
+    # exactly as before). On failure, render a static, non-leaky
+    # hosted-unavailable state — never the raw exception, never a silent
+    # fallback to ctx.signal_repository.
+    if signal_repository is not None:
+        try:
+            signals = signals_repo.get_all_signals()
+        except Exception:
+            empty_state(
+                "Hosted signals are temporarily unavailable.",
+                "Try again shortly, or view the standard signal feed.",
+                key="signals-hosted-unavailable",
+            )
+            return
+    else:
+        signals = signals_repo.get_all_signals()
 
     prev_last_seen = st.session_state.get(LAST_SEEN_KEY)
     read_ids = st.session_state.setdefault(READ_IDS_KEY, set())

@@ -3306,3 +3306,41 @@ non-leaky error rendering for a hosted read failure, since neither
 `container.py` nor `signals.py` currently has any error handling around
 the signal-repository call at all (confirmed by inspection, not
 assumed). Both of these remain explicitly separate, later work.
+
+## Durable-State Phase 4G-1 — Explicit Hosted Signals UI Injection Seam
+
+`signals.render()` now accepts an optional explicit `SignalRepository`
+collaborator (`signal_repository: SignalRepository | None = None`).
+Omitted calls preserve the existing JSON/default Signals path exactly —
+`app.py` and the existing zero-argument AppTest harness
+(`tests/apptest_pages/signals_page.py`) are unchanged and still call
+`render()` with no arguments. An injected repository is read directly by
+`signals.py`; it is never constructed there, and neither `container.py`
+nor `backend_factory.py` changed this phase. Explicit injected-repository
+failures render a static, non-leaky "Hosted signals are temporarily
+unavailable" state via the existing `empty_state()` primitive, with no
+`str(exception)`, traceback, host, DSN, or credential ever rendered, and
+no fallback to the default JSON/`container.get_repositories()` path.
+
+No Postgres/Neon/DSN/environment/runtime backend activation, source
+scan, provider call, scheduler, review/publish action, workflow,
+deployment, or public release was added. Human review remains the sole
+route to `PUBLISHED` status, and the PUBLISHED-only repository guarantee
+(`src/logic/signal_promotion.py`) is untouched. Test coverage
+(`tests/apptest_pages/signals_page_hosted.py`, extending
+`tests/test_signals_page.py`) uses only in-process fake
+`SignalRepository` objects built from public `Signal` model fields — no
+`Settings`, `get_settings`, `backend_factory`, `container.get_repositories`,
+Postgres/SQLite class, `psycopg`, environment variable, DSN, external
+client, Docker, database, or network access anywhere in the new test
+code — proving the default path's call shape is unchanged, an injected
+fake renders through the existing signal-card path, an injected failure
+is safe and non-fallback, and the empty/filter-empty/hosted-unavailable
+states remain three distinct outcomes.
+
+Real hosted repository construction, supplying a real hosted DSN/secret
+in a deployment environment, deploying a preview/private environment,
+retaining real scan results in Neon for review, publishing signals,
+enabling a scheduler, and making any hosted-backed page publicly
+accessible all remain separately approved future actions — none of them
+occurred this phase.
