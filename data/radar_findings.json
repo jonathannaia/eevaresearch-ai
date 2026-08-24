@@ -1,6 +1,83 @@
 [
   {
     "niche": "Space",
+    "headline": "SpaceX will set rocket-reuse record on 100th Falcon 9 launch of the year early Aug. 25: Watch it live",
+    "summary": "SpaceX is scheduled to conduct its 100th Falcon 9 launch of the year early on August 25, which will set a new rocket-reuse record.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-starship-record-37th-booster-flight-100-falcon-9-launches",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 17:00:00 +0000",
+    "retrieved_at": "2026-08-24T18:27:26+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX's Falcon 9 launch directly addresses space launch activities, one of the core Space scope topics.",
+    "url_hash": "27ccb87b09ba93ad",
+    "id": "27ccb87b09ba93ad"
+  },
+  {
+    "niche": "Space",
+    "headline": "Goodbye, Falcon 9: SpaceX planning to retire workhorse launcher when Starship is up and running",
+    "summary": "SpaceX plans to retire its Falcon 9 rocket once its next-generation Starship megarocket becomes operational, which could impact the current launch market.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/goodbye-falcon-9-spacex-planning-to-retire-workhorse-launcher-when-starship-is-up-and-running",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 18:00:00 +0000",
+    "retrieved_at": "2026-08-24T18:27:24+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX's plan to retire Falcon 9 in favor of Starship is directly relevant to space launch infrastructure.",
+    "url_hash": "e1a20b33d91e021b",
+    "id": "e1a20b33d91e021b"
+  },
+  {
+    "niche": "Space",
+    "headline": "Aerospace demonstrates DiskSats in low-Earth orbit",
+    "summary": "The Aerospace Corp. is demonstrating pancake-shaped DiskSats in low-Earth orbit following their December launch on a Rocket Lab Electron vehicle.",
+    "source_url": "https://spacenews.com/aerospace-demonstrates-disksats-in-low-earth-orbit/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 17:30:00 +0000",
+    "retrieved_at": "2026-08-24T18:27:21+00:00",
+    "tickers": [
+      {
+        "ticker": "RKLB",
+        "company_name": "Rocket Lab USA Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Demonstrates operational deployment of DiskSats in low-Earth orbit, directly relevant to space infrastructure and satellite technology.",
+    "url_hash": "3ac57a37f22c06f0",
+    "id": "3ac57a37f22c06f0"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Prometheus’ 1.5 GW Texas Data Center Plan Tests Private Power",
+    "summary": "Prometheus is developing a 1.5 GW data center campus in Texas with onsite power generation; the project's 2027 completion depends on securing a customer and building a new power plant.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-construction/prometheus-1-5-gw-pecos-plan-tests-private-power",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 15:19:07 GMT",
+    "retrieved_at": "2026-08-24T18:27:06+00:00",
+    "tickers": [],
+    "relevance_reason": "Describes a large-scale data center project with 1.5 GW capacity and private power infrastructure, directly addressing AI buildout infrastructure",
+    "url_hash": "8b956153f4ffec15",
+    "id": "8b956153f4ffec15"
+  },
+  {
+    "niche": "Space",
     "headline": "Spirit Electronics Adds Texas Instruments and Microchip Technology Space Grade Components to Online Store Ahead of SmallSat 2026",
     "summary": "Spirit Electronics, a high-reliability electronics distributor, added space-grade components from Texas Instruments and Microchip Technology to its online store in advance of the SmallSat 2026 conference.",
     "source_url": "https://spacenews.com/spirit-electronics-adds-texas-instruments-and-microchip-technology-space-grade-components-to-online-store-ahead-of-smallsat-2026/",
