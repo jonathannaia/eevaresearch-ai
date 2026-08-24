@@ -3229,3 +3229,72 @@ real caller never *supplies* the parameter — is covered per-source in
   calls anywhere in the new tests. Zero access to the real cache
   directory, `.env`, the Streamlit secrets file, or the pre-existing
   legacy database at any point.
+
+## Durable-State Phase 4E-1 — Hosted PUBLISHED-Only Signal Repository Proof
+
+Phase 4E-1 added explicit Postgres `SignalRepository` test coverage,
+via test-only repository construction, for: PUBLISHED-only filtering,
+non-PUBLISHED non-leakage, Signal-field preservation, empty-result
+behavior, theme filtering, and sanitized typed configuration failure.
+`SignalRepository.get_all_signals()`/`get_signals_for_theme()` are
+structurally PUBLISHED-only regardless of backend — every
+implementation filters via `src/logic/signal_promotion.py`'s
+`is_eligible_for_signal()` before ever constructing a `Signal`, and the
+`Signal` model itself carries no status field capable of representing
+an unpublished state — and the new tests encode that guarantee for the
+Postgres path specifically (synthetic candidates across `NEEDS_REVIEW`,
+`PROCESSING_DEFERRED`, `DISMISSED`, `PARSE_FAILED`, `RETRIEVAL_FAILED`,
+and `PUBLISHED`, with explicit non-leakage assertions on issuer/excerpt/
+source-URL/title text; field preservation of source name, issuer,
+source URL, theme slug, native title, original language, direction,
+strength, horizon, and last-updated; an empty-database `[]` result; and
+`get_signals_for_theme()` excluding both a different-theme PUBLISHED
+signal and a same-theme non-PUBLISHED candidate).
+
+**Execution status, stated precisely**: of the six new tests, only the
+sanitized-configuration-failure test — which needs no real connection —
+was actually run this phase, and it passed, proving `get_signal_repository()`
+fails closed with a sanitized `BackendConfigurationError` (no DSN, host,
+port, or credential in the message) on a malformed/unreachable
+configuration, mirroring the existing `get_candidate_repository()` proof
+from Phase 4B. The other five tests (PUBLISHED-only filtering,
+non-leakage, field preservation, empty-result, theme filtering) require
+the local disposable Postgres container and were **skipped** in this
+session — that container was unavailable, and a subsequent inspection
+found that tracked project files (`tests/_postgres_test_support.py`,
+this document) specify the local test target's *identity* (host, port,
+database name, role) but do not document an unambiguous, executable
+container *lifecycle* procedure — no tracked start command, container
+name, readiness check, password-supply procedure, or cleanup command
+exists. **Phase 4E-1's real local-Postgres execution proof is therefore
+pending, not complete** — these five tests are written and believed
+correct by inspection and by direct analogy to the already-passing,
+already-executed `test_state_db_postgres_signal_repository.py` suite,
+but that belief is not yet confirmed by a real run.
+
+**No UI, `signals.py`, `container.py`, `backend_factory.py`, service,
+pipeline, environment activation, schema, migration, scheduler,
+workflow, deployment, source call, hosted connection, or public page
+behavior changed this phase.** The only files touched were
+`tests/test_backend_factory_postgres.py` (new tests only, in a new,
+clearly labeled section) and this decision record. JSON remains the
+normal application default, unconditionally and unaffected by
+construction — nothing in `container.py`'s or `backend_factory.py`'s own
+source changed.
+
+**Explicit design note for the future UI-integration phase**: this
+audit (Phase 4E-0) identified that `container.py`'s `get_repositories()`
+is the one existing path in this codebase already capable of reaching
+Postgres from ambient environment variables alone
+(`EDGE_DB_BACKEND=postgres` + `EDGE_STATE_DB_URL=<dsn>`, with no other
+code change), since it calls `backend_factory.get_signal_repository()`
+unconditionally on every page load. This phase deliberately tested one
+layer below that path (`backend_factory.get_signal_repository()` called
+directly, never through `container.py`) specifically to avoid touching
+that surface. The future UI-integration phase must use an explicit,
+fail-closed hosted-read design — never relying on ambient Postgres
+activation through `container.get_repositories()` — and must add safe,
+non-leaky error rendering for a hosted read failure, since neither
+`container.py` nor `signals.py` currently has any error handling around
+the signal-repository call at all (confirmed by inspection, not
+assumed). Both of these remain explicitly separate, later work.

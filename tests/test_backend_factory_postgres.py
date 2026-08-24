@@ -199,6 +199,149 @@ def test_postgres_backend_never_creates_or_writes_the_json_cache_directory(pg_is
 
 
 # ---------------------------------------------------------------------------
+# Durable-State Phase 4E-1 — hosted PUBLISHED-only Signal repository proof.
+# Every assertion below reads exclusively through get_all_signals()/
+# get_signals_for_theme(); fixture setup uses only the existing,
+# already-tested candidate_repository.upsert_new_candidates() write path.
+# No UI, container.py, or backend_factory.py behavior is touched or
+# implied by any test here — this proves the repository-layer guarantee
+# only, exactly as scoped in design/DECISIONS.md's Phase 4E-1 record.
+# ---------------------------------------------------------------------------
+
+
+def _signal_filing(rcept_no: str, theme_slug: str, corp_name: str, source_url: str) -> FilingEvent:
+    return FilingEvent(
+        rcept_no=rcept_no, corp_code=f"{rcept_no}-cik", corp_name=corp_name, stock_code="ZZTST",
+        report_nm="8-K", rcept_dt="20260101", flr_nm=corp_name, source_name="SEC EDGAR",
+        original_language="English", theme_slug=theme_slug, source_url=source_url,
+    )
+
+
+def test_only_published_candidate_produces_a_signal_across_every_other_status(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+
+    non_published_statuses = [
+        CandidateStatus.NEEDS_REVIEW,
+        CandidateStatus.PROCESSING_DEFERRED,
+        CandidateStatus.DISMISSED,
+        CandidateStatus.PARSE_FAILED,
+        CandidateStatus.RETRIEVAL_FAILED,
+    ]
+    non_published_candidates = [
+        _candidate(
+            f"cand-nonpub-{i}",
+            _signal_filing(f"rcept-nonpub-{i}", "ai-buildout", f"NONPUB-CORP-{i}", f"https://example.invalid/nonpub-{i}"),
+            status=status,
+        )
+        for i, status in enumerate(non_published_statuses)
+    ]
+    published_candidate = _candidate(
+        "cand-pub-1",
+        _signal_filing("rcept-pub-1", "ai-buildout", "PUBLISHED-CORP", "https://example.invalid/pub-1"),
+        status=CandidateStatus.PUBLISHED,
+    )
+
+    candidate_repo.upsert_new_candidates(non_published_candidates + [published_candidate])
+
+    signal_repo = backend_factory.get_signal_repository(settings)
+    assert isinstance(signal_repo, PostgresSignalRepository)  # explicit hosted path only, per this phase's own requirement
+    signals = signal_repo.get_all_signals()
+
+    assert [s.id for s in signals] == ["signal-cand-pub-1"]
+    result_text = " ".join(f"{s.issuer} {s.excerpt} {s.source_url} {s.title_native}" for s in signals)
+    for i in range(len(non_published_statuses)):
+        assert f"NONPUB-CORP-{i}" not in result_text
+        assert f"nonpub-{i}" not in result_text
+
+
+def test_published_signal_preserves_permitted_fields(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    filing = _signal_filing("rcept-field-1", "photonics", "FIELD-PRESERVE-CORP", "https://example.invalid/field-1")
+    candidate = _candidate("cand-field-1", filing, status=CandidateStatus.PUBLISHED)
+    candidate_repo.upsert_new_candidates([candidate])
+
+    signal_repo = backend_factory.get_signal_repository(settings)
+    signals = signal_repo.get_all_signals()
+    assert len(signals) == 1
+    signal = signals[0]
+
+    assert signal.source_name == filing.source_name
+    assert signal.issuer == filing.corp_name
+    assert signal.source_url == filing.source_url
+    assert signal.theme_slug == filing.theme_slug
+    assert signal.title_native == filing.report_nm
+    assert signal.original_language == filing.original_language
+    # No document was extracted/translated in this synthetic fixture —
+    # excerpt/title_translated correctly stay None, never fabricated.
+    assert signal.excerpt == candidate.excerpt_original
+    assert signal.title_translated is None
+    # No real tracked company has stock_code "ZZTST" — exchange_symbol
+    # correctly stays None rather than a guessed match.
+    assert signal.exchange_symbol is None
+    assert signal.direction is not None
+    assert signal.strength is not None
+    assert signal.horizon is not None
+    assert signal.last_updated
+
+
+def test_get_all_signals_empty_in_a_clean_database_with_no_published_candidates(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    signal_repo = backend_factory.get_signal_repository(settings)
+    assert signal_repo.get_all_signals() == []
+
+
+def test_get_signals_for_theme_returns_only_published_signals_in_that_theme(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+
+    theme_a_published = _candidate(
+        "cand-theme-a-pub",
+        _signal_filing("rcept-theme-a-pub", "ai-buildout", "THEME-A-PUB-CORP", "https://example.invalid/theme-a-pub"),
+        status=CandidateStatus.PUBLISHED,
+    )
+    theme_b_published = _candidate(
+        "cand-theme-b-pub",
+        _signal_filing("rcept-theme-b-pub", "memory", "THEME-B-PUB-CORP", "https://example.invalid/theme-b-pub"),
+        status=CandidateStatus.PUBLISHED,
+    )
+    theme_a_not_published = _candidate(
+        "cand-theme-a-nonpub",
+        _signal_filing("rcept-theme-a-nonpub", "ai-buildout", "THEME-A-NONPUB-CORP", "https://example.invalid/theme-a-nonpub"),
+        status=CandidateStatus.NEEDS_REVIEW,
+    )
+
+    candidate_repo.upsert_new_candidates([theme_a_published, theme_b_published, theme_a_not_published])
+
+    signal_repo = backend_factory.get_signal_repository(settings)
+    theme_a_signals = signal_repo.get_signals_for_theme("ai-buildout")
+
+    assert [s.id for s in theme_a_signals] == ["signal-cand-theme-a-pub"]
+    result_text = " ".join(s.issuer for s in theme_a_signals)
+    assert "THEME-B-PUB-CORP" not in result_text
+    assert "THEME-A-NONPUB-CORP" not in result_text
+
+
+def test_signal_repository_connection_failure_is_sanitized_no_dsn_host_or_credentials():
+    """Same fail-closed/sanitization proof as
+    test_postgres_connection_failure_is_sanitized_no_dsn_host_or_credentials
+    above, for get_signal_repository() specifically — the entry point this
+    phase's hosted-read design actually uses. Runs unconditionally: this
+    deliberately-wrong target is unreachable whether or not the real
+    disposable container happens to be running."""
+    bad_dsn = "host=127.0.0.1 port=1 dbname=x user=y password=REDACTED_TEST_ONLY connect_timeout=1"
+    settings = Settings(db_backend="postgres", state_db_url=bad_dsn)
+    with pytest.raises(backend_factory.BackendConfigurationError) as exc_info:
+        backend_factory.get_signal_repository(settings)
+    message = str(exc_info.value)
+    assert "127.0.0.1" not in message
+    assert "port=1" not in message
+    assert "REDACTED_TEST_ONLY" not in message
+    assert "dbname=x" not in message
+
+
+# ---------------------------------------------------------------------------
 # Real-local-state and non-loopback-host guard — covers every new
 # postgres_state_db package file and every new Postgres test file.
 # ---------------------------------------------------------------------------
