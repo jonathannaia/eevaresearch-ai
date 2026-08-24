@@ -63,7 +63,7 @@ def test_blank_backend_selects_json(tmp_path):
 
 
 def test_unrecognized_backend_value_selects_json(tmp_path):
-    settings = replace(_json_settings(tmp_path), db_backend="postgres")
+    settings = replace(_json_settings(tmp_path), db_backend="not-a-real-backend")
     assert isinstance(backend_factory.get_signal_repository(settings), RadarSignalRepository)
 
 

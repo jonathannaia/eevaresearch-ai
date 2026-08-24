@@ -13,3 +13,4 @@ pypdf>=6.0,<7.0
 # imports it, and no test requires it installed (tests inject an
 # ObjectStorageClient fake instead of building a real client).
 boto3>=1.34,<2.0
+psycopg[binary]>=3.2,<4.0

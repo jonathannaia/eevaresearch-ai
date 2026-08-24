@@ -96,11 +96,18 @@ class Settings:
     state_db_path: Path | None = field(
         default_factory=lambda: Path(os.getenv("EDGE_STATE_DB_PATH")) if os.getenv("EDGE_STATE_DB_PATH") else None
     )
-    # Reserved for a future managed-database connection string. Same
-    # dedicated EDGE_STATE_DB_* naming as above, for the same reason.
-    # Read for presence only — never parsed, validated, or connected to
-    # in this phase; this field must never be the trigger for a network
-    # call.
+    # Durable-State Phase 4B (dormant in production — see
+    # src/data_access/postgres_state_db/). Same dedicated EDGE_STATE_DB_*
+    # naming as state_db_path above, for the same reason. This field
+    # itself still only reads the env var for presence — no parsing or
+    # validation happens here, exactly like state_db_path. Real use is
+    # confined to backend_factory.py's db_backend="postgres" branch,
+    # which requires this to be an explicit, non-empty DSN before
+    # connecting (see that module's own docstring) — and, this phase,
+    # that branch is reachable only via direct backend_factory calls in
+    # local, synthetic tests against a disposable local Postgres target,
+    # never from get_settings()/any real service entry point, never a
+    # hosted database, never a secret.
     state_db_url: str | None = field(default_factory=lambda: os.getenv("EDGE_STATE_DB_URL") or None)
     # Private-beta access foundation, Phase 1 — disabled by default so every
     # existing page keeps working with no configuration at all. The

@@ -43,13 +43,32 @@ unrecognized) always returns exactly today's existing collaborators,
 completely unchanged. "sqlite" requires an explicit, non-empty
 `EDGE_STATE_DB_PATH` — selecting sqlite without one raises
 `BackendConfigurationError` rather than silently falling back to JSON.
-`EDGE_STATE_DB_URL` is never read, parsed, or connected to here."""
+
+Durable-State Phase 4B adds "postgres" alongside "sqlite" — an
+isolated, independently-implemented backend (`src/data_access/
+postgres_state_db/`, no shared code with `state_db/`, per that phase's
+explicit no-dialect-abstraction constraint) requiring an explicit,
+non-empty `EDGE_STATE_DB_URL`; selecting postgres without one raises
+the same `BackendConfigurationError`, never a silent JSON fallback. Local-
+test-only this phase (see design/DECISIONS.md's Phase 4B-0/4B-1
+records) — no real service entry point selects it; it is reachable only
+through direct calls to this module's own factory functions, exactly
+matching how "sqlite" itself was introduced in Phase 2A before later,
+separate phases wired it into specific call sites. Unlike the sqlite
+path, a postgres connection-establishment failure is deliberately
+reported as `BackendConfigurationError` with only the underlying
+exception's class name — never `str(exc)`, the DSN, host, port,
+database, role, user, or password — since a real network connection
+error can embed exactly that information in its message text, unlike a
+local SQLite file-path error."""
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+import psycopg
 
 from src.config.settings import Settings
 from src.data_access.dart import candidate_store
@@ -62,6 +81,15 @@ from src.data_access.edinet import edinet_pipeline
 from src.data_access.edinet import scan_service as edinet_scan_service
 from src.data_access.interfaces import SignalRepository
 from src.data_access.live.radar_signal_repository import RadarSignalRepository
+from src.data_access.postgres_state_db import candidate_repository as postgres_candidates
+from src.data_access.postgres_state_db import connection as postgres_state_db_connection
+from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
+from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
+from src.data_access.postgres_state_db import schema as postgres_schema
+from src.data_access.postgres_state_db.identifier_repository import (
+    ResolvedIdentifierRecord as PostgresResolvedIdentifierRecord,
+)
+from src.data_access.postgres_state_db.signal_repository import PostgresSignalRepository
 from src.data_access.state_db import candidate_repository as sqlite_candidates
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
@@ -105,12 +133,39 @@ def _require_sqlite_connection(settings: Settings) -> sqlite3.Connection:
     return conn
 
 
+def _require_postgres_connection(settings: Settings) -> psycopg.Connection:
+    """Durable-State Phase 4B. Same fail-closed discipline as
+    _require_sqlite_connection above — an explicit, non-empty
+    `EDGE_STATE_DB_URL` is required, and a missing one raises before any
+    connection is attempted. A genuine connection-establishment failure
+    is caught and re-raised with only the exception's class name (see
+    this module's own docstring for why) — never str(exc), which for a
+    real network driver can embed host/port/dbname/user."""
+    dsn = settings.state_db_url
+    if not dsn or not str(dsn).strip():
+        raise BackendConfigurationError(
+            "EDGE_DB_BACKEND=postgres requires an explicit, non-empty EDGE_STATE_DB_URL — "
+            "none was configured. Refusing to silently use the JSON backend instead."
+        )
+    try:
+        conn = postgres_state_db_connection.connect(dsn)
+    except psycopg.Error as exc:
+        raise BackendConfigurationError(
+            f"EDGE_DB_BACKEND=postgres connection attempt failed ({type(exc).__name__}). "
+            "No connection information is included in this message."
+        ) from None
+    postgres_schema.migrate(conn)
+    return conn
+
+
 # --- Signal repository — the one factory actually wired into container.py ---
 
 def get_signal_repository(settings: Settings) -> SignalRepository:
     backend = _normalized_backend(settings)
     if backend == "sqlite":
         return SqliteSignalRepository(_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresSignalRepository(_require_postgres_connection(settings))
     return RadarSignalRepository(settings)
 
 
@@ -200,12 +255,45 @@ class SqliteCandidateRepository:
         return UpdateOutcome(status=outcome.status, current=outcome.current)
 
 
+@dataclass(frozen=True)
+class PostgresCandidateRepository:
+    """Durable-State Phase 4B — the isolated Postgres counterpart to
+    SqliteCandidateRepository above, same `expected_version` re-read
+    convenience/no-real-conflict-protection caveat when omitted, backed
+    by src/data_access/postgres_state_db/candidate_repository.py instead
+    of the SQLite module. Local-test-only this phase; never constructed
+    by any real service entry point (see this module's own docstring)."""
+
+    conn: psycopg.Connection
+    source: str
+
+    def load_candidates(self) -> dict[str, CandidateSignal]:
+        return postgres_candidates.load_candidates(self.conn, self.source)
+
+    def get_candidate(self, candidate_id: str) -> CandidateSignal | None:
+        return postgres_candidates.get_candidate(self.conn, candidate_id)
+
+    def get_candidate_version(self, candidate_id: str) -> int | None:
+        return postgres_candidates.get_candidate_version(self.conn, candidate_id)
+
+    def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]:
+        return postgres_candidates.upsert_new_candidates(self.conn, self.source, new_candidates)
+
+    def update_candidate(self, candidate: CandidateSignal, expected_version: int | None = None) -> UpdateOutcome:
+        if expected_version is None:
+            expected_version = postgres_candidates.get_candidate_version(self.conn, candidate.id) or 1
+        outcome = postgres_candidates.update_candidate(self.conn, candidate, expected_version)
+        return UpdateOutcome(status=outcome.status, current=outcome.current)
+
+
 def get_candidate_repository(settings: Settings, source: str) -> CandidateRepositoryProtocol:
     """`source` is one of "OpenDART / DART" / "SEC EDGAR" / "EDINET" —
     the same source_name strings used throughout this codebase."""
     backend = _normalized_backend(settings)
     if backend == "sqlite":
         return SqliteCandidateRepository(conn=_require_sqlite_connection(settings), source=source)
+    if backend == "postgres":
+        return PostgresCandidateRepository(conn=_require_postgres_connection(settings), source=source)
     return JsonCandidateRepository(cache_dir=settings.cache_dir, filename=_CANDIDATE_FILENAME_BY_SOURCE[source])
 
 
@@ -261,10 +349,30 @@ class SqliteFilingEventRepository:
         return sqlite_filing_events.filing_event_exists(self.conn, self.source, corp_code, rcept_no)
 
 
+@dataclass(frozen=True)
+class PostgresFilingEventRepository:
+    """Durable-State Phase 4B — the isolated Postgres counterpart to
+    SqliteFilingEventRepository above. Read-only in the same sense as
+    the SQLite/JSON adapters (see this section's own header comment
+    above SqliteFilingEventRepository) — no standalone, non-network
+    write path exists in production for any backend this phase."""
+
+    conn: psycopg.Connection
+    source: str
+
+    def load_filing_events(self) -> tuple[FilingEvent, ...]:
+        return postgres_filing_events.load_filing_events(self.conn, self.source)
+
+    def exists(self, corp_code: str, rcept_no: str) -> bool:
+        return postgres_filing_events.filing_event_exists(self.conn, self.source, corp_code, rcept_no)
+
+
 def get_filing_event_repository(settings: Settings, source: str) -> FilingEventRepositoryProtocol:
     backend = _normalized_backend(settings)
     if backend == "sqlite":
         return SqliteFilingEventRepository(conn=_require_sqlite_connection(settings), source=source)
+    if backend == "postgres":
+        return PostgresFilingEventRepository(conn=_require_postgres_connection(settings), source=source)
     return JsonFilingEventRepository(cache_dir=settings.cache_dir, source=source)
 
 
@@ -319,8 +427,26 @@ class SqliteIdentifierRepository:
         return sqlite_identifiers.get_resolved_identifier(self.conn, self.source, lookup_key)
 
 
+@dataclass(frozen=True)
+class PostgresIdentifierRepository:
+    """Durable-State Phase 4B — the isolated Postgres counterpart to
+    SqliteIdentifierRepository above. Read-only, same reasoning as
+    SqliteIdentifierRepository's own header comment."""
+
+    conn: psycopg.Connection
+    source: str
+
+    def load_identifiers(self) -> dict[str, PostgresResolvedIdentifierRecord]:
+        return postgres_identifiers.load_resolved_identifiers(self.conn, self.source)
+
+    def get_identifier(self, lookup_key: str) -> PostgresResolvedIdentifierRecord | None:
+        return postgres_identifiers.get_resolved_identifier(self.conn, self.source, lookup_key)
+
+
 def get_identifier_repository(settings: Settings, source: str) -> IdentifierRepositoryProtocol:
     backend = _normalized_backend(settings)
     if backend == "sqlite":
         return SqliteIdentifierRepository(conn=_require_sqlite_connection(settings), source=source)
+    if backend == "postgres":
+        return PostgresIdentifierRepository(conn=_require_postgres_connection(settings), source=source)
     return JsonIdentifierRepository(cache_dir=settings.cache_dir, source=source)

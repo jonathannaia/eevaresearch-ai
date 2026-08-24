@@ -3102,3 +3102,68 @@ separately authorize any dependency addition, local Postgres test
 target, code/test files, and schema/repository implementation. Hosted
 provider provisioning, secret setup, workflow changes, real scans, and
 deployment remain later, separate approvals beyond even Phase 4B-1.
+
+## Durable-State Phase 4B Approval 2 — isolated Postgres backend implemented and proven against a real local disposable container
+
+A separate, isolated Postgres package (`src/data_access/postgres_state_db/`)
+is implemented behind an explicit, non-default `db_backend="postgres"` in
+`backend_factory.py`, mirroring `state_db/`'s module/symbol structure
+symbol-for-symbol with no shared code and no dialect abstraction — the
+existing SQLite source (`src/data_access/state_db/`) and its transaction
+model are completely untouched. JSON remains the unconditional default
+for unset, blank, or unrecognized `db_backend` values. Selecting
+`"postgres"` requires an explicit, non-empty `state_db_url`; a missing
+one raises the existing `BackendConfigurationError` before any
+connection is attempted, and a genuine connection-establishment failure
+is caught and re-raised with only the exception's class name — never
+the DSN, host, port, database, role, user, or password.
+
+Local tests run against an ephemeral, loopback-only, disposable Postgres
+Docker container (`postgres:16.8`), with per-test schema isolation —
+either a direct isolated-connection fixture for repository-level tests,
+or a DSN carrying a `search_path`-scoped `options` parameter for tests
+that go through `backend_factory.py`'s own connection construction —
+teardown drops every isolation schema with `CASCADE`. The container's
+password is a fresh, session-scoped throwaway value, never printed,
+logged, or persisted anywhere; the local test suite reads it from
+exactly one process-local environment variable.
+
+Durable-State Phase 3B-0's full batch-atomicity contract was
+independently reproduced and proven for Postgres, not assumed to
+transfer from SQLite: one outer transaction per candidate batch, the
+transaction-free filing-event helper never opening its own transaction,
+a forced later-candidate failure leaving zero partial candidate/
+filing-event/state-transition rows, and pre-existing rows surviving a
+later failed batch — each verified against the real container, plus a
+direct proof that exactly one `transaction()` context is entered per
+batch regardless of batch size.
+
+Postgres is not wired into any real service entry point, UI, live scan,
+schedule, hosted provider, deployment, or public-publishing path this
+phase — `review_actions.py`, `edgar_service.py`, `radar_service.py`,
+and every DART/EDINET module are unmodified, verified directly (not
+assumed) by a structural test reading `review_actions.record_review_
+decision`'s own source. There is no Signals table and no Signal writer
+— Signals remain derived on every read from `PUBLISHED` candidates,
+reusing the existing, unmodified `signal_promotion.py`. No dual-write
+between backends, no migration of real data, and no DART/EDINET work is
+part of this phase.
+
+A real, mid-implementation bug was caught and fixed by the real
+container run, not by any mocked test: the backend-factory-level
+integration tests initially connected through `backend_factory.py`'s
+own connection construction with no schema isolation of their own,
+writing to the shared `public` schema — a second pytest invocation
+against the same still-running container then read back a candidate ID
+reused across test files in a stale state from the prior run. This was
+a test-harness isolation gap, not a defect in `backend_factory.py` or
+`postgres_state_db/`; the fix added a dedicated isolated-DSN fixture
+(`pg_isolated_dsn`) so every real-connection test — including the ones
+exercising `backend_factory.py`'s own connection path — operates inside
+its own uniquely-named, torn-down-on-teardown schema.
+
+Full suite verified in both states: 1161 passed with the container
+running (including every new Postgres test), and 1124 passed / 37
+skipped with the container stopped and no password configured — every
+real-connection Postgres test skips quickly and cleanly rather than
+failing or hanging, and every pre-existing test passes unchanged.
