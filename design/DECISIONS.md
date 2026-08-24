@@ -3167,3 +3167,65 @@ running (including every new Postgres test), and 1124 passed / 37
 skipped with the container stopped and no password configured — every
 real-connection Postgres test skips quickly and cleanly rather than
 failing or hanging, and every pre-existing test passes unchanged.
+
+## Durable-State Phase 4C-1 — Three-Source Service Injection Parity
+
+DART (`src/data_access/dart/radar_service.py`) and EDINET
+(`src/data_access/edinet/edinet_service.py`) now match EDGAR's optional
+service/script-level `candidate_repository` injection seam
+(Durable-State Phase 4A): `run_scan()`/`process_candidate_now()` on both
+modules gained the same additive, optional, default-`None` parameter,
+threaded straight through to their respective pipelines' own parameter
+of the same name. `scripts/run_scan.py`'s `main()` gained matching
+`dart_candidate_repository`/`edinet_candidate_repository` parameters
+alongside the existing `edgar_candidate_repository`, each reaching only
+its own source's `run_scan()` call.
+
+All three pipeline-level seams (`edgar_pipeline.py`, `radar_pipeline.py`,
+`edinet_pipeline.py`) already existed, unchanged, from Durable-State
+Phase 3A — this phase only carries that existing seam one layer up,
+through each source's service module and the CLI script. No pipeline
+file was touched.
+
+JSON remains the default whenever no collaborator is explicitly
+supplied — every real caller, including the CLI's actual
+argument-free invocation, makes each source's `run_scan()` call with
+zero extra keyword arguments, not merely `candidate_repository=None`,
+proven directly by spy tests per source. No environment-variable
+activation, `backend_factory` construction, local/hosted database
+connection, Docker use, source scan, workflow, scheduling, deployment,
+migration, dual-write, or automatic publishing was added anywhere in
+this phase — DART and EDINET remain exactly as unwired to any real
+Postgres/SQLite backend at runtime as EDGAR was after Phase 4A. Phase
+3B-0 transaction semantics are unchanged and unaffected, since nothing
+in this phase touches `state_db/`, `postgres_state_db/`,
+`backend_factory.py`, `settings.py`, or any repository/schema file —
+the new tests prove an injected collaborator instance reaches the
+already-tested pipeline/repository seam, they do not re-derive
+batch-rollback atomicity, which stays the sole responsibility of the
+existing repository-level test suites.
+
+The Phase 3A guard test that prohibited any service entry point from
+exposing `candidate_repository` (`test_candidate_persistence_phase3a.py`)
+was retired, not weakened or made vacuous — its premise (no service
+module exposes the parameter) is now the opposite of the intended,
+approved design for all three sources equally, so asserting it would be
+asserting against this phase's own goal. What still matters — that a
+real caller never *supplies* the parameter — is covered per-source in
+`tests/test_edgar_service.py`, `tests/test_radar_service.py`,
+`tests/test_edinet_service.py`, and `tests/test_run_scan_cli.py`.
+
+- **Tests**: 8 new in `test_radar_service.py` (default-omitted/
+  explicitly-supplied pass-through for both wrappers via monkeypatched
+  `radar_pipeline` functions; a real end-to-end pair — mocked `DartClient`/
+  translation provider — proving JSON-default and injected-SQLite paths
+  produce the same one candidate). 9 new in `test_edinet_service.py`
+  (same pattern, using the real live-verified SoftBank Group Corp.
+  cohort entry since EDINET's tracked-company list has no
+  runtime-unresolved path to seed around). 5 new in
+  `test_run_scan_cli.py` (DART/EDINET default-omission, each of the
+  three supplied-repository-reaches-only-that-source proofs, and one
+  all-three-simultaneously no-cross-contamination proof). Zero network
+  calls anywhere in the new tests. Zero access to the real cache
+  directory, `.env`, the Streamlit secrets file, or the pre-existing
+  legacy database at any point.

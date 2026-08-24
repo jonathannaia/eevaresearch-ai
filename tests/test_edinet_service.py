@@ -1,15 +1,26 @@
-"""edinet_service — the EDINET pilot's wiring layer. Only
-edinet_readiness and get_edinet_companies are tested here (pure config/
-cache reads, no network); run_scan/process_candidate_now are thin
-wrappers already exercised end-to-end via test_edinet_pipeline.py's
-mocked-client tests. Gate 7 note: get_edinet_companies now returns the
-five live-verified EDINET cohort entries (see tracked_companies.py) —
-all pre-resolved (corp_code hardcoded, not runtime-resolved, per that
+"""edinet_service — the EDINET pilot's wiring layer. edinet_readiness
+and get_edinet_companies are pure config/cache reads, no network.
+run_scan/process_candidate_now's core scan/extraction behavior is
+already exercised end-to-end via test_edinet_pipeline.py's mocked-client
+tests — the tests below cover only Durable-State Phase 4C-1's addition
+to those two wrappers: the optional, additive `candidate_repository`
+parameter and its threading through to
+edinet_pipeline.run_pipeline/process_single_candidate. No test here
+makes a real network call — either the pipeline-layer function is
+monkeypatched directly, or edinet_service._client is replaced with a
+MagicMock EdinetClient, mirroring tests/test_edgar_service.py's own
+Phase 4A pattern. Gate 7 note: get_edinet_companies now returns the five
+live-verified EDINET cohort entries (see tracked_companies.py) — all
+pre-resolved (corp_code hardcoded, not runtime-resolved, per that
 module's docstring), so unresolved_companies stays trivially empty
 either way."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
+
 from src.config.settings import Settings
+from src.data_access import backend_factory
 from src.data_access.edinet import edinet_service
 
 
@@ -60,3 +71,127 @@ def test_readiness_never_raises_without_a_configured_key(tmp_path):
     # EdinetConfigError docstring and the Settings field's own docstring).
     readiness = edinet_service.edinet_readiness(_settings(tmp_path, subscription_key=""))
     assert not readiness.subscription_key_configured
+
+
+# ---------------------------------------------------------------------------
+# Durable-State Phase 4C-1 — run_scan/process_candidate_now's additive,
+# optional candidate_repository parameter, threaded through to
+# edinet_pipeline.run_pipeline/process_single_candidate.
+# ---------------------------------------------------------------------------
+
+
+def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return "sentinel-report"
+
+    monkeypatch.setattr(edinet_service.edinet_pipeline, "run_pipeline", _fake_run_pipeline)
+
+    result = edinet_service.run_scan(_settings(tmp_path, subscription_key="test-key"))
+
+    assert result == "sentinel-report"
+    assert captured["candidate_repository"] is None
+
+
+def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
+    captured = {}
+    sentinel_repo = object()  # identity check only — no method on it is ever called this test
+
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return "sentinel-report"
+
+    monkeypatch.setattr(edinet_service.edinet_pipeline, "run_pipeline", _fake_run_pipeline)
+
+    edinet_service.run_scan(_settings(tmp_path, subscription_key="test-key"), candidate_repository=sentinel_repo)
+
+    assert captured["candidate_repository"] is sentinel_repo
+
+
+def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return None
+
+    monkeypatch.setattr(edinet_service.edinet_pipeline, "process_single_candidate", _fake_process_single_candidate)
+
+    result = edinet_service.process_candidate_now(_settings(tmp_path, subscription_key="test-key"), "edinet-cand-1")
+
+    assert result is None
+    assert captured["candidate_repository"] is None
+
+
+def test_process_candidate_now_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
+    captured = {}
+    sentinel_repo = object()
+
+    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return None
+
+    monkeypatch.setattr(edinet_service.edinet_pipeline, "process_single_candidate", _fake_process_single_candidate)
+
+    edinet_service.process_candidate_now(
+        _settings(tmp_path, subscription_key="test-key"), "edinet-cand-1", candidate_repository=sentinel_repo,
+    )
+
+    assert captured["candidate_repository"] is sentinel_repo
+
+
+# --- Real end-to-end proof, one level up from edinet_pipeline.py's own
+# Phase 3A equivalence tests: a mocked-client run_scan() call, with an
+# injected synthetic local SQLite repository, produces the same one
+# candidate a default/omitted JSON-backed call would. Uses the real,
+# live-verified SoftBank Group Corp. cohort entry (corp_code E02778,
+# docID S100YGH5 — see tracked_companies.py) since get_edinet_companies
+# has no unresolved-company path to seed around (Gate 7: hardcoded, not
+# runtime-resolved). ---
+
+_EDINET_DOC_ID = "S100YGH5"
+_EDINET_DOC_BYTES = b"<html><body><p>Annual report content.</p></body></html>"
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _edinet_envelope(results: list[dict]) -> dict:
+    return {"metadata": {"status": "200", "message": "OK", "resultset": {"count": len(results)}}, "results": results}
+
+
+def _make_edinet_client() -> MagicMock:
+    result = {
+        "docID": _EDINET_DOC_ID, "docTypeCode": "120", "ordinanceCode": "010", "formCode": "030000",
+        "filerName": "SoftBank Group Corp.", "docDescription": "Annual Securities Report",
+        "edinetCode": "E02778", "secCode": "99840", "submitDateTime": "2026-06-22 09:00",
+    }
+    client = MagicMock()
+    client.get_document_list.side_effect = lambda date_str, type_=2: (
+        _edinet_envelope([result]) if date_str == _today() else _edinet_envelope([])
+    )
+    client.fetch_document.side_effect = lambda doc_id, type_: _EDINET_DOC_BYTES
+    return client
+
+
+def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_path, monkeypatch):
+    monkeypatch.setattr(edinet_service, "_client", lambda settings: _make_edinet_client())
+    settings = Settings(
+        edinet_subscription_key="test-key", cache_dir=tmp_path,
+        db_backend="sqlite", state_db_path=tmp_path / "state.db",
+    )
+    repo = backend_factory.get_candidate_repository(settings, "EDINET")
+
+    report = edinet_service.run_scan(settings, candidate_repository=repo)
+
+    assert report.candidates_detected == 1
+    stored = repo.load_candidates()
+    assert len(stored) == 1
+    candidate = next(iter(stored.values()))
+    assert candidate.filing.rcept_no == _EDINET_DOC_ID
+    assert candidate.filing.corp_code == "E02778"
+    # The SQLite path never touched the JSON candidate store this call.
+    assert not (tmp_path / "edinet_candidates.json").exists()

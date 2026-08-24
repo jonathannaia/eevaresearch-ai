@@ -45,14 +45,19 @@ Durable-State Phase 4A: main() accepts an optional, default-None
 `edgar_candidate_repository` parameter — additive, no new environment
 variable. Omitted (the CLI's real invocation, `python -m scripts.run_scan`,
 always omits it), every source's run_scan() call is made exactly as
-before this phase — EDGAR's included, with zero extra keyword arguments,
-not merely `candidate_repository=None`. Supplied, only the EDGAR call
-receives it; DART/EDINET's run_scan() calls are never touched. This is a
-synthetic/local-test-only seam — a caller must invoke main() directly
-with a real Python object, matching the same "not reachable from any
-real service entry point in production" discipline as
-edgar_pipeline.py's own Phase 3A seam and edgar_service.py's Phase 4A
-extension of it.
+before this phase, with zero extra keyword arguments, not merely
+`candidate_repository=None`. This is a synthetic/local-test-only seam —
+a caller must invoke main() directly with a real Python object, matching
+the same "not reachable from any real service entry point in
+production" discipline as each pipeline module's own Phase 3A seam and
+each service module's own extension of it.
+
+Durable-State Phase 4C-1 extends this identically to DART and EDINET:
+main() also accepts `dart_candidate_repository`/`edinet_candidate_repository`,
+each additive/optional/default-None. Each of the three parameters
+reaches only its own source's run_scan() call — never another source's
+— and every source's default call shape (no extra keyword at all) is
+unchanged from before this phase.
 """
 from __future__ import annotations
 
@@ -90,14 +95,15 @@ def _run_one_source(
     source: str, settings: Settings, candidate_repository: CandidatePersistence | None = None,
 ) -> SourceResult:
     try:
-        # `candidate_repository` is EDGAR-only (Durable-State Phase 4A) —
-        # DART/EDINET's run_scan() don't accept the parameter at all, so
-        # it's never passed to them, and when None it's omitted entirely
-        # for EDGAR too rather than passed as an explicit keyword, so the
-        # default call shape is byte-for-byte what it was before this
-        # phase.
+        # Every source's run_scan() accepts candidate_repository as of
+        # Durable-State Phase 4C-1 (EDGAR: Phase 4A) — but it's still
+        # omitted entirely, rather than passed as an explicit
+        # `candidate_repository=None`, when not supplied, so the default
+        # call shape stays byte-for-byte what it was before any of these
+        # phases. Per-source routing (which of the three main() keywords
+        # reaches this call) happens in main() below, not here.
         kwargs = {}
-        if source == "edgar" and candidate_repository is not None:
+        if candidate_repository is not None:
             kwargs["candidate_repository"] = candidate_repository
         report = _SERVICE_MODULES[source].run_scan(settings, **kwargs)
         return SourceResult(source=source, ok=True, report=report)
@@ -161,13 +167,19 @@ def _sync_remote_cache(settings: Settings) -> tuple[str, bool]:
         return f"remote cache: sync failed ({type(exc).__name__}) — local data unaffected", False
 
 
-def main(edgar_candidate_repository: CandidatePersistence | None = None) -> int:
+def main(
+    edgar_candidate_repository: CandidatePersistence | None = None,
+    dart_candidate_repository: CandidatePersistence | None = None,
+    edinet_candidate_repository: CandidatePersistence | None = None,
+) -> int:
     settings = get_settings()
+    repository_by_source = {
+        "dart": dart_candidate_repository,
+        "edgar": edgar_candidate_repository,
+        "edinet": edinet_candidate_repository,
+    }
     results = [
-        _run_one_source(
-            source, settings,
-            candidate_repository=edgar_candidate_repository if source == "edgar" else None,
-        )
+        _run_one_source(source, settings, candidate_repository=repository_by_source[source])
         for source in _SOURCES
     ]
     remote_summary, remote_ok = _sync_remote_cache(settings)

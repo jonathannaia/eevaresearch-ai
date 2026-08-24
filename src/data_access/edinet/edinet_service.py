@@ -17,6 +17,7 @@ from pathlib import Path
 
 from src.config.settings import Settings
 from src.config.tracked_companies import TrackedCompany, get_tracked_companies_for_source
+from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edinet import edinet_pipeline, scan_service
 from src.data_access.edinet.client import EdinetClient
 from src.models.models import CandidateSignal
@@ -65,13 +66,29 @@ def run_scan(
     settings: Settings,
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates: int = edinet_pipeline.DEFAULT_MAX_CANDIDATES_PER_SCAN,
+    candidate_repository: CandidatePersistence | None = None,
 ) -> edinet_pipeline.ScanReport:
+    """`candidate_repository` (Durable-State Phase 4C-1) is additive and
+    optional, threaded straight through to edinet_pipeline.run_pipeline's
+    own parameter of the same name. Omitted — every real caller this
+    phase, including scripts/run_scan.py's default invocation — behavior
+    is byte-for-byte identical to before: today's JSON candidate_store.py
+    path. Supplied — synthetic/local tests only, never a real service
+    entry point in production this phase — every candidate-store touch
+    inside this one call routes through the given collaborator instead."""
     companies = get_edinet_companies(settings.cache_dir)
     return edinet_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
+        candidate_repository=candidate_repository,
     )
 
 
-def process_candidate_now(settings: Settings, candidate_id: str) -> CandidateSignal | None:
-    return edinet_pipeline.process_single_candidate(_client(settings), candidate_id, settings.cache_dir)
+def process_candidate_now(
+    settings: Settings, candidate_id: str, candidate_repository: CandidatePersistence | None = None,
+) -> CandidateSignal | None:
+    """`candidate_repository` (Durable-State Phase 4C-1) — same additive,
+    optional, synthetic/local-test-only seam as run_scan above."""
+    return edinet_pipeline.process_single_candidate(
+        _client(settings), candidate_id, settings.cache_dir, candidate_repository=candidate_repository,
+    )

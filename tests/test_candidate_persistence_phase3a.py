@@ -18,15 +18,21 @@ run_pipeline, and radar_pipeline.process_single_candidate/run_pipeline:
     service.py/document_service.py/translation_service.py/cik_resolver.py/
     corp_code_resolver.py/discovery_service.py already behave, unmodified
     this phase;
-  - is never reachable from a real DART/EDINET service entry point
-    (dart/radar_service.run_scan/process_candidate_now and edinet_service.
-    run_scan/process_candidate_now keep their original signatures this
-    phase). Durable-State Phase 4A later extends this same additive,
-    optional seam one level up through edgar_service.run_scan/
-    process_candidate_now and scripts/run_scan.py's main(), for EDGAR
-    only — still synthetic/local-test-only, never reachable from the
-    CLI's real invocation — see tests/test_edgar_service.py and
-    tests/test_run_scan_cli.py.
+  - was not yet reachable from any real service entry point at the time
+    this phase landed. Durable-State Phase 4A (EDGAR) and Phase 4C-1
+    (DART, EDINET) later extend this same additive, optional seam one
+    level up through each source's own service module
+    (edgar_service.py/dart/radar_service.py/edinet_service.py) and
+    scripts/run_scan.py's main() — still synthetic/local-test-only in
+    every case: a real caller (the CLI's actual invocation, or any
+    production code path) always omits the parameter, so JSON-backed
+    candidate_store.py behavior is unaffected regardless of the seam's
+    existence. See tests/test_edgar_service.py, tests/test_radar_service.py,
+    tests/test_edinet_service.py, and tests/test_run_scan_cli.py for
+    each source's own pass-through/default-omission coverage — this file
+    no longer separately guards against DART/EDINET exposing the
+    parameter, since exposing it is now the correct, intended state for
+    all three sources equally.
 
 Everything here uses tmp_path/`:memory:` and fully mocked clients — no
 test reads ambient application configuration or accepts an ambient real
@@ -663,25 +669,22 @@ def test_filing_event_persistence_stays_json_even_with_sqlite_candidate_reposito
 
 
 # ---------------------------------------------------------------------------
-# 13. No real DART/EDINET service entry point can select/pass SQLite
-# candidate persistence in this phase — dart/radar_service.py and
-# edinet_service.py's run_scan/process_candidate_now were not modified.
-# EDGAR's equivalent entry points (edgar_service.py, scripts/run_scan.py)
-# gained this same additive/optional parameter in Durable-State Phase 4A
-# — see tests/test_edgar_service.py and tests/test_run_scan_cli.py for
-# that phase's own coverage, including the still-true "never reachable
-# from a real production invocation" guarantee.
+# 13. [Retired] This section previously guarded that no real service
+# entry point (edgar_service.py, dart/radar_service.py, edinet_service.py)
+# exposed a `candidate_repository` parameter — true only as of this
+# phase (3A), by construction, since none of those modules were touched
+# here. Durable-State Phase 4A (EDGAR) and Phase 4C-1 (DART, EDINET)
+# deliberately gave all three service modules this same additive,
+# optional, default-None parameter, so a guard prohibiting it would now
+# be asserting the opposite of the intended, approved design — retired
+# rather than inverted or left vacuous. What still matters — that a real
+# caller (the CLI's actual invocation, or any other production code
+# path) never supplies the parameter, so JSON-backed behavior is
+# unaffected — is covered per-source in tests/test_edgar_service.py,
+# tests/test_radar_service.py, tests/test_edinet_service.py, and
+# tests/test_run_scan_cli.py, each proving the default call omits the
+# keyword entirely rather than merely passing `candidate_repository=None`.
 # ---------------------------------------------------------------------------
-
-def test_no_service_entry_point_exposes_a_candidate_repository_parameter():
-    import inspect
-    from src.data_access.dart import radar_service
-    from src.data_access.edinet import edinet_service
-
-    for module in (radar_service, edinet_service):
-        for fn_name in ("run_scan", "process_candidate_now"):
-            params = inspect.signature(getattr(module, fn_name)).parameters
-            assert "candidate_repository" not in params, f"{module.__name__}.{fn_name} must not accept candidate_repository this phase"
 
 
 # ---------------------------------------------------------------------------

@@ -1,13 +1,26 @@
-"""radar_service — the Radar Inbox wiring layer. Only radar_readiness and
-get_radar_companies are tested here (pure config/cache reads, no
-network); run_scan/process_candidate_now are thin wrappers already
-exercised end-to-end via test_radar_pipeline.py's mocked-client tests."""
+"""radar_service — the Radar Inbox wiring layer. radar_readiness and
+get_radar_companies are pure config/cache reads, no network.
+run_scan/process_candidate_now's core scan/extraction/translation
+behavior is already exercised end-to-end via test_radar_pipeline.py's
+mocked-client tests — the tests below cover only Durable-State
+Phase 4C-1's addition to those two wrappers: the optional, additive
+`candidate_repository` parameter and its threading through to
+radar_pipeline.run_pipeline/process_single_candidate. No test here makes
+a real network call — either the pipeline-layer function is
+monkeypatched directly, or radar_service._client/_translation_provider
+are replaced with a MagicMock/fake, mirroring
+tests/test_edgar_service.py's own Phase 4A pattern."""
 from __future__ import annotations
 
+import io
 import json
+import zipfile
+from unittest.mock import MagicMock
 
 from src.config.settings import Settings
+from src.data_access import backend_factory
 from src.data_access.dart import radar_service
+from src.data_access.dart.client import DisclosureRecord
 
 
 def _settings(cache_dir, dart_key=None, translation_key=None) -> Settings:
@@ -65,3 +78,142 @@ def test_get_radar_companies_fills_in_resolved_corp_codes(tmp_path):
 def test_get_radar_companies_leaves_unresolved_companies_with_none_corp_code(tmp_path):
     companies = radar_service.get_radar_companies(tmp_path)
     assert all(c.corp_code is None for c in companies)
+
+
+# ---------------------------------------------------------------------------
+# Durable-State Phase 4C-1 — run_scan/process_candidate_now's additive,
+# optional candidate_repository parameter, threaded through to
+# radar_pipeline.run_pipeline/process_single_candidate.
+# ---------------------------------------------------------------------------
+
+
+def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_run_pipeline(client, translation_provider, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return "sentinel-report"
+
+    monkeypatch.setattr(radar_service.radar_pipeline, "run_pipeline", _fake_run_pipeline)
+
+    result = radar_service.run_scan(_settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"))
+
+    assert result == "sentinel-report"
+    assert captured["candidate_repository"] is None
+
+
+def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
+    captured = {}
+    sentinel_repo = object()  # identity check only — no method on it is ever called this test
+
+    def _fake_run_pipeline(client, translation_provider, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return "sentinel-report"
+
+    monkeypatch.setattr(radar_service.radar_pipeline, "run_pipeline", _fake_run_pipeline)
+
+    radar_service.run_scan(
+        _settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"), candidate_repository=sentinel_repo,
+    )
+
+    assert captured["candidate_repository"] is sentinel_repo
+
+
+def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_process_single_candidate(client, translation_provider, candidate_id, cache_dir, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return None
+
+    monkeypatch.setattr(radar_service.radar_pipeline, "process_single_candidate", _fake_process_single_candidate)
+
+    result = radar_service.process_candidate_now(
+        _settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"), "cand-1",
+    )
+
+    assert result is None
+    assert captured["candidate_repository"] is None
+
+
+def test_process_candidate_now_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
+    captured = {}
+    sentinel_repo = object()
+
+    def _fake_process_single_candidate(client, translation_provider, candidate_id, cache_dir, candidate_repository=None):
+        captured["candidate_repository"] = candidate_repository
+        return None
+
+    monkeypatch.setattr(radar_service.radar_pipeline, "process_single_candidate", _fake_process_single_candidate)
+
+    radar_service.process_candidate_now(
+        _settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"), "cand-1", candidate_repository=sentinel_repo,
+    )
+
+    assert captured["candidate_repository"] is sentinel_repo
+
+
+# --- Real end-to-end proof, one level up from radar_pipeline.py's own
+# Phase 3A equivalence tests: a mocked-client run_scan() call, with an
+# injected synthetic local SQLite repository, produces the same one
+# candidate a default/omitted JSON-backed call would. ---
+
+_DART_RCEPT_NO = "20260810000001"
+
+
+def _dart_document_zip(body_text: str = "신규시설투자등 결정 안내") -> bytes:
+    xml = (
+        f'<?xml version="1.0" encoding="utf-8"?><DOCUMENT>'
+        f"<SECTION-1><P>cover</P></SECTION-1><SECTION-1><P>{body_text}</P></SECTION-1></DOCUMENT>"
+    ).encode("utf-8")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("doc.xml", xml)
+    return buf.getvalue()
+
+
+def _make_dart_client(samsung_corp_code: str) -> MagicMock:
+    record = DisclosureRecord(
+        corp_cls="Y", corp_name="삼성전자", corp_code=samsung_corp_code, stock_code="005930",
+        report_nm="신규시설투자등", rcept_no=_DART_RCEPT_NO, flr_nm="삼성전자", rcept_dt="20260810", rm="",
+    )
+    client = MagicMock()
+
+    def _search(corp_code, bgn_de, end_de, page_no=1, page_count=100):
+        if corp_code == samsung_corp_code and page_no == 1:
+            return ([record], 1)
+        return ([], 0)
+
+    client.search_disclosures.side_effect = _search
+    client.fetch_document_zip.side_effect = lambda rcept_no: _dart_document_zip()
+    return client
+
+
+class _FakeTranslationProvider:
+    name = "DeepL"
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        return f"[translated] {text}"
+
+
+def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_path, monkeypatch):
+    samsung_corp_code = "corp-005930"
+    _seed_corp_codes(tmp_path, ["005930", "000660"])
+    monkeypatch.setattr(radar_service, "_client", lambda settings: _make_dart_client(samsung_corp_code))
+    monkeypatch.setattr(radar_service, "_translation_provider", lambda settings: _FakeTranslationProvider())
+    settings = Settings(
+        dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path,
+        db_backend="sqlite", state_db_path=tmp_path / "state.db",
+    )
+    repo = backend_factory.get_candidate_repository(settings, "OpenDART / DART")
+
+    report = radar_service.run_scan(settings, candidate_repository=repo)
+
+    assert report.candidates_detected == 1
+    stored = repo.load_candidates()
+    assert len(stored) == 1
+    candidate = next(iter(stored.values()))
+    assert candidate.filing.rcept_no == _DART_RCEPT_NO
+    assert candidate.filing.corp_code == samsung_corp_code
+    # The SQLite path never touched the JSON candidate store this call.
+    assert not (tmp_path / "dart_candidates.json").exists()
