@@ -1,6 +1,104 @@
 [
   {
     "niche": "Space",
+    "headline": "Polish startup Ares Shield hired to protect data center satellites with high-power microwave weapons",
+    "summary": "Lonestar Data Holdings contracted Polish startup Ares Shield to protect its planned orbital data centers using high-power microwave weapons in a deal worth up to $6 million.",
+    "source_url": "https://www.space.com/space-exploration/satellites/satellite-defense-ares-shield-contract-lonestar-data-holdings",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 13:00:00 +0000",
+    "retrieved_at": "2026-08-25T18:26:18+00:00",
+    "tickers": [],
+    "relevance_reason": "involves satellite infrastructure for data center operations in space",
+    "url_hash": "ed728a0ee7c366df",
+    "id": "ed728a0ee7c366df"
+  },
+  {
+    "niche": "Space",
+    "headline": "Astronauts make history repairing the ISS | Space photo of the day for Aug. 25, 2026",
+    "summary": "ESA astronaut Sophie Adenot and NASA astronaut Anil Menon completed a spacewalk on August 18, 2026, making history with ISS repairs.",
+    "source_url": "https://www.space.com/space-exploration/human-spaceflight/astronauts-make-history-repairing-the-iss-space-photo-of-the-day-for-aug-25-2026",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:00:00 +0000",
+    "retrieved_at": "2026-08-25T18:26:17+00:00",
+    "tickers": [],
+    "relevance_reason": "Describes a spacewalk at the International Space Station, a core space infrastructure activity.",
+    "url_hash": "bc22c15f58a5abb5",
+    "id": "bc22c15f58a5abb5"
+  },
+  {
+    "niche": "Space",
+    "headline": "The Roman Space Telescope will reveal the universe in a way the JWST and Hubble cannot",
+    "summary": "The Roman Space Telescope will capture images so large that no existing screen can display them in full, offering observational capabilities distinct from the James Webb Space Telescope and Hubble.",
+    "source_url": "https://www.space.com/astronomy/the-roman-space-telescope-will-reveal-the-universe-in-a-way-the-jwst-and-hubble-cannot",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 17:00:15 +0000",
+    "retrieved_at": "2026-08-25T18:26:13+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses a space telescope mission (Roman Space Telescope), which directly relates to the Space scope.",
+    "url_hash": "05bc4424f167bf61",
+    "id": "05bc4424f167bf61"
+  },
+  {
+    "niche": "Space",
+    "headline": "SpaceX intends to invest up to $100 billion in massive Louisiana spaceport",
+    "summary": "SpaceX intends to invest up to $100 billion in a massive spaceport project in Louisiana.",
+    "source_url": "https://arstechnica.com/space/2026/08/spacex-intends-to-invest-up-to-100-billion-in-massive-louisiana-spaceport/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 17:26:15 +0000",
+    "retrieved_at": "2026-08-25T18:26:12+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla Inc. (parent of SpaceX)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX's investment in a major spaceport infrastructure project is directly relevant to space launch capabilities.",
+    "url_hash": "579b65ab022fee88",
+    "id": "579b65ab022fee88"
+  },
+  {
+    "niche": "Space",
+    "headline": "Tendeg Launches NewTEN Steerable Compact Antenna at SmallSat",
+    "summary": "Tendeg has launched NewTEN, a two-axis steerable reflector antenna designed to enhance communications performance and pointing access for small spacecraft.",
+    "source_url": "https://spacenews.com/tendeg-launches-newten-steerable-compact-antenna-at-smallsat/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 13:00:00 +0000",
+    "retrieved_at": "2026-08-25T18:26:10+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses space satellite hardware with a new steerable antenna product for small spacecraft.",
+    "url_hash": "c73434584f157d9d",
+    "id": "c73434584f157d9d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Infineon acquires Indian power systems firm C2i Semiconductors",
+    "summary": "Infineon is acquiring Indian power systems firm C2i Semiconductors, with the transaction expected to close this year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/infineon-acquires-indian-power-systems-firm-c2i-semiconductors/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 16:11:51 +0000",
+    "retrieved_at": "2026-08-25T18:25:50+00:00",
+    "tickers": [
+      {
+        "ticker": "IFX",
+        "company_name": "Infineon Technologies",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Acquisition of a power systems semiconductor firm directly supports AI infrastructure power delivery capabilities",
+    "url_hash": "480d9ac358f95b00",
+    "id": "480d9ac358f95b00"
+  },
+  {
+    "niche": "Space",
     "headline": "Space Angel secures $1.75m WA Government backing to advance Western Australian spaceport plans",
     "summary": "Space Angel has received a $1.75 million Spaceport Establishment Support Grant from the Western Australian Government to advance spaceport plans in Western Australia.",
     "source_url": "https://spacenews.com/space-angel-secures-1-75m-wa-government-backing-to-advance-western-australian-spaceport-plans/",
