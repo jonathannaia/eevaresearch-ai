@@ -2,7 +2,7 @@
   "AAOI": {
     "ticker": "AAOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:23:27+00:00",
+    "retrieved_at": "2026-08-25T12:29:58+00:00",
     "errors": [],
     "price": {
       "ticker": "AAOI",
@@ -151,7 +151,7 @@
   "ABCL": {
     "ticker": "ABCL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:23:35+00:00",
+    "retrieved_at": "2026-08-25T12:30:07+00:00",
     "errors": [],
     "price": {
       "ticker": "ABCL",
@@ -300,7 +300,7 @@
   "AEHR": {
     "ticker": "AEHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:23:42+00:00",
+    "retrieved_at": "2026-08-25T12:30:21+00:00",
     "errors": [],
     "price": {
       "ticker": "AEHR",
@@ -449,7 +449,7 @@
   "ARM": {
     "ticker": "ARM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:23:49+00:00",
+    "retrieved_at": "2026-08-25T12:30:28+00:00",
     "errors": [],
     "price": {
       "ticker": "ARM",
@@ -547,7 +547,7 @@
   "AVGO": {
     "ticker": "AVGO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:23:55+00:00",
+    "retrieved_at": "2026-08-25T12:30:35+00:00",
     "errors": [],
     "price": {
       "ticker": "AVGO",
@@ -696,7 +696,7 @@
   "AXTI": {
     "ticker": "AXTI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:01+00:00",
+    "retrieved_at": "2026-08-25T12:30:42+00:00",
     "errors": [],
     "price": {
       "ticker": "AXTI",
@@ -845,7 +845,7 @@
   "BE": {
     "ticker": "BE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:07+00:00",
+    "retrieved_at": "2026-08-25T12:30:48+00:00",
     "errors": [],
     "price": {
       "ticker": "BE",
@@ -994,7 +994,7 @@
   "CLS": {
     "ticker": "CLS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:14+00:00",
+    "retrieved_at": "2026-08-25T12:30:55+00:00",
     "errors": [],
     "price": {
       "ticker": "CLS",
@@ -1143,7 +1143,7 @@
   "COHR": {
     "ticker": "COHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:19+00:00",
+    "retrieved_at": "2026-08-25T12:31:01+00:00",
     "errors": [],
     "price": {
       "ticker": "COHR",
@@ -1167,8 +1167,8 @@
       "as_of_date": "2026-08-25",
       "is_mock": false
     },
-    "pct_change_1d": -4.846,
-    "unusual_move": true,
+    "pct_change_1d": -0.1758,
+    "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "COHR",
@@ -1292,11 +1292,11 @@
   "CRDO": {
     "ticker": "CRDO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:26+00:00",
+    "retrieved_at": "2026-08-25T12:31:08+00:00",
     "errors": [],
     "price": {
       "ticker": "CRDO",
-      "last_price": 222.61,
+      "last_price": 230.57,
       "fifty_two_week_low": 86.485,
       "fifty_two_week_high": 308.6699,
       "pct_change_3m": 0.151094,
@@ -1316,8 +1316,8 @@
       "as_of_date": "2026-08-25",
       "is_mock": false
     },
-    "pct_change_1d": -3.4523,
-    "unusual_move": true,
+    "pct_change_1d": -0.3372,
+    "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "CRDO",
@@ -1441,7 +1441,7 @@
   "DRAM": {
     "ticker": "DRAM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:32+00:00",
+    "retrieved_at": "2026-08-25T12:31:14+00:00",
     "errors": [
       "valuation: No market cap from Finnhub for 'DRAM'.",
       "insiders: No SEC EDGAR CIK found for ticker 'DRAM' — not a US-listed filer, or the ticker is wrong.",
@@ -1449,7 +1449,7 @@
     ],
     "price": {
       "ticker": "DRAM",
-      "last_price": 54.28,
+      "last_price": 57.68,
       "fifty_two_week_low": 26.14,
       "fifty_two_week_high": 81.34,
       "pct_change_3m": 0.11978300000000001,
@@ -1470,7 +1470,7 @@
   "INTC": {
     "ticker": "INTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:37+00:00",
+    "retrieved_at": "2026-08-25T12:31:33+00:00",
     "errors": [],
     "price": {
       "ticker": "INTC",
@@ -1586,7 +1586,7 @@
   "IREN": {
     "ticker": "IREN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:48+00:00",
+    "retrieved_at": "2026-08-25T12:31:43+00:00",
     "errors": [],
     "price": {
       "ticker": "IREN",
@@ -1713,7 +1713,7 @@
   "LITE": {
     "ticker": "LITE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:24:56+00:00",
+    "retrieved_at": "2026-08-25T12:31:55+00:00",
     "errors": [],
     "price": {
       "ticker": "LITE",
@@ -1862,7 +1862,7 @@
   "LPTH": {
     "ticker": "LPTH",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:03+00:00",
+    "retrieved_at": "2026-08-25T12:32:02+00:00",
     "errors": [],
     "price": {
       "ticker": "LPTH",
@@ -2011,7 +2011,7 @@
   "MP": {
     "ticker": "MP",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:09+00:00",
+    "retrieved_at": "2026-08-25T12:32:08+00:00",
     "errors": [],
     "price": {
       "ticker": "MP",
@@ -2160,7 +2160,7 @@
   "MRVL": {
     "ticker": "MRVL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:17+00:00",
+    "retrieved_at": "2026-08-25T12:32:24+00:00",
     "errors": [],
     "price": {
       "ticker": "MRVL",
@@ -2309,7 +2309,7 @@
   "MU": {
     "ticker": "MU",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:33+00:00",
+    "retrieved_at": "2026-08-25T12:32:32+00:00",
     "errors": [],
     "price": {
       "ticker": "MU",
@@ -2458,7 +2458,7 @@
   "MXL": {
     "ticker": "MXL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:39+00:00",
+    "retrieved_at": "2026-08-25T12:32:38+00:00",
     "errors": [],
     "price": {
       "ticker": "MXL",
@@ -2607,7 +2607,7 @@
   "NBIS": {
     "ticker": "NBIS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:45+00:00",
+    "retrieved_at": "2026-08-25T12:32:44+00:00",
     "errors": [],
     "price": {
       "ticker": "NBIS",
@@ -2705,7 +2705,7 @@
   "PLTR": {
     "ticker": "PLTR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:51+00:00",
+    "retrieved_at": "2026-08-25T12:33:01+00:00",
     "errors": [],
     "price": {
       "ticker": "PLTR",
@@ -2854,7 +2854,7 @@
   "RKLB": {
     "ticker": "RKLB",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:25:57+00:00",
+    "retrieved_at": "2026-08-25T12:33:07+00:00",
     "errors": [],
     "price": {
       "ticker": "RKLB",
@@ -3003,7 +3003,7 @@
   "SIVE": {
     "ticker": "SIVE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:03+00:00",
+    "retrieved_at": "2026-08-25T12:33:13+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SIVE'.",
       "valuation: No market cap from Finnhub for 'SIVE'.",
@@ -3022,7 +3022,7 @@
   "SKHY": {
     "ticker": "SKHY",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:08+00:00",
+    "retrieved_at": "2026-08-25T12:33:18+00:00",
     "errors": [],
     "price": {
       "ticker": "SKHY",
@@ -3064,7 +3064,7 @@
   "SMCI": {
     "ticker": "SMCI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:21+00:00",
+    "retrieved_at": "2026-08-25T12:33:25+00:00",
     "errors": [],
     "price": {
       "ticker": "SMCI",
@@ -3157,7 +3157,7 @@
   "SMTC": {
     "ticker": "SMTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:31+00:00",
+    "retrieved_at": "2026-08-25T12:33:36+00:00",
     "errors": [],
     "price": {
       "ticker": "SMTC",
@@ -3306,7 +3306,7 @@
   "SNDK": {
     "ticker": "SNDK",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:37+00:00",
+    "retrieved_at": "2026-08-25T12:33:42+00:00",
     "errors": [],
     "price": {
       "ticker": "SNDK",
@@ -3455,7 +3455,7 @@
   "SOI": {
     "ticker": "SOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:44+00:00",
+    "retrieved_at": "2026-08-25T12:33:50+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SOI'.",
       "insiders: No SEC EDGAR CIK found for ticker 'SOI' — not a US-listed filer, or the ticker is wrong.",
@@ -3482,7 +3482,7 @@
   "SPCX": {
     "ticker": "SPCX",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:48+00:00",
+    "retrieved_at": "2026-08-25T12:33:54+00:00",
     "errors": [],
     "price": {
       "ticker": "SPCX",
@@ -3587,7 +3587,7 @@
   "TSEM": {
     "ticker": "TSEM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:26:54+00:00",
+    "retrieved_at": "2026-08-25T12:34:01+00:00",
     "errors": [],
     "price": {
       "ticker": "TSEM",
@@ -3685,7 +3685,7 @@
   "USAR": {
     "ticker": "USAR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T10:27:00+00:00",
+    "retrieved_at": "2026-08-25T12:34:07+00:00",
     "errors": [],
     "price": {
       "ticker": "USAR",
@@ -4237,18 +4237,18 @@
   "NVDA": {
     "ticker": "NVDA",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T16:28:46+00:00",
+    "retrieved_at": "2026-08-25T12:32:50+00:00",
     "errors": [],
     "price": {
       "ticker": "NVDA",
-      "last_price": 210.75,
+      "last_price": 208.48,
       "fifty_two_week_low": 164.07,
       "fifty_two_week_high": 236.54,
-      "pct_change_3m": -0.039155,
-      "pct_change_1y": 0.227112,
-      "avg_volume_30d": 145424060.0,
+      "pct_change_3m": -0.050248,
+      "pct_change_1y": 0.17130199999999998,
+      "avg_volume_30d": 144866820.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-08-24",
+      "as_of_date": "2026-08-25",
       "is_mock": false
     },
     "valuation": {
@@ -4258,10 +4258,10 @@
       "ev_to_ebitda": 32.7357,
       "price_to_sales": 21.3932,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-08-24",
+      "as_of_date": "2026-08-25",
       "is_mock": false
     },
-    "pct_change_1d": -1.8489,
+    "pct_change_1d": -2.9061,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -7730,6 +7730,397 @@
         "published_date": "2026-07-24",
         "source_type": "Press Release",
         "snippet": "SEC Form 8-K filed 2026-07-24 under item(s) 5.02, 9.01 (Departure/Election of Directors or Officers). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      }
+    ]
+  },
+  "IBM": {
+    "ticker": "IBM",
+    "jurisdiction": "United States",
+    "retrieved_at": "2026-08-25T12:31:22+00:00",
+    "errors": [],
+    "price": {
+      "ticker": "IBM",
+      "last_price": 231.04,
+      "fifty_two_week_low": 199.19,
+      "fifty_two_week_high": 332.46,
+      "pct_change_3m": -0.08669,
+      "pct_change_1y": -0.045644,
+      "avg_volume_30d": 9825270.0,
+      "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "valuation": {
+      "ticker": "IBM",
+      "market_cap": 221415720000.0,
+      "ev_to_revenue": 3.9978,
+      "ev_to_ebitda": 23.0827,
+      "price_to_sales": 3.2045,
+      "peer_median_ev_to_revenue": null,
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "pct_change_1d": -1.9688,
+    "unusual_move": false,
+    "watch_trigger_move": false,
+    "analyst_recommendations": {
+      "symbol": "IBM",
+      "period": "2026-08-01",
+      "strongBuy": 8,
+      "buy": 9,
+      "hold": 12,
+      "sell": 2,
+      "strongSell": 0
+    },
+    "insider_transactions": [],
+    "news": [
+      {
+        "ticker": "IBM",
+        "title": "IBM 8-K: Results of Operations and Financial Condition",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000077/ibm-20260722.htm",
+        "published_date": "2026-07-22",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-07-22 under item(s) 2.02, 9.01 (Results of Operations and Financial Condition). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "IBM",
+        "title": "IBM 8-K: Results of Operations and Financial Condition; Regulation FD Disclosure",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000070/ibm-20260714.htm",
+        "published_date": "2026-07-14",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-07-14 under item(s) 2.02, 7.01, 9.01 (Results of Operations and Financial Condition; Regulation FD Disclosure). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "IBM",
+        "title": "IBM 8-K: Entry into a Material Definitive Agreement",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000061/ibm-20260622.htm",
+        "published_date": "2026-06-23",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-06-23 under item(s) 1.01, 2.03, 9.01 (Entry into a Material Definitive Agreement). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "IBM",
+        "title": "IBM 8-K: Regulation FD Disclosure",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000047/ibm-20260528.htm",
+        "published_date": "2026-05-28",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-05-28 under item(s) 7.01 (Regulation FD Disclosure). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "IBM",
+        "title": "IBM 8-K: Departure/Election of Directors or Officers",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000043/ibm-20260428.htm",
+        "published_date": "2026-05-01",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-05-01 under item(s) 5.02, 5.03, 5.07 (Departure/Election of Directors or Officers). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      }
+    ]
+  },
+  "MPWR": {
+    "ticker": "MPWR",
+    "jurisdiction": "United States",
+    "retrieved_at": "2026-08-25T12:32:17+00:00",
+    "errors": [],
+    "price": {
+      "ticker": "MPWR",
+      "last_price": 1285.03,
+      "fifty_two_week_low": 800.97,
+      "fifty_two_week_high": 1714.0898,
+      "pct_change_3m": -0.176922,
+      "pct_change_1y": 0.522547,
+      "avg_volume_30d": 852930.0,
+      "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "valuation": {
+      "ticker": "MPWR",
+      "market_cap": 69819430000.0,
+      "ev_to_revenue": 21.0237,
+      "ev_to_ebitda": 68.7944,
+      "price_to_sales": 21.3309,
+      "peer_median_ev_to_revenue": null,
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "pct_change_1d": -2.3741,
+    "unusual_move": false,
+    "watch_trigger_move": false,
+    "analyst_recommendations": {
+      "symbol": "MPWR",
+      "period": "2026-08-01",
+      "strongBuy": 7,
+      "buy": 12,
+      "hold": 4,
+      "sell": 0,
+      "strongSell": 0
+    },
+    "insider_transactions": [
+      {
+        "ticker": "MPWR",
+        "insider_name": "DEAN ROBERT W II",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 6.0,
+        "value_usd": 8481.84,
+        "filing_date": "2026-08-19",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000121465926010630/xslF345X06/marketforms-73781.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "insider_name": "CHANG KUO WEI HERBERT",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 50.0,
+        "value_usd": 71000.0,
+        "filing_date": "2026-08-13",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000121465926010101/xslF345X06/marketforms-73754.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "insider_name": "DEAN ROBERT W II",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 105.0,
+        "value_usd": 141148.35,
+        "filing_date": "2026-08-06",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000121465926009739/xslF345X06/marketforms-73703.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "insider_name": "Sciammas Maurice",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 30.0,
+        "value_usd": 40318.2,
+        "filing_date": "2026-08-05",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000121465926009676/xslF345X06/marketforms-73662.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "insider_name": "Sciammas Maurice",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 527.0,
+        "value_usd": 692493.81,
+        "filing_date": "2026-07-17",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000121465926008703/xslF345X06/marketforms-73614.xml",
+        "is_mock": false
+      }
+    ],
+    "news": [
+      {
+        "ticker": "MPWR",
+        "title": "MPWR 8-K: Results of Operations and Financial Condition",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000162828026051029/mpwr-20260730.htm",
+        "published_date": "2026-07-30",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-07-30 under item(s) 2.02, 9.01 (Results of Operations and Financial Condition). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "title": "MPWR 8-K: Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000162828026042820/mpwr-20260611.htm",
+        "published_date": "2026-06-12",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-06-12 under item(s) 5.07, 8.01, 9.01 (Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "title": "MPWR 8-K: Results of Operations and Financial Condition",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000143774926014182/mpwr20260305_8k.htm",
+        "published_date": "2026-04-30",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-04-30 under item(s) 2.02, 9.01 (Results of Operations and Financial Condition). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "title": "MPWR 8-K: Results of Operations and Financial Condition; Departure/Election of Directors or Officers; Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000143774926003191/mpwr20251110_8k.htm",
+        "published_date": "2026-02-05",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-02-05 under item(s) 2.02, 5.02, 8.01, 9.01 (Results of Operations and Financial Condition; Departure/Election of Directors or Officers; Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "MPWR",
+        "title": "MPWR 8-K: Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1280452/000143774925037726/mpwr20251208_8k.htm",
+        "published_date": "2025-12-12",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2025-12-12 under item(s) 8.01, 9.01 (Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      }
+    ]
+  },
+  "WULF": {
+    "ticker": "WULF",
+    "jurisdiction": "United States",
+    "retrieved_at": "2026-08-25T12:34:17+00:00",
+    "errors": [],
+    "price": {
+      "ticker": "WULF",
+      "last_price": 15.48,
+      "fifty_two_week_low": 8.6,
+      "fifty_two_week_high": 29.84,
+      "pct_change_3m": -0.32460700000000003,
+      "pct_change_1y": 0.689956,
+      "avg_volume_30d": 32081449.999999996,
+      "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "valuation": {
+      "ticker": "WULF",
+      "market_cap": 8518207000.0,
+      "ev_to_revenue": 67.2693,
+      "ev_to_ebitda": 639.7109,
+      "price_to_sales": 51.5652,
+      "peer_median_ev_to_revenue": null,
+      "as_of_date": "2026-08-25",
+      "is_mock": false
+    },
+    "pct_change_1d": -1.023,
+    "unusual_move": false,
+    "watch_trigger_move": false,
+    "analyst_recommendations": {
+      "symbol": "WULF",
+      "period": "2026-08-01",
+      "strongBuy": 8,
+      "buy": 16,
+      "hold": 1,
+      "sell": 0,
+      "strongSell": 0
+    },
+    "insider_transactions": [
+      {
+        "ticker": "WULF",
+        "insider_name": "Bucella Michael C.",
+        "role": "Director",
+        "transaction_type": "Buy",
+        "shares": 3023.0,
+        "value_usd": 49985.31,
+        "filing_date": "2026-08-17",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000170/xslF345X06/wk-form4_1787004706.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "insider_name": "Bucella Michael C.",
+        "role": "Director",
+        "transaction_type": "Buy",
+        "shares": 2860.0,
+        "value_usd": 49964.2,
+        "filing_date": "2026-08-17",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000170/xslF345X06/wk-form4_1787004706.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "insider_name": "Prager Paul B.",
+        "role": "Director, Chief Executive Officer",
+        "transaction_type": "Sell",
+        "shares": 137500.0,
+        "value_usd": 3656950.0,
+        "filing_date": "2026-07-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000095014226001962/xslF345X06/es260800411_4-pragerp.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "insider_name": "Prager Paul B.",
+        "role": "Director, Chief Executive Officer",
+        "transaction_type": "Sell",
+        "shares": 166650.0,
+        "value_usd": 4071209.5,
+        "filing_date": "2026-05-28",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000112/xslF345X06/wk-form4_1780017502.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "insider_name": "Prager Paul B.",
+        "role": "Director, Chief Executive Officer",
+        "transaction_type": "Sell",
+        "shares": 109849.0,
+        "value_usd": 2809607.87,
+        "filing_date": "2026-05-28",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000112/xslF345X06/wk-form4_1780017502.xml",
+        "is_mock": false
+      }
+    ],
+    "news": [
+      {
+        "ticker": "WULF",
+        "title": "WULF 8-K: Results of Operations and Financial Condition; Regulation FD Disclosure",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000162/wulf-20260805.htm",
+        "published_date": "2026-08-05",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-08-05 under item(s) 2.02, 7.01, 9.01 (Results of Operations and Financial Condition; Regulation FD Disclosure). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "title": "WULF 8-K: Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000110465926080583/tm2619468d1_8k.htm",
+        "published_date": "2026-07-06",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-07-06 under item(s) 8.01, 9.01 (Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "title": "WULF 8-K: Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000109/wulf-20260522.htm",
+        "published_date": "2026-05-26",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-05-26 under item(s) 8.01, 9.01 (Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "title": "WULF 8-K: Results of Operations and Financial Condition; Regulation FD Disclosure",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000108330126000083/wulf-20260508.htm",
+        "published_date": "2026-05-08",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-05-08 under item(s) 2.02, 7.01, 9.01 (Results of Operations and Financial Condition; Regulation FD Disclosure). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "WULF",
+        "title": "WULF 8-K: Entry into a Material Definitive Agreement; Other Events",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1083301/000110465926044387/tm2611661d9_8k.htm",
+        "published_date": "2026-04-16",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-04-16 under item(s) 1.01, 8.01, 9.01 (Entry into a Material Definitive Agreement; Other Events). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
         "tag": "neutral",
         "is_mock": false
       }

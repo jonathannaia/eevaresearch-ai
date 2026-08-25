@@ -1,5 +1,103 @@
 [
   {
+    "niche": "Space",
+    "headline": "NASA satellites ace world's 1st 'lost-in-space' GPS-free navigation experiment",
+    "summary": "NASA satellites successfully completed a GPS-free navigation experiment in space, demonstrating alternative navigation methods without relying on traditional GPS signals.",
+    "source_url": "https://www.space.com/space-exploration/satellites/nasa-satellites-ace-worlds-1st-lost-in-space-gps-free-navigation-experiment",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 12:00:00 +0000",
+    "retrieved_at": "2026-08-25T12:29:57+00:00",
+    "tickers": [],
+    "relevance_reason": "Describes a NASA satellite navigation experiment in space operations, directly relevant to space scope.",
+    "url_hash": "1b38afc563bdd913",
+    "id": "1b38afc563bdd913"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Molex invests in liquid cooling vendor CAEPlus",
+    "summary": "Molex has invested in liquid cooling vendor CAEPlus to support development of the BoundaryCool direct-to-chip cooling system used in AI infrastructure.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/molex-invests-in-liquid-cooling-vendor-caeplus/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 10:36:33 +0000",
+    "retrieved_at": "2026-08-25T12:29:29+00:00",
+    "tickers": [
+      {
+        "ticker": "MPWR",
+        "company_name": "Monolithic Power Systems",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct-to-chip liquid cooling is core AI data center thermal management infrastructure.",
+    "url_hash": "48f7f334fcae689a",
+    "id": "48f7f334fcae689a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "IBM mainframe chip to run Arm and Z workloads on the same cores",
+    "summary": "IBM is developing a mainframe chip capable of running both Arm and Z workloads on the same cores, combining two previously separate computing architectures.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ibm-mainframe-chip-to-run-arm-and-z-workloads-on-the-same-cores/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 10:38:36 +0000",
+    "retrieved_at": "2026-08-25T12:29:27+00:00",
+    "tickers": [
+      {
+        "ticker": "IBM",
+        "company_name": "International Business Machines Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "IBM's mainframe chip development directly relates to AI infrastructure chip supply chain and processor architecture.",
+    "url_hash": "32ce44a79a61e0ee",
+    "id": "32ce44a79a61e0ee"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "TeraWulf secures 482MW electrical service agreement for planned data center campus in Kentucky",
+    "summary": "TeraWulf secured a 482MW electrical service agreement for a planned data center campus in Kentucky, with the first phase expected to come online next year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/terawulf-secures-482mw-electrical-service-agreement-for-planned-data-center-campus-in-kentucky/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 11:59:45 +0000",
+    "retrieved_at": "2026-08-25T12:29:23+00:00",
+    "tickers": [
+      {
+        "ticker": "WULF",
+        "company_name": "TeraWulf Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly concerns AI infrastructure buildout with a substantial power allocation for a data center campus.",
+    "url_hash": "88deeb4e9cf29a5a",
+    "id": "88deeb4e9cf29a5a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia invests in data center powered land company Lancium",
+    "summary": "Nvidia has invested in Lancium, a data center company powered by land resources, to provide its customers with large-scale power-ready capacity for AI workloads.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nvidia-invests-in-data-center-powered-land-company-lancium/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 12:05:23 +0000",
+    "retrieved_at": "2026-08-25T12:29:21+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Nvidia investment in data center infrastructure directly supports AI buildout scope through power-ready capacity for AI workloads.",
+    "url_hash": "0c2c0325a227a68e",
+    "id": "0c2c0325a227a68e"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Soluna acquires 397-acre plot in Briscoe County, Texas, for Project Dorothy 3 data center",
     "summary": "Soluna acquired a 397-acre plot in Briscoe County, Texas for its Project Dorothy 3 data center, which is expected to have a capacity of 300MW.",
