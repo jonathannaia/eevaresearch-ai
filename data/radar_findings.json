@@ -1,6 +1,55 @@
 [
   {
     "niche": "Space",
+    "headline": "'You just saved the video dish': Two astronauts complete spacewalk to replace ISS antenna",
+    "summary": "Astronauts Anil Menon and Sophie Adenot completed a 6.5-hour spacewalk to install a replacement Space-to-Ground antenna on the International Space Station.",
+    "source_url": "https://www.space.com/space-exploration/international-space-station/you-just-saved-the-video-dish-two-astronauts-complete-spacewalk-to-replace-iss-antenna",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 21:00:00 +0000",
+    "retrieved_at": "2026-08-25T22:17:41+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers spacewalk and ISS infrastructure maintenance, directly related to space operations.",
+    "url_hash": "dfe9d513f0524034",
+    "id": "dfe9d513f0524034"
+  },
+  {
+    "niche": "Space",
+    "headline": "Propulsion is having a moment",
+    "summary": "SpaceNews interviewed Kevin Lausten, CEO of Morpheus Space, at the 2026 Small Satellite Conference to discuss the importance of propulsion technology in the space industry.",
+    "source_url": "https://spacenews.com/propulsion-is-having-a-moment/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 19:59:37 +0000",
+    "retrieved_at": "2026-08-25T22:17:39+00:00",
+    "tickers": [
+      {
+        "ticker": "MORPH",
+        "company_name": "Morpheus Space",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article discusses propulsion technology and features an interview with the CEO of Morpheus Space, a satellite propulsion company, directly relevant to space infrastructure.",
+    "url_hash": "8a1f93f64c7f185b",
+    "id": "8a1f93f64c7f185b"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA Invites Media to LunaRecycle Challenge Finale Event in Alabama",
+    "summary": "NASA is announcing winners of its LunaRecycle Challenge on August 28 at the University of Alabama, a competition launched in 2024 to develop recycling systems for lunar missions.",
+    "source_url": "https://www.nasa.gov/news-release/nasa-invites-media-to-lunarecycle-challenge-finale-event-in-alabama/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 25 Aug 2026 20:20:58 +0000",
+    "retrieved_at": "2026-08-25T22:17:34+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses space infrastructure and lunar mission support through waste management innovation.",
+    "url_hash": "32641859ec15324f",
+    "id": "32641859ec15324f"
+  },
+  {
+    "niche": "Space",
     "headline": "Starbase Louisiana: SpaceX announces enormous $100 billion Starbase launch site",
     "summary": "SpaceX announced plans for a new $100 billion Starbase spaceport in Louisiana with 10 launch pads designed to support thousands of Starship launches annually.",
     "source_url": "https://www.space.com/space-exploration/private-spaceflight/spacex-announces-enormous-usd100-billion-starbase-louisiana-starship-launch-site",
