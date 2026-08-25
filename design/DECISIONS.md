@@ -3344,3 +3344,46 @@ retaining real scan results in Neon for review, publishing signals,
 enabling a scheduler, and making any hosted-backed page publicly
 accessible all remain separately approved future actions — none of them
 occurred this phase.
+
+## Durable-State Phase 4H-1 — Private Hosted Signals Preview Bootstrap
+
+`scripts/hosted_signals_preview.py` is a new, standalone Streamlit
+entrypoint, entirely separate from `app.py` — nothing in `app.py`
+imports it, and it does not import `app.py`, `container.py`'s
+`get_repositories()`, normal multi-page routing, source scanners, review
+actions, or publishing logic. `app.py`'s own startup and JSON-default
+Signals behavior are unchanged and unaffected by this file's existence.
+
+It requires the dedicated, one-shot `EEVA_HOSTED_SIGNALS_PREVIEW_DSN`
+environment variable and reads no other environment variable anywhere in
+the file (proven structurally by this phase's own AST-based guard test).
+It never uses `EDGE_DB_BACKEND` or `EDGE_STATE_DB_URL` for this purpose —
+an explicit `Settings(db_backend="postgres", state_db_url=<preview DSN>)`
+is constructed directly, with every other `Settings` field pinned to a
+neutral, explicit value, and a test proves a poisoned, non-empty
+`EDGE_DB_BACKEND`/`EDGE_STATE_DB_URL` in the ambient environment cannot
+change what this bootstrap constructs. It calls the existing, unmodified
+`backend_factory.get_signal_repository()` and injects the result
+explicitly into the existing, unmodified `signals.render(signal_repository=...)`
+seam (Durable-State Phase 4G-1) via `with_chrome(..., "signals",
+show_sidebar=False)`. The sidebar is deliberately disabled: `render_sidebar()`
+otherwise constructs its own separate, ambient-settings-backed
+`SignalRepository` (for the unread-count badge) whenever a `"signals"`
+page is registered — disabling it avoids that incidental construction
+entirely, on top of this script never registering any page at all.
+
+On a missing preview DSN or a hosted-repository construction failure,
+the script renders only a static, non-leaky "Hosted signals are
+temporarily unavailable" state (the same text/key `signals.py` itself
+uses for an injected-collaborator failure) — never an exception message,
+traceback, hostname, DSN, username, or password, and never a fallback to
+JSON/default data. Test coverage
+(`tests/test_hosted_signals_preview_bootstrap.py`) uses mocks/
+monkeypatching only — no real DSN, database, Docker, network call,
+Streamlit server, `.env` file, or secret anywhere in the new test code.
+
+This phase does not start a preview, connect to Neon or any hosted
+database, deploy anything, retain real scan results, publish any signal,
+schedule any scan, or expose anything publicly. Running this script with
+a real DSN, starting it, opening it in a browser, and every step after
+remain separately approved future actions.
