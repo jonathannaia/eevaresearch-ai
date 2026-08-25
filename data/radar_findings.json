@@ -1,5 +1,166 @@
 [
   {
+    "niche": "Humanoids",
+    "headline": "AI Companion Robots Are Closing the Human Connection in Modern Homes",
+    "summary": "Ollobot's OlloNi SS1 is a new-generation AI companion robot designed for elderly individuals, children, and single professionals, featuring proactive interaction, fall detection, autonomous mobility, and on-device AI processing. The global AI companion market is projected to grow from $48 billion in 2026 to $318 billion by 2033.",
+    "source_url": "https://spectrum.ieee.org/ollobot-ai-companion-robot",
+    "source_name": "IEEE Spectrum — Robotics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 10:00:03 +0000",
+    "retrieved_at": "2026-08-25T14:36:15+00:00",
+    "tickers": [],
+    "relevance_reason": "Article substantively covers AI companion robots, a core humanoid robotics application, with detailed technical and market discussion of the OlloNi SS1 robot.",
+    "url_hash": "eb011ad202c8a4ee",
+    "id": "eb011ad202c8a4ee"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "OpenAI’s Jalapeño chip is built for fast inference at scale, benchmarks show",
+    "summary": "OpenAI's Jalapeño inference chip demonstrated superior performance metrics compared to existing alternatives in the Semianalysis InferenceX benchmark, achieving higher tokens per user and throughput per kilowatt.",
+    "source_url": "https://techcrunch.com/2026/08/25/openais-jalapeno-chip-is-built-for-fast-inference-at-scale-benchmarks-show/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:22:04 +0000",
+    "retrieved_at": "2026-08-25T14:36:03+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns AI chip development for inference workloads, a core component of AI infrastructure buildout.",
+    "url_hash": "bfd1495c76918d53",
+    "id": "bfd1495c76918d53"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Lancium, Nvidia Partner on Gigawatt-Scale AI Data Centers",
+    "summary": "Lancium announced a partnership with Nvidia involving 4 GW of leased capacity and over 15 GW of powered land to develop grid-responsive AI data centers at gigawatt scale.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-construction/lancium-nvidia-partner-on-gigawatt-scale-ai-data-centers",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 12:33:39 GMT",
+    "retrieved_at": "2026-08-25T14:36:01+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "directly addresses hyperscaler data center buildout and AI infrastructure expansion",
+    "url_hash": "f624b95312e2afb0",
+    "id": "f624b95312e2afb0"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Starcloud closes $250m Series A extension at $2.3bn valuation to scale AI on orbital data centers",
+    "summary": "Starcloud, an orbital data center company, closed a $250 million Series A extension at a $2.3 billion valuation to scale AI computing infrastructure in space.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/starcloud-closes-250m-series-a-extension-at-23bn-valuation-to-scale-ai-on-orbital-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 12:30:00 +0000",
+    "retrieved_at": "2026-08-25T14:35:56+00:00",
+    "tickers": [],
+    "relevance_reason": "Orbital data centers represent a concrete development in AI infrastructure buildout beyond Earth, combining AI computing scale with space deployment.",
+    "url_hash": "b2ee4961c36eb6f6",
+    "id": "b2ee4961c36eb6f6"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DCD Talks: Natural gas as a bridge to AI scale with Stiven Smith, Cummins",
+    "summary": "Cummins' Vice President of Power Generation discusses natural gas and flexible power strategies as solutions for meeting the power demands of AI-scale data centers facing grid constraints.",
+    "source_url": "https://www.datacenterdynamics.com/en/videos/dcd-talks-natural-gas-as-a-bridge-to-ai-scale-with-stiven-smith-cummins/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 13:00:27 +0000",
+    "retrieved_at": "2026-08-25T14:35:53+00:00",
+    "tickers": [
+      {
+        "ticker": "CMI",
+        "company_name": "Cummins Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "discusses power strategies and infrastructure solutions for AI-scale data centers",
+    "url_hash": "e863150278fba846",
+    "id": "e863150278fba846"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nebius secures $5.75bn in senior notes offering",
+    "summary": "Nebius secured $5.75 billion in senior notes, with plans to use the proceeds to expand its data center and GPU footprint.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nebius-secures-575bn-in-senior-notes-offering/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:11:00 +0000",
+    "retrieved_at": "2026-08-25T14:35:51+00:00",
+    "tickers": [],
+    "relevance_reason": "Nebius is explicitly raising capital to expand data center and GPU infrastructure, which is core to AI Buildout scope.",
+    "url_hash": "c4e7a22c854fa925",
+    "id": "c4e7a22c854fa925"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nano Nuclear partners with Tillman Digital to deploy micro nuclear reactors at US AI data centers",
+    "summary": "Nano Nuclear signed a non-binding partnership with Tillman Digital to deploy micro nuclear reactors at US AI data centers, with a target of up to 6GW of nuclear capacity by 2040.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nano-nuclear-partners-with-tillman-digital-to-deploy-micro-nuclear-reactors-at-us-ai-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:13:11 +0000",
+    "retrieved_at": "2026-08-25T14:35:49+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure deployment for AI data centers, a core AI Buildout component.",
+    "url_hash": "c41c0cfe87599ba5",
+    "id": "c41c0cfe87599ba5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Echelon partners with new data center liquid cooling company Trinovium",
+    "summary": "Echelon partnered with Trinovium, a newly launched data center liquid cooling company that was created by biotech firm Trinity earlier this year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/echelon-partners-with-new-data-center-liquid-cooling-company-trinovium/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:19:25 +0000",
+    "retrieved_at": "2026-08-25T14:35:48+00:00",
+    "tickers": [],
+    "relevance_reason": "Liquid cooling for data centers is a core infrastructure component for AI buildout",
+    "url_hash": "d391f11296c670cc",
+    "id": "d391f11296c670cc"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "OpenAI details Jalapeño AI chip, with 700W TDP",
+    "summary": "OpenAI unveiled its first custom AI chip called Jalapeño with a 700W thermal design power specification at the Hot Chips conference.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/openai-details-jalape%C3%B1o-ai-chip-with-700w-tdp/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:22:35 +0000",
+    "retrieved_at": "2026-08-25T14:35:46+00:00",
+    "tickers": [],
+    "relevance_reason": "OpenAI is designing custom AI chips, directly relevant to AI Buildout's chip supply chain scope.",
+    "url_hash": "2d4ca0e835d3b4bd",
+    "id": "2d4ca0e835d3b4bd"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia’s ultra-low-latency AI inference LPX racks hit full production",
+    "summary": "Nvidia's ultra-low-latency AI inference LPX racks have entered full production, with Neocloud Nebius among early adopters of the platform.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nvidias-ultra-low-latency-ai-inference-lpx-racks-hit-full-production/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:30:27 +0000",
+    "retrieved_at": "2026-08-25T14:35:45+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly addresses AI inference infrastructure and hardware deployment for hyperscalers.",
+    "url_hash": "41a9df89924f400c",
+    "id": "41a9df89924f400c"
+  },
+  {
     "niche": "Space",
     "headline": "NASA satellites ace world's 1st 'lost-in-space' GPS-free navigation experiment",
     "summary": "NASA satellites successfully completed a GPS-free navigation experiment in space, demonstrating alternative navigation methods without relying on traditional GPS signals.",
