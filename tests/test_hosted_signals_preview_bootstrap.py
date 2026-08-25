@@ -12,6 +12,9 @@ calls app.py, container.get_repositories(), Docker, or any network API.
 from __future__ import annotations
 
 import ast
+import importlib.util
+import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -199,3 +202,50 @@ def test_bootstrap_script_does_not_start_streamlit_server_or_set_bind_settings()
     source = Path(bootstrap.__file__).read_text(encoding="utf-8")
     for token in ("bootstrap.run", "server.address", "server.port", "st.set_page_config"):
         assert token not in source
+
+
+# --- Repository-root sys.path bootstrap (fixes ModuleNotFoundError: No
+# module named 'src' when Streamlit executes this file from scripts/) ---
+#
+# These reload the file fresh via importlib (bypassing sys.modules and
+# pytest.ini's own pythonpath=. setting) so they exercise the script's
+# own sys.path-fixing code, not this repo's test-runner configuration.
+
+def _exec_launcher_fresh(module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, bootstrap.__file__)
+    fresh_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh_module)
+    return fresh_module
+
+
+def test_importing_launcher_succeeds_when_repo_root_absent_from_sys_path(monkeypatch):
+    repo_root = str(Path(bootstrap.__file__).resolve().parent.parent)
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != repo_root])
+    assert repo_root not in sys.path
+
+    _exec_launcher_fresh("hosted_signals_preview_fresh_import_test_1")
+
+    assert repo_root in sys.path
+
+
+def test_launcher_derives_repo_root_from_file_location_not_cwd(monkeypatch):
+    real_repo_root = str(Path(bootstrap.__file__).resolve().parent.parent)
+    decoy_cwd = "/definitely/not/the/repo/root"
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != real_repo_root])
+    monkeypatch.setattr(os, "getcwd", lambda: decoy_cwd)
+
+    _exec_launcher_fresh("hosted_signals_preview_fresh_import_test_2")
+
+    assert real_repo_root in sys.path
+    assert decoy_cwd not in sys.path
+
+
+def test_repo_root_bootstrap_does_not_duplicate_an_already_present_path(monkeypatch):
+    repo_root = str(Path(bootstrap.__file__).resolve().parent.parent)
+    if repo_root not in sys.path:
+        monkeypatch.setattr(sys, "path", [repo_root, *sys.path])
+    before_count = sys.path.count(repo_root)
+
+    _exec_launcher_fresh("hosted_signals_preview_fresh_import_test_3")
+
+    assert sys.path.count(repo_root) == before_count

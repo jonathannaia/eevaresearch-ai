@@ -3387,3 +3387,15 @@ database, deploy anything, retain real scan results, publish any signal,
 schedule any scan, or expose anything publicly. Running this script with
 a real DSN, starting it, opening it in a browser, and every step after
 remain separately approved future actions.
+
+**Follow-up fix**: an actual local run surfaced `ModuleNotFoundError: No
+module named 'src'`, since Streamlit executes this file from the
+`scripts/` directory's own context, which does not put the repository
+root on `sys.path`. The launcher now derives its repository root from
+its own file location (`Path(__file__).resolve().parent.parent`, never
+`os.getcwd()`) and inserts it into `sys.path` once, before any `src`
+import, only if not already present. This is a plain Python import-path
+fix for Streamlit script execution — it reads no environment variable,
+handles no secret or DSN, and is not backend activation; it changes
+nothing about how the preview DSN is read, how the hosted repository is
+constructed, how failures are handled, or how the sidebar is disabled.

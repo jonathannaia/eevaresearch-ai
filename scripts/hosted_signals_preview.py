@@ -15,6 +15,13 @@ Run (later, once separately approved) as:
 Launch binding (host/port) is deliberately not decided here — see this
 module's own _run_preview() docstring.
 
+Because Streamlit executes this file from the scripts/ directory's own
+context, this module derives the repository root from its own file
+location and adds it to sys.path (only if not already present) before
+importing anything from src — a plain Python import-path fix, not
+backend activation or secret handling; it reads no environment variable
+and prints nothing.
+
 Reads exactly one environment variable, EEVA_HOSTED_SIGNALS_PREVIEW_DSN,
 and nothing else — never EDGE_DB_BACKEND, never EDGE_STATE_DB_URL, never
 get_settings(), never a Streamlit secrets file. Importing
@@ -42,6 +49,21 @@ file.
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+# Streamlit executes this script from the scripts/ directory's own
+# context, so the repository root is not automatically on sys.path and
+# `from src....` imports below would otherwise fail with
+# "ModuleNotFoundError: No module named 'src'". This derives the root
+# from this file's own location (never the current working directory,
+# which can vary depending on where `streamlit run` is invoked from) and
+# adds it to sys.path only if it isn't already there. This is a Python
+# import-path fix only — it reads no environment variable, no secret, no
+# DSN, and does not activate or select any backend.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
