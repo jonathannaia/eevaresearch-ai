@@ -1,6 +1,20 @@
 [
   {
     "niche": "Space",
+    "headline": "Watch 2 astronauts replace failed ISS antenna during spacewalk today",
+    "summary": "NASA astronaut Anil Menon and French astronaut Sophie Adenot conducted a spacewalk on August 25 to replace a failed space-to-ground antenna on the International Space Station.",
+    "source_url": "https://www.space.com/space-exploration/international-space-station/watch-2-astronauts-replace-failed-iss-antenna-during-spacewalk-today",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 04:01:00 +0000",
+    "retrieved_at": "2026-08-25T04:30:47+00:00",
+    "tickers": [],
+    "relevance_reason": "ISS maintenance operations are relevant to space infrastructure and operations.",
+    "url_hash": "4304ca900b29758a",
+    "id": "4304ca900b29758a"
+  },
+  {
+    "niche": "Space",
     "headline": "Robotics and the future of on-orbit labor",
     "summary": "SpaceNews interviews Icarus Robotics CEO Ethan Barajas at the 2026 Small Satellite Conference to discuss the role of robotics and astronauts in on-orbit labor.",
     "source_url": "https://spacenews.com/robotics-and-the-future-of-on-orbit-labor/",
