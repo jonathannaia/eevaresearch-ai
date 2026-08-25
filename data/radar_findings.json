@@ -1,5 +1,19 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Healthy Choice Wellness Corp. plans reverse merger with data center company",
+    "summary": "Healthy Choice Wellness Corp. plans a reverse merger with a data center company as part of a pivot toward digital infrastructure operations.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/healthy-choice-wellness-corp-plans-reverse-merger-with-data-center-company/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 11:17:32 +0000",
+    "retrieved_at": "2026-08-25T08:31:44+00:00",
+    "tickers": [],
+    "relevance_reason": "Company pivot involves acquiring a data center operator, which is directly relevant to AI infrastructure buildout.",
+    "url_hash": "9085060c085cec04",
+    "id": "9085060c085cec04"
+  },
+  {
     "niche": "Space",
     "headline": "Watch 2 astronauts replace failed ISS antenna during spacewalk today",
     "summary": "NASA astronaut Anil Menon and French astronaut Sophie Adenot conducted a spacewalk on August 25 to replace a failed space-to-ground antenna on the International Space Station.",
