@@ -1,6 +1,34 @@
 [
   {
     "niche": "Space",
+    "headline": "Robotics and the future of on-orbit labor",
+    "summary": "SpaceNews interviews Icarus Robotics CEO Ethan Barajas at the 2026 Small Satellite Conference to discuss the role of robotics and astronauts in on-orbit labor.",
+    "source_url": "https://spacenews.com/robotics-and-the-future-of-on-orbit-labor/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 24 Aug 2026 22:26:02 +0000",
+    "retrieved_at": "2026-08-25T00:43:08+00:00",
+    "tickers": [],
+    "relevance_reason": "discusses robotics for on-orbit labor, which relates to space infrastructure and operations",
+    "url_hash": "85a7eb8d143cbb26",
+    "id": "85a7eb8d143cbb26"
+  },
+  {
+    "niche": "Space",
+    "headline": "MAIA Air Sensor at Work in Addis Ababa",
+    "summary": "NASA's Multi-Angle Imager for Aerosols (MAIA) has deployed air quality sensors in Addis Ababa, Ethiopia to measure particulate matter and study air pollution using space-based observation technology.",
+    "source_url": "https://science.nasa.gov/photojournal/maia-air-sensor-at-work-in-addis-ababa/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Mon, 24 Aug 2026 17:27:01 +0000",
+    "retrieved_at": "2026-08-25T00:43:05+00:00",
+    "tickers": [],
+    "relevance_reason": "NASA satellite instrument for atmospheric monitoring represents space-based Earth observation infrastructure.",
+    "url_hash": "be5081c6c575d517",
+    "id": "be5081c6c575d517"
+  },
+  {
+    "niche": "Space",
     "headline": "NASA Sets Coverage for Roman Space Telescope Launch from Florida",
     "summary": "NASA and SpaceX are targeting the Nancy Grace Roman Space Telescope launch for no earlier than August 30 aboard a SpaceX Falcon Heavy rocket from Florida.",
     "source_url": "https://www.nasa.gov/news-release/nasa-sets-coverage-for-roman-space-telescope-launch-from-florida/",
