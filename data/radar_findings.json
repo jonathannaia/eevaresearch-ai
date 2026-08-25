@@ -1,5 +1,124 @@
 [
   {
+    "niche": "Space",
+    "headline": "Space Angel secures $1.75m WA Government backing to advance Western Australian spaceport plans",
+    "summary": "Space Angel has received a $1.75 million Spaceport Establishment Support Grant from the Western Australian Government to advance spaceport plans in Western Australia.",
+    "source_url": "https://spacenews.com/space-angel-secures-1-75m-wa-government-backing-to-advance-western-australian-spaceport-plans/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:00:00 +0000",
+    "retrieved_at": "2026-08-25T16:26:16+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns spaceport development, a core space infrastructure component.",
+    "url_hash": "8a779c73c42dac3e",
+    "id": "8a779c73c42dac3e"
+  },
+  {
+    "niche": "Space",
+    "headline": "Astronauts Anil Menon and Sophie Adenot on Spacewalk",
+    "summary": "Astronauts Anil Menon (NASA) and Sophie Adenot (ESA) conducted a six-hour and 23-minute spacewalk outside the International Space Station on August 18, 2026, to continue installing high-speed equipment.",
+    "source_url": "https://www.nasa.gov/image-article/astronauts-anil-menon-and-sophie-adenot-on-spacewalk/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 25 Aug 2026 14:57:26 +0000",
+    "retrieved_at": "2026-08-25T16:26:07+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers a spacewalk event at the International Space Station, which falls within the Space scope.",
+    "url_hash": "4241a4e9063f5e18",
+    "id": "4241a4e9063f5e18"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Jetson Orin Nano 2 doubles inference performance for robotics on the edge, says NVIDIA",
+    "summary": "NVIDIA has released the Jetson Orin Nano 2, which the company claims doubles inference performance and enables real-time AI execution for edge robotics applications.",
+    "source_url": "https://www.therobotreport.com/jetson-orin-nano-2-doubles-inference-performance-robotics-edge-says-nvidia/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 15:00:22 +0000",
+    "retrieved_at": "2026-08-25T16:26:05+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Jetson Orin Nano 2 is an edge AI chip product directly enabling robotics applications and on-device inference.",
+    "url_hash": "60540dcbe26267ea",
+    "id": "60540dcbe26267ea"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA Announces Jetson Orin Nano 2 Robotics Computer to Redefine Entry-Level Edge AI",
+    "summary": "NVIDIA announced the Jetson Orin Nano 2, a new robotics computer designed to deliver edge AI performance for developers.",
+    "source_url": "https://nvidianews.nvidia.com/news/nvidia-announces-jetson-orin-nano-2-robotics-computer-to-redefine-entry-level-edge-ai",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Tue, 25 Aug 2026 15:00:00 GMT",
+    "retrieved_at": "2026-08-25T16:25:58+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "NVIDIA is announcing an AI accelerator/chip product (Jetson Orin Nano 2) for edge AI deployment, which is part of the AI chip supply chain and infrastructure buildout.",
+    "url_hash": "f1d5f7a3d06ef525",
+    "id": "f1d5f7a3d06ef525"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "APAC data center asset values could reach $1 trillion by 2030 - Cushman & Wakefield",
+    "summary": "Cushman & Wakefield projects APAC data center asset values could reach $1 trillion by 2030, requiring $280 billion in capital expenditure during this period.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/apac-data-center-asset-values-could-reach-1-trillion-by-2030-cushman-wakefield/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 14:50:31 +0000",
+    "retrieved_at": "2026-08-25T16:25:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses data center infrastructure growth and capital expenditure requirements, which are core AI Buildout topics.",
+    "url_hash": "4f419babc78283b2",
+    "id": "4f419babc78283b2"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Residents raise concerns over proposed 50MW data center in Hopkinsville, Kentucky",
+    "summary": "North Campbell Land Co. is planning to convert its existing Bitcoin mining facility in Hopkinsville, Kentucky to support AI and high-performance computing workloads, with a proposed 50MW capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/residents-raise-concerns-over-proposed-50mw-data-center-in-hopkinsville-kentucky/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 15:00:27 +0000",
+    "retrieved_at": "2026-08-25T16:25:48+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses conversion of a facility to AI and HPC infrastructure, which falls under AI Buildout scope.",
+    "url_hash": "c891d16905f4bfc7",
+    "id": "c891d16905f4bfc7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Arm's race: Building the AGI CPU",
+    "summary": "Arm, Britain's chip design company, is developing its own silicon processors for AI data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/analysis/arms-race-building-the-agi-cpu/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 16:00:33 +0000",
+    "retrieved_at": "2026-08-25T16:25:46+00:00",
+    "tickers": [
+      {
+        "ticker": "ARM",
+        "company_name": "Arm Holdings",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Arm is designing chips specifically for AI data centers, which falls directly under AI infrastructure buildout.",
+    "url_hash": "7a02b96662bd1e3a",
+    "id": "7a02b96662bd1e3a"
+  },
+  {
     "niche": "Humanoids",
     "headline": "AI Companion Robots Are Closing the Human Connection in Modern Homes",
     "summary": "Ollobot's OlloNi SS1 is a new-generation AI companion robot designed for elderly individuals, children, and single professionals, featuring proactive interaction, fall detection, autonomous mobility, and on-device AI processing. The global AI companion market is projected to grow from $48 billion in 2026 to $318 billion by 2033.",
