@@ -1,13 +1,18 @@
-"""Durable-State Phase 4K-1 — scripts/hosted_postgres_candidate_ingest.py
-bootstrap tests.
+"""Durable-State Phase 4K-1/4K-2/4K-3 —
+scripts/hosted_postgres_candidate_ingest.py bootstrap tests.
 
-Every test here uses mocks/monkeypatching only. No real DSN, database,
-Docker, network call, source-provider request, or secret is ever used —
-backend_factory.get_candidate_repository and each source service
-module's run_scan are patched at their call boundaries, so no Postgres
-connection and no real scan is ever attempted. This file never imports
-or calls app.py, container.get_repositories(), review_actions,
-signal_promotion, a SignalRepository, or scripts.run_scan.
+Every test here uses mocks/monkeypatching and fake values only. No real
+DSN, database, Docker, network call, source-provider request, or secret
+is ever used — backend_factory.get_candidate_repository,
+edgar_pipeline.run_pipeline, EdgarClient, and each non-EDGAR source
+service module's run_scan are patched at their call boundaries, so no
+Postgres connection, no EDGAR client, and no real scan is ever
+attempted. Ticker validation is the one exception left unmocked on
+purpose: it must exercise the real, static, in-repository tracked-company
+registry (src/config/tracked_companies.py), not a fake one. This file
+never imports or calls app.py, container.get_repositories(),
+review_actions, signal_promotion, a SignalRepository, cik_resolver, or
+scripts.run_scan.
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ from scripts import hosted_postgres_candidate_ingest as ingest
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.dart import radar_service as dart_radar_service
-from src.data_access.edgar import edgar_service
+from src.data_access.edgar import edgar_pipeline
 from src.data_access.edinet import edinet_service
 from src.models.models import CandidateStatus
 
@@ -31,6 +36,35 @@ _LEAK_MARKERS = ("SHOULD_NOT_LEAK_HOST", "SHOULD_NOT_LEAK_DSN", "SHOULD_NOT_LEAK
 _FAKE_DSN = "postgresql://fake-only-for-this-test/db"
 _DSN_VAR_NAME = "TEST_ONLY_ONE_SHOT_DSN_VAR"
 _FAKE_EDGAR_USER_AGENT = "Test App test-only@example.com"
+
+# A ticker that genuinely exists in the real, tracked SEC EDGAR registry
+# (src/config/tracked_companies.py) — ticker validation must use the
+# real static registry, not a mock, so this has to be a real entry. The
+# CIK below is a syntactically valid, well-formed value only; this
+# harness never verifies it against SEC, so no claim of correctness is
+# made or needed for these tests.
+_REAL_TRACKED_EDGAR_TICKER = "NVDA"
+_FAKE_BUT_VALID_CIK = "1045810"
+_FAKE_BUT_VALID_CIK_NORMALIZED = "0001045810"
+_UNKNOWN_TICKER = "ZZZZNOTATRACKEDTICKER"
+
+
+def _edgar_argv(max_candidates="1", **overrides):
+    args = {
+        "--source": "edgar",
+        "--max-candidates": max_candidates,
+        "--dsn-env-var": _DSN_VAR_NAME,
+        "--edgar-user-agent": _FAKE_EDGAR_USER_AGENT,
+        "--issuer-ticker": _REAL_TRACKED_EDGAR_TICKER,
+        "--issuer-cik": _FAKE_BUT_VALID_CIK,
+    }
+    args.update(overrides)
+    argv = []
+    for flag, value in args.items():
+        if value is None:
+            continue
+        argv.extend([flag, value])
+    return argv
 
 
 def _fake_report(**overrides):
@@ -51,15 +85,15 @@ def _exec_module_fresh(module_name: str):
 
 # --- Import-time safety: nothing real happens merely by importing ---
 
-def test_importing_module_invokes_no_repository_or_scan_call():
+def test_importing_module_invokes_no_repository_client_or_pipeline_call():
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_edgar_run, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
          patch.object(dart_radar_service, "run_scan") as mock_dart_run, \
          patch.object(edinet_service, "run_scan") as mock_edinet_run:
         _exec_module_fresh("hosted_postgres_candidate_ingest_fresh_import_test")
 
     mock_get_repo.assert_not_called()
-    mock_edgar_run.assert_not_called()
+    mock_run_pipeline.assert_not_called()
     mock_dart_run.assert_not_called()
     mock_edinet_run.assert_not_called()
 
@@ -78,52 +112,202 @@ def test_importing_module_invokes_no_repository_or_scan_call():
 )
 def test_missing_or_invalid_required_args_exit_before_any_call(argv, capsys):
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
         with pytest.raises(SystemExit) as exc_info:
             ingest.main(argv)
 
     assert exc_info.value.code != 0
     mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
+    mock_run_pipeline.assert_not_called()
     capsys.readouterr()  # drain argparse's own usage output, not asserted on
 
 
 @pytest.mark.parametrize("bad_bound", ["0", "-1", "-5"])
 def test_non_positive_max_candidates_fails_before_any_call(bad_bound, capsys):
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
         result = ingest.main(["--source", "edgar", "--max-candidates", bad_bound, "--dsn-env-var", _DSN_VAR_NAME])
 
     assert result != 0
     mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
+    mock_run_pipeline.assert_not_called()
     assert "positive" in capsys.readouterr().err
 
 
-# --- Missing named DSN environment variable fails safely ---
+# --- --edgar-user-agent: required iff --source edgar (Phase 4K-2) ---
 
-def test_missing_named_dsn_env_var_fails_safely_no_repo_or_scan_call(monkeypatch, capsys):
-    monkeypatch.delenv(_DSN_VAR_NAME, raising=False)
+def test_edgar_source_missing_edgar_user_agent_exits_before_any_call(monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
 
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    assert "edgar-user-agent" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("blank_value", ["", "   ", "\t"])
+def test_edgar_source_blank_edgar_user_agent_fails_without_echoing_it(blank_value, monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
         result = ingest.main([
             "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+            "--edgar-user-agent", blank_value,
         ])
 
     assert result != 0
     mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    err = capsys.readouterr().err
+    assert "edgar-user-agent" in err
+    assert repr(blank_value) not in err
+
+
+# --- --issuer-ticker/--issuer-cik: required iff --source edgar (Phase 4K-3) ---
+
+def test_edgar_source_missing_issuer_ticker_exits_before_any_call(monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(_edgar_argv(**{"--issuer-ticker": None}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert "issuer-ticker" in capsys.readouterr().err
+
+
+def test_edgar_source_missing_issuer_cik_exits_before_any_call(monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(_edgar_argv(**{"--issuer-cik": None}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert "issuer-cik" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("blank_value", ["", "   ", "\t"])
+def test_edgar_source_blank_issuer_ticker_fails_without_echoing_it(blank_value, monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv(**{"--issuer-ticker": blank_value}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    err = capsys.readouterr().err
+    assert "issuer-ticker" in err
+    assert repr(blank_value) not in err
+
+
+@pytest.mark.parametrize("blank_value", ["", "   ", "\t"])
+def test_edgar_source_blank_issuer_cik_fails_without_echoing_it(blank_value, monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv(**{"--issuer-cik": blank_value}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    err = capsys.readouterr().err
+    assert "issuer-cik" in err
+    assert repr(blank_value) not in err
+
+
+def test_unknown_ticker_rejected_using_only_real_static_registry(monkeypatch, capsys):
+    """No mock of get_tracked_companies_for_source here — this must
+    fail against the real, static, in-repository registry."""
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(_edgar_argv(**{"--issuer-ticker": _UNKNOWN_TICKER}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert "issuer-ticker" in capsys.readouterr().err
+
+
+def test_ambiguous_ticker_rejected(monkeypatch, capsys):
+    """Real tracked data has no duplicate EDGAR tickers, so this is the
+    one test that synthesizes an ambiguous registry — narrowly, only for
+    this scenario a real registry can't reproduce."""
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    real_companies = ingest.get_tracked_companies_for_source("SEC EDGAR")
+    duplicated = (real_companies[0], real_companies[0])
+
+    with patch.object(ingest, "get_tracked_companies_for_source", return_value=duplicated), \
+         patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv(**{"--issuer-ticker": real_companies[0].krx_code}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    assert "issuer-ticker" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "malformed_cik",
+    ["abc", "12a45", "-123", "0000000000", "123456789012", "1.5", "NaN"],
+)
+def test_malformed_cik_rejected_before_any_call(malformed_cik, monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(_edgar_argv(**{"--issuer-cik": malformed_cik}))
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert "issuer-cik" in capsys.readouterr().err
+
+
+# --- Missing named DSN environment variable fails safely ---
+
+def test_missing_named_dsn_env_var_fails_safely_no_repo_or_pipeline_call(monkeypatch, capsys):
+    monkeypatch.delenv(_DSN_VAR_NAME, raising=False)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv())
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_pipeline.assert_not_called()
     err = capsys.readouterr().err
     assert _DSN_VAR_NAME in err  # the NAME is safe and expected to appear
     for marker in _LEAK_MARKERS:
         assert marker not in err
 
 
-# --- Successful mocked invocation ---
+# --- Successful mocked invocation (one resolved issuer only) ---
 
-def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monkeypatch, capsys):
+def test_successful_mocked_invocation_resolves_one_issuer_and_calls_run_pipeline(monkeypatch, capsys):
     monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
     monkeypatch.delenv("EDGE_DB_BACKEND", raising=False)
     monkeypatch.delenv("EDGE_STATE_DB_URL", raising=False)
@@ -131,6 +315,7 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
 
     fake_repo = MagicMock(name="fake_postgres_candidate_repository")
     fake_repo.load_candidates.return_value = {}
+    fake_client = MagicMock(name="fake_edgar_client")
     captured: dict = {}
 
     def _fake_get_candidate_repository(settings, source):
@@ -139,13 +324,11 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
         return fake_repo
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository) as mock_get_repo, \
-         patch.object(edgar_service, "run_scan", return_value=_fake_report(candidates_detected=1, candidates_processed=1)) as mock_edgar_run, \
+         patch.object(ingest, "EdgarClient", return_value=fake_client) as mock_client_cls, \
+         patch.object(edgar_pipeline, "run_pipeline", return_value=_fake_report(candidates_detected=1, candidates_processed=1)) as mock_run_pipeline, \
          patch.object(dart_radar_service, "run_scan") as mock_dart_run, \
          patch.object(edinet_service, "run_scan") as mock_edinet_run:
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "3", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+        result = ingest.main(_edgar_argv(max_candidates="3"))
 
     assert result == 0
     mock_get_repo.assert_called_once()
@@ -156,17 +339,25 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
     assert settings_used.edgar_user_agent == _FAKE_EDGAR_USER_AGENT
     assert captured["source"] == "SEC EDGAR"
 
-    mock_edgar_run.assert_called_once()
-    call_args, call_kwargs = mock_edgar_run.call_args
-    assert call_args[0] is settings_used
-    assert call_kwargs["max_candidates"] == 3
-    assert call_kwargs["candidate_repository"] is fake_repo
+    mock_client_cls.assert_called_once_with(_FAKE_EDGAR_USER_AGENT)
 
-    # Only the selected source's service module is ever touched.
+    mock_run_pipeline.assert_called_once()
+    call_args = mock_run_pipeline.call_args
+    assert call_args.args[0] is fake_client
+    companies_arg = call_args.args[1]
+    assert len(companies_arg) == 1
+    resolved = companies_arg[0]
+    assert resolved.krx_code == _REAL_TRACKED_EDGAR_TICKER
+    assert resolved.corp_code == _FAKE_BUT_VALID_CIK_NORMALIZED
+    assert call_args.kwargs["max_candidates_to_process"] == 3
+    assert call_args.kwargs["candidate_repository"] is fake_repo
+
+    # DART/EDINET service modules are never touched for an EDGAR run.
     mock_dart_run.assert_not_called()
     mock_edinet_run.assert_not_called()
 
-    # The user-agent isn't a secret, but this script still never echoes it.
+    # Neither the user-agent nor the CIK/ticker are secrets, but this
+    # script still never echoes them in normal output.
     out = capsys.readouterr().out
     assert _FAKE_EDGAR_USER_AGENT not in out
 
@@ -184,92 +375,12 @@ def test_edgar_user_agent_not_inferred_from_ambient_edge_edgar_user_agent(monkey
         return fake_repo
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
-         patch.object(edgar_service, "run_scan", return_value=_fake_report()):
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(ingest, "EdgarClient"), \
+         patch.object(edgar_pipeline, "run_pipeline", return_value=_fake_report()):
+        result = ingest.main(_edgar_argv())
 
     assert result == 0
     assert captured["settings"].edgar_user_agent == _FAKE_EDGAR_USER_AGENT
-
-
-# --- --edgar-user-agent: required iff --source edgar ---
-
-def test_edgar_source_missing_edgar_user_agent_exits_before_any_call(monkeypatch, capsys):
-    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
-
-    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
-
-    assert result != 0
-    mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
-    assert "edgar-user-agent" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("blank_value", ["", "   ", "\t"])
-def test_edgar_source_blank_edgar_user_agent_fails_without_echoing_it(blank_value, monkeypatch, capsys):
-    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
-
-    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", blank_value,
-        ])
-
-    assert result != 0
-    mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
-    err = capsys.readouterr().err
-    assert "edgar-user-agent" in err
-    assert repr(blank_value) not in err
-
-
-def test_dart_source_does_not_require_or_use_edgar_user_agent(monkeypatch):
-    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
-    captured: dict = {}
-
-    def _fake_get_candidate_repository(settings, source):
-        captured["settings"] = settings
-        fake_repo = MagicMock()
-        fake_repo.load_candidates.return_value = {}
-        return fake_repo
-
-    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
-         patch.object(dart_radar_service, "run_scan", return_value=_fake_report()) as mock_dart_run, \
-         patch.object(edgar_service, "run_scan") as mock_edgar_run:
-        result = ingest.main(["--source", "dart", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
-
-    assert result == 0
-    mock_dart_run.assert_called_once()
-    mock_edgar_run.assert_not_called()
-    assert captured["settings"].edgar_user_agent is None
-    assert captured["settings"].dart_api_key is None  # no new provider activation
-
-
-def test_edinet_source_does_not_require_or_use_edgar_user_agent(monkeypatch):
-    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
-    captured: dict = {}
-
-    def _fake_get_candidate_repository(settings, source):
-        captured["settings"] = settings
-        fake_repo = MagicMock()
-        fake_repo.load_candidates.return_value = {}
-        return fake_repo
-
-    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
-         patch.object(edinet_service, "run_scan", return_value=_fake_report()) as mock_edinet_run, \
-         patch.object(edgar_service, "run_scan") as mock_edgar_run:
-        result = ingest.main(["--source", "edinet", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
-
-    assert result == 0
-    mock_edinet_run.assert_called_once()
-    mock_edgar_run.assert_not_called()
-    assert captured["settings"].edgar_user_agent is None
-    assert captured["settings"].edinet_subscription_key is None  # no new provider activation
 
 
 def test_ambient_edge_vars_cannot_affect_the_harness(monkeypatch):
@@ -286,11 +397,9 @@ def test_ambient_edge_vars_cannot_affect_the_harness(monkeypatch):
         return fake_repo
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
-         patch.object(edgar_service, "run_scan", return_value=_fake_report()):
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(ingest, "EdgarClient"), \
+         patch.object(edgar_pipeline, "run_pipeline", return_value=_fake_report()):
+        result = ingest.main(_edgar_argv())
 
     assert result == 0
     assert captured["settings"].db_backend == "postgres"
@@ -304,15 +413,62 @@ def test_hard_coded_dsn_env_var_name_cannot_substitute_for_the_named_one(monkeyp
     monkeypatch.delenv(_DSN_VAR_NAME, raising=False)
 
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv())
 
     assert result != 0
     mock_get_repo.assert_not_called()
-    mock_run_scan.assert_not_called()
+    mock_run_pipeline.assert_not_called()
+
+
+# --- DART/EDINET remain unaffected ---
+
+def test_dart_source_does_not_require_or_use_edgar_flags(monkeypatch):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    captured: dict = {}
+
+    def _fake_get_candidate_repository(settings, source):
+        captured["settings"] = settings
+        fake_repo = MagicMock()
+        fake_repo.load_candidates.return_value = {}
+        return fake_repo
+
+    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
+         patch.object(dart_radar_service, "run_scan", return_value=_fake_report()) as mock_dart_run, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(["--source", "dart", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result == 0
+    mock_dart_run.assert_called_once()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert captured["settings"].edgar_user_agent is None
+    assert captured["settings"].dart_api_key is None  # no new provider activation
+
+
+def test_edinet_source_does_not_require_or_use_edgar_flags(monkeypatch):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    captured: dict = {}
+
+    def _fake_get_candidate_repository(settings, source):
+        captured["settings"] = settings
+        fake_repo = MagicMock()
+        fake_repo.load_candidates.return_value = {}
+        return fake_repo
+
+    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
+         patch.object(edinet_service, "run_scan", return_value=_fake_report()) as mock_edinet_run, \
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline, \
+         patch.object(ingest, "EdgarClient") as mock_client_cls:
+        result = ingest.main(["--source", "edinet", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result == 0
+    mock_edinet_run.assert_called_once()
+    mock_run_pipeline.assert_not_called()
+    mock_client_cls.assert_not_called()
+    assert captured["settings"].edgar_user_agent is None
+    assert captured["settings"].edinet_subscription_key is None  # no new provider activation
 
 
 # --- No DSN/secret leakage on failure ---
@@ -324,14 +480,11 @@ def test_repository_construction_failure_leaks_no_dsn_or_markers(monkeypatch, ca
     )
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=leaky_exc), \
-         patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(edgar_pipeline, "run_pipeline") as mock_run_pipeline:
+        result = ingest.main(_edgar_argv())
 
     assert result != 0
-    mock_run_scan.assert_not_called()
+    mock_run_pipeline.assert_not_called()
     err = capsys.readouterr().err
     assert _FAKE_DSN not in err
     for marker in _LEAK_MARKERS:
@@ -349,13 +502,11 @@ def test_unexpected_published_candidate_after_ingestion_is_rejected(monkeypatch,
     }
 
     with patch.object(backend_factory, "get_candidate_repository", return_value=fake_repo), \
-         patch.object(edgar_service, "run_scan", return_value=_fake_report()) as mock_run_scan:
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(ingest, "EdgarClient"), \
+         patch.object(edgar_pipeline, "run_pipeline", return_value=_fake_report()) as mock_run_pipeline:
+        result = ingest.main(_edgar_argv())
 
-    mock_run_scan.assert_called_once()  # the check happens after a real run, not instead of one
+    mock_run_pipeline.assert_called_once()  # the check happens after a real run, not instead of one
     assert result != 0
     assert "PUBLISHED" in capsys.readouterr().err
 
@@ -368,18 +519,16 @@ def test_non_published_candidates_after_ingestion_succeed_normally(monkeypatch):
     }
 
     with patch.object(backend_factory, "get_candidate_repository", return_value=fake_repo), \
-         patch.object(edgar_service, "run_scan", return_value=_fake_report(candidates_detected=1, candidates_processed=1)):
-        result = ingest.main([
-            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
-            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
-        ])
+         patch.object(ingest, "EdgarClient"), \
+         patch.object(edgar_pipeline, "run_pipeline", return_value=_fake_report(candidates_detected=1, candidates_processed=1)):
+        result = ingest.main(_edgar_argv())
 
     assert result == 0
 
 
-# --- Structural guards: no review/publish/signal-repository/run_scan path ---
+# --- Structural guards: no review/publish/signal-repository/resolver path ---
 
-def test_harness_never_imports_review_publish_signal_or_run_scan_module():
+def test_harness_never_imports_review_publish_signal_resolver_or_run_scan_module():
     source = Path(ingest.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     imported = set()
@@ -400,6 +549,9 @@ def test_harness_never_imports_review_publish_signal_or_run_scan_module():
     assert not any(name.endswith(".get_repositories") for name in imported)
     assert not any(name.endswith(".get_settings") for name in imported)
     assert not any(name.endswith(".record_review_decision") for name in imported)
+    # Phase 4K-3: no CIK cache/resolver/edgar_service involvement at all.
+    assert not any("cik_resolver" in name for name in imported)
+    assert not any("edgar_service" in name for name in imported)
 
 
 def test_harness_imports_no_streamlit_docker_subprocess_or_scheduler_module():

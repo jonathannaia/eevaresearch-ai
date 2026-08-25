@@ -3636,3 +3636,59 @@ real EDGAR request, DSN, database connection, or Docker/network action
 occurred. Running this harness with a real user-agent and DSN, and any
 subsequent scan/review/publish action, remain separately approved future
 actions.
+
+## Durable-State Phase 4K-3 — Explicit Single-Issuer EDGAR Selection
+
+`scripts/hosted_postgres_candidate_ingest.py` gains
+`--issuer-ticker`/`--issuer-cik`, required if and only if `--source
+edgar`, restricting an EDGAR run to exactly one explicitly selected,
+already-tracked issuer. `--issuer-ticker` is matched offline and
+exactly against the existing, real, static
+`get_tracked_companies_for_source("SEC EDGAR")` registry
+(`src/config/tracked_companies.py`) — an unknown or ambiguous ticker is
+rejected before any DSN read, `Settings`, repository, `EdgarClient`, or
+pipeline call; a test proves this using the real, unmocked registry (a
+second, narrow test mocks a synthetic duplicate-ticker registry only to
+prove the ambiguous-match case, since real tracked data has no
+duplicates to exercise it against). `--issuer-cik` is validated and
+normalized **syntactically only**, reusing the existing, unmodified
+`client.normalize_cik()` zero-padding convention (the same one
+`cik_resolver.py`/`discovery_service.py` already use) — no new CIK
+convention was invented.
+
+**This harness does not independently verify ticker-to-CIK correctness
+against SEC.** The CIK is entirely operator-supplied; a syntactically
+valid but mismatched ticker/CIK pair will not raise an error here — it
+will simply scan whichever issuer that CIK actually belongs to, or
+return no filings if the CIK doesn't correspond to a real, active
+filer. **A future live-operation approval must require the operator to
+verify the ticker/CIK pair from an authoritative source (e.g. SEC's own
+EDGAR company search) before ever supplying a real value.** No SEC
+ticker mapping, CIK resolver, CIK cache (read or write), or all-company
+scan is invoked anywhere in this phase's code — confirmed by a
+structural test asserting `cik_resolver` and `edgar_service` are never
+imported by this module at all.
+
+Once resolved, the matched tracked-company record is copied
+(`dataclasses.replace`) with the normalized CIK attached and passed as a
+**one-element list** directly to the existing, unmodified
+`edgar_pipeline.run_pipeline()` — replacing this harness's prior call to
+`edgar_service.run_scan()` for EDGAR specifically, since `run_scan()`
+always resolves the full 25-company tracked registry internally with no
+filtering parameter of its own (confirmed by the preceding read-only
+feasibility audit). DART and EDINET are completely unaffected: they
+remain on their existing, unmodified `run_scan(...)` call via
+`_NON_EDGAR_SERVICE_MODULES`, and neither new flag is required or read
+for either source.
+
+**Execution status, stated precisely**: all 42 tests in
+`tests/test_hosted_postgres_candidate_ingest.py` (rewritten/extended
+this phase) ran locally, mocked/synthetic only — **42 passed**. The
+existing EDGAR test suites (`tests/test_edgar_pipeline.py`,
+`tests/test_edgar_service.py`, `tests/test_edgar_client.py`, 45 tests)
+also pass unmodified, confirming no production EDGAR source file was
+touched. No real EDGAR request, DSN, CIK cache, database connection, or
+Docker/network action occurred. Supplying a real, verified ticker/CIK
+pair and DSN, running this harness for real, and any subsequent
+scan/review/publish action all remain separately approved future
+actions.

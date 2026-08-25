@@ -17,6 +17,7 @@ Run (later, once separately approved) as:
     .venv/bin/python -m scripts.hosted_postgres_candidate_ingest \\
         --source {dart,edgar,edinet} --max-candidates N --dsn-env-var NAME \\
         [--edgar-user-agent "<AppName> <contact@email>"]  # required if and only if --source edgar
+        [--issuer-ticker TICKER --issuer-cik CIK]         # required if and only if --source edgar
 (matching scripts/run_scan.py's own `-m` invocation convention.)
 
 Every activation input is explicit and required — there is no default
@@ -36,6 +37,35 @@ not a secret, but this script still never echoes its value in any
 printed output, error message, or exception text. DART and EDINET are
 unaffected: this flag is neither required nor read for either source,
 and no new API-key flag or ambient-credential read was added for them.
+
+Durable-State Phase 4K-3: `--issuer-ticker`/`--issuer-cik` restrict an
+EDGAR run to exactly one explicitly selected, already-tracked issuer —
+required if and only if `--source edgar`. `--issuer-ticker` is matched,
+offline and exactly, against the existing static
+`get_tracked_companies_for_source("SEC EDGAR")` registry
+(`src/config/tracked_companies.py`) — no network call, no bulk SEC
+ticker file, no `cik_resolver` involvement at all. `--issuer-cik` is
+validated and normalized **syntactically only**, reusing the existing,
+unmodified `client.normalize_cik()` zero-padding convention (the same
+one `cik_resolver.py`/`discovery_service.py` already use) — this script
+never calls `cik_resolver.resolve_and_cache()`, never reads or writes a
+CIK cache file, and never verifies the ticker/CIK pair against SEC
+itself. **The operator is solely responsible for supplying a CIK that
+actually belongs to the named ticker** — a syntactically valid but
+mismatched pair will not raise an error here; it will simply scan
+whatever issuer that CIK actually belongs to (or return no filings, if
+none). A future live-operation approval must require the operator to
+verify the ticker/CIK pair from an authoritative source (e.g. SEC's own
+EDGAR company search) before ever supplying a real value. Once resolved,
+the matched tracked-company record is copied (`dataclasses.replace`)
+with the normalized CIK attached and passed as a **one-element list**
+directly to the existing, unmodified `edgar_pipeline.run_pipeline()` —
+never `edgar_service.run_scan()`, which this phase intentionally bypasses
+for EDGAR specifically, since `run_scan()` always resolves the full
+25-company tracked registry internally with no filtering parameter of
+its own. DART and EDINET are completely unaffected: they remain on
+their existing, unmodified `run_scan(...)` call, and these two new flags
+are neither required nor read for either source.
 
 DSN handling: `--dsn-env-var NAME` requires the operator to name — at
 invocation time — an environment variable they have already exported in
@@ -57,15 +87,21 @@ sanitization discipline.
 Ingestion mechanics: this script constructs an explicit
 `Settings(db_backend="postgres", state_db_url=<the one DSN read above>,
 ...)` (every other field pinned to a neutral value — see
-_build_explicit_postgres_settings below), builds the matching Postgres
-`CandidateRepository` via the existing, unmodified
-`backend_factory.get_candidate_repository()`, and injects it into the
-selected source's own existing, unmodified `{dart,edgar,edinet}_service.
-run_scan(settings, max_candidates=..., candidate_repository=...)` — the
-same additive, optional injection seam scripts/run_scan.py's own
-`main()` already uses for local/synthetic tests (Durable-State Phases
-4A/4C-1). This is a real, existing pipeline/service call — it may
-create or advance candidates exactly as any other scan would — but it
+_build_explicit_postgres_settings below) and builds the matching
+Postgres `CandidateRepository` via the existing, unmodified
+`backend_factory.get_candidate_repository()`. For DART/EDINET, it
+injects that repository into the source's own existing, unmodified
+`{dart,edinet}_service.run_scan(settings, max_candidates=...,
+candidate_repository=...)` — the same additive, optional injection seam
+scripts/run_scan.py's own `main()` already uses for local/synthetic
+tests (Durable-State Phases 4A/4C-1). For EDGAR, Phase 4K-3 calls the
+existing, unmodified `edgar_pipeline.run_pipeline()` directly instead,
+with exactly one explicitly resolved issuer (see the
+`--issuer-ticker`/`--issuer-cik` section below) — never
+`edgar_service.run_scan()`, which always resolves the full tracked
+registry internally. Either way, this is a real, existing pipeline/
+service call — it may create or advance candidates exactly as any other
+scan would — but it
 never calls `record_review_decision`, never touches signal-promotion
 logic, never constructs or writes through a `SignalRepository`, and
 never executes direct SQL. No pipeline in this codebase ever sets a
@@ -89,21 +125,33 @@ import argparse
 import os
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from src.config.settings import Settings
+from src.config.tracked_companies import get_tracked_companies_for_source
 from src.data_access import backend_factory
 from src.data_access.dart import radar_service as dart_radar_service
-from src.data_access.edgar import edgar_service
+from src.data_access.edgar import edgar_pipeline
+from src.data_access.edgar.client import EdgarClient, normalize_cik
 from src.data_access.edinet import edinet_service
 from src.models.models import CandidateStatus
 
-# (CLI token) -> (backend_factory "source" string, service module).
-# The three CLI tokens mirror scripts/run_scan.py's own _SOURCES tuple.
-_SOURCE_CONFIG = {
-    "dart": ("OpenDART / DART", dart_radar_service),
-    "edgar": ("SEC EDGAR", edgar_service),
-    "edinet": ("EDINET", edinet_service),
+_EDGAR_SOURCE = "SEC EDGAR"
+
+# (CLI token) -> backend_factory "source" string. The three CLI tokens
+# mirror scripts/run_scan.py's own _SOURCES tuple.
+_SOURCE_DISPLAY_NAMES = {
+    "dart": "OpenDART / DART",
+    "edgar": _EDGAR_SOURCE,
+    "edinet": "EDINET",
+}
+
+# EDGAR is deliberately absent here (Phase 4K-3): it never goes through
+# a source service module's run_scan() — see main()'s own branch below.
+_NON_EDGAR_SERVICE_MODULES = {
+    "dart": dart_radar_service,
+    "edinet": edinet_service,
 }
 
 
@@ -126,7 +174,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--source", required=True, choices=sorted(_SOURCE_CONFIG),
+        "--source", required=True, choices=sorted(_SOURCE_DISPLAY_NAMES),
         help="Exactly one of the repository's existing supported sources.",
     )
     parser.add_argument(
@@ -150,7 +198,41 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "ambient source. Ignored for --source dart/edinet."
         ),
     )
+    parser.add_argument(
+        "--issuer-ticker", default=None,
+        help=(
+            "Required if and only if --source edgar: the exact ticker of one "
+            "already-tracked SEC EDGAR issuer (matched offline against the static "
+            "tracked-company registry only). No default; ignored for --source dart/edinet."
+        ),
+    )
+    parser.add_argument(
+        "--issuer-cik", default=None,
+        help=(
+            "Required if and only if --source edgar: that issuer's SEC CIK, "
+            "digits only (leading zeros optional). Validated and normalized "
+            "syntactically/locally only — never checked against SEC. No default; "
+            "ignored for --source dart/edinet."
+        ),
+    )
     return parser
+
+
+def _validate_and_normalize_cik(raw: str) -> str | None:
+    """Syntactic/local-only validation — never calls cik_resolver, never
+    reads or writes a CIK cache, never makes a network request. Reuses
+    the existing, unmodified client.normalize_cik() zero-padding
+    convention (the same one cik_resolver.py/discovery_service.py
+    already use) rather than inventing a new one. Returns None for
+    anything non-numeric, blank, all-zero, or longer than the 10
+    significant digits normalize_cik's own zero-padded form allows."""
+    stripped = raw.strip()
+    if not stripped or not stripped.isdigit():
+        return None
+    normalized = normalize_cik(stripped)
+    if len(normalized) != 10 or int(normalized) == 0:
+        return None
+    return normalized
 
 
 def _build_explicit_postgres_settings(dsn: str, edgar_user_agent: str | None = None) -> Settings:
@@ -221,9 +303,10 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: --max-candidates must be a strictly positive integer.", file=sys.stderr)
         return 2
 
-    display_source, service_module = _SOURCE_CONFIG[args.source]
+    display_source = _SOURCE_DISPLAY_NAMES[args.source]
 
     edgar_user_agent: str | None = None
+    resolved_company = None
     if args.source == "edgar":
         # Required if and only if --source edgar. Never echoed — not a
         # secret, but this script reports only that it is missing/blank,
@@ -237,6 +320,49 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         edgar_user_agent = args.edgar_user_agent
+
+        if args.issuer_ticker is None or not args.issuer_ticker.strip():
+            print(
+                "ERROR: --issuer-ticker is required and must be non-blank when "
+                "--source edgar is selected. Aborting before any configuration or "
+                "connection attempt.",
+                file=sys.stderr,
+            )
+            return 2
+        if args.issuer_cik is None or not args.issuer_cik.strip():
+            print(
+                "ERROR: --issuer-cik is required and must be non-blank when "
+                "--source edgar is selected. Aborting before any configuration or "
+                "connection attempt.",
+                file=sys.stderr,
+            )
+            return 2
+
+        # Offline, static-registry lookup only — no network call, no
+        # cik_resolver, no cache. Case-folded since tracked tickers are
+        # conventionally stored uppercase; still an exact match against
+        # existing data, never an external resolution.
+        ticker = args.issuer_ticker.strip().upper()
+        matches = [c for c in get_tracked_companies_for_source(_EDGAR_SOURCE) if c.krx_code == ticker]
+        if len(matches) != 1:
+            print(
+                f"ERROR: --issuer-ticker does not match exactly one tracked {_EDGAR_SOURCE} "
+                f"issuer ({len(matches)} match(es)). Aborting before any configuration or "
+                "connection attempt.",
+                file=sys.stderr,
+            )
+            return 2
+
+        normalized_cik = _validate_and_normalize_cik(args.issuer_cik)
+        if normalized_cik is None:
+            print(
+                "ERROR: --issuer-cik is not a valid SEC CIK (expected digits only). "
+                "Aborting before any configuration or connection attempt.",
+                file=sys.stderr,
+            )
+            return 2
+
+        resolved_company = replace(matches[0], corp_code=normalized_cik)
 
     dsn = os.environ.get(args.dsn_env_var)
     if not dsn:
@@ -259,9 +385,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        report = service_module.run_scan(
-            settings, max_candidates=args.max_candidates, candidate_repository=candidate_repository,
-        )
+        if args.source == "edgar":
+            # Phase 4K-3: exactly one resolved issuer, via the existing
+            # public edgar_pipeline.run_pipeline() directly — never
+            # edgar_service.run_scan(), which always resolves the full
+            # tracked-company registry internally with no way to filter it.
+            client = EdgarClient(edgar_user_agent)
+            report = edgar_pipeline.run_pipeline(
+                client, [resolved_company], settings.cache_dir,
+                max_candidates_to_process=args.max_candidates, candidate_repository=candidate_repository,
+            )
+        else:
+            report = _NON_EDGAR_SERVICE_MODULES[args.source].run_scan(
+                settings, max_candidates=args.max_candidates, candidate_repository=candidate_repository,
+            )
     except Exception as exc:  # noqa: BLE001 — never leak a raw pipeline/network error
         print(f"ERROR: ingestion run failed ({type(exc).__name__}).", file=sys.stderr)
         return 1
