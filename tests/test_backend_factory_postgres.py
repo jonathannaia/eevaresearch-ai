@@ -174,19 +174,152 @@ def test_stale_postgres_review_update_conflict_preserves_current_state(pg_isolat
     assert outcome_a.current.status == CandidateStatus.NEEDS_REVIEW
 
 
-def test_review_actions_record_review_decision_is_not_wired_to_postgres():
-    """Confirms the deliberate service-entry boundary this phase draws:
-    review_actions.record_review_decision() only special-cases
-    settings.db_backend == "sqlite" — a literal string check, not a full
-    backend_factory dispatch — so an explicit "postgres" selection falls
-    through to its JSON-path branch untouched. This is the documented,
-    intended scope boundary (see design/DECISIONS.md's Phase 4B-1
-    record), verified directly rather than assumed."""
+def test_review_actions_record_review_decision_is_wired_to_postgres():
+    """Durable-State Phase 4J-1 replaces the old boundary this test used
+    to confirm (that "postgres" was deliberately absent from
+    record_review_decision()'s source) with the new, intentional one:
+    both "sqlite" and "postgres" are now recognized backend values,
+    routed through the same shared repository-backed branch — not two
+    separate hand-rolled branches — via backend_factory.get_candidate_repository(),
+    never direct SQL. Verified directly rather than assumed, exactly like
+    the test it replaces."""
     import inspect
 
     source = inspect.getsource(review_actions.record_review_decision)
     assert '"sqlite"' in source
-    assert '"postgres"' not in source
+    assert '"postgres"' in source
+    assert "get_candidate_repository" in source
+
+
+def test_record_review_decision_with_postgres_settings_routes_through_postgres_not_json(pg_isolated_dsn, tmp_path):
+    """Direct sibling of test_backend_factory_phase2b.py's own
+    test_record_review_decision_with_sqlite_settings_routes_through_sqlite
+    — proves the new Postgres route is actually taken, not a silent
+    fall-through to the JSON path (which would still "work" against an
+    empty tmp_path cache_dir/filename, but would not persist through the
+    Postgres repository at all)."""
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([candidate])
+
+    result = review_actions.record_review_decision(
+        tmp_path / "unused-cache-dir", candidate.id, "edgar_candidates.json",
+        CandidateStatus.PUBLISHED, "approved-postgres", settings=settings,
+    )
+    assert result is not None
+    assert result.status == CandidateStatus.PUBLISHED
+    assert result.reviewed_note == "approved-postgres"
+    # Genuinely persisted through the Postgres repository, not JSON — and
+    # no JSON cache file was ever created for this call.
+    reloaded = repo.get_candidate(candidate.id)
+    assert reloaded.status == CandidateStatus.PUBLISHED
+    assert not (tmp_path / "unused-cache-dir").exists()
+
+
+@pytest.mark.parametrize("status", [CandidateStatus.PUBLISHED, CandidateStatus.MONITORING, CandidateStatus.DISMISSED])
+def test_record_review_decision_postgres_sets_status_reviewed_fields_and_appends_transition(pg_isolated_dsn, tmp_path, status):
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([candidate])
+
+    result = review_actions.record_review_decision(
+        tmp_path, candidate.id, "edgar_candidates.json", status, "reviewer note", settings=settings,
+    )
+    assert result.status == status
+    assert result.reviewed_at is not None
+    assert result.reviewed_note == "reviewer note"
+    assert [t.status for t in result.state_history] == [CandidateStatus.CANDIDATE_DETECTED, status]
+    assert result.state_history[-1].detail == "reviewer note"
+
+
+def test_record_review_decision_postgres_published_appears_in_signal_repository(pg_isolated_dsn, tmp_path):
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    backend_factory.get_candidate_repository(settings, "SEC EDGAR").upsert_new_candidates([candidate])
+
+    review_actions.record_review_decision(
+        tmp_path, candidate.id, "edgar_candidates.json", CandidateStatus.PUBLISHED, settings=settings,
+    )
+
+    signals = backend_factory.get_signal_repository(settings).get_all_signals()
+    assert [s.id for s in signals] == ["signal-cand-1"]
+
+
+@pytest.mark.parametrize("status", [CandidateStatus.MONITORING, CandidateStatus.DISMISSED])
+def test_record_review_decision_postgres_non_published_absent_from_signal_repository(pg_isolated_dsn, tmp_path, status):
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    backend_factory.get_candidate_repository(settings, "SEC EDGAR").upsert_new_candidates([candidate])
+
+    review_actions.record_review_decision(
+        tmp_path, candidate.id, "edgar_candidates.json", status, settings=settings,
+    )
+
+    signals = backend_factory.get_signal_repository(settings).get_all_signals()
+    assert signals == []
+
+
+def test_record_review_decision_postgres_invalid_status_raises_and_writes_nothing(pg_isolated_dsn, tmp_path):
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([candidate])
+
+    with pytest.raises(ValueError):
+        review_actions.record_review_decision(
+            tmp_path, candidate.id, "edgar_candidates.json", CandidateStatus.NEEDS_REVIEW, settings=settings,
+        )
+
+    unchanged = repo.get_candidate(candidate.id)
+    assert unchanged.status == CandidateStatus.CANDIDATE_DETECTED
+    assert len(unchanged.state_history) == 1
+
+
+def test_record_review_decision_postgres_unknown_candidate_id_returns_none(pg_isolated_dsn, tmp_path):
+    settings = _postgres_settings(pg_isolated_dsn)
+    result = review_actions.record_review_decision(
+        tmp_path, "cand-does-not-exist", "edgar_candidates.json", CandidateStatus.PUBLISHED, settings=settings,
+    )
+    assert result is None
+
+
+def test_stale_postgres_review_decision_conflict_via_record_review_decision_preserves_current_state(pg_isolated_dsn, tmp_path):
+    """Sibling of test_backend_factory_phase2b.py's own
+    test_stale_sqlite_review_update_conflict_preserves_current_state, for
+    Postgres, exercised through record_review_decision() itself (not just
+    the raw repository, which test_stale_postgres_review_update_conflict_preserves_current_state
+    above already covers) — a stale concurrent writer's update must never
+    overwrite a decision record_review_decision already committed."""
+    settings = _postgres_settings(pg_isolated_dsn)
+    filing = _filing()
+    candidate = _candidate("cand-1", filing, status=CandidateStatus.CANDIDATE_DETECTED)
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([candidate])
+    stale_version = repo.get_candidate_version(candidate.id)
+
+    first = review_actions.record_review_decision(
+        tmp_path, candidate.id, "edgar_candidates.json", CandidateStatus.PUBLISHED, "first reviewer", settings=settings,
+    )
+    assert first.status == CandidateStatus.PUBLISHED
+
+    # A second, stale writer — still holding the pre-review version —
+    # attempts a conflicting decision directly against the repository.
+    stale_candidate = repo.get_candidate(candidate.id)
+    stale_candidate.status = CandidateStatus.DISMISSED
+    stale_candidate.reviewed_note = "stale second reviewer"
+    outcome = repo.update_candidate(stale_candidate, expected_version=stale_version)
+
+    assert outcome.status == "conflict"
+    assert outcome.current.status == CandidateStatus.PUBLISHED
+    assert outcome.current.reviewed_note == "first reviewer"
+    assert repo.get_candidate(candidate.id).status == CandidateStatus.PUBLISHED
 
 
 def test_postgres_backend_never_creates_or_writes_the_json_cache_directory(pg_isolated_dsn, tmp_path):

@@ -19,7 +19,19 @@ instead reads/writes through `backend_factory.get_candidate_repository()`
 — the SQLite-backed store — using `expected_version` for the same
 optimistic-concurrency guarantee `state_db.candidate_repository.
 update_candidate()` already provides: a stale concurrent write is
-rejected explicitly (`conflict`), never silently overwritten. Any other
+rejected explicitly (`conflict`), never silently overwritten.
+
+Durable-State Phase 4J-1 extends the same repository-backed branch to
+`settings.db_backend == "postgres"` — no new logic, since
+`backend_factory.get_candidate_repository()` already returns a
+`PostgresCandidateRepository` for that backend, exposing the identical
+`get_candidate`/`get_candidate_version`/`update_candidate` shape as its
+SQLite counterpart. Selection stays explicit and test-only: reachable
+only when a caller passes an explicit `settings` with
+`db_backend="postgres"` and a non-empty `state_db_url` (see
+`backend_factory._require_postgres_connection`'s own fail-closed
+behavior otherwise) — this function never calls `get_settings()` and
+never reads an ambient `EDGE_*` environment variable itself. Any other
 `settings.db_backend` value (unset/blank/"json"/unrecognized) behaves
 exactly like `settings=None`."""
 from __future__ import annotations
@@ -56,26 +68,27 @@ def record_review_decision(
     ID prefix — see radar_inbox.py) — this function has no source
     awareness of its own, matching candidate_store.py's own design.
 
-    `settings` is additive and optional (Durable-State Phase 2B) — see
-    this module's own docstring. Omitted, this function is byte-for-byte
-    identical to its pre-Phase-2B behavior, reading/writing through
-    `cache_dir`/`filename` directly. Supplied with
-    `settings.db_backend == "sqlite"`, `cache_dir`/`filename` are used
-    only to derive the source (via
-    `backend_factory.source_for_candidate_filename`); the actual
-    read/write goes through the SQLite-backed candidate repository, with
-    optimistic-concurrency protection.
+    `settings` is additive and optional (Durable-State Phase 2B; extended
+    to Postgres in Phase 4J-1) — see this module's own docstring.
+    Omitted, this function is byte-for-byte identical to its
+    pre-Phase-2B behavior, reading/writing through `cache_dir`/`filename`
+    directly. Supplied with `settings.db_backend` of `"sqlite"` or
+    `"postgres"`, `cache_dir`/`filename` are used only to derive the
+    source (via `backend_factory.source_for_candidate_filename`); the
+    actual read/write goes through the matching backend-specific
+    candidate repository, with optimistic-concurrency protection in
+    both cases.
 
     Returns the updated CandidateSignal, or None if `candidate_id` isn't
-    found — no write occurs in that case. On the SQLite path, None is
-    also returned (and no write occurs) if a concurrent writer already
-    changed the candidate since this call last read it (an optimistic-
-    concurrency conflict) — the newer, concurrent decision is never
-    overwritten; the caller's existing "None means show an error, don't
-    treat as success" handling (see radar_inbox.py) already covers this
-    case correctly without a new return shape. Raises ValueError, before
-    any load or write, if `status` isn't one of the three permitted
-    reviewer outcomes."""
+    found — no write occurs in that case. On the SQLite/Postgres path,
+    None is also returned (and no write occurs) if a concurrent writer
+    already changed the candidate since this call last read it (an
+    optimistic-concurrency conflict) — the newer, concurrent decision is
+    never overwritten; the caller's existing "None means show an error,
+    don't treat as success" handling (see radar_inbox.py) already covers
+    this case correctly without a new return shape. Raises ValueError,
+    before any load or write, if `status` isn't one of the three
+    permitted reviewer outcomes."""
     if status not in _PERMITTED_REVIEWER_STATUSES:
         raise ValueError(
             "record_review_decision only accepts a reviewer outcome of "
@@ -86,8 +99,9 @@ def record_review_decision(
     now = datetime.now(timezone.utc).isoformat()
     detail = note if note else f"Reviewer decision: {status.value}"
 
-    use_sqlite = settings is not None and (settings.db_backend or "json").strip().lower() == "sqlite"
-    if use_sqlite:
+    backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
+    use_repository_backend = backend in ("sqlite", "postgres")
+    if use_repository_backend:
         source = backend_factory.source_for_candidate_filename(filename)
         repo = backend_factory.get_candidate_repository(settings, source)
         # Version captured from THIS call's own read, before any other

@@ -3490,3 +3490,62 @@ executing the rollback procedure; running a real source scan or creating
 retained live data; publishing any signal; and connecting to Neon,
 Postgres, GitHub, EDGAR, DART, EDINET, DeepL, or any other external
 service.
+
+## Durable-State Phase 4J-1 — Postgres Support in the Human Review-Decision Path
+
+`src/logic/review_actions.record_review_decision()` now recognizes
+`settings.db_backend == "postgres"` alongside the existing `"sqlite"`
+value, routed through the same shared branch — broadening one condition
+(`backend in ("sqlite", "postgres")`) rather than adding a second,
+duplicated code path — since `backend_factory.get_candidate_repository()`
+already returns a `PostgresCandidateRepository` exposing the identical
+`get_candidate`/`get_candidate_version`/`update_candidate` shape as its
+SQLite counterpart. No direct SQL was added; no new production code path
+calls `get_settings()` or reads an ambient `EDGE_*` variable — Postgres
+selection remains reachable only through an explicit, caller-supplied
+`Settings(db_backend="postgres", state_db_url=<dsn>)`. JSON (the
+default, `settings=None` or any unrecognized/blank backend value) and
+SQLite behavior are unchanged — the existing JSON and SQLite test suites
+(`tests/test_review_actions.py`, the relevant tests in
+`tests/test_backend_factory_phase2b.py`) pass unmodified.
+
+This closes the gap identified in the preceding read-only workflow
+audit: previously, `record_review_decision()` had no Postgres branch at
+all, so a reviewer decision against a Postgres-backed candidate would
+have silently fallen through to the JSON path. `tests/test_backend_factory_postgres.py`'s
+old boundary test (`test_review_actions_record_review_decision_is_not_wired_to_postgres`,
+which asserted the literal string `"postgres"` must be absent from this
+function's source) is replaced with
+`test_review_actions_record_review_decision_is_wired_to_postgres`,
+confirming the new, intentional boundary instead, alongside new focused
+tests proving: each of the three permitted reviewer outcomes
+(`PUBLISHED`/`MONITORING`/`DISMISSED`) is reachable and correctly
+persisted (status, `reviewed_at`, `reviewed_note`, exactly one appended
+`StateTransition`) via Postgres; a `PUBLISHED` decision made through
+`record_review_decision()` is visible through the existing
+`PostgresSignalRepository`, while `MONITORING`/`DISMISSED` decisions are
+not; an invalid reviewer status still raises `ValueError` and writes
+nothing; an unknown candidate ID still returns `None`; and a stale
+optimistic-concurrency conflict — this time exercised through
+`record_review_decision()` itself, not just the raw repository — still
+fails without overwriting the already-committed decision.
+
+**Execution status, stated precisely**: all of the above ran, for real,
+against the local disposable Postgres test container
+(`scripts/postgres_test_container.sh`), together with every existing
+test in `tests/test_review_actions.py`,
+`tests/test_backend_factory_postgres.py`,
+`tests/test_state_db_postgres_candidate_repository.py`, and
+`tests/test_state_db_postgres_signal_repository.py` — **71 passed, 0
+failed, 0 skipped**. The container was confirmed absent afterward
+(removed by the wrapper's own cleanup).
+
+**No** application code, UI, scan entry point, `app.py`,
+`scripts/hosted_signals_preview.py`, deployment behavior, secret,
+`.env`, GitHub workflow, or Streamlit Community Cloud configuration
+changed this phase. No real candidate, filing, or signal was created,
+reviewed, or published — every record in every new test is synthetic
+and local to the disposable test container. Using this new capability
+against the real hosted Neon database, running a real scan, reviewing or
+publishing real data, and pushing this commit all remain separately
+approved future actions.
