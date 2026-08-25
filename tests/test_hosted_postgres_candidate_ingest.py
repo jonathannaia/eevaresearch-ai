@@ -30,6 +30,7 @@ from src.models.models import CandidateStatus
 _LEAK_MARKERS = ("SHOULD_NOT_LEAK_HOST", "SHOULD_NOT_LEAK_DSN", "SHOULD_NOT_LEAK_PASSWORD")
 _FAKE_DSN = "postgresql://fake-only-for-this-test/db"
 _DSN_VAR_NAME = "TEST_ONLY_ONE_SHOT_DSN_VAR"
+_FAKE_EDGAR_USER_AGENT = "Test App test-only@example.com"
 
 
 def _fake_report(**overrides):
@@ -106,7 +107,10 @@ def test_missing_named_dsn_env_var_fails_safely_no_repo_or_scan_call(monkeypatch
 
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
          patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result != 0
     mock_get_repo.assert_not_called()
@@ -119,10 +123,11 @@ def test_missing_named_dsn_env_var_fails_safely_no_repo_or_scan_call(monkeypatch
 
 # --- Successful mocked invocation ---
 
-def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monkeypatch):
+def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monkeypatch, capsys):
     monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
     monkeypatch.delenv("EDGE_DB_BACKEND", raising=False)
     monkeypatch.delenv("EDGE_STATE_DB_URL", raising=False)
+    monkeypatch.delenv("EDGE_EDGAR_USER_AGENT", raising=False)
 
     fake_repo = MagicMock(name="fake_postgres_candidate_repository")
     fake_repo.load_candidates.return_value = {}
@@ -137,7 +142,10 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
          patch.object(edgar_service, "run_scan", return_value=_fake_report(candidates_detected=1, candidates_processed=1)) as mock_edgar_run, \
          patch.object(dart_radar_service, "run_scan") as mock_dart_run, \
          patch.object(edinet_service, "run_scan") as mock_edinet_run:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "3", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "3", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result == 0
     mock_get_repo.assert_called_once()
@@ -145,6 +153,7 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
     assert isinstance(settings_used, Settings)
     assert settings_used.db_backend == "postgres"
     assert settings_used.state_db_url == _FAKE_DSN
+    assert settings_used.edgar_user_agent == _FAKE_EDGAR_USER_AGENT
     assert captured["source"] == "SEC EDGAR"
 
     mock_edgar_run.assert_called_once()
@@ -156,6 +165,111 @@ def test_successful_mocked_invocation_uses_named_dsn_and_injects_repository(monk
     # Only the selected source's service module is ever touched.
     mock_dart_run.assert_not_called()
     mock_edinet_run.assert_not_called()
+
+    # The user-agent isn't a secret, but this script still never echoes it.
+    out = capsys.readouterr().out
+    assert _FAKE_EDGAR_USER_AGENT not in out
+
+
+def test_edgar_user_agent_not_inferred_from_ambient_edge_edgar_user_agent(monkeypatch):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    monkeypatch.setenv("EDGE_EDGAR_USER_AGENT", "Ambient App ambient@example.com")
+
+    captured: dict = {}
+
+    def _fake_get_candidate_repository(settings, source):
+        captured["settings"] = settings
+        fake_repo = MagicMock()
+        fake_repo.load_candidates.return_value = {}
+        return fake_repo
+
+    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
+         patch.object(edgar_service, "run_scan", return_value=_fake_report()):
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
+
+    assert result == 0
+    assert captured["settings"].edgar_user_agent == _FAKE_EDGAR_USER_AGENT
+
+
+# --- --edgar-user-agent: required iff --source edgar ---
+
+def test_edgar_source_missing_edgar_user_agent_exits_before_any_call(monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_service, "run_scan") as mock_run_scan:
+        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_scan.assert_not_called()
+    assert "edgar-user-agent" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("blank_value", ["", "   ", "\t"])
+def test_edgar_source_blank_edgar_user_agent_fails_without_echoing_it(blank_value, monkeypatch, capsys):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+
+    with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
+         patch.object(edgar_service, "run_scan") as mock_run_scan:
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", blank_value,
+        ])
+
+    assert result != 0
+    mock_get_repo.assert_not_called()
+    mock_run_scan.assert_not_called()
+    err = capsys.readouterr().err
+    assert "edgar-user-agent" in err
+    assert repr(blank_value) not in err
+
+
+def test_dart_source_does_not_require_or_use_edgar_user_agent(monkeypatch):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    captured: dict = {}
+
+    def _fake_get_candidate_repository(settings, source):
+        captured["settings"] = settings
+        fake_repo = MagicMock()
+        fake_repo.load_candidates.return_value = {}
+        return fake_repo
+
+    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
+         patch.object(dart_radar_service, "run_scan", return_value=_fake_report()) as mock_dart_run, \
+         patch.object(edgar_service, "run_scan") as mock_edgar_run:
+        result = ingest.main(["--source", "dart", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result == 0
+    mock_dart_run.assert_called_once()
+    mock_edgar_run.assert_not_called()
+    assert captured["settings"].edgar_user_agent is None
+    assert captured["settings"].dart_api_key is None  # no new provider activation
+
+
+def test_edinet_source_does_not_require_or_use_edgar_user_agent(monkeypatch):
+    monkeypatch.setenv(_DSN_VAR_NAME, _FAKE_DSN)
+    captured: dict = {}
+
+    def _fake_get_candidate_repository(settings, source):
+        captured["settings"] = settings
+        fake_repo = MagicMock()
+        fake_repo.load_candidates.return_value = {}
+        return fake_repo
+
+    with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
+         patch.object(edinet_service, "run_scan", return_value=_fake_report()) as mock_edinet_run, \
+         patch.object(edgar_service, "run_scan") as mock_edgar_run:
+        result = ingest.main(["--source", "edinet", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+
+    assert result == 0
+    mock_edinet_run.assert_called_once()
+    mock_edgar_run.assert_not_called()
+    assert captured["settings"].edgar_user_agent is None
+    assert captured["settings"].edinet_subscription_key is None  # no new provider activation
 
 
 def test_ambient_edge_vars_cannot_affect_the_harness(monkeypatch):
@@ -173,7 +287,10 @@ def test_ambient_edge_vars_cannot_affect_the_harness(monkeypatch):
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=_fake_get_candidate_repository), \
          patch.object(edgar_service, "run_scan", return_value=_fake_report()):
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result == 0
     assert captured["settings"].db_backend == "postgres"
@@ -188,7 +305,10 @@ def test_hard_coded_dsn_env_var_name_cannot_substitute_for_the_named_one(monkeyp
 
     with patch.object(backend_factory, "get_candidate_repository") as mock_get_repo, \
          patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result != 0
     mock_get_repo.assert_not_called()
@@ -205,7 +325,10 @@ def test_repository_construction_failure_leaks_no_dsn_or_markers(monkeypatch, ca
 
     with patch.object(backend_factory, "get_candidate_repository", side_effect=leaky_exc), \
          patch.object(edgar_service, "run_scan") as mock_run_scan:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result != 0
     mock_run_scan.assert_not_called()
@@ -227,7 +350,10 @@ def test_unexpected_published_candidate_after_ingestion_is_rejected(monkeypatch,
 
     with patch.object(backend_factory, "get_candidate_repository", return_value=fake_repo), \
          patch.object(edgar_service, "run_scan", return_value=_fake_report()) as mock_run_scan:
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     mock_run_scan.assert_called_once()  # the check happens after a real run, not instead of one
     assert result != 0
@@ -243,7 +369,10 @@ def test_non_published_candidates_after_ingestion_succeed_normally(monkeypatch):
 
     with patch.object(backend_factory, "get_candidate_repository", return_value=fake_repo), \
          patch.object(edgar_service, "run_scan", return_value=_fake_report(candidates_detected=1, candidates_processed=1)):
-        result = ingest.main(["--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME])
+        result = ingest.main([
+            "--source", "edgar", "--max-candidates", "1", "--dsn-env-var", _DSN_VAR_NAME,
+            "--edgar-user-agent", _FAKE_EDGAR_USER_AGENT,
+        ])
 
     assert result == 0
 

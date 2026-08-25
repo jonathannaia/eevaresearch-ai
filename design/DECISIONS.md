@@ -3606,3 +3606,33 @@ connection was attempted this phase. Running this harness with a real
 DSN, connecting to Neon, scanning a real source, retaining data, and any
 subsequent review/publish action all remain separately approved future
 actions.
+
+## Durable-State Phase 4K-2 — Explicit EDGAR Identity Input for the Ingestion Harness
+
+`scripts/hosted_postgres_candidate_ingest.py` gains one new CLI flag,
+`--edgar-user-agent`, supplying EDGAR's own non-secret but required
+identifying string (`src/data_access/edgar/client.py`'s own
+`EdgarConfigError`, per SEC's access policy) directly into
+`Settings(edgar_user_agent=...)`. Required if and only if `--source
+edgar`; rejected when blank/whitespace-only; has no default; never read
+from `EDGE_EDGAR_USER_AGENT`, `.env`, or `get_settings()` — a test
+proves a poisoned ambient `EDGE_EDGAR_USER_AGENT` cannot substitute for
+the explicit flag. It is not a secret, but this script still never
+echoes its value in any printed output or error message — verified
+directly on both the success path (checked against captured stdout) and
+the blank-value rejection path (checked against captured stderr).
+
+DART and EDINET are unaffected: the flag is neither required nor read
+for either source (tests confirm `Settings.edgar_user_agent` stays
+`None` and each source's own existing credential field is untouched when
+running those sources), and no new API-key flag or ambient-credential
+read was added for either.
+
+**Execution status, stated precisely**: all 25 tests in
+`tests/test_hosted_postgres_candidate_ingest.py` (18 pre-existing, now
+updated to supply a fake `--edgar-user-agent` where `--source edgar` is
+used, plus 7 new) ran locally, mocked/synthetic only — **25 passed**. No
+real EDGAR request, DSN, database connection, or Docker/network action
+occurred. Running this harness with a real user-agent and DSN, and any
+subsequent scan/review/publish action, remain separately approved future
+actions.

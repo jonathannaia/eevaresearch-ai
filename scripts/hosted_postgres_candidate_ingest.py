@@ -15,13 +15,27 @@ of this file.
 
 Run (later, once separately approved) as:
     .venv/bin/python -m scripts.hosted_postgres_candidate_ingest \\
-        --source {dart,edgar,edinet} --max-candidates N --dsn-env-var NAME
+        --source {dart,edgar,edinet} --max-candidates N --dsn-env-var NAME \\
+        [--edgar-user-agent "<AppName> <contact@email>"]  # required if and only if --source edgar
 (matching scripts/run_scan.py's own `-m` invocation convention.)
 
 Every activation input is explicit and required — there is no default
 source, no default candidate bound, and no default DSN or DSN-variable
 name. Missing or invalid input fails fast (a non-zero exit), before any
 Settings, repository, or pipeline call is made.
+
+Durable-State Phase 4K-2: `--edgar-user-agent` supplies EDGAR's own
+non-secret but required identifying string (see
+src/data_access/edgar/client.py's own `EdgarConfigError` — SEC rejects
+requests without one) directly into `Settings(edgar_user_agent=...)`.
+Required only when `--source edgar`; rejected if blank/whitespace-only;
+has no default; is never read from `EDGE_EDGAR_USER_AGENT`, `.env`,
+`get_settings()`, or any ambient source — the operator must type it at
+invocation time, the same explicit discipline as `--dsn-env-var`. It is
+not a secret, but this script still never echoes its value in any
+printed output, error message, or exception text. DART and EDINET are
+unaffected: this flag is neither required nor read for either source,
+and no new API-key flag or ambient-credential read was added for them.
 
 DSN handling: `--dsn-env-var NAME` requires the operator to name — at
 invocation time — an environment variable they have already exported in
@@ -127,21 +141,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "hosted Postgres DSN. Never a hard-coded name; never read at import time."
         ),
     )
+    parser.add_argument(
+        "--edgar-user-agent", default=None,
+        help=(
+            "Required if and only if --source edgar: EDGAR's own non-secret "
+            "identifying string, e.g. \"AppName contact@email\" (see SEC's access "
+            "policy). No default; never read from EDGE_EDGAR_USER_AGENT or any "
+            "ambient source. Ignored for --source dart/edinet."
+        ),
+    )
     return parser
 
 
-def _build_explicit_postgres_settings(dsn: str) -> Settings:
+def _build_explicit_postgres_settings(dsn: str, edgar_user_agent: str | None = None) -> Settings:
     """Mirrors scripts/hosted_signals_preview.py's own
     _build_hosted_signal_repository discipline: every field besides
-    db_backend/state_db_url/cache_dir is pinned to an explicit neutral
-    value rather than left to its own ambient-environment
-    default_factory, so this call reads no environment variable beyond
-    the one already captured in `dsn`. A future phase may need to add
-    explicit, separately-approved CLI input for a real per-source
-    credential (e.g. EDGAR's identifying user-agent) — deliberately out
-    of scope here; today this harness will fail closed with that
-    source's own existing missing-configuration error if one is
-    required and not otherwise present."""
+    db_backend/state_db_url/cache_dir/edgar_user_agent is pinned to an
+    explicit neutral value rather than left to its own
+    ambient-environment default_factory, so this call reads no
+    environment variable beyond the one DSN already captured in `dsn`
+    and, for EDGAR only, the explicit `--edgar-user-agent` value the
+    caller already validated. DART's and EDINET's own credentials remain
+    unconditionally None — out of scope for this phase, deliberately;
+    each source will fail closed with its own existing
+    missing-configuration error if one is required and not present."""
     return Settings(
         db_backend="postgres",
         state_db_url=dsn,
@@ -149,7 +172,7 @@ def _build_explicit_postgres_settings(dsn: str) -> Settings:
         cache_dir=Path(tempfile.mkdtemp(prefix="eeva-hosted-ingest-")),
         dart_api_key=None,
         translation_api_key=None,
-        edgar_user_agent=None,
+        edgar_user_agent=edgar_user_agent,
         edinet_subscription_key=None,
         edgar_discovery_enabled=False,
         state_db_path=None,
@@ -200,6 +223,21 @@ def main(argv: list[str] | None = None) -> int:
 
     display_source, service_module = _SOURCE_CONFIG[args.source]
 
+    edgar_user_agent: str | None = None
+    if args.source == "edgar":
+        # Required if and only if --source edgar. Never echoed — not a
+        # secret, but this script reports only that it is missing/blank,
+        # never the value itself, per this phase's own safety contract.
+        if args.edgar_user_agent is None or not args.edgar_user_agent.strip():
+            print(
+                "ERROR: --edgar-user-agent is required and must be non-blank when "
+                "--source edgar is selected. Aborting before any configuration or "
+                "connection attempt.",
+                file=sys.stderr,
+            )
+            return 2
+        edgar_user_agent = args.edgar_user_agent
+
     dsn = os.environ.get(args.dsn_env_var)
     if not dsn:
         print(
@@ -209,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    settings = _build_explicit_postgres_settings(dsn)
+    settings = _build_explicit_postgres_settings(dsn, edgar_user_agent)
 
     try:
         candidate_repository = backend_factory.get_candidate_repository(settings, display_source)
