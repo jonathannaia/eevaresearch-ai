@@ -2,6 +2,7 @@
   "seen_url_hashes": [
     "00b6b595b72750df",
     "0132ebed82c9de27",
+    "027a23e549c57653",
     "0370b5d96bd90098",
     "05bc4424f167bf61",
     "064b1ff0861f28e3",
@@ -106,6 +107,7 @@
     "5d31aa950ed02016",
     "5d5e52bd15b70866",
     "5e91cb16c0723c77",
+    "5ef90938495d5af8",
     "5f042336b91716b3",
     "5f58cfa807d1bcf5",
     "5fc8f31b557a499f",
@@ -128,6 +130,7 @@
     "72d30ebc1e2f0b30",
     "73a11eb062ec2273",
     "744ebd52ee08e82a",
+    "746b1078c2b5cc1d",
     "747941ae108938ab",
     "75ea97a5e8f4803e",
     "767390f51df09f98",
@@ -188,6 +191,7 @@
     "9fcc559deea48e7b",
     "a22ce8c6fcc22634",
     "a6cde63e3d6f6e01",
+    "a8aebd0762e536e8",
     "a8ed5a53b730fa99",
     "abc996f7cb75dca3",
     "ac2949d5ee04d39c",
@@ -244,6 +248,7 @@
     "d391f11296c670cc",
     "d7419d7ef9dca290",
     "d7bf42ce6a730a6d",
+    "db28e82ac0ea01c5",
     "dcc69b29c269c5d3",
     "dd6a17d27c3d8a37",
     "de7036976a177b45",
@@ -282,6 +287,19 @@
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-08-25T20:18:21+00:00",
+      "finished_at": "2026-08-25T20:19:16+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 436,
+      "items_after_freshness_filter": 75,
+      "items_after_keyword_filter": 25,
+      "items_sent_to_llm": 25,
+      "items_saved": 5,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
     {
       "started_at": "2026-08-25T18:25:38+00:00",
       "finished_at": "2026-08-25T18:26:23+00:00",

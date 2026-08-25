@@ -1,6 +1,83 @@
 [
   {
     "niche": "Space",
+    "headline": "Starbase Louisiana: SpaceX announces enormous $100 billion Starbase launch site",
+    "summary": "SpaceX announced plans for a new $100 billion Starbase spaceport in Louisiana with 10 launch pads designed to support thousands of Starship launches annually.",
+    "source_url": "https://www.space.com/space-exploration/private-spaceflight/spacex-announces-enormous-usd100-billion-starbase-louisiana-starship-launch-site",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 18:27:22 +0000",
+    "retrieved_at": "2026-08-25T20:19:11+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla Inc. (SpaceX parent)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Announces major new space launch infrastructure and spaceport development for commercial spaceflight.",
+    "url_hash": "5ef90938495d5af8",
+    "id": "5ef90938495d5af8"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA’s Pandora Mission Begins Study of Exoplanets, Host Stars",
+    "summary": "NASA's Pandora satellite, launched through the agency's Astrophysics Pioneers program, has begun observations of exoplanets and their host stars, with plans to determine the atmospheric composition of at least 20 exoplanets.",
+    "source_url": "https://science.nasa.gov/missions/pandora-missions/nasas-pandora-mission-begins-study-of-exoplanets-host-stars/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 25 Aug 2026 17:55:02 +0000",
+    "retrieved_at": "2026-08-25T20:19:04+00:00",
+    "tickers": [],
+    "relevance_reason": "NASA's Pandora satellite mission directly involves space launch and spacecraft operations for scientific observation.",
+    "url_hash": "db28e82ac0ea01c5",
+    "id": "db28e82ac0ea01c5"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA Ames’ Contributions to Roman’s Mission",
+    "summary": "NASA's Nancy Grace Roman Space Telescope is scheduled to launch on August 30 and will conduct observations of dark energy, dark matter, exoplanets, and galaxy formation.",
+    "source_url": "https://www.nasa.gov/general/nasa-ames-contributions-to-romans-mission/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 25 Aug 2026 19:44:55 +0000",
+    "retrieved_at": "2026-08-25T20:19:01+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses NASA's Nancy Grace Roman Space Telescope, a space mission launching in August.",
+    "url_hash": "a8aebd0762e536e8",
+    "id": "a8aebd0762e536e8"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Liquid Cooling Options: RDHx, Direct-to-Chip, Immersion",
+    "summary": "The article compares three liquid cooling approaches (RDHx, direct-to-chip, and immersion) as solutions for cooling high-density AI workloads in data centers that exceed air cooling limits.",
+    "source_url": "https://www.datacenterknowledge.com/cooling/liquid-cooling-options-rdhx-direct-to-chip-immersion",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 19:21:33 GMT",
+    "retrieved_at": "2026-08-25T20:18:51+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses liquid cooling technologies for high-density AI data center infrastructure.",
+    "url_hash": "027a23e549c57653",
+    "id": "027a23e549c57653"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DOE Keeps Eddystone Power Plant Online Amid Data Center Demand Surge",
+    "summary": "The U.S. Department of Energy is extending operations of the 760 MW Eddystone coal-fired power plant due to rising data center electricity demand and generator retirements in the PJM region.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/doe-extends-eddystone-as-pjm-faces-data-center-power-surge",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 19:54:43 GMT",
+    "retrieved_at": "2026-08-25T20:18:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Article directly concerns power infrastructure decisions driven by data center demand surge, a core AI Buildout concern.",
+    "url_hash": "746b1078c2b5cc1d",
+    "id": "746b1078c2b5cc1d"
+  },
+  {
+    "niche": "Space",
     "headline": "Polish startup Ares Shield hired to protect data center satellites with high-power microwave weapons",
     "summary": "Lonestar Data Holdings contracted Polish startup Ares Shield to protect its planned orbital data centers using high-power microwave weapons in a deal worth up to $6 million.",
     "source_url": "https://www.space.com/space-exploration/satellites/satellite-defense-ares-shield-contract-lonestar-data-holdings",
