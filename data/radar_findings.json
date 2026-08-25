@@ -1,6 +1,54 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Soluna acquires 397-acre plot in Briscoe County, Texas, for Project Dorothy 3 data center",
+    "summary": "Soluna acquired a 397-acre plot in Briscoe County, Texas for its Project Dorothy 3 data center, which is expected to have a capacity of 300MW.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/soluna-acquires-397-acre-plot-in-briscoe-county-texas-for-project-dorothy-3-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 08:50:34 +0000",
+    "retrieved_at": "2026-08-25T10:22:50+00:00",
+    "tickers": [
+      {
+        "ticker": "SLNH",
+        "company_name": "Soluna Holdings",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "SOUA",
+        "company_name": "Soluna Holdings (alternative ticker)",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct investment in data center infrastructure expansion for AI/hyperscaler workloads",
+    "url_hash": "d13bf4dbdbab5fa8",
+    "id": "d13bf4dbdbab5fa8"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Pre-construction works start on Microsoft data center in Vaasa, Finland",
+    "summary": "Microsoft has begun pre-construction works on a data center facility in Vaasa, Finland, and is awaiting permit approval to start the main construction phase.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/pre-constructino/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 09:50:33 +0000",
+    "retrieved_at": "2026-08-25T10:22:48+00:00",
+    "tickers": [
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "directly concerns hyperscaler data center infrastructure buildout for AI",
+    "url_hash": "1b692232cc5c7bc9",
+    "id": "1b692232cc5c7bc9"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Healthy Choice Wellness Corp. plans reverse merger with data center company",
     "summary": "Healthy Choice Wellness Corp. plans a reverse merger with a data center company as part of a pivot toward digital infrastructure operations.",
     "source_url": "https://www.datacenterdynamics.com/en/news/healthy-choice-wellness-corp-plans-reverse-merger-with-data-center-company/",
