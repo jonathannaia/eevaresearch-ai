@@ -3399,3 +3399,94 @@ fix for Streamlit script execution — it reads no environment variable,
 handles no secret or DSN, and is not backend activation; it changes
 nothing about how the preview DSN is read, how the hosted repository is
 constructed, how failures are handled, or how the sidebar is disabled.
+
+## Durable-State Phase 4I-0 — Private Hosted Signals Beta Deployment Specification
+
+This is a specification only — nothing is deployed, configured,
+provisioned, or connected this phase. It describes how the existing,
+already-committed `scripts/hosted_signals_preview.py` may later be
+deployed as a private, named-user beta.
+
+**1. Scope.** The beta is private and Signals-only, and read-only. The
+sole application entry point for the beta is:
+```text
+streamlit run scripts/hosted_signals_preview.py
+```
+The deployment must never run `app.py`, any source scan, scheduler,
+review action, publication action, GitHub workflow, Docker build/run
+step, or database migration. No other page, route, or script is part of
+this beta.
+
+**2. Data behavior.** The launcher's only data path is the explicitly
+injected hosted Postgres `SignalRepository` (Durable-State Phase 4H-1) —
+never `container.get_repositories()`, never JSON. Only candidates that
+reached `PUBLISHED` through the existing, unchanged human-review workflow
+(`src/logic/signal_promotion.py`'s `is_eligible_for_signal()`) may ever
+render. No manual database insertion, filter bypass, synthetic
+production-looking content, or display of a non-`PUBLISHED` candidate is
+permitted merely to populate the beta with something to look at — an
+empty beta showing "No eligible filings yet." is an acceptable, honest
+outcome, not a defect to work around.
+
+**3. Secret contract.** `EEVA_HOSTED_SIGNALS_PREVIEW_DSN` is supplied to
+the deployed process only through the eventual host's own managed
+runtime-secret mechanism — never committed to this repository, never
+added to `.env.example`, never stored as a GitHub Actions secret for this
+phase (no workflow exists or is proposed that would consume it), never
+printed or logged, never placed in a public URL or query parameter, and
+never left in shell history. This document does not name a host, and no
+`.env`, `.streamlit/secrets.toml`, or live DSN was read or touched in
+writing it.
+
+**4. Access boundary.** No hosting provider is chosen or provisioned by
+this document. Before any URL is ever shared with anyone, the eventual
+host must enforce named-user private access or an equivalent
+authenticated access boundary in front of the Streamlit process — a
+publicly reachable, unauthenticated, database-backed preview is
+prohibited under this specification, regardless of host.
+
+**5. Deployment criteria** (for whenever a host is later chosen and
+separately approved): the deployment must start only the one dedicated
+launcher script above — nothing else. It must use the host's own
+provided bind/port configuration at deployment time; this document
+hard-codes no public hostname or URL, matching the existing launcher's
+own design (Phase 4H-1: no host/port decided in source). The database
+role/credential reachable from the deployed process must never carry
+write capability — read-only access only, matching what
+`PostgresSignalRepository` itself already performs (`SELECT`-only queries
+in `src/data_access/postgres_state_db/signal_repository.py`). A clear
+stop/disable/revoke-access rollback procedure (stopping the deployed
+process and/or revoking the deployed credential) must exist and be
+documented at deployment time, before the beta is shared with anyone.
+
+**6. Acceptance checks for the later deployment** — all must hold before
+any user is invited:
+- With no DSN configured: only the existing generic, static
+  "Hosted signals are temporarily unavailable." state appears.
+- With an invalid or unreachable DSN: the same generic, static
+  unavailable state appears — never a different message that reveals
+  which failure mode occurred.
+- With a valid DSN and no `PUBLISHED` signals yet: "No eligible filings
+  yet." appears, distinct from the unavailable state.
+- With a valid DSN and at least one real, human-reviewed `PUBLISHED`
+  signal: only `PUBLISHED` signals render — never a `NEEDS_REVIEW`,
+  `PROCESSING_DEFERRED`, `DISMISSED`, `PARSE_FAILED`, or
+  `RETRIEVAL_FAILED` candidate.
+- In no case may a DSN, hostname, username, password, stack trace, raw
+  database driver error, or non-`PUBLISHED` candidate's content appear
+  anywhere in the rendered page or in any log the operator can see.
+- No source scan, scheduler tick, review action, publish action,
+  source-provider (EDGAR/DART/EDINET/DeepL) request, or GitHub workflow
+  run may occur as a side effect of the deployed process running.
+
+**7. Explicitly deferred** — none of the following are authorized or
+performed by this specification, and each remains its own separate,
+future approval: choosing a hosting provider and provisioning an
+account; creating or storing a real secret anywhere; writing a
+deployment configuration file or CI/CD workflow; deploying anything;
+exposing any URL publicly; inviting any user; implementing the
+authentication/access-boundary mechanism itself; setting up monitoring;
+executing the rollback procedure; running a real source scan or creating
+retained live data; publishing any signal; and connecting to Neon,
+Postgres, GitHub, EDGAR, DART, EDINET, DeepL, or any other external
+service.
