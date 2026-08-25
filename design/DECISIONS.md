@@ -3549,3 +3549,60 @@ and local to the disposable test container. Using this new capability
 against the real hosted Neon database, running a real scan, reviewing or
 publishing real data, and pushing this commit all remain separately
 approved future actions.
+
+## Durable-State Phase 4K-1 — Bounded Explicit Hosted-Postgres Candidate-Ingestion Harness
+
+`scripts/hosted_postgres_candidate_ingest.py` is a new, standalone
+entry point — never imported by `app.py`, `scripts/run_scan.py`,
+`scripts/hosted_signals_preview.py`, any UI page, any GitHub workflow,
+or any deployment configuration. Every activation input (`--source`,
+`--max-candidates`, `--dsn-env-var`) is required with no default;
+missing or invalid input (unsupported source, non-positive/non-integer
+bound, unset named DSN variable) fails with a non-zero exit before any
+`Settings`, repository, or pipeline call is made, verified directly via
+mocked tests. The DSN itself is read exactly once, from whichever
+environment-variable *name* the operator supplies at invocation time via
+`--dsn-env-var` — never a hard-coded name, never `EDGE_DB_BACKEND`,
+never `EDGE_STATE_DB_URL`, never `get_settings()`, never `.env`, never a
+Streamlit secrets file — and a test proves poisoned, non-empty
+`EDGE_DB_BACKEND`/`EDGE_STATE_DB_URL` values cannot substitute for it.
+
+On success, the harness constructs an explicit `Settings(db_backend=
+"postgres", state_db_url=<the one DSN read above>, ...)` with every
+other field pinned to a neutral value (mirroring
+`scripts/hosted_signals_preview.py`'s own discipline) — including a
+freshly created, uniquely-named temporary `cache_dir`, since the
+underlying scan pipelines read/write JSON-backed identifier and
+filing-event caches under `settings.cache_dir` regardless of candidate
+backend, and this harness must never touch the real local
+`data/cache/`. It then builds the matching Postgres `CandidateRepository`
+via the existing, unmodified `backend_factory.get_candidate_repository()`
+and injects it into the selected source's own existing, unmodified
+`{dart,edgar,edinet}_service.run_scan(settings, max_candidates=...,
+candidate_repository=...)` — the same additive injection seam
+`scripts/run_scan.py`'s own tests already exercise (Durable-State Phases
+4A/4C-1) — never `scripts.run_scan`'s own multi-source `main()`. Only
+the one selected source's service module is ever called; a test
+confirms the other two are not.
+
+The harness never imports `review_actions`, `signal_promotion`, any
+`SignalRepository`, or `container.get_repositories()` (verified via an
+AST-based structural test, not a text search, since this module's own
+docstring legitimately discusses those names in prose describing what it
+does not do). No pipeline in this codebase ever sets a candidate to
+`PUBLISHED` itself — only a human reviewer action can (see Phase 4J-1)
+— and this harness calls no such action; a defensive post-run check
+(`_assert_no_automated_publish`) additionally verifies no `PUBLISHED`
+candidate is ever observed, raising a clear, non-leaky error rather than
+silently succeeding if one somehow were. Every failure path reports only
+`type(exc).__name__`, never a raw exception message, DSN, or credential.
+
+**Execution status, stated precisely**: all tests
+(`tests/test_hosted_postgres_candidate_ingest.py`, 18 tests) are
+mocked/synthetic only and ran locally with no real DSN, database,
+Docker, network call, or source-provider request — **18 passed**. No
+real scan was run, no real candidate was created, and no hosted Postgres
+connection was attempted this phase. Running this harness with a real
+DSN, connecting to Neon, scanning a real source, retaining data, and any
+subsequent review/publish action all remain separately approved future
+actions.
