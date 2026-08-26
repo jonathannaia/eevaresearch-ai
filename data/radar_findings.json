@@ -1,5 +1,26 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Sponsored: Join the green computing: Ablecom unveils AbleCool RDHx portfolio",
+    "summary": "Ablecom unveiled its AbleCool RDHx portfolio of cooling solutions ranging from airflow boosters to 100kW AI supercomputing racks.",
+    "source_url": "https://www.datacenterdynamics.com/en/product-news/join-the-green-computing-ablecom-unveils-ablecool-rdhx-portfolio/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 25 Aug 2026 13:00:00 +0000",
+    "retrieved_at": "2026-08-26T08:32:30+00:00",
+    "tickers": [
+      {
+        "ticker": "ABCO",
+        "company_name": "Ablecom Technology Inc.",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "The article describes cooling solutions specifically designed for AI supercomputing infrastructure, which is directly relevant to the AI Buildout scope covering power/cooling for AI infrastructure.",
+    "url_hash": "f4802baaeed310ba",
+    "id": "f4802baaeed310ba"
+  },
+  {
     "niche": "Space",
     "headline": "New Next-Gen Dish Adds Muscle to NASA’s Deep Space Network",
     "summary": "NASA's Deep Space Network facility in California has added a new 34-meter radio frequency antenna to support deep space communications and navigation for more than 40 spacecraft exploring the solar system and interstellar space.",
