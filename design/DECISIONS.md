@@ -3692,3 +3692,58 @@ Docker/network action occurred. Supplying a real, verified ticker/CIK
 pair and DSN, running this harness for real, and any subsequent
 scan/review/publish action all remain separately approved future
 actions.
+
+## Durable-State Phase 4L-1 — Standalone Read-Only Hosted Candidate-Audit Command
+
+`scripts/hosted_postgres_candidate_audit.py` is a new, standalone
+command letting a human operator list candidate metadata already
+sitting in the hosted Postgres store — after a real ingestion
+(Phase 4K-1/4K-3) — without touching any UI and without writing
+anything back. It is not imported by `app.py`, any existing script, or
+any deployment/workflow configuration. Like its sibling scripts, every
+activation input is explicit: `--source` and `--dsn-env-var` are
+required with no default; `--ticker` is optional and filters purely in
+Python against the already-loaded candidates' real `filing.stock_code`
+field, case-insensitively — never a corporate-name fallback, CIK,
+provider, resolver, or scan. The named DSN variable is read once, after
+all other validation, the same explicit discipline as
+`scripts/hosted_signals_preview.py` and
+`scripts/hosted_postgres_candidate_ingest.py` — never `EDGE_DB_BACKEND`,
+`EDGE_STATE_DB_URL`, `get_settings()`, or `.env`.
+
+The command is strictly read-only: it calls
+`backend_factory.get_candidate_repository()` (the existing, unmodified
+factory) and only that repository's existing `load_candidates()` method
+— never `update_candidate()`, `upsert_new_candidates()`,
+`get_candidate()`, `get_candidate_version()`, direct SQL, or any
+`SignalRepository`/`review_actions`/signal-promotion path. A repository
+construction or read failure — either one — prints only a fixed,
+generic `AUDIT_STOP: hosted candidate repository could not be read.`
+message and exits non-zero; a test proves this is true even for an
+exception whose own message embeds sensitive-looking substrings, and
+that not even the exception's class name is reported (a stricter
+sanitization than this session's other scripts, appropriate for a
+read-only audit tool with no legitimate reason to reveal *why* a read
+failed beyond "it failed").
+
+Output is deliberately minimal: a `CANDIDATES=<count>` line, then one
+line per candidate — sorted by `filing.rcept_dt`, then `id` — containing
+only `id`, `status`, `form`, `filed`, `ticker`, `confidence`, and
+`rules`, with missing/empty values normalized to `unknown`/`none`.
+`status`/`confidence` are rendered via `str.__str__` on the field's own
+value rather than `.value` — this correctly handles both a real
+`CandidateStatus(str, Enum)` instance (whose default Python 3.11+
+`__str__`/`format()` would otherwise render the qualified
+`"CandidateStatus.PUBLISHED"` form, not the plain value) and a
+plain-string test double with no `.value` attribute at all, closing the
+exact gap an earlier, informal ad hoc audit attempt would have hit by
+assuming `.value` always exists. A test using a `str` subclass whose
+`.value` property raises `AssertionError` if ever accessed proves this
+directly, not just by inspection.
+
+**Execution status, stated precisely**: all 17 tests in
+`tests/test_hosted_postgres_candidate_audit.py` ran locally,
+mocked/synthetic only — **17 passed**. No real DSN, database, Docker,
+network call, or source-provider request occurred. Supplying a real DSN
+and running this command for real against the hosted store remain
+separately approved future actions.
