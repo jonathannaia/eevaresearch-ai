@@ -1,6 +1,34 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Mistral and Humain team up for sovereign AI in Saudi Arabia",
+    "summary": "Mistral has partnered with Humain to provide sovereign AI services in Saudi Arabia and the wider Middle East region.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/mistral-and-humain-team-up-for-sovereign-ai-in-saudi-arabia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 15:13:37 +0000",
+    "retrieved_at": "2026-08-26T19:40:02+00:00",
+    "tickers": [],
+    "relevance_reason": "Mistral is a leading AI model developer whose infrastructure and compute requirements relate to AI buildout, and this partnership involves deploying AI services requiring computational infrastructure.",
+    "url_hash": "28eee855454393ba",
+    "id": "28eee855454393ba"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Sweden's EcoDataCenter acquires land in Dalarna for 150MW campus",
+    "summary": "EcoDataCenter has acquired land in Dalarna, Sweden for a 150MW data center campus, marking the company's third project in Dalarna County.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/swedens-ecodatacenter-acquires-land-in-dalarna-for-150mw-campus/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 16:54:37 +0000",
+    "retrieved_at": "2026-08-26T19:40:00+00:00",
+    "tickers": [],
+    "relevance_reason": "EcoDataCenter is building a new 150MW data center campus, directly relevant to AI infrastructure buildout.",
+    "url_hash": "339e5eafe601a11d",
+    "id": "339e5eafe601a11d"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Armada launches 10MW modular data center, Orion",
     "summary": "Armada launched Orion, a 10MW modular data center that represents the largest version of their Galleon family product line.",
     "source_url": "https://www.datacenterdynamics.com/en/news/armada-launches-10mw-modular-data-center-orion/",
