@@ -1,6 +1,41 @@
 [
   {
     "niche": "Space",
+    "headline": "New Next-Gen Dish Adds Muscle to NASA’s Deep Space Network",
+    "summary": "NASA's Deep Space Network facility in California has added a new 34-meter radio frequency antenna to support deep space communications and navigation for more than 40 spacecraft exploring the solar system and interstellar space.",
+    "source_url": "https://www.nasa.gov/technology/space-comms/deep-space-network/new-next-gen-dish-adds-muscle-to-nasas-deep-space-network/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 25 Aug 2026 22:28:34 +0000",
+    "retrieved_at": "2026-08-26T00:44:02+00:00",
+    "tickers": [],
+    "relevance_reason": "NASA's Deep Space Network infrastructure expansion directly supports space exploration missions and spacecraft operations.",
+    "url_hash": "f3ac3655bf675d20",
+    "id": "f3ac3655bf675d20"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "OpenAI loses a top data center exec, as stream of high-profile departures continues",
+    "summary": "OpenAI's top data center executive has departed, following a recent organizational restructuring of the infrastructure group under Vice President Sachin Katti's leadership.",
+    "source_url": "https://techcrunch.com/2026/08/25/openai-loses-a-top-data-center-exec-as-stream-of-high-profile-departures-continues/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 00:06:20 +0000",
+    "retrieved_at": "2026-08-26T00:43:54+00:00",
+    "tickers": [
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Personnel departures at a major AI company focused on data center and infrastructure organization are relevant to AI Buildout scope",
+    "url_hash": "4b73af7f6f1d70c2",
+    "id": "4b73af7f6f1d70c2"
+  },
+  {
+    "niche": "Space",
     "headline": "'You just saved the video dish': Two astronauts complete spacewalk to replace ISS antenna",
     "summary": "Astronauts Anil Menon and Sophie Adenot completed a 6.5-hour spacewalk to install a replacement Space-to-Ground antenna on the International Space Station.",
     "source_url": "https://www.space.com/space-exploration/international-space-station/you-just-saved-the-video-dish-two-astronauts-complete-spacewalk-to-replace-iss-antenna",
