@@ -1,5 +1,102 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "OpenAI Moves Energy Planning Inside Data Center Organization",
+    "summary": "OpenAI is creating a new energy-technology role and expanding flexible-load, generation, and storage strategies as part of its growing AI data center portfolio.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-construction/openai-moves-energy-planning-inside-data-center-organization",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 12:13:02 GMT",
+    "retrieved_at": "2026-08-26T12:32:19+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI infrastructure energy planning and data center operations for a hyperscaler",
+    "url_hash": "f1629ec05fbcc4fc",
+    "id": "f1629ec05fbcc4fc"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Navitas Semiconductor acquires power management firm Claros for $232.8m",
+    "summary": "Navitas Semiconductor acquired power management firm Claros for $232.8 million; Claros develops technology for powering high-speed AI chipsets.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/navitas-semiconductor-acquires-power-management-firm-claros-for-2328m/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 10:48:10 +0000",
+    "retrieved_at": "2026-08-26T12:32:06+00:00",
+    "tickers": [
+      {
+        "ticker": "NVTS",
+        "company_name": "Navitas Semiconductor",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Navitas's acquisition of a power management firm serving AI chipsets directly relates to AI infrastructure buildout.",
+    "url_hash": "5aae7408ab0add70",
+    "id": "5aae7408ab0add70"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "GE Vernova announces medium-voltage UPS for data center sector",
+    "summary": "GE Vernova announced a medium-voltage uninterruptible power supply (UPS) product for data centers, with shipments expected to begin in mid-2027.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ge-vernova-announces-medium-voltage-ups-for-data-center-sector/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 10:53:29 +0000",
+    "retrieved_at": "2026-08-26T12:32:05+00:00",
+    "tickers": [
+      {
+        "ticker": "GE",
+        "company_name": "General Electric Company",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "GEV",
+        "company_name": "GE Vernova Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "UPS systems are infrastructure components for data center power/cooling systems supporting AI buildout",
+    "url_hash": "6984ace22e427776",
+    "id": "6984ace22e427776"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AI cloud Lambda seeks $3bn funding round ahead of IPO plans - report",
+    "summary": "Lambda, an AI cloud computing provider, is seeking $3 billion in funding ahead of potential IPO plans that could occur next year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ai-cloud-lambda-seeks-3bn-funding-round-ahead-of-ipo-plans-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 11:13:10 +0000",
+    "retrieved_at": "2026-08-26T12:32:01+00:00",
+    "tickers": [],
+    "relevance_reason": "Lambda offers AI compute infrastructure services directly relevant to AI buildout, with capital raising indicating scaling of AI infrastructure capacity.",
+    "url_hash": "099ebdf42b4986fd",
+    "id": "099ebdf42b4986fd"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Optics startup Quintessent secures $40m to revolutionize interconnects for AI",
+    "summary": "Optics startup Quintessent raised $40 million to develop dense wavelength division multiplexing (DWDM) interconnect technology using gallium arsenide as an alternative to supply-constrained indium phosphide, with Ciena among the backers.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/optics-startup-quintessent-secures-40m-to-revolutionize-interconnects-for-ai/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 11:18:22 +0000",
+    "retrieved_at": "2026-08-26T12:32:00+00:00",
+    "tickers": [
+      {
+        "ticker": "CIEN",
+        "company_name": "Ciena Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "startup developing optical interconnect technology for AI infrastructure addresses chip supply chain and data center connectivity challenges",
+    "url_hash": "117ab2d83851d97f",
+    "id": "117ab2d83851d97f"
+  },
+  {
     "niche": "Space",
     "headline": "Inside the Nancy Grace Roman Space Telescope, NASA's next great observatory",
     "summary": "NASA's Roman Space Telescope is scheduled to launch on August 30 and the article describes the major components of this observatory.",
