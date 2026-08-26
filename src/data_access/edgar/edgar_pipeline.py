@@ -30,6 +30,7 @@ from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edgar import document_service, edgar_rules, scan_service
+from src.logic.signal_decision_policy import SignalRoute, decide_signal_route
 from src.data_access.edgar.client import EdgarClient
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState
 
@@ -149,6 +150,18 @@ def process_candidate(
                 else:
                     final_status_detail = f"Classified from document-excerpt item header(s) {', '.join(excerpt_items)} (no scan-time SEC item metadata was available)."
         candidate = _transition(candidate, CandidateStatus.EXTRACTED)
+        shadow_decision = decide_signal_route(candidate)
+        candidate.state_history.append(
+            StateTransition(
+                status=CandidateStatus.EXTRACTED,
+                at=datetime.now(timezone.utc).isoformat(),
+                detail=(
+                    f"Shadow policy: {shadow_decision.route.value} — "
+                    f"{shadow_decision.reason} "
+                    f"[rules: {', '.join(shadow_decision.rule_ids)}]"
+                ),
+            )
+        )
     elif doc_result.state == ExtractionState.RETRIEVAL_FAILED:
         error_counts["retrieval_failed"] = error_counts.get("retrieval_failed", 0) + 1
         candidate = _transition(candidate, CandidateStatus.RETRIEVAL_FAILED, doc_result.detail)
@@ -162,7 +175,13 @@ def process_candidate(
     candidate.translation_state = TranslationState.NOT_REQUESTED
 
     if candidate.extraction_state == ExtractionState.EXTRACTED:
-        final_status = CandidateStatus.NEEDS_REVIEW
+        if shadow_decision.route == SignalRoute.TIMELINE:
+            final_status = CandidateStatus.MONITORING
+        elif shadow_decision.route == SignalRoute.ARCHIVE:
+            final_status = CandidateStatus.DISMISSED
+        else:
+            # REVIEW and PUBLISH remain human-gated in this beta.
+            final_status = CandidateStatus.NEEDS_REVIEW
     elif candidate.extraction_state == ExtractionState.RETRIEVAL_FAILED:
         final_status = CandidateStatus.RETRIEVAL_FAILED
     else:
