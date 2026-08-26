@@ -1,6 +1,89 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "PJM’s Power Shortfall Puts Data Center Growth in Focus",
+    "summary": "PJM's initial large load process yielded 12 proposals without consensus, and the region is now pursuing accelerated procurement to address a 6.8 GW capacity shortfall that impacts data center growth.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/pjm-s-power-shortfall-puts-data-center-growth-in-focus",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 17:43:34 GMT",
+    "retrieved_at": "2026-08-26T22:36:35+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure constraints affecting data center expansion, a core component of AI infrastructure buildout.",
+    "url_hash": "2eca5fc5e376076c",
+    "id": "2eca5fc5e376076c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA Announces Financial Results for Second Quarter Fiscal 2027",
+    "summary": "NVIDIA reported second quarter fiscal 2027 revenue of $96.2 billion, representing 18% sequential growth and 106% year-over-year growth.",
+    "source_url": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Wed, 26 Aug 2026 20:20:00 GMT",
+    "retrieved_at": "2026-08-26T22:36:34+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "NVIDIA's quarterly earnings reflect results from its primary GPU/accelerator business supporting AI infrastructure buildout.",
+    "url_hash": "9bc4950664f1773d",
+    "id": "9bc4950664f1773d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AWS and NVIDIA to Deliver 2 Million Additional GPUs and Next-Generation Infrastructure for Agentic and Physical AI",
+    "summary": "AWS and NVIDIA announced a major expansion of their collaboration to deliver 2 million additional GPUs and next-generation infrastructure to meet global demand for AI infrastructure.",
+    "source_url": "https://nvidianews.nvidia.com/news/aws-and-nvidia-to-deliver-2-million-additional-gpus-and-next-generation-infrastructure-for-agentic-and-physical-ai",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Wed, 26 Aug 2026 21:05:00 GMT",
+    "retrieved_at": "2026-08-26T22:36:32+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon.com, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly addresses AI infrastructure buildout through GPU deployment and capacity expansion",
+    "url_hash": "b9ec799d769b0f4b",
+    "id": "b9ec799d769b0f4b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA NVLink Fusion Expands With NVHBM Custom High-Bandwidth Memory",
+    "summary": "NVIDIA is expanding its NVLink Fusion technology with NVHBM custom high-bandwidth memory to address infrastructure demands from AI agents and trillion-parameter workloads. The technology aims to optimize performance across compute, memory, storage, networking and software integration for hyperscalers.",
+    "source_url": "https://blogs.nvidia.com/blog/nvlink-fusion-nvhbm-custom-high-bandwidth-memory/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Wed, 26 Aug 2026 21:05:30 GMT",
+    "retrieved_at": "2026-08-26T22:36:30+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article discusses NVIDIA's NVLink Fusion and custom high-bandwidth memory technology for AI infrastructure, directly relevant to the AI Buildout scope covering chip supply chain and hyperscaler capex.",
+    "url_hash": "a50e18aa16c5d023",
+    "id": "a50e18aa16c5d023"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Mistral and Humain team up for sovereign AI in Saudi Arabia",
     "summary": "Mistral has partnered with Humain to provide sovereign AI services in Saudi Arabia and the wider Middle East region.",
     "source_url": "https://www.datacenterdynamics.com/en/news/mistral-and-humain-team-up-for-sovereign-ai-in-saudi-arabia/",

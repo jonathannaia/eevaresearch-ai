@@ -2,11 +2,11 @@
   "AAOI": {
     "ticker": "AAOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:40:34+00:00",
+    "retrieved_at": "2026-08-26T22:36:57+00:00",
     "errors": [],
     "price": {
       "ticker": "AAOI",
-      "last_price": 113.71,
+      "last_price": 113.76,
       "fifty_two_week_low": 18.5,
       "fifty_two_week_high": 233.67,
       "pct_change_3m": -0.37655,
@@ -26,7 +26,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.4949,
+    "pct_change_1d": 0.5391,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -151,11 +151,11 @@
   "ABCL": {
     "ticker": "ABCL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:40:41+00:00",
+    "retrieved_at": "2026-08-26T22:37:04+00:00",
     "errors": [],
     "price": {
       "ticker": "ABCL",
-      "last_price": 12.21,
+      "last_price": 12.24,
       "fifty_two_week_low": 2.745,
       "fifty_two_week_high": 12.5,
       "pct_change_3m": 1.4038460000000001,
@@ -175,7 +175,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -2.32,
+    "pct_change_1d": -2.08,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -300,11 +300,11 @@
   "AEHR": {
     "ticker": "AEHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:40:49+00:00",
+    "retrieved_at": "2026-08-26T22:37:11+00:00",
     "errors": [],
     "price": {
       "ticker": "AEHR",
-      "last_price": 91.56,
+      "last_price": 91.12,
       "fifty_two_week_low": 18.7,
       "fifty_two_week_high": 147.4,
       "pct_change_3m": 0.005999,
@@ -324,7 +324,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -4.2159,
+    "pct_change_1d": -4.6762,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -449,11 +449,11 @@
   "ARM": {
     "ticker": "ARM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:40:55+00:00",
+    "retrieved_at": "2026-08-26T22:37:21+00:00",
     "errors": [],
     "price": {
       "ticker": "ARM",
-      "last_price": 251.76,
+      "last_price": 251.06,
       "fifty_two_week_low": 100.02,
       "fifty_two_week_high": 452.7,
       "pct_change_3m": -0.211902,
@@ -473,7 +473,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 4.2226,
+    "pct_change_1d": 3.9328,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -547,11 +547,11 @@
   "AVGO": {
     "ticker": "AVGO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:01+00:00",
+    "retrieved_at": "2026-08-26T22:37:28+00:00",
     "errors": [],
     "price": {
       "ticker": "AVGO",
-      "last_price": 353.58,
+      "last_price": 355.59,
       "fifty_two_week_low": 287.17,
       "fifty_two_week_high": 495.0,
       "pct_change_3m": -0.1386,
@@ -571,7 +571,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -0.8858,
+    "pct_change_1d": -0.3224,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -696,11 +696,11 @@
   "AXTI": {
     "ticker": "AXTI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:07+00:00",
+    "retrieved_at": "2026-08-26T22:37:34+00:00",
     "errors": [],
     "price": {
       "ticker": "AXTI",
-      "last_price": 65.31,
+      "last_price": 65.18,
       "fifty_two_week_low": 2.6809,
       "fifty_two_week_high": 143.16,
       "pct_change_3m": -0.521054,
@@ -720,7 +720,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -3.1727,
+    "pct_change_1d": -3.3655,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -845,11 +845,11 @@
   "BE": {
     "ticker": "BE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:13+00:00",
+    "retrieved_at": "2026-08-26T22:37:39+00:00",
     "errors": [],
     "price": {
       "ticker": "BE",
-      "last_price": 219.31,
+      "last_price": 218.21,
       "fifty_two_week_low": 47.83,
       "fifty_two_week_high": 351.28,
       "pct_change_3m": -0.28113299999999997,
@@ -869,7 +869,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.8554,
+    "pct_change_1d": 0.3495,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -994,11 +994,11 @@
   "CLS": {
     "ticker": "CLS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:19+00:00",
+    "retrieved_at": "2026-08-26T22:37:45+00:00",
     "errors": [],
     "price": {
       "ticker": "CLS",
-      "last_price": 308.92,
+      "last_price": 307.32,
       "fifty_two_week_low": 253.12,
       "fifty_two_week_high": 655.5,
       "pct_change_3m": -0.19037800000000002,
@@ -1018,7 +1018,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.6713,
+    "pct_change_1d": 0.1499,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1143,11 +1143,11 @@
   "COHR": {
     "ticker": "COHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:24+00:00",
+    "retrieved_at": "2026-08-26T22:37:50+00:00",
     "errors": [],
     "price": {
       "ticker": "COHR",
-      "last_price": 294.48,
+      "last_price": 294.37,
       "fifty_two_week_low": 85.94,
       "fifty_two_week_high": 440.0,
       "pct_change_3m": -0.236857,
@@ -1167,7 +1167,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 2.2003,
+    "pct_change_1d": 2.1621,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1292,11 +1292,11 @@
   "CRDO": {
     "ticker": "CRDO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:31+00:00",
+    "retrieved_at": "2026-08-26T22:37:57+00:00",
     "errors": [],
     "price": {
       "ticker": "CRDO",
-      "last_price": 225.27,
+      "last_price": 226.49,
       "fifty_two_week_low": 86.485,
       "fifty_two_week_high": 308.6699,
       "pct_change_3m": 0.037086,
@@ -1316,7 +1316,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -0.5121,
+    "pct_change_1d": -0.0088,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1441,7 +1441,7 @@
   "DRAM": {
     "ticker": "DRAM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:36+00:00",
+    "retrieved_at": "2026-08-26T22:38:02+00:00",
     "errors": [
       "valuation: No market cap from Finnhub for 'DRAM'.",
       "insiders: No SEC EDGAR CIK found for ticker 'DRAM' — not a US-listed filer, or the ticker is wrong.",
@@ -1449,7 +1449,7 @@
     ],
     "price": {
       "ticker": "DRAM",
-      "last_price": 56.42,
+      "last_price": 56.39,
       "fifty_two_week_low": 26.14,
       "fifty_two_week_high": 81.34,
       "pct_change_3m": 0.064748,
@@ -1460,7 +1460,7 @@
       "is_mock": false
     },
     "valuation": null,
-    "pct_change_1d": 0.3201,
+    "pct_change_1d": 0.2667,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": null,
@@ -1470,11 +1470,11 @@
   "INTC": {
     "ticker": "INTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:42+00:00",
+    "retrieved_at": "2026-08-26T22:38:07+00:00",
     "errors": [],
     "price": {
       "ticker": "INTC",
-      "last_price": 87.65,
+      "last_price": 88.24,
       "fifty_two_week_low": 23.68,
       "fifty_two_week_high": 142.35,
       "pct_change_3m": -0.270027,
@@ -1494,7 +1494,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.1943,
+    "pct_change_1d": 0.8688,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1586,11 +1586,11 @@
   "IREN": {
     "ticker": "IREN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:41:52+00:00",
+    "retrieved_at": "2026-08-26T22:38:16+00:00",
     "errors": [],
     "price": {
       "ticker": "IREN",
-      "last_price": 39.74,
+      "last_price": 39.58,
       "fifty_two_week_low": 20.74,
       "fifty_two_week_high": 76.87,
       "pct_change_3m": -0.257258,
@@ -1610,7 +1610,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -5.8517,
+    "pct_change_1d": -6.2308,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1713,11 +1713,11 @@
   "LITE": {
     "ticker": "LITE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:00+00:00",
+    "retrieved_at": "2026-08-26T22:38:24+00:00",
     "errors": [],
     "price": {
       "ticker": "LITE",
-      "last_price": 939.07,
+      "last_price": 939.03,
       "fifty_two_week_low": 119.25,
       "fifty_two_week_high": 1085.68,
       "pct_change_3m": -0.064775,
@@ -1737,7 +1737,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 6.0419,
+    "pct_change_1d": 6.0374,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -1862,11 +1862,11 @@
   "LPTH": {
     "ticker": "LPTH",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:07+00:00",
+    "retrieved_at": "2026-08-26T22:38:31+00:00",
     "errors": [],
     "price": {
       "ticker": "LPTH",
-      "last_price": 13.17,
+      "last_price": 13.18,
       "fifty_two_week_low": 4.1788,
       "fifty_two_week_high": 18.94,
       "pct_change_3m": -0.186431,
@@ -1886,7 +1886,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -4.496,
+    "pct_change_1d": -4.4235,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2011,11 +2011,11 @@
   "MP": {
     "ticker": "MP",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:13+00:00",
+    "retrieved_at": "2026-08-26T22:38:36+00:00",
     "errors": [],
     "price": {
       "ticker": "MP",
-      "last_price": 59.19,
+      "last_price": 59.31,
       "fifty_two_week_low": 37.81,
       "fifty_two_week_high": 100.251,
       "pct_change_3m": -0.066553,
@@ -2035,7 +2035,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -1.7949,
+    "pct_change_1d": -1.4293,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2160,11 +2160,11 @@
   "MRVL": {
     "ticker": "MRVL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:20+00:00",
+    "retrieved_at": "2026-08-26T22:38:44+00:00",
     "errors": [],
     "price": {
       "ticker": "MRVL",
-      "last_price": 243.67,
+      "last_price": 245.11,
       "fifty_two_week_low": 61.44,
       "fifty_two_week_high": 329.88,
       "pct_change_3m": 0.22436699999999998,
@@ -2184,7 +2184,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 1.3687,
+    "pct_change_1d": 1.9677,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2309,11 +2309,11 @@
   "MU": {
     "ticker": "MU",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:27+00:00",
+    "retrieved_at": "2026-08-26T22:38:50+00:00",
     "errors": [],
     "price": {
       "ticker": "MU",
-      "last_price": 938.15,
+      "last_price": 938.4,
       "fifty_two_week_low": 114.25,
       "fifty_two_week_high": 1255.0,
       "pct_change_3m": 0.242304,
@@ -2333,7 +2333,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.5552,
+    "pct_change_1d": 0.582,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2458,11 +2458,11 @@
   "MXL": {
     "ticker": "MXL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:32+00:00",
+    "retrieved_at": "2026-08-26T22:38:55+00:00",
     "errors": [],
     "price": {
       "ticker": "MXL",
-      "last_price": 62.9,
+      "last_price": 63.0,
       "fifty_two_week_low": 12.77,
       "fifty_two_week_high": 128.3,
       "pct_change_3m": -0.330779,
@@ -2482,7 +2482,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -5.214,
+    "pct_change_1d": -5.0633,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2607,11 +2607,11 @@
   "NBIS": {
     "ticker": "NBIS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:38+00:00",
+    "retrieved_at": "2026-08-26T22:39:01+00:00",
     "errors": [],
     "price": {
       "ticker": "NBIS",
-      "last_price": 214.84,
+      "last_price": 213.93,
       "fifty_two_week_low": 63.26,
       "fifty_two_week_high": 299.86,
       "pct_change_3m": 0.033524,
@@ -2631,7 +2631,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -3.2121,
+    "pct_change_1d": -3.6221,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2705,11 +2705,11 @@
   "PLTR": {
     "ticker": "PLTR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:44+00:00",
+    "retrieved_at": "2026-08-26T22:39:15+00:00",
     "errors": [],
     "price": {
       "ticker": "PLTR",
-      "last_price": 177.74,
+      "last_price": 177.5,
       "fifty_two_week_low": 106.37,
       "fifty_two_week_high": 207.52,
       "pct_change_3m": 0.261908,
@@ -2729,7 +2729,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 2.9005,
+    "pct_change_1d": 2.7615,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -2854,11 +2854,11 @@
   "RKLB": {
     "ticker": "RKLB",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:50+00:00",
+    "retrieved_at": "2026-08-26T22:39:20+00:00",
     "errors": [],
     "price": {
       "ticker": "RKLB",
-      "last_price": 66.29,
+      "last_price": 66.18,
       "fifty_two_week_low": 37.57,
       "fifty_two_week_high": 150.9999,
       "pct_change_3m": -0.507145,
@@ -2878,7 +2878,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -0.9266,
+    "pct_change_1d": -1.091,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -3003,7 +3003,7 @@
   "SIVE": {
     "ticker": "SIVE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:42:56+00:00",
+    "retrieved_at": "2026-08-26T22:39:26+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SIVE'.",
       "valuation: No market cap from Finnhub for 'SIVE'.",
@@ -3022,11 +3022,11 @@
   "SKHY": {
     "ticker": "SKHY",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:00+00:00",
+    "retrieved_at": "2026-08-26T22:39:30+00:00",
     "errors": [],
     "price": {
       "ticker": "SKHY",
-      "last_price": 157.98,
+      "last_price": 158.02,
       "fifty_two_week_low": 491500.0,
       "fifty_two_week_high": 2987000.0,
       "pct_change_3m": -0.121926,
@@ -3046,7 +3046,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -0.9716,
+    "pct_change_1d": -0.9465,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -3064,11 +3064,11 @@
   "SMCI": {
     "ticker": "SMCI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:06+00:00",
+    "retrieved_at": "2026-08-26T22:39:36+00:00",
     "errors": [],
     "price": {
       "ticker": "SMCI",
-      "last_price": 37.3,
+      "last_price": 37.39,
       "fifty_two_week_low": 19.48,
       "fifty_two_week_high": 58.78,
       "pct_change_3m": 0.080944,
@@ -3088,8 +3088,8 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -3.0161,
-    "unusual_move": true,
+    "pct_change_1d": -2.7821,
+    "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "SMCI",
@@ -3157,11 +3157,11 @@
   "SMTC": {
     "ticker": "SMTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:15+00:00",
+    "retrieved_at": "2026-08-26T22:39:45+00:00",
     "errors": [],
     "price": {
       "ticker": "SMTC",
-      "last_price": 139.59,
+      "last_price": 140.8,
       "fifty_two_week_low": 50.42,
       "fifty_two_week_high": 177.35,
       "pct_change_3m": -0.186631,
@@ -3181,7 +3181,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 9.4652,
+    "pct_change_1d": 10.4141,
     "unusual_move": true,
     "watch_trigger_move": true,
     "analyst_recommendations": {
@@ -3306,11 +3306,11 @@
   "SNDK": {
     "ticker": "SNDK",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:21+00:00",
+    "retrieved_at": "2026-08-26T22:39:51+00:00",
     "errors": [],
     "price": {
       "ticker": "SNDK",
-      "last_price": 1499.85,
+      "last_price": 1499.37,
       "fifty_two_week_low": 46.01,
       "fifty_two_week_high": 2354.39,
       "pct_change_3m": 0.0014069999999999998,
@@ -3330,7 +3330,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 1.2885,
+    "pct_change_1d": 1.2561,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -3455,7 +3455,7 @@
   "SOI": {
     "ticker": "SOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:28+00:00",
+    "retrieved_at": "2026-08-26T22:39:57+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SOI'.",
       "insiders: No SEC EDGAR CIK found for ticker 'SOI' — not a US-listed filer, or the ticker is wrong.",
@@ -3482,11 +3482,11 @@
   "SPCX": {
     "ticker": "SPCX",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:32+00:00",
+    "retrieved_at": "2026-08-26T22:40:01+00:00",
     "errors": [],
     "price": {
       "ticker": "SPCX",
-      "last_price": 139.15,
+      "last_price": 139.63,
       "fifty_two_week_low": 104.83,
       "fifty_two_week_high": 225.64,
       "pct_change_3m": 0.0,
@@ -3506,7 +3506,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 0.8699,
+    "pct_change_1d": 1.2178,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -3587,11 +3587,11 @@
   "TSEM": {
     "ticker": "TSEM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:38+00:00",
+    "retrieved_at": "2026-08-26T22:40:07+00:00",
     "errors": [],
     "price": {
       "ticker": "TSEM",
-      "last_price": 220.54,
+      "last_price": 221.23,
       "fifty_two_week_low": 54.32,
       "fifty_two_week_high": 319.94,
       "pct_change_3m": -0.249515,
@@ -3611,7 +3611,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 3.6811,
+    "pct_change_1d": 4.0055,
     "unusual_move": true,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -3685,11 +3685,11 @@
   "USAR": {
     "ticker": "USAR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-26T19:43:44+00:00",
+    "retrieved_at": "2026-08-26T22:40:13+00:00",
     "errors": [],
     "price": {
       "ticker": "USAR",
-      "last_price": 18.93,
+      "last_price": 18.92,
       "fifty_two_week_low": 11.45,
       "fifty_two_week_high": 43.98,
       "pct_change_3m": -0.23280599999999999,
@@ -3709,7 +3709,7 @@
       "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": -2.473,
+    "pct_change_1d": -2.5245,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -4088,18 +4088,18 @@
   "AMZN": {
     "ticker": "AMZN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-24T14:34:23+00:00",
+    "retrieved_at": "2026-08-26T22:37:16+00:00",
     "errors": [],
     "price": {
       "ticker": "AMZN",
-      "last_price": 261.47,
+      "last_price": 260.28,
       "fifty_two_week_low": 196.0,
       "fifty_two_week_high": 287.2,
-      "pct_change_3m": -0.024075000000000003,
-      "pct_change_1y": 0.165262,
-      "avg_volume_30d": 48115740.0,
+      "pct_change_3m": -0.019751,
+      "pct_change_1y": 0.14530099999999999,
+      "avg_volume_30d": 47767730.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-08-24",
+      "as_of_date": "2026-08-26",
       "is_mock": false
     },
     "valuation": {
@@ -4109,10 +4109,10 @@
       "ev_to_ebitda": 17.387,
       "price_to_sales": 3.6868,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-08-24",
+      "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 1.0981,
+    "pct_change_1d": -0.2988,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -4127,57 +4127,57 @@
     "insider_transactions": [
       {
         "ticker": "AMZN",
-        "insider_name": "Herrington Douglas J",
-        "role": "CEO Worldwide Amazon Stores",
+        "insider_name": "Jassy Andrew R",
+        "role": "Director, President and CEO",
         "transaction_type": "Sell",
-        "shares": 1441.0,
-        "value_usd": 377607.42,
-        "filing_date": "2026-08-19",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000193600626000020/xslF345X06/wk-form4_1787174724.xml",
+        "shares": 3197.0,
+        "value_usd": 823656.86,
+        "filing_date": "2026-08-25",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000137454526000010/xslF345X06/wk-form4_1787692115.xml",
         "is_mock": false
       },
       {
         "ticker": "AMZN",
-        "insider_name": "Herrington Douglas J",
-        "role": "CEO Worldwide Amazon Stores",
+        "insider_name": "Jassy Andrew R",
+        "role": "Director, President and CEO",
         "transaction_type": "Sell",
-        "shares": 1900.0,
-        "value_usd": 499349.07,
-        "filing_date": "2026-08-19",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000193600626000020/xslF345X06/wk-form4_1787174724.xml",
+        "shares": 7478.0,
+        "value_usd": 1934299.86,
+        "filing_date": "2026-08-25",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000137454526000010/xslF345X06/wk-form4_1787692115.xml",
         "is_mock": false
       },
       {
         "ticker": "AMZN",
-        "insider_name": "Herrington Douglas J",
-        "role": "CEO Worldwide Amazon Stores",
+        "insider_name": "Jassy Andrew R",
+        "role": "Director, President and CEO",
         "transaction_type": "Sell",
-        "shares": 400.0,
-        "value_usd": 106037.0,
-        "filing_date": "2026-08-19",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000193600626000020/xslF345X06/wk-form4_1787174724.xml",
+        "shares": 7514.0,
+        "value_usd": 1950685.5,
+        "filing_date": "2026-08-25",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000137454526000010/xslF345X06/wk-form4_1787692115.xml",
         "is_mock": false
       },
       {
         "ticker": "AMZN",
-        "insider_name": "Herrington Douglas J",
-        "role": "CEO Worldwide Amazon Stores",
+        "insider_name": "Jassy Andrew R",
+        "role": "Director, President and CEO",
         "transaction_type": "Sell",
-        "shares": 1000.0,
-        "value_usd": 278390.0,
-        "filing_date": "2026-08-05",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000030/xslF345X06/wk-form4_1785962562.xml",
+        "shares": 1811.0,
+        "value_usd": 471570.82,
+        "filing_date": "2026-08-25",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000137454526000010/xslF345X06/wk-form4_1787692115.xml",
         "is_mock": false
       },
       {
         "ticker": "AMZN",
-        "insider_name": "BEZOS JEFFREY P",
-        "role": "Director, Executive Chair",
+        "insider_name": "Garman Matthew S",
+        "role": "CEO Amazon Web Services",
         "transaction_type": "Sell",
-        "shares": 1209649.0,
-        "value_usd": 346453513.69,
-        "filing_date": "2026-08-05",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000028/xslF345X06/wk-form4_1785962062.xml",
+        "shares": 2159.0,
+        "value_usd": 556148.47,
+        "filing_date": "2026-08-25",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1018724/000202481326000010/xslF345X06/wk-form4_1787691690.xml",
         "is_mock": false
       }
     ],
@@ -4237,18 +4237,18 @@
   "NVDA": {
     "ticker": "NVDA",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-08-25T16:28:24+00:00",
+    "retrieved_at": "2026-08-26T22:39:06+00:00",
     "errors": [],
     "price": {
       "ticker": "NVDA",
-      "last_price": 212.22,
+      "last_price": 209.66,
       "fifty_two_week_low": 164.07,
       "fifty_two_week_high": 236.54,
-      "pct_change_3m": -0.050248,
-      "pct_change_1y": 0.17130199999999998,
-      "avg_volume_30d": 144866820.0,
+      "pct_change_3m": -0.010588,
+      "pct_change_1y": 0.184862,
+      "avg_volume_30d": 144736780.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-08-25",
+      "as_of_date": "2026-08-26",
       "is_mock": false
     },
     "valuation": {
@@ -4258,10 +4258,10 @@
       "ev_to_ebitda": 32.7357,
       "price_to_sales": 21.3932,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-08-25",
+      "as_of_date": "2026-08-26",
       "is_mock": false
     },
-    "pct_change_1d": 1.7939,
+    "pct_change_1d": -1.5912,
     "unusual_move": false,
     "watch_trigger_move": false,
     "analyst_recommendations": {
@@ -4300,6 +4300,16 @@
     "news": [
       {
         "ticker": "NVDA",
+        "title": "NVDA 8-K: Results of Operations and Financial Condition",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000073/nvda-20260826.htm",
+        "published_date": "2026-08-26",
+        "source_type": "Press Release",
+        "snippet": "SEC Form 8-K filed 2026-08-26 under item(s) 2.02, 9.01 (Results of Operations and Financial Condition). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
+        "tag": "neutral",
+        "is_mock": false
+      },
+      {
+        "ticker": "NVDA",
         "title": "NVDA 8-K: Entry into a Material Definitive Agreement; Regulation FD Disclosure",
         "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000069/nvda-20260817.htm",
         "published_date": "2026-08-17",
@@ -4335,16 +4345,6 @@
         "published_date": "2026-05-20",
         "source_type": "Press Release",
         "snippet": "SEC Form 8-K filed 2026-05-20 under item(s) 2.02, 9.01 (Results of Operations and Financial Condition). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
-        "tag": "neutral",
-        "is_mock": false
-      },
-      {
-        "ticker": "NVDA",
-        "title": "NVDA 8-K: Departure/Election of Directors or Officers",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000028/nvda-20260507.htm",
-        "published_date": "2026-05-08",
-        "source_type": "Press Release",
-        "snippet": "SEC Form 8-K filed 2026-05-08 under item(s) 5.02 (Departure/Election of Directors or Officers). This is filing metadata, not extracted press-release text — open the source to read the actual content.",
         "tag": "neutral",
         "is_mock": false
       }
