@@ -1,6 +1,34 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "OpenAI's head of data centers, Chris Malone, latest to depart",
+    "summary": "OpenAI's head of data centers Chris Malone has departed, marking another key departure from the Stargate project team.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/openais-head-of-data-centers-chris-malone-latest-to-depart/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 12:09:25 +0000",
+    "retrieved_at": "2026-08-26T14:36:31+00:00",
+    "tickers": [],
+    "relevance_reason": "OpenAI's head of data centers departing is substantively relevant to AI infrastructure buildout and hyperscaler capex.",
+    "url_hash": "0eb1d1319e25f0f6",
+    "id": "0eb1d1319e25f0f6"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Spain drafts rules requiring data centers to source 80% of power from new renewables - report",
+    "summary": "Spain has drafted rules requiring data centers with capacity of 1MW or more to source 80% of their power from new renewable sources.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/spain-drafts-rules-requiring-data-centers-to-source-80-of-power-from-new-renewables-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 13:15:54 +0000",
+    "retrieved_at": "2026-08-26T14:36:28+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure requirements for data centers, which is a core component of AI infrastructure buildout.",
+    "url_hash": "9ccd078535b6f7a6",
+    "id": "9ccd078535b6f7a6"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "OpenAI Moves Energy Planning Inside Data Center Organization",
     "summary": "OpenAI is creating a new energy-technology role and expanding flexible-load, generation, and storage strategies as part of its growing AI data center portfolio.",
     "source_url": "https://www.datacenterknowledge.com/data-center-construction/openai-moves-energy-planning-inside-data-center-organization",
