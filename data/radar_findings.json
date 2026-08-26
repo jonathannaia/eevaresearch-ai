@@ -1,6 +1,83 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Armada launches 10MW modular data center, Orion",
+    "summary": "Armada launched Orion, a 10MW modular data center that represents the largest version of their Galleon family product line.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/armada-launches-10mw-modular-data-center-orion/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 13:10:00 +0000",
+    "retrieved_at": "2026-08-26T16:42:21+00:00",
+    "tickers": [],
+    "relevance_reason": "Modular data center product launch directly relevant to AI infrastructure buildout scope.",
+    "url_hash": "10b09d3da8c132b6",
+    "id": "10b09d3da8c132b6"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Rum Group signs up to $13.7bn lease agreement with unnamed US cloud customer",
+    "summary": "Rum Group signed a $13.7 billion lease agreement with an unnamed US cloud customer for capacity at its Maysville, Georgia data center.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/rum-group-signs-up-to-137bn-lease-agreement-with-unnamed-us-cloud-customer/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 15:01:46 +0000",
+    "retrieved_at": "2026-08-26T16:42:15+00:00",
+    "tickers": [
+      {
+        "ticker": "RUM",
+        "company_name": "Rum Group",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "article discusses a major data center lease agreement for AI infrastructure",
+    "url_hash": "0f674c81a8ba772d",
+    "id": "0f674c81a8ba772d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Administrative Office of the U.S. Courts seeks vendor for two colocation data centers",
+    "summary": "The Administrative Office of the U.S. Courts is seeking vendors for two colocation data centers, currently using Digital Realty and Csquare through a third-party intermediary.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/administrative-office-of-the-us-courts-seeks-vendor-for-two-colocation-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 15:45:41 +0000",
+    "retrieved_at": "2026-08-26T16:42:12+00:00",
+    "tickers": [
+      {
+        "ticker": "DLR",
+        "company_name": "Digital Realty",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct mention of colocation data center procurement relevant to data center infrastructure buildout.",
+    "url_hash": "819bdffea9d6f031",
+    "id": "819bdffea9d6f031"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Empyrion closes financing for Taipei, Taiwan data center with E.Sun Bank",
+    "summary": "Empyrion closed financing for a 7MW data center in Taipei, Taiwan with support from E.Sun Bank.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/empyrion-closes-financing-for-taipei-taiwan-data-center-with-esun-bank/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 16:00:42 +0000",
+    "retrieved_at": "2026-08-26T16:42:11+00:00",
+    "tickers": [
+      {
+        "ticker": "2884",
+        "company_name": "E.Sun Bank",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "directly addresses data center infrastructure development, a core AI Buildout component",
+    "url_hash": "1ff05eda7f99d233",
+    "id": "1ff05eda7f99d233"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "OpenAI's head of data centers, Chris Malone, latest to depart",
     "summary": "OpenAI's head of data centers Chris Malone has departed, marking another key departure from the Stargate project team.",
     "source_url": "https://www.datacenterdynamics.com/en/news/openais-head-of-data-centers-chris-malone-latest-to-depart/",
