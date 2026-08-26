@@ -1,5 +1,19 @@
 [
   {
+    "niche": "Space",
+    "headline": "Inside the Nancy Grace Roman Space Telescope, NASA's next great observatory",
+    "summary": "NASA's Roman Space Telescope is scheduled to launch on August 30 and the article describes the major components of this observatory.",
+    "source_url": "https://www.space.com/astronomy/inside-the-nancy-grace-roman-space-telescope-nasas-next-great-observatory",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 10:00:00 +0000",
+    "retrieved_at": "2026-08-26T10:25:55+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers NASA's Roman Space Telescope, a space observatory mission directly relevant to the Space scope.",
+    "url_hash": "17631fa3d2e79ad2",
+    "id": "17631fa3d2e79ad2"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Sponsored: Join the green computing: Ablecom unveils AbleCool RDHx portfolio",
     "summary": "Ablecom unveiled its AbleCool RDHx portfolio of cooling solutions ranging from airflow boosters to 100kW AI supercomputing racks.",
