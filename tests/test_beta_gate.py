@@ -164,10 +164,19 @@ def test_app_with_beta_auth_enabled_and_empty_allowlist_shows_unconfigured_place
     at.run()
 
     assert not at.exception
-    assert [info.value for info in at.info] == [
-        "Private beta access is being configured. "
-        "Approved beta accounts have not been configured on this deployment yet."
-    ]
+    # With auth enabled and no authenticated user, the app must stop at
+    # the Google sign-in screen before ever evaluating the allowlist —
+    # regardless of whether the allowlist itself is configured. The old
+    # "unconfigured placeholder" expectation here relied on an
+    # unauthenticated placeholder email being treated as a real logged-in
+    # identity, which is exactly the login-state bug this test now guards
+    # against instead.
+    assert [title.value for title in at.title] == ["Private beta"]
+    assert any(
+        "Sign in with your approved Google account to access EevaResearch AI." in md.value
+        for md in at.markdown
+    )
+    assert [button.label for button in at.button] == ["Continue with Google"]
 
 
 def test_app_with_beta_auth_enabled_and_configured_allowlist_reaches_auth_flow(monkeypatch):

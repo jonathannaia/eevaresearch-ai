@@ -144,8 +144,8 @@ st.session_state.setdefault(READ_IDS_KEY, set())
 # value.
 _beta_settings = get_settings()
 
-_beta_email = st.user.get("email")
-_beta_is_logged_in = bool(_beta_email)
+_beta_is_logged_in = getattr(st.user, "is_logged_in", False)
+_beta_email = st.user.get("email") if _beta_is_logged_in else None
 
 if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
     st.title("Private beta")
