@@ -1,5 +1,67 @@
 [
   {
+    "niche": "Space",
+    "headline": "Roman Space Telescope Travels to SpaceX Hangar",
+    "summary": "NASA's Nancy Grace Roman Space Telescope was transported to SpaceX's hangar at Kennedy Space Center ahead of mating to a Falcon Heavy rocket for an upcoming launch.",
+    "source_url": "https://www.nasa.gov/image-article/roman-space-telescope-travels-to-spacex-hangar/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Wed, 26 Aug 2026 18:40:19 +0000",
+    "retrieved_at": "2026-08-27T05:52:16+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "SpaceX (Tesla parent company)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Substantively covers space launch infrastructure and a major space telescope mission preparation with SpaceX",
+    "url_hash": "eeb71822d855a9ea",
+    "id": "eeb71822d855a9ea"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Bedrock Robotics’ first operator-free excavator deployments take off",
+    "summary": "Bedrock Robotics has begun deploying autonomous, operator-free excavators to active construction job sites to address labor shortages using AI-powered heavy machinery.",
+    "source_url": "https://www.therobotreport.com/bedrock-robotics-first-operator-free-excavator-deployments-take-off/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 13:51:51 +0000",
+    "retrieved_at": "2026-08-27T05:52:13+00:00",
+    "tickers": [],
+    "relevance_reason": "Bedrock Robotics is deploying autonomous excavators to active job sites, directly addressing the humanoid/robotics automation scope.",
+    "url_hash": "4d71f3ee2a48bba7",
+    "id": "4d71f3ee2a48bba7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Amazon just tripled its order of Nvidia chips over ‘surging demand’",
+    "summary": "Amazon is increasing its order of Nvidia GPU chips by 2 million units over the next two years to meet surging demand for its data centers. The partnership extends beyond the chip purchase.",
+    "source_url": "https://techcrunch.com/2026/08/26/amazon-just-tripled-its-order-of-nvidia-chips-over-surging-demand/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 26 Aug 2026 23:47:18 +0000",
+    "retrieved_at": "2026-08-27T05:51:51+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly concerns GPU/accelerator supply chain and hyperscaler capex for AI infrastructure",
+    "url_hash": "d949d26fe8757800",
+    "id": "d949d26fe8757800"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "PJM’s Power Shortfall Puts Data Center Growth in Focus",
     "summary": "PJM's initial large load process yielded 12 proposals without consensus, and the region is now pursuing accelerated procurement to address a 6.8 GW capacity shortfall that impacts data center growth.",
