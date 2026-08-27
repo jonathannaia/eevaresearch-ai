@@ -302,3 +302,94 @@ def test_reprocessing_does_not_cause_repeated_category_growth_or_duplicate_recor
     assert len(store) == 1  # no duplicate CandidateSignal
     from src.data_access.edgar import scan_service
     assert len(scan_service.load_filing_events(tmp_path)) == 1  # no duplicate FilingEvent
+
+
+def test_complete_424b5_stays_needs_review_when_auto_publish_is_disabled(tmp_path):
+    client = _make_client(
+        {
+            "0001045810": {
+                "filings": {
+                    "recent": _recent(
+                        ["0001045810-26-000050"],
+                        forms=["424B5"],
+                        primary_docs=["offering.htm"],
+                    )
+                }
+            }
+        },
+        {
+            "0001045810-26-000050": (
+                b"<html><body><p>"
+                b"We priced the public offering of 10,000,000 shares of common stock. "
+                b"The offering is expected to result in gross proceeds of $125 million."
+                b"</p></body></html>"
+            )
+        },
+    )
+
+    edgar_pipeline.run_pipeline(
+        client,
+        [_NVDA],
+        tmp_path,
+        auto_publish_enabled=False,
+    )
+
+    candidate = next(
+        iter(candidate_store.load_candidates(
+            tmp_path,
+            edgar_pipeline.CANDIDATE_STORE_FILENAME,
+        ).values())
+    )
+
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert any(
+        transition.detail.startswith("Shadow policy: PUBLISH")
+        for transition in candidate.state_history
+    )
+
+
+def test_complete_424b5_is_published_when_auto_publish_is_enabled(tmp_path):
+    from src.logic.signal_promotion import is_eligible_for_signal
+
+    client = _make_client(
+        {
+            "0001045810": {
+                "filings": {
+                    "recent": _recent(
+                        ["0001045810-26-000051"],
+                        forms=["424B5"],
+                        primary_docs=["offering.htm"],
+                    )
+                }
+            }
+        },
+        {
+            "0001045810-26-000051": (
+                b"<html><body><p>"
+                b"We priced the public offering of 10,000,000 shares of common stock. "
+                b"The offering is expected to result in gross proceeds of $125 million."
+                b"</p></body></html>"
+            )
+        },
+    )
+
+    edgar_pipeline.run_pipeline(
+        client,
+        [_NVDA],
+        tmp_path,
+        auto_publish_enabled=True,
+    )
+
+    candidate = next(
+        iter(candidate_store.load_candidates(
+            tmp_path,
+            edgar_pipeline.CANDIDATE_STORE_FILENAME,
+        ).values())
+    )
+
+    assert candidate.status == CandidateStatus.PUBLISHED
+    assert is_eligible_for_signal(candidate) is True
+    assert any(
+        transition.detail.startswith("Shadow policy: PUBLISH")
+        for transition in candidate.state_history
+    )

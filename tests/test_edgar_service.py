@@ -94,8 +94,17 @@ def test_get_edgar_companies_only_returns_edgar_source_companies(tmp_path):
 def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     captured = {}
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+    def _fake_run_pipeline(
+        client,
+        companies,
+        cache_dir,
+        lookback_days=None,
+        max_candidates_to_process=None,
+        candidate_repository=None,
+        auto_publish_enabled=False,
+    ):
         captured["candidate_repository"] = candidate_repository
+        captured["auto_publish_enabled"] = auto_publish_enabled
         return "sentinel-report"
 
     monkeypatch.setattr(edgar_service.edgar_pipeline, "run_pipeline", _fake_run_pipeline)
@@ -104,14 +113,24 @@ def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
 
     assert result == "sentinel-report"
     assert captured["candidate_repository"] is None
+    assert captured["auto_publish_enabled"] is False
 
 
 def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
     captured = {}
     sentinel_repo = object()  # identity check only — no method on it is ever called this test
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+    def _fake_run_pipeline(
+        client,
+        companies,
+        cache_dir,
+        lookback_days=None,
+        max_candidates_to_process=None,
+        candidate_repository=None,
+        auto_publish_enabled=False,
+    ):
         captured["candidate_repository"] = candidate_repository
+        captured["auto_publish_enabled"] = auto_publish_enabled
         return "sentinel-report"
 
     monkeypatch.setattr(edgar_service.edgar_pipeline, "run_pipeline", _fake_run_pipeline)
@@ -119,13 +138,22 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
     edgar_service.run_scan(_settings(tmp_path, user_agent="EevaResearch test@example.com"), candidate_repository=sentinel_repo)
 
     assert captured["candidate_repository"] is sentinel_repo
+    assert captured["auto_publish_enabled"] is False
+    assert captured["auto_publish_enabled"] is False
 
 
 def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     captured = {}
 
-    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+    def _fake_process_single_candidate(
+        client,
+        candidate_id,
+        cache_dir,
+        candidate_repository=None,
+        auto_publish_enabled=False,
+    ):
         captured["candidate_repository"] = candidate_repository
+        captured["auto_publish_enabled"] = auto_publish_enabled
         return None
 
     monkeypatch.setattr(edgar_service.edgar_pipeline, "process_single_candidate", _fake_process_single_candidate)
@@ -134,14 +162,22 @@ def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, m
 
     assert result is None
     assert captured["candidate_repository"] is None
+    assert captured["auto_publish_enabled"] is False
 
 
 def test_process_candidate_now_passes_through_an_explicitly_supplied_repository(tmp_path, monkeypatch):
     captured = {}
     sentinel_repo = object()
 
-    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+    def _fake_process_single_candidate(
+        client,
+        candidate_id,
+        cache_dir,
+        candidate_repository=None,
+        auto_publish_enabled=False,
+    ):
         captured["candidate_repository"] = candidate_repository
+        captured["auto_publish_enabled"] = auto_publish_enabled
         return None
 
     monkeypatch.setattr(edgar_service.edgar_pipeline, "process_single_candidate", _fake_process_single_candidate)
@@ -249,3 +285,30 @@ def test_phase4a_files_never_reference_real_local_state():
             if forbidden in source:
                 offenders.append(f"{path.name}: contains {forbidden!r}")
     assert not offenders, offenders
+
+
+def test_process_candidate_now_threads_explicit_auto_publish_setting(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_process_single_candidate(
+        client,
+        candidate_id,
+        cache_dir,
+        candidate_repository=None,
+        auto_publish_enabled=False,
+    ):
+        captured["auto_publish_enabled"] = auto_publish_enabled
+        return None
+
+    monkeypatch.setattr(
+        edgar_service.edgar_pipeline,
+        "process_single_candidate",
+        _fake_process_single_candidate,
+    )
+
+    settings = _settings(tmp_path, user_agent="EevaResearch test@example.com")
+    object.__setattr__(settings, "edgar_auto_publish_enabled", True)
+
+    edgar_service.process_candidate_now(settings, "edgar-cand-1")
+
+    assert captured["auto_publish_enabled"] is True

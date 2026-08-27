@@ -89,6 +89,7 @@ def process_candidate(
     cache_dir: Path,
     counters: dict[str, int],
     error_counts: dict[str, int],
+    auto_publish_enabled: bool = False,
 ) -> CandidateSignal:
     """The per-candidate retrieval/extraction state machine — a single
     explicit candidate, never a loop. Called both from run_pipeline's
@@ -179,8 +180,10 @@ def process_candidate(
             final_status = CandidateStatus.MONITORING
         elif shadow_decision.route == SignalRoute.ARCHIVE:
             final_status = CandidateStatus.DISMISSED
+        elif shadow_decision.route == SignalRoute.PUBLISH and auto_publish_enabled:
+            final_status = CandidateStatus.PUBLISHED
         else:
-            # REVIEW and PUBLISH remain human-gated in this beta.
+            # REVIEW and disabled PUBLISH remain human-gated.
             final_status = CandidateStatus.NEEDS_REVIEW
     elif candidate.extraction_state == ExtractionState.RETRIEVAL_FAILED:
         final_status = CandidateStatus.RETRIEVAL_FAILED
@@ -196,6 +199,7 @@ def process_single_candidate(
     candidate_id: str,
     cache_dir: Path,
     candidate_repository: CandidatePersistence | None = None,
+    auto_publish_enabled: bool = False,
 ) -> CandidateSignal | None:
     """On-demand processing of exactly one named candidate — the seam
     Radar Inbox's manual "Process now"/"Retry processing" actions call
@@ -214,7 +218,14 @@ def process_single_candidate(
         return None
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0}
     error_counts: dict[str, int] = {}
-    processed = process_candidate(client, candidate, cache_dir, counters, error_counts)
+    processed = process_candidate(
+        client,
+        candidate,
+        cache_dir,
+        counters,
+        error_counts,
+        auto_publish_enabled=auto_publish_enabled,
+    )
     if candidate_repository is None:
         candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)
     else:
@@ -229,6 +240,7 @@ def run_pipeline(
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
+    auto_publish_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -273,7 +285,14 @@ def run_pipeline(
     error_counts: dict[str, int] = {}
 
     for candidate in to_process:
-        processed = process_candidate(client, candidate, cache_dir, counters, error_counts)
+        processed = process_candidate(
+            client,
+            candidate,
+            cache_dir,
+            counters,
+            error_counts,
+            auto_publish_enabled=auto_publish_enabled,
+        )
         if candidate_repository is None:
             candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)
         else:

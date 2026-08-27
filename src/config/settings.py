@@ -72,6 +72,12 @@ class Settings:
     # exists so a future, separately-approved wiring step has a ready,
     # already-fail-closed-by-default gate to read.
     edgar_discovery_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_DISCOVERY_ENABLED"))
+    # Conservative autonomous-publication gate for the narrow, evidence-complete
+    # EDGAR policy path. Disabled unless explicitly enabled in the deployment
+    # environment; this field only parses the flag and never performs I/O.
+    edgar_auto_publish_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_AUTO_PUBLISH_ENABLED")
+    )
     cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cache")
     # Durable-State Phase 1 (dormant — see src/data_access/state_db/).
     # "json" (the default, used whenever this var is unset/blank/

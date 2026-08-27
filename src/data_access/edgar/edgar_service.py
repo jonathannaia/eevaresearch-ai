@@ -86,6 +86,7 @@ def run_scan(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
+        auto_publish_enabled=settings.edgar_auto_publish_enabled,
     )
 
 
@@ -95,5 +96,7 @@ def process_candidate_now(
     """`candidate_repository` (Durable-State Phase 4A) — same additive,
     optional, synthetic/local-test-only seam as run_scan above."""
     return edgar_pipeline.process_single_candidate(
-        _client(settings), candidate_id, settings.cache_dir, candidate_repository=candidate_repository,
+        _client(settings), candidate_id, settings.cache_dir,
+        candidate_repository=candidate_repository,
+        auto_publish_enabled=settings.edgar_auto_publish_enabled,
     )
