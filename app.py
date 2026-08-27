@@ -143,13 +143,29 @@ st.session_state.setdefault(READ_IDS_KEY, set())
 # the allowlist itself, its size, any email, or the gate's internal reason
 # value.
 _beta_settings = get_settings()
-_beta_gate_decision = evaluate_beta_gate(_beta_settings, email=None)
+
+_beta_email = st.user.get("email")
+_beta_is_logged_in = bool(_beta_email)
+
+if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
+    st.title("Private beta")
+    st.write("Sign in with your approved Google account to access EevaResearch AI.")
+    st.button("Continue with Google", on_click=st.login, args=("google",))
+    st.stop()
+
+_beta_gate_decision = evaluate_beta_gate(_beta_settings, email=_beta_email)
+
 if not _beta_gate_decision.allowed:
     st.title("Private beta")
     if _beta_settings.private_beta_allowed_emails:
-        st.info("Private beta access is being configured. Sign-in is not enabled on this deployment yet.")
+        st.error("This Google account is not approved for the private beta.")
+        if _beta_is_logged_in:
+            st.button("Sign out", on_click=st.logout)
     else:
-        st.info("Private beta access is being configured. Approved beta accounts have not been configured on this deployment yet.")
+        st.info(
+            "Private beta access is being configured. "
+            "Approved beta accounts have not been configured on this deployment yet."
+        )
     st.stop()
 
 selected = st.navigation(list(pages.values()), position="hidden")
