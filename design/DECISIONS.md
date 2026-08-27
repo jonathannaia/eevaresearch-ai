@@ -3747,3 +3747,62 @@ mocked/synthetic only — **17 passed**. No real DSN, database, Docker,
 network call, or source-provider request occurred. Supplying a real DSN
 and running this command for real against the hosted store remain
 separately approved future actions.
+
+## Theme Registry Foundation — Typed, Fail-Closed Canonical Taxonomy
+
+`config/eevaresearch_theme_registry.yaml` is added as EevaResearch's
+canonical, versioned, multilingual thematic taxonomy (13 themes plus a
+universal `company_specific_catalysts` event layer), together with
+`src/models/theme_registry.py` (pure frozen-dataclass types),
+`src/config/theme_registry_loader.py` (the sole file-I/O boundary —
+`yaml.safe_load` only, never `yaml.load`), and
+`src/logic/theme_matching.py` (pure, read-only Unicode-NFKC+casefold
+normalization and deterministic substring alias/event-pattern
+matching). Full design record: `design/THEME_REGISTRY_FOUNDATION.md`.
+
+This is a separate, internal classification namespace from
+`src.config.ontology.PRIMARY_THEMES` — nothing in that module,
+`data/seed/themes.json`, `Issuer.themes`, or `TrackedCompany.themes` is
+touched, renamed, or mapped. A future crosswalk between the two remains
+a separate, later, dedicated phase.
+
+Validation is fail-closed throughout: `load_theme_registry_or_none()`
+never raises, returning `(None, <sanitized reason code>)` for any
+missing file, malformed YAML, duplicate theme ID, unknown entity role,
+invalid priority, more than one universal theme, or — by explicit
+decision — an unknown `from`/`to` theme ID in
+`shared_cross_theme_relationships` (a **hard failure**, not
+drop-and-warn: an authoring error fails the whole registry closed for
+classification, while `load_theme_registry_or_none()`'s own contract
+keeps that failure from ever reaching or crashing a caller). No reason
+code ever contains a raw exception, file path, or anything unsafe to
+log.
+
+Theme matching is classification/retrieval metadata only. An AST-based
+structural test proves `theme_matching.py`, `theme_registry_loader.py`,
+and `theme_registry.py` import none of `review_actions`,
+`signal_promotion`, `backend_factory`, `container`, or any
+`SignalRepository` — not merely by inspection. No code in this phase
+can construct a `CandidateSignal`, score materiality, or set
+`CandidateStatus` to `PUBLISHED`/`MONITORING`/`DISMISSED`; a
+data-integrity test cross-checks the registry's own
+`classification_output_contract.status_policy.autonomous_statuses_forbidden`
+against the real `CandidateStatus` enum members. `record_review_decision()`
+remains the sole route to any of those three statuses, entirely
+unchanged.
+
+**Scope**: registry foundation only. No live scanning, IR/RSS
+ingestion, generic news ingestion, AI-generated research, execution of
+`discovery_queries`, database migration, dashboard taxonomy change,
+`CandidateSignal`/`FilingEvent` persistence change, `signal_promotion.py`
+change, Signals policy change, or authentication change occurred or is
+implied by this phase.
+
+**New dependency**: `PyYAML>=6.0,<7.0` added to `requirements.txt` —
+used exclusively via `yaml.safe_load`.
+
+**Execution status, stated precisely**: all 30 new tests
+(`tests/test_theme_registry_loader.py`, `tests/test_theme_matching.py`)
+pass locally — **30 passed** — entirely offline (no network, no
+database, no Docker). The full existing suite was also run this phase;
+see the accompanying report for the combined result.

@@ -1,0 +1,873 @@
+# EevaResearch canonical theme registry
+# Purpose: machine-readable taxonomy for classifying, prioritizing, and later
+# discovering filings, earnings releases, IR materials, and news.
+# This registry supplies relevance context only. It must not publish signals or
+# bypass the CandidateSignal human-review lifecycle.
+#
+# Normalization guidance:
+# - Match aliases case-insensitively after Unicode normalization.
+# - Use aliases as retrieval/classification hints, not proof of relevance.
+# - Require source evidence and a material event before creating a candidate.
+# - Terms are intentionally multilingual where useful; preserve original source
+#   language and provide English translation in downstream research output.
+
+registry_version: 1
+registry_name: EevaResearch Theme Registry
+primary_language: en
+
+matching_policy:
+  minimum_theme_evidence: 1
+  require_material_event_for_candidate: true
+  allow_multi_theme_assignment: true
+  do_not_auto_publish: true
+  source_priority:
+    - regulatory_filing
+    - issuer_ir
+    - earnings_release
+    - official_company_statement
+    - reputable_news
+  common_material_event_patterns:
+    - earnings
+    - guidance_change
+    - capex
+    - capacity_expansion
+    - customer_win
+    - order_or_backlog
+    - supply_agreement
+    - partnership
+    - product_launch
+    - technology_milestone
+    - financing
+    - m_and_a
+    - restructuring
+    - executive_change
+    - litigation_or_regulatory
+    - export_control_or_trade_policy
+
+geographies:
+  - id: united_states
+    names: [United States, U.S., US, USA]
+    sources: [SEC_EDGAR, issuer_ir, earnings_release, reputable_news]
+  - id: south_korea
+    names: [South Korea, Korea, 대한민국, 한국]
+    sources: [Korea_DART, issuer_ir, earnings_release, reputable_news]
+  - id: japan
+    names: [Japan, 日本]
+    sources: [Japan_EDINET, TDnet, issuer_ir, earnings_release, reputable_news]
+  - id: china
+    names: [China, PRC, 中国, 中华人民共和国]
+    sources: [issuer_ir, exchange_disclosure, reputable_news]
+  - id: taiwan
+    names: [Taiwan, 台灣, 台湾]
+    sources: [issuer_ir, exchange_disclosure, reputable_news]
+  - id: europe
+    names: [Europe, European Union, EU, United Kingdom, UK]
+    sources: [issuer_ir, exchange_disclosure, reputable_news]
+
+entity_roles:
+  - upstream_materials
+  - equipment_vendor
+  - component_supplier
+  - chip_designer
+  - foundry
+  - memory_supplier
+  - packaging_and_test
+  - systems_vendor
+  - hyperscaler
+  - telecom_operator
+  - utility
+  - developer_operator
+  - customer
+  - government_or_regulator
+
+materiality_keywords:
+  high_priority:
+    - raises guidance
+    - lowers guidance
+    - withdraws guidance
+    - outlook
+    - demand
+    - order backlog
+    - design win
+    - customer qualification
+    - purchase order
+    - long-term agreement
+    - supply agreement
+    - strategic partnership
+    - memorandum of understanding
+    - contract award
+    - capacity expansion
+    - capital expenditure
+    - capex
+    - fab expansion
+    - data center expansion
+    - production ramp
+    - volume production
+    - mass production
+    - commercial launch
+    - acquisition
+    - merger
+    - divestiture
+    - financing
+    - convertible notes
+    - equity offering
+    - debt facility
+    - restructuring
+    - workforce reduction
+    - chief executive officer
+    - chief financial officer
+    - export controls
+    - sanctions
+    - regulatory approval
+    - investigation
+    - litigation
+  lower_priority:
+    - annual meeting
+    - routine director election
+    - form of proxy
+    - insider transaction
+    - administrative amendment
+
+shared_cross_theme_relationships:
+  - relation: ai_compute_drives
+    from: ai_infrastructure_and_semiconductors
+    to:
+      - data_centers_and_compute_capacity
+      - advanced_packaging_memory_and_semiconductor_equipment
+      - optical_networking_and_data_center_connectivity
+      - power_grid_infrastructure_and_energy
+  - relation: electrification_drives
+    from: evs_batteries_and_electrification
+    to:
+      - critical_minerals_and_strategic_supply_chains
+      - power_grid_infrastructure_and_energy
+  - relation: photonics_enables
+    from: quantum_computing_and_photonics
+    to:
+      - optical_networking_and_data_center_connectivity
+      - ai_infrastructure_and_semiconductors
+  - relation: regional_supply_chain_overlap
+    from: east_asia_and_cross_border_technology_supply_chains
+    to:
+      - ai_infrastructure_and_semiconductors
+      - advanced_packaging_memory_and_semiconductor_equipment
+      - optical_networking_and_data_center_connectivity
+      - critical_minerals_and_strategic_supply_chains
+
+themes:
+  - id: ai_infrastructure_and_semiconductors
+    name: AI infrastructure and semiconductors
+    priority: critical
+    description: Compute silicon, accelerators, AI servers, foundry capacity, and the infrastructure required to train and run AI workloads.
+    aliases:
+      - artificial intelligence infrastructure
+      - AI infrastructure
+      - AI compute
+      - accelerated computing
+      - AI accelerator
+      - GPU
+      - NPU
+      - TPU
+      - ASIC
+      - custom silicon
+      - AI server
+      - AI cluster
+      - hyperscale AI
+      - generative AI
+      - machine learning infrastructure
+      - 데이터센터 AI
+      - 인공지능 반도체
+      - AI 半導体
+      - 人工智能芯片
+    technologies_products:
+      - GPU
+      - AI accelerator
+      - NPU
+      - TPU
+      - AI ASIC
+      - CPU
+      - AI server
+      - rack-scale system
+      - inference hardware
+      - training cluster
+      - liquid cooling
+    entity_roles:
+      - chip_designer
+      - foundry
+      - systems_vendor
+      - hyperscaler
+      - customer
+    event_patterns:
+      - accelerator roadmap
+      - customer deployment
+      - cloud capacity expansion
+      - AI server shipment
+      - foundry allocation
+      - product qualification
+      - supply constraint
+      - demand forecast
+    discovery_queries:
+      - AI accelerator guidance
+      - AI server capex
+      - GPU supply agreement
+      - custom silicon partnership
+      - data center AI capacity
+
+  - id: optical_networking_and_data_center_connectivity
+    name: Optical networking and data-center connectivity
+    priority: critical
+    description: Optical components, transceivers, interconnects, switching, and networking capacity supporting AI and cloud data centers.
+    aliases:
+      - optical networking
+      - data center connectivity
+      - datacenter connectivity
+      - optical interconnect
+      - silicon photonics
+      - optical transceiver
+      - coherent optics
+      - CPO
+      - co-packaged optics
+      - pluggable optics
+      - Ethernet switching
+      - InfiniBand
+      - AEC
+      - active electrical cable
+      - 광통신
+      - 실리콘 포토닉스
+      - 光通信
+      - 硅光子
+    technologies_products:
+      - 400G
+      - 800G
+      - 1.6T
+      - transceiver
+      - optical engine
+      - DSP
+      - laser
+      - coherent module
+      - silicon photonics
+      - CPO
+      - Ethernet switch
+      - InfiniBand
+      - fiber optic cable
+    entity_roles:
+      - component_supplier
+      - systems_vendor
+      - telecom_operator
+      - hyperscaler
+      - customer
+    event_patterns:
+      - transceiver demand
+      - 800G ramp
+      - 1.6T ramp
+      - hyperscaler qualification
+      - optical module order
+      - networking capacity expansion
+      - supply agreement
+      - design win
+    discovery_queries:
+      - 800G customer qualification
+      - 1.6T optical transceiver order
+      - silicon photonics partnership
+      - co-packaged optics product launch
+      - AI networking backlog
+
+  - id: power_grid_infrastructure_and_energy
+    name: Power, grid infrastructure, and energy
+    priority: critical
+    description: Electricity generation, grid equipment, transmission, storage, and power availability for industrial growth and data centers.
+    aliases:
+      - grid infrastructure
+      - electrical grid
+      - transmission
+      - distribution
+      - substation
+      - transformer
+      - switchgear
+      - power availability
+      - data center power
+      - utility interconnection
+      - energy storage
+      - grid-scale battery
+      - nuclear power
+      - gas turbine
+      - 전력망
+      - 변압기
+      - 電力網
+      - 送電
+    technologies_products:
+      - transformer
+      - switchgear
+      - substation
+      - transmission line
+      - distribution equipment
+      - turbine
+      - generator
+      - battery energy storage
+      - microgrid
+      - power purchase agreement
+      - interconnection
+    entity_roles:
+      - utility
+      - equipment_vendor
+      - developer_operator
+      - customer
+      - government_or_regulator
+    event_patterns:
+      - interconnection approval
+      - power purchase agreement
+      - utility capex
+      - transformer backlog
+      - substation order
+      - generation capacity
+      - data center power contract
+      - grid constraint
+    discovery_queries:
+      - data center power agreement
+      - transformer backlog guidance
+      - utility capex transmission
+      - grid interconnection approval
+      - battery storage project award
+
+  - id: data_centers_and_compute_capacity
+    name: Data centers and compute capacity
+    priority: critical
+    description: Data-center construction, capacity, leasing, cloud availability zones, cooling, land, and power procurement.
+    aliases:
+      - data center
+      - datacenter
+      - cloud region
+      - availability zone
+      - colocation
+      - hyperscale campus
+      - compute capacity
+      - AI cluster
+      - data center construction
+      - cooling capacity
+      - 데이터센터
+      - 数据中心
+      - データセンター
+    technologies_products:
+      - data center campus
+      - colocation
+      - cloud region
+      - liquid cooling
+      - air cooling
+      - rack
+      - server
+      - power distribution
+      - backup generation
+    entity_roles:
+      - developer_operator
+      - hyperscaler
+      - systems_vendor
+      - utility
+      - customer
+    event_patterns:
+      - campus acquisition
+      - construction start
+      - capacity lease
+      - cloud region launch
+      - power procurement
+      - cooling deployment
+      - capex increase
+      - delivery delay
+    discovery_queries:
+      - data center campus expansion
+      - AI data center lease
+      - cloud region launch
+      - data center capex guidance
+      - liquid cooling deployment
+
+  - id: advanced_packaging_memory_and_semiconductor_equipment
+    name: Advanced packaging, memory, and semiconductor equipment
+    priority: critical
+    description: HBM, DRAM, NAND, advanced packaging, test, lithography, deposition, etch, inspection, and fab equipment.
+    aliases:
+      - advanced packaging
+      - HBM
+      - high bandwidth memory
+      - DRAM
+      - NAND
+      - memory semiconductor
+      - chiplet
+      - 2.5D packaging
+      - 3D packaging
+      - wafer-level packaging
+      - OSAT
+      - semiconductor equipment
+      - lithography
+      - deposition
+      - etch
+      - metrology
+      - inspection
+      - 반도체 장비
+      - 고대역폭 메모리
+      - 先进封装
+      - 高带宽存储器
+    technologies_products:
+      - HBM
+      - DRAM
+      - NAND
+      - chiplet
+      - interposer
+      - TSV
+      - CoWoS
+      - hybrid bonding
+      - packaging substrate
+      - test equipment
+      - lithography
+      - deposition
+      - etch
+      - inspection
+    entity_roles:
+      - memory_supplier
+      - packaging_and_test
+      - equipment_vendor
+      - foundry
+      - component_supplier
+    event_patterns:
+      - HBM qualification
+      - memory contract
+      - packaging capacity
+      - CoWoS capacity
+      - equipment order
+      - utilization rate
+      - wafer-fab equipment guidance
+      - yield improvement
+    discovery_queries:
+      - HBM supply agreement
+      - advanced packaging capacity expansion
+      - CoWoS capacity guidance
+      - semiconductor equipment order backlog
+      - memory pricing outlook
+
+  - id: robotics_automation_and_industrial_technology
+    name: Robotics, automation, and industrial technology
+    priority: high
+    description: Factory automation, industrial software, machine vision, robotics, motion control, and autonomous systems.
+    aliases:
+      - robotics
+      - industrial automation
+      - factory automation
+      - machine vision
+      - motion control
+      - collaborative robot
+      - cobot
+      - autonomous mobile robot
+      - AMR
+      - industrial software
+      - digital twin
+      - 스마트 팩토리
+      - 로봇
+      - 工业自动化
+      - 机器人
+    technologies_products:
+      - industrial robot
+      - cobot
+      - AMR
+      - PLC
+      - servo motor
+      - machine vision
+      - sensor
+      - industrial software
+      - digital twin
+      - factory automation system
+    entity_roles:
+      - equipment_vendor
+      - systems_vendor
+      - component_supplier
+      - customer
+    event_patterns:
+      - automation order
+      - factory investment
+      - robotics deployment
+      - distributor demand
+      - industrial capex
+      - new platform
+      - strategic partnership
+    discovery_queries:
+      - industrial automation order backlog
+      - robotics customer deployment
+      - machine vision guidance
+      - factory automation capex
+      - AMR commercial launch
+
+  - id: space_satellites_and_defense_adjacent_technology
+    name: Space, satellites, and defense-adjacent technology
+    priority: high
+    description: Launch services, satellite constellations, space infrastructure, secure communications, and dual-use aerospace technology.
+    aliases:
+      - space economy
+      - satellite
+      - satellite constellation
+      - launch vehicle
+      - rocket
+      - spacecraft
+      - earth observation
+      - space communications
+      - secure communications
+      - aerospace
+      - defense technology
+      - 위성
+      - 우주항공
+      - 卫星
+      - 航天
+    technologies_products:
+      - launch vehicle
+      - satellite bus
+      - payload
+      - constellation
+      - ground station
+      - satellite communications
+      - earth observation
+      - propulsion
+      - space-grade components
+    entity_roles:
+      - systems_vendor
+      - component_supplier
+      - customer
+      - government_or_regulator
+    event_patterns:
+      - launch contract
+      - launch success or failure
+      - government award
+      - constellation deployment
+      - satellite order
+      - regulatory license
+      - financing runway
+    discovery_queries:
+      - satellite constellation contract
+      - launch services award
+      - space company backlog
+      - satellite communications partnership
+      - government aerospace contract
+
+  - id: quantum_computing_and_photonics
+    name: Quantum computing and photonics
+    priority: high
+    description: Quantum hardware, quantum networking, photonic computing, lasers, sensors, and enabling components.
+    aliases:
+      - quantum computing
+      - quantum computer
+      - quantum networking
+      - quantum communication
+      - photonic computing
+      - photonics
+      - quantum processor
+      - qubit
+      - quantum error correction
+      - laser technology
+      - 양자컴퓨팅
+      - 광자
+      - 量子计算
+      - 光子学
+    technologies_products:
+      - quantum processor
+      - qubit
+      - quantum networking
+      - photon source
+      - laser
+      - photonic integrated circuit
+      - quantum sensor
+      - cryogenic system
+    entity_roles:
+      - systems_vendor
+      - component_supplier
+      - customer
+      - government_or_regulator
+    event_patterns:
+      - technology milestone
+      - error-correction milestone
+      - commercial contract
+      - government funding
+      - hardware delivery
+      - strategic partnership
+      - photonics capacity expansion
+    discovery_queries:
+      - quantum computing contract
+      - quantum networking partnership
+      - photonic integrated circuit launch
+      - quantum error correction milestone
+      - laser component demand
+
+  - id: evs_batteries_and_electrification
+    name: EVs, batteries, and electrification
+    priority: high
+    description: Electric vehicles, battery cells/materials, charging, power electronics, and electrified industrial equipment.
+    aliases:
+      - electric vehicle
+      - EV
+      - battery electric vehicle
+      - battery cell
+      - lithium ion battery
+      - battery pack
+      - charging
+      - fast charging
+      - power electronics
+      - inverter
+      - silicon carbide
+      - SiC
+      - electrification
+      - 전기차
+      - 배터리
+      - 电动汽车
+      - 电池
+    technologies_products:
+      - battery cell
+      - battery pack
+      - cathode
+      - anode
+      - separator
+      - electrolyte
+      - charging station
+      - inverter
+      - SiC device
+      - electric drivetrain
+    entity_roles:
+      - component_supplier
+      - equipment_vendor
+      - customer
+      - upstream_materials
+      - government_or_regulator
+    event_patterns:
+      - production guidance
+      - battery supply agreement
+      - plant expansion
+      - charging network expansion
+      - pricing action
+      - demand revision
+      - incentive or tariff change
+    discovery_queries:
+      - EV demand guidance
+      - battery supply agreement
+      - battery plant capex
+      - silicon carbide order
+      - charging network expansion
+
+  - id: critical_minerals_and_strategic_supply_chains
+    name: Critical minerals and strategic supply chains
+    priority: high
+    description: Materials, mining, refining, processing, and strategic supply chains for semiconductors, energy, batteries, and defense technology.
+    aliases:
+      - critical minerals
+      - strategic minerals
+      - rare earths
+      - rare earth elements
+      - lithium
+      - nickel
+      - cobalt
+      - graphite
+      - gallium
+      - germanium
+      - tungsten
+      - antimony
+      - copper
+      - mineral processing
+      - refining
+      - supply chain security
+      - 핵심광물
+      - 희토류
+      - 关键矿产
+      - 稀土
+    technologies_products:
+      - lithium
+      - nickel
+      - cobalt
+      - graphite
+      - rare earth elements
+      - gallium
+      - germanium
+      - copper
+      - mineral concentrate
+      - refining capacity
+      - processing plant
+    entity_roles:
+      - upstream_materials
+      - customer
+      - government_or_regulator
+      - developer_operator
+    event_patterns:
+      - offtake agreement
+      - mine permit
+      - processing facility
+      - export restriction
+      - strategic investment
+      - supply disruption
+      - commodity pricing
+      - government grant
+    discovery_queries:
+      - critical minerals offtake agreement
+      - rare earth processing expansion
+      - lithium supply contract
+      - mineral export restriction
+      - strategic materials government grant
+
+  - id: biotech_and_life_sciences
+    name: Biotech and life sciences
+    priority: high
+    description: Drug development, clinical trials, diagnostics, genomics, medical devices, and biologics manufacturing.
+    aliases:
+      - biotechnology
+      - biotech
+      - life sciences
+      - clinical trial
+      - phase 1
+      - phase 2
+      - phase 3
+      - FDA approval
+      - drug development
+      - biologics
+      - genomics
+      - diagnostic
+      - medical device
+      - 바이오
+      - 임상시험
+      - 生物技术
+      - 临床试验
+    technologies_products:
+      - therapeutic
+      - biologic
+      - small molecule
+      - cell therapy
+      - gene therapy
+      - diagnostic
+      - sequencing
+      - medical device
+      - clinical platform
+    entity_roles:
+      - systems_vendor
+      - component_supplier
+      - customer
+      - government_or_regulator
+    event_patterns:
+      - clinical readout
+      - trial enrollment
+      - FDA action
+      - regulatory approval
+      - licensing agreement
+      - collaboration
+      - manufacturing agreement
+      - capital raise
+    discovery_queries:
+      - clinical trial results
+      - FDA approval decision
+      - biotech licensing agreement
+      - phase 3 data
+      - biologics manufacturing partnership
+
+  - id: east_asia_and_cross_border_technology_supply_chains
+    name: China, Korea, Japan, and cross-border technology supply chains
+    priority: critical
+    description: Cross-border technology manufacturing, supplier/customer dependencies, policy changes, export controls, and regional disclosures across East Asia.
+    aliases:
+      - East Asia supply chain
+      - China technology supply chain
+      - Korea technology supply chain
+      - Japan technology supply chain
+      - cross-border supply chain
+      - export controls
+      - technology sanctions
+      - localization
+      - reshoring
+      - friendshoring
+      - 공급망
+      - 수출 통제
+      - サプライチェーン
+      - 輸出規制
+      - 供应链
+      - 出口管制
+    technologies_products:
+      - semiconductor supply chain
+      - electronics manufacturing
+      - memory supply chain
+      - optical components
+      - battery materials
+      - rare earth processing
+      - manufacturing equipment
+    entity_roles:
+      - upstream_materials
+      - equipment_vendor
+      - component_supplier
+      - foundry
+      - memory_supplier
+      - packaging_and_test
+      - customer
+      - government_or_regulator
+    event_patterns:
+      - export control
+      - tariff
+      - sanctions
+      - licensing restriction
+      - localization plan
+      - supplier change
+      - cross-border joint venture
+      - capacity relocation
+      - geopolitical disruption
+    discovery_queries:
+      - semiconductor export controls
+      - Korea memory supply agreement
+      - Japan semiconductor equipment order
+      - China technology policy filing
+      - supply chain localization capex
+
+  - id: company_specific_catalysts
+    name: Company-specific catalysts
+    priority: critical
+    description: Universal event layer applied to every covered and discovered issuer; it connects company events to one or more thematic exposures.
+    aliases:
+      - earnings
+      - guidance
+      - revenue
+      - margin
+      - capex
+      - backlog
+      - order
+      - contract
+      - partnership
+      - M&A
+      - financing
+      - regulation
+      - management change
+    applies_to_all_themes: true
+    event_patterns:
+      - earnings_result
+      - guidance_change
+      - revenue_or_margin_change
+      - capex_or_capacity_change
+      - order_backlog_or_customer_win
+      - partnership_or_commercial_agreement
+      - merger_acquisition_divestiture
+      - financing_or_balance_sheet_event
+      - regulatory_or_legal_event
+      - executive_or_governance_change
+      - product_or_technology_milestone
+      - supply_chain_disruption
+    candidate_requirements:
+      - primary_source_or_reputable_news
+      - concrete_company_event
+      - source_url
+      - publication_timestamp_when_available
+      - evidence_excerpt
+
+classification_output_contract:
+  required_fields:
+    - item_id
+    - source_type
+    - source_url
+    - issuer_name
+    - ticker_or_local_identifier
+    - published_at
+    - assigned_theme_ids
+    - matched_aliases
+    - matched_event_patterns
+    - evidence_excerpt
+    - original_language
+    - confidence
+    - requires_human_review
+  status_policy:
+    initial_candidate_status: NEW_FILING_EVENT
+    autonomous_statuses_forbidden:
+      - PUBLISHED
+      - MONITORING
+      - DISMISSED
