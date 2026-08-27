@@ -1,5 +1,227 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Issues Stack Up With More HBM Layers",
+    "summary": "According to Hot Chips 2026, increasing HBM layer density faces significant obstacles including thermal dissipation challenges, limited manufacturing capacity, and constraints from die thinning and TSV (through-silicon via) area expansion.",
+    "source_url": "https://semiengineering.com/issues-stack-up-with-more-hbm-layers/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 07:15:08 +0000",
+    "retrieved_at": "2026-08-27T17:08:10+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses technical challenges in scaling HBM (High Bandwidth Memory) components, which are critical GPU/accelerator memory for AI infrastructure.",
+    "url_hash": "ec09a0c30cfccb1c",
+    "id": "ec09a0c30cfccb1c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia revenue doubles over last year, as company forecasts record growth",
+    "summary": "Nvidia reported doubled revenue compared to the prior year and expects record growth ahead, while achieving higher revenue per gigawatt of data center power consumption.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nvidia-revenue-doubles-over-last-year-as-company-forecasts-record-growth/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 09:05:00 +0000",
+    "retrieved_at": "2026-08-27T17:08:08+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Reports directly on Nvidia's data center revenue growth and efficiency metrics, core AI infrastructure buildout indicators.",
+    "url_hash": "7e9e6e288718d942",
+    "id": "7e9e6e288718d942"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "LG CNS deploys direct-to-chip cooling for Naver Cloud at data center in Goyang City, South Korea",
+    "summary": "LG CNS has deployed direct-to-chip cooling technology for Naver Cloud at a data center in Goyang City, South Korea, following Naver's lease agreement at the site in April.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/lg-cns-deploys-direct-to-chip-cooling-for-naver-cloud-at-data-center-in-goyang-city-south-korea/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 09:20:45 +0000",
+    "retrieved_at": "2026-08-27T17:08:06+00:00",
+    "tickers": [
+      {
+        "ticker": "035420",
+        "company_name": "Naver",
+        "jurisdiction": "South Korea",
+        "verified": false
+      },
+      {
+        "ticker": "001120",
+        "company_name": "LG CNS",
+        "jurisdiction": "South Korea",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct-to-chip cooling deployment at hyperscaler data center is core AI infrastructure buildout technology",
+    "url_hash": "d6ed8430d0cd68c4",
+    "id": "d6ed8430d0cd68c4"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Anthropic signs $45bn compute capacity agreement with Nscale - report",
+    "summary": "Anthropic has signed a $45 billion compute capacity agreement with Nscale for 460MW of capacity at Nscale's West Virginia data center campus.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/anthropic-signs-45bn-compute-capacity-agreement-with-nscale-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 10:34:19 +0000",
+    "retrieved_at": "2026-08-27T17:08:04+00:00",
+    "tickers": [],
+    "relevance_reason": "Anthropic's multi-billion dollar compute capacity agreement directly involves AI infrastructure buildout and data center capacity.",
+    "url_hash": "e1505147e39520f7",
+    "id": "e1505147e39520f7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Data center start up Fossefall taps Armada for AI data center deployments",
+    "summary": "Fossefall, a data center startup, is deploying five Leviathan modular data centers in the Nordic region through a partnership with Armada.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/data-center-start-up-fossefall-taps-armada-for-ai-data-center-deployments/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 11:08:30 +0000",
+    "retrieved_at": "2026-08-27T17:08:00+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI data center infrastructure deployment with modular data centers for AI workloads.",
+    "url_hash": "22ab7cbe5b938717",
+    "id": "22ab7cbe5b938717"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "SK Telecom launches new AI DC infrastructure focused company, split from SK Broadband",
+    "summary": "SK Telecom has launched SK Horizon, a new company focused on AI data center infrastructure, which received $2.2 billion in investment from KKR and IMM.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/sk-telecom-launches-new-ai-dc-infrastructure-focused-company-split-from-sk-broadband/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 11:09:58 +0000",
+    "retrieved_at": "2026-08-27T17:07:59+00:00",
+    "tickers": [
+      {
+        "ticker": "SKT",
+        "company_name": "SK Telecom",
+        "jurisdiction": "South Korea",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct announcement of new AI data center infrastructure company formation with significant capital commitment.",
+    "url_hash": "682ce2d8f0076bd7",
+    "id": "682ce2d8f0076bd7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "OpenAI gets green light for 3.2GW power deal to supply planned data center in Effingham County, Georgia",
+    "summary": "OpenAI secured approval for a 3.2GW power deal with Georgia Power to supply a planned data center in Effingham County, Georgia, with OpenAI expected to fund the construction of the new generation facility.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/openai-gets-green-light-for-32gw-power-deal-to-supply-planned-data-center-in-effingham-county-georgia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 11:11:16 +0000",
+    "retrieved_at": "2026-08-27T17:07:57+00:00",
+    "tickers": [
+      {
+        "ticker": "GPE",
+        "company_name": "Georgia Power Company",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns hyperscaler capex and power infrastructure for AI data center buildout",
+    "url_hash": "ee9d5196766269b9",
+    "id": "ee9d5196766269b9"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nexspace breaks ground on data center in Graz, Austria",
+    "summary": "Nexspace is breaking ground on a second data center facility in Graz, Austria, expanding its presence in the city.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nexspace-breaks-ground-on-data-center-in-graz-austria/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 11:40:32 +0000",
+    "retrieved_at": "2026-08-27T17:07:54+00:00",
+    "tickers": [],
+    "relevance_reason": "Nexspace is expanding data center infrastructure, which falls under AI Buildout scope covering data center development.",
+    "url_hash": "f3e214999e989b08",
+    "id": "f3e214999e989b08"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AWS to deploy 2 million additional Nvidia GPUs",
+    "summary": "AWS is expanding its partnership with Nvidia to deploy 2 million additional GPUs, representing a significant expansion of AI infrastructure capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/aws-to-deploy-2-million-additional-nvidia-gpus/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 12:00:37 +0000",
+    "retrieved_at": "2026-08-27T17:07:52+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon Web Services (Amazon)",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly addresses GPU procurement by a major hyperscaler for AI infrastructure buildout",
+    "url_hash": "e88f03af1b0b9d19",
+    "id": "e88f03af1b0b9d19"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Gateway Capital files to build 81MW data center in Sydney, Australia",
+    "summary": "Gateway Capital has filed plans to build an 81MW data center on a former industrial site in Sydney, Australia, designed as a five-story facility.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/gateway-capital-files-to-build-81mw-data-center-in-sydney-australia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 12:28:02 +0000",
+    "retrieved_at": "2026-08-27T17:07:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Article describes a data center construction project, which is directly relevant to AI Buildout infrastructure scope.",
+    "url_hash": "984400279aea62a5",
+    "id": "984400279aea62a5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "VCI Global announces launch of Galatron AI",
+    "summary": "VCI Global has announced the launch of Galatron AI, a prefabricated modular AI data center platform designed to support up to 500MW of aggregate AI compute capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/vci-global-announces-launch-of-galatron-ai/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 12:58:25 +0000",
+    "retrieved_at": "2026-08-27T17:07:49+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly relevant to AI Buildout scope as it concerns prefabricated modular AI data center infrastructure and capacity expansion.",
+    "url_hash": "e8b1fe38a915cb48",
+    "id": "e8b1fe38a915cb48"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Salim Group buys out Keppel’s share of Indonesian data center venture",
+    "summary": "Salim Group has acquired Keppel's stake in an Indonesian data center joint venture, which has been rebranded as IndoData.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/salim-group-buys-out-keppels-share-of-indonesian-data-center-venture/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 15:29:42 +0000",
+    "retrieved_at": "2026-08-27T17:07:45+00:00",
+    "tickers": [
+      {
+        "ticker": "KEP",
+        "company_name": "Keppel Corporation",
+        "jurisdiction": "Hong Kong",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "directly concerns data center venture in Indonesia, core AI buildout infrastructure",
+    "url_hash": "af48620ff3c122b0",
+    "id": "af48620ff3c122b0"
+  },
+  {
     "niche": "Space",
     "headline": "Roman Space Telescope Travels to SpaceX Hangar",
     "summary": "NASA's Nancy Grace Roman Space Telescope was transported to SpaceX's hangar at Kennedy Space Center ahead of mating to a Falcon Heavy rocket for an upcoming launch.",
