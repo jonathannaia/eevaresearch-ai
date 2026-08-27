@@ -120,6 +120,31 @@ def test_explicit_postgres_backend_selects_postgres_repositories(pg_isolated_dsn
     assert isinstance(signal_repo, PostgresSignalRepository)
 
 
+def test_explicit_postgres_backend_selects_postgres_scan_status_repository(pg_isolated_dsn):
+    """Durable-State Phase 4M-0 — sibling of
+    test_backend_factory_scan_status.py's own sqlite-side proof, for the
+    real Postgres path. get_scan_status_repository() has no JSON branch
+    at all (see backend_factory.py's own docstring); that no-JSON
+    behavior is proven unconditionally in test_backend_factory_scan_status.py
+    and not repeated here."""
+    from src.data_access.postgres_state_db.scan_status_repository import ProviderScanStatus as PgProviderScanStatus
+
+    settings = _postgres_settings(pg_isolated_dsn)
+    repo = backend_factory.get_scan_status_repository(settings)
+    assert isinstance(repo, backend_factory.PostgresScanStatusRepository)
+    assert repo.get_scan_status("SEC EDGAR") is None
+
+    status = PgProviderScanStatus(
+        provider="SEC EDGAR", cursor_value="20260101", started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:01:00+00:00", last_successful_at="2026-01-01T00:01:00+00:00",
+        items_discovered=1, candidates_created=1, skipped_unresolved_count=0, failure_code=None,
+        updated_at="2026-01-01T00:01:00+00:00",
+    )
+    repo.upsert_scan_status(status)
+    assert repo.get_scan_status("SEC EDGAR") == status
+    assert repo.get_all_scan_statuses() == {"SEC EDGAR": status}
+
+
 def test_candidate_survives_postgres_upsert_and_readback_via_selected_path(pg_isolated_dsn):
     settings = _postgres_settings(pg_isolated_dsn)
     repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
@@ -487,6 +512,7 @@ _NEW_POSTGRES_FILES = (
     Path(__file__).resolve().parent / "test_state_db_postgres_candidate_repository.py",
     Path(__file__).resolve().parent / "test_state_db_postgres_identifier_repository.py",
     Path(__file__).resolve().parent / "test_state_db_postgres_signal_repository.py",
+    Path(__file__).resolve().parent / "test_state_db_postgres_scan_status_repository.py",
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "__init__.py",
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "connection.py",
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "schema.py",
@@ -494,6 +520,7 @@ _NEW_POSTGRES_FILES = (
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "candidate_repository.py",
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "identifier_repository.py",
     Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "signal_repository.py",
+    Path(__file__).resolve().parent.parent / "src" / "data_access" / "postgres_state_db" / "scan_status_repository.py",
 )
 
 _FORBIDDEN_REAL_STATE_REFERENCES = (

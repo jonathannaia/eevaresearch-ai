@@ -225,6 +225,106 @@ def _render_scan_result(session_key_report: str, session_key_error: str) -> None
         st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{st.session_state[session_key_error]}</div>', unsafe_allow_html=True)
 
 
+_WORKER_TRACKED_PROVIDERS = ("SEC EDGAR", "OpenDART / DART", "EDINET")
+
+_WORKER_STATUS_SCOPE_NOTE = (
+    "Status only — not a candidate feed. The worker persists candidates "
+    "directly to its own configured store; rendering those candidates in "
+    "this dashboard requires a separately approved dashboard "
+    "persistence-read bridge, which does not exist yet."
+)
+
+
+def _worker_scan_status_snapshot(settings: Settings):
+    """Durable-State Phase 4M-0 (corrected) — read-only lookup of the
+    standalone worker's (scripts/radar_worker.py) own per-provider scan
+    status. Deliberately reads only this page's own, already-existing
+    `settings.db_backend`/`settings.state_db_url` — the same dashboard
+    Postgres/SQLite bridge every other read in this module already uses
+    (get_signal_repository, get_candidate_repository via _build_items'
+    own `use_sqlite` check) — never
+    `radar_worker_db_backend`/`radar_worker_state_db_path`/
+    `radar_worker_state_db_url`. Those three fields are worker-only:
+    scripts/radar_worker.py reads them from its own separate process
+    environment; this dashboard must never read or require them (see
+    design/DECISIONS.md's Phase 4M-0 correction record for why). If an
+    operator wants this expander to show real data, they point this
+    dashboard's own EDGE_DB_BACKEND/EDGE_STATE_DB_URL at the same
+    physical database the worker's own EDGE_RADAR_WORKER_DB_BACKEND/
+    EDGE_RADAR_WORKER_STATE_DB_URL targets — an operational choice made
+    entirely outside this function, which never bridges the two itself.
+
+    This function never scans, never writes, never resolves an
+    identifier, and never runs on a page load unless a page load happens
+    to occur — matching the existing pattern already used by every other
+    read in this module (_build_items, _edinet_scope_line).
+
+    Returns ("not_configured", None) when this dashboard's own backend
+    isn't sqlite/postgres (the default, "json", today) — the expected
+    state for this phase, since Phase 4M-0 documents but does not
+    provision worker hosting or a dashboard candidate-read bridge (see
+    design/RADAR_WORKER_DEPLOYMENT.md). Returns ("unreachable", None) if
+    a sqlite/postgres backend is configured but the status store can't
+    be reached right now — never raising, never surfacing the underlying
+    exception. Returns ("ok", statuses) otherwise."""
+    backend = (settings.db_backend or "json").strip().lower()
+    if backend not in ("sqlite", "postgres"):
+        return "not_configured", None
+    try:
+        statuses = backend_factory.get_scan_status_repository(settings).get_all_scan_statuses()
+    except Exception:  # noqa: BLE001 — never leak a raw connection/config error into the UI
+        return "unreachable", None
+    return "ok", statuses
+
+
+def _render_worker_status(settings: Settings) -> None:
+    """Renders the required states without ever showing an API key,
+    DSN, EDGE_* environment-variable name, raw exception, stack trace,
+    internal resolver command, or unresolved-issuer list — only provider
+    display names, counts, and timestamps already established elsewhere
+    in this codebase as safe to print (see ScanReport's own docstring).
+    Read-only and sanitized: calls only get_all_scan_statuses(), never a
+    write method, and never displays failure_code's own raw value."""
+    state, statuses = _worker_scan_status_snapshot(settings)
+    with st.expander("Continuous worker status only — not a candidate feed (read-only)"):
+        st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
+        if state == "not_configured":
+            st.markdown(
+                '<div class="er-muted" style="margin-top:0.4rem;">This dashboard is not configured with a '
+                'sqlite/postgres backend, so no worker status can be shown here. See '
+                'design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker deployment path.</div>',
+                unsafe_allow_html=True,
+            )
+            return
+        if state == "unreachable":
+            st.markdown(
+                '<div class="er-muted" style="margin-top:0.4rem;">This dashboard\'s own configured store could not '
+                'be reached right now.</div>',
+                unsafe_allow_html=True,
+            )
+            return
+        for provider in _WORKER_TRACKED_PROVIDERS:
+            status = statuses.get(provider)
+            if status is None:
+                st.markdown(
+                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: no continuous scan has run yet.</div>',
+                    unsafe_allow_html=True,
+                )
+            elif status.failure_code:
+                st.markdown(
+                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: last continuous scan attempt did not complete '
+                    f'(last success: {status.last_successful_at or "never"}).</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: healthy · last successful scan {status.last_successful_at} · '
+                    f'{status.candidates_created} candidate(s) created, {status.skipped_unresolved_count} skipped '
+                    f'(unresolved identifier).</div>',
+                    unsafe_allow_html=True,
+                )
+
+
 def render() -> None:
     settings = get_settings()
     dart_readiness = radar_service.radar_readiness(settings)
@@ -306,6 +406,8 @@ def render() -> None:
         _render_scan_result("radar_last_scan_report", "radar_last_scan_error")
         _render_scan_result("edgar_last_scan_report", "edgar_last_scan_error")
         _render_scan_result("edinet_last_scan_report", "edinet_last_scan_error")
+
+    _render_worker_status(settings)
 
     items = _build_items(settings.cache_dir, settings)
 

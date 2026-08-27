@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -96,11 +96,33 @@ _V1_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Durable-State Phase 4M-0 — isolated Postgres counterpart to
+# state_db/schema.py's own provider_scan_status table, identical shape
+# (no Postgres-specific column types are needed here). See that
+# module's own comment for the full per-column design rationale.
+_V2_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE provider_scan_status (
+        provider TEXT PRIMARY KEY,
+        cursor_value TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        last_successful_at TEXT,
+        items_discovered INTEGER NOT NULL DEFAULT 0,
+        candidates_created INTEGER NOT NULL DEFAULT 0,
+        skipped_unresolved_count INTEGER NOT NULL DEFAULT 0,
+        failure_code TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 2 later means appending a new (2, (...statements...))
+# Adding schema version 3 later means appending a new (3, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
+    (2, _V2_STATEMENTS),
 )
 
 

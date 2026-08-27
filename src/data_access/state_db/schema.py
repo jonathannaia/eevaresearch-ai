@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -128,11 +128,38 @@ _V1_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Durable-State Phase 4M-0 — one row per provider (per-provider
+# granularity, not per-issuer, by explicit decision). Combines the
+# cursor (`cursor_value`) and the scan-status fields into a single table
+# since a worker tick always reads/writes both together for one
+# provider. `provider` is the same source-name string used everywhere
+# else in this codebase ("SEC EDGAR" / "OpenDART / DART" / "EDINET").
+# `failure_code` is a short, sanitized internal reason string — never a
+# raw exception message, matching this codebase's existing
+# BackendConfigurationError discipline (see backend_factory.py).
+_V2_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE provider_scan_status (
+        provider TEXT PRIMARY KEY,
+        cursor_value TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        last_successful_at TEXT,
+        items_discovered INTEGER NOT NULL DEFAULT 0,
+        candidates_created INTEGER NOT NULL DEFAULT 0,
+        skipped_unresolved_count INTEGER NOT NULL DEFAULT 0,
+        failure_code TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 2 later means appending a new (2, (...statements...))
+# Adding schema version 3 later means appending a new (3, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
+    (2, _V2_STATEMENTS),
 )
 
 

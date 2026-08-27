@@ -85,17 +85,21 @@ from src.data_access.postgres_state_db import candidate_repository as postgres_c
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
 from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
+from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
     ResolvedIdentifierRecord as PostgresResolvedIdentifierRecord,
 )
+from src.data_access.postgres_state_db.scan_status_repository import ProviderScanStatus as PostgresProviderScanStatus
 from src.data_access.postgres_state_db.signal_repository import PostgresSignalRepository
 from src.data_access.state_db import candidate_repository as sqlite_candidates
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
 from src.data_access.state_db import identifier_repository as sqlite_identifiers
+from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
+from src.data_access.state_db.scan_status_repository import ProviderScanStatus
 from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
 
@@ -450,3 +454,72 @@ def get_identifier_repository(settings: Settings, source: str) -> IdentifierRepo
     if backend == "postgres":
         return PostgresIdentifierRepository(conn=_require_postgres_connection(settings), source=source)
     return JsonIdentifierRepository(cache_dir=settings.cache_dir, source=source)
+
+
+# --- Provider scan-status/cursor repository — sqlite/postgres only ---
+#
+# Durable-State Phase 4M-0. Deliberately no JSON implementation and no
+# JSON fallback: JSON is not safe shared persistence for a separate
+# dashboard + continuous-worker process pair (see
+# design/RADAR_WORKER_DEPLOYMENT.md), and scripts/run_scan.py's existing
+# one-shot invocation needs no cursor at all — its own idempotent
+# FilingEvent dedup is sufficient for a single, manually-triggered run.
+# Only scripts/radar_worker.py calls get_scan_status_repository(); no
+# existing pipeline, page, or component does.
+
+class ScanStatusRepositoryProtocol(Protocol):
+    def get_scan_status(self, provider: str) -> ProviderScanStatus | None: ...
+    def get_all_scan_statuses(self) -> dict[str, ProviderScanStatus]: ...
+    def upsert_scan_status(self, status: ProviderScanStatus) -> None: ...
+
+
+@dataclass(frozen=True)
+class SqliteScanStatusRepository:
+    conn: sqlite3.Connection
+
+    def get_scan_status(self, provider: str) -> ProviderScanStatus | None:
+        return sqlite_scan_status.get_scan_status(self.conn, provider)
+
+    def get_all_scan_statuses(self) -> dict[str, ProviderScanStatus]:
+        return sqlite_scan_status.get_all_scan_statuses(self.conn)
+
+    def upsert_scan_status(self, status: ProviderScanStatus) -> None:
+        sqlite_scan_status.upsert_scan_status(self.conn, status)
+
+
+@dataclass(frozen=True)
+class PostgresScanStatusRepository:
+    conn: psycopg.Connection
+
+    def get_scan_status(self, provider: str) -> PostgresProviderScanStatus | None:
+        return postgres_scan_status.get_scan_status(self.conn, provider)
+
+    def get_all_scan_statuses(self) -> dict[str, PostgresProviderScanStatus]:
+        return postgres_scan_status.get_all_scan_statuses(self.conn)
+
+    def upsert_scan_status(self, status: PostgresProviderScanStatus) -> None:
+        postgres_scan_status.upsert_scan_status(self.conn, status)
+
+
+def get_scan_status_repository(settings: Settings) -> ScanStatusRepositoryProtocol:
+    """Unlike every other factory function in this module, this one has
+    no JSON branch at all — `db_backend` of `"json"` (the default) or
+    any other unrecognized/blank value raises BackendConfigurationError
+    rather than silently returning something. The caller (
+    scripts/radar_worker.py) is expected to construct its own explicit
+    `Settings(db_backend=..., state_db_url=...)` from its dedicated
+    EDGE_RADAR_WORKER_DB_BACKEND/EDGE_RADAR_WORKER_STATE_DB_URL
+    configuration before calling this — never the ambient
+    EDGE_DB_BACKEND/EDGE_STATE_DB_URL pair `get_settings()` would
+    resolve, which belongs to the ordinary dashboard path."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteScanStatusRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresScanStatusRepository(conn=_require_postgres_connection(settings))
+    raise BackendConfigurationError(
+        "Provider scan-status/cursor persistence requires an explicit "
+        f'db_backend of "sqlite" or "postgres" for continuous worker mode '
+        f"(got {backend!r}). JSON is not supported here — "
+        "scripts/run_scan.py's existing one-shot path needs no cursor at all."
+    )

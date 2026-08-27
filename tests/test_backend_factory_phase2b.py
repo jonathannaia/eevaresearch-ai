@@ -285,23 +285,30 @@ def test_get_edgar_companies_json_path_unchanged_when_settings_omitted(tmp_path)
     assert nvda.corp_code == "0001045810"
 
 
-def test_run_scan_and_process_candidate_now_do_not_route_identifier_reads_through_sqlite(tmp_path):
-    # Documented, deliberate Phase 2B limitation: run_scan()/
-    # process_candidate_now() never pass `settings` into
-    # get_edgar_companies()/get_radar_companies() internally, so identifier
-    # resolution during an actual scan/process action stays JSON-only
-    # regardless of backend — this test proves that by inspecting the
-    # source, not by running a real scan (which would require live
-    # network calls, out of scope).
+def test_run_scan_routes_identifier_reads_through_the_configured_backend(tmp_path):
+    # Durable-State Phase 4M-0 replaces the old Phase 2B limitation this
+    # test used to confirm (that run_scan() never passed `settings` into
+    # get_edgar_companies()/get_radar_companies(), so identifier
+    # resolution during an actual scan stayed JSON-only regardless of
+    # backend) with the new, intentional behavior: run_scan() now passes
+    # `settings` through, so a "sqlite"/"postgres" db_backend resolves
+    # identifiers from that backend's own identifier repository. This is
+    # verified directly against source, not by running a real scan
+    # (which would require live network calls, out of scope), exactly
+    # like the test it replaces.
     import inspect
 
-    edgar_source = inspect.getsource(edgar_service.run_scan) + inspect.getsource(edgar_service.process_candidate_now)
-    assert "get_edgar_companies(settings.cache_dir)" in edgar_source
-    assert "get_edgar_companies(settings.cache_dir, settings)" not in edgar_source
+    edgar_source = inspect.getsource(edgar_service.run_scan)
+    assert "get_edgar_companies(settings.cache_dir, settings)" in edgar_source
 
-    dart_source = inspect.getsource(dart_radar_service.run_scan) + inspect.getsource(dart_radar_service.process_candidate_now)
-    assert "get_radar_companies(settings.cache_dir)" in dart_source
-    assert "get_radar_companies(settings.cache_dir, settings)" not in dart_source
+    dart_source = inspect.getsource(dart_radar_service.run_scan)
+    assert "get_radar_companies(settings.cache_dir, settings)" in dart_source
+
+    # process_candidate_now() is unchanged by this phase — it operates on
+    # one already-persisted candidate by ID and has no identifier-lookup
+    # call of its own to route.
+    edgar_process_source = inspect.getsource(edgar_service.process_candidate_now)
+    assert "get_edgar_companies" not in edgar_process_source
 
 
 # --- 9/10. Derived Signal identity through the selected SignalRepository ---

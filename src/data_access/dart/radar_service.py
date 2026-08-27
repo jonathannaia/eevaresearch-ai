@@ -44,15 +44,17 @@ def get_radar_companies(cache_dir: Path, settings: Settings | None = None) -> tu
     (added in milestone 8, same shared registry) never leaks into a DART
     scan/readiness check. EDGAR has its own get_edgar_companies().
 
-    `settings` is additive and optional (Durable-State Phase 2B) — see
-    backend_factory.py's module docstring. Omitted, behavior is
-    unchanged. Supplied with `settings.db_backend == "sqlite"`, reads the
-    SQLite-backed identifier repository instead of
-    the on-disk dart_corp_codes.json cache — a read-only lookup either way,
-    never a live resolution. `run_scan`/`process_candidate_now` below
-    deliberately do NOT pass `settings` here — see their own note."""
-    use_sqlite = settings is not None and (settings.db_backend or "json").strip().lower() == "sqlite"
-    if use_sqlite:
+    `settings` is additive and optional (Durable-State Phase 2B;
+    extended to Postgres in Phase 4M-0) — see backend_factory.py's
+    module docstring. Omitted, behavior is unchanged. Supplied with
+    `settings.db_backend` of `"sqlite"` or `"postgres"`, reads the
+    matching backend-specific identifier repository instead of the
+    on-disk dart_corp_codes.json cache — a read-only lookup either way,
+    never a live resolution; this function itself never calls
+    corp_code_resolver.resolve_and_cache()."""
+    backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
+    use_repository_backend = backend in ("sqlite", "postgres")
+    if use_repository_backend:
         records = backend_factory.get_identifier_repository(settings, _DART_SOURCE).load_identifiers()
         resolved = {krx: record.identifier for krx, record in records.items()}
     else:
@@ -94,8 +96,15 @@ def run_scan(
     is byte-for-byte identical to before: today's JSON candidate_store.py
     path. Supplied — synthetic/local tests only, never a real service
     entry point in production this phase — every candidate-store touch
-    inside this one call routes through the given collaborator instead."""
-    companies = get_radar_companies(settings.cache_dir)
+    inside this one call routes through the given collaborator instead.
+
+    Durable-State Phase 4M-0: `settings` is now passed through to
+    get_radar_companies() (previously omitted here), so a `"sqlite"`/
+    `"postgres"` `db_backend` resolves identifiers from that backend's
+    own identifier repository instead of always the on-disk JSON cache.
+    No-op for every existing caller — see get_edgar_companies' own
+    sibling note in edgar_service.py for why."""
+    companies = get_radar_companies(settings.cache_dir, settings)
     return radar_pipeline.run_pipeline(
         _client(settings), _translation_provider(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,

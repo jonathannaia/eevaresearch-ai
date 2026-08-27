@@ -233,7 +233,8 @@ def test_run_scan_default_omitted_repository_persists_json_candidate_store(tmp_p
 def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_path, monkeypatch):
     from datetime import datetime, timezone
 
-    _seed_ciks(tmp_path, ["NVDA"])
+    from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
+
     filing_date = datetime.now(timezone.utc).date().isoformat()
     monkeypatch.setattr(edgar_service, "_client", lambda settings: _make_edgar_client("0000045810", filing_date))
     settings = Settings(
@@ -241,6 +242,19 @@ def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_p
         db_backend="sqlite", state_db_path=tmp_path / "state.db",
     )
     repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    # Durable-State Phase 4M-0: run_scan() now resolves identifiers from
+    # the *same* configured backend (see edgar_service.get_edgar_companies'
+    # own docstring) — a SQLite-backend scan must seed the SQLite
+    # identifier repository, not the on-disk JSON cache, matching
+    # test_backend_factory_phase2b.py's own established seeding pattern.
+    id_repo = backend_factory.get_identifier_repository(settings, "SEC EDGAR")
+    upsert_resolved_identifier(
+        id_repo.conn, "SEC EDGAR", "NVDA",
+        ResolvedIdentifierRecord(
+            identifier="0000045810", display_name="SYNTHETIC NVIDIA RECORD",
+            resolution_method="synthetic-test-fixture", retrieved_at=filing_date,
+        ),
+    )
 
     report = edgar_service.run_scan(settings, candidate_repository=repo)
 
@@ -248,6 +262,7 @@ def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_p
     assert len(repo.load_candidates()) == 1
     # The SQLite path never touched the JSON candidate store this call.
     assert not (tmp_path / "edgar_candidates.json").exists()
+    assert not (tmp_path / "edgar_ciks.json").exists()
 
 
 # ---------------------------------------------------------------------------

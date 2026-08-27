@@ -72,6 +72,22 @@ class Settings:
     # exists so a future, separately-approved wiring step has a ready,
     # already-fail-closed-by-default gate to read.
     edgar_discovery_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_DISCOVERY_ENABLED"))
+    # Durable-State Phase 4M-0 (design/DECISIONS.md) — the master switch
+    # for the standalone continuous worker (scripts/radar_worker.py)
+    # only. Disabled by default, same "unset/blank/unrecognized ->
+    # disabled" parsing as every other flag on this class. The Streamlit
+    # dashboard never reads this to decide whether to scan — it never
+    # scans on page render regardless of this value; only the worker
+    # process's own startup checks it.
+    radar_live_scan_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_RADAR_LIVE_SCAN_ENABLED"))
+    # Conservative default (hourly) — this pilot's tracked-issuer universe
+    # (25 EDGAR + 2 DART + 5 EDINET) does not need sub-hourly polling, and
+    # EDGAR's own existing client-side throttle (0.5s/request minimum
+    # interval, src/data_access/edgar/client.py) already bounds per-scan
+    # request volume independently of this setting.
+    radar_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_RADAR_SCAN_INTERVAL_MINUTES") or "60")
+    )
     # Conservative autonomous-publication gate for the narrow, evidence-complete
     # EDGAR policy path. Disabled unless explicitly enabled in the deployment
     # environment; this field only parses the flag and never performs I/O.
@@ -115,6 +131,31 @@ class Settings:
     # never from get_settings()/any real service entry point, never a
     # hosted database, never a secret.
     state_db_url: str | None = field(default_factory=lambda: os.getenv("EDGE_STATE_DB_URL") or None)
+    # Durable-State Phase 4M-0 — deliberately separate from db_backend/
+    # state_db_url above, and read only by scripts/radar_worker.py, never
+    # by get_settings()'s own ambient use in app.py/container.py. This
+    # keeps a Streamlit Secrets misconfiguration from ever making the
+    # *dashboard* silently start writing to a worker's database — the
+    # worker's own backend/DSN pair lives in its own, separate deployment
+    # environment only (see design/DECISIONS.md and
+    # design/RADAR_WORKER_DEPLOYMENT.md). None means unconfigured; the
+    # worker fails closed rather than guessing json/sqlite/postgres.
+    radar_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_RADAR_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    radar_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_RADAR_WORKER_STATE_DB_URL") or None
+    )
+    # SQLite counterpart to radar_worker_state_db_url above — local/test
+    # only (design/RADAR_WORKER_DEPLOYMENT.md): a single-host, single-
+    # process worker may use this to validate the continuous-loop
+    # behavior without Postgres, but it is never the recommended
+    # deployed configuration for a separate dashboard+worker pair.
+    radar_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH")) if os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH") else None
+        )
+    )
     # Private-beta access foundation, Phase 1 — disabled by default so every
     # existing page keeps working with no configuration at all. The
     # allowlist alone is authorization, not authentication (see

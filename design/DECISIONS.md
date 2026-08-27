@@ -3806,3 +3806,207 @@ used exclusively via `yaml.safe_load`.
 pass locally — **30 passed** — entirely offline (no network, no
 database, no Docker). The full existing suite was also run this phase;
 see the accompanying report for the combined result.
+
+## Durable-State Phase 4M-0 — Autonomous Live Primary-Filing Scans
+
+A new standalone continuous worker, `scripts/radar_worker.py`, runs the
+existing, unmodified EDGAR/DART/EDINET scan pipelines
+(`edgar_service.run_scan`/`radar_service.run_scan`/`edinet_service.run_scan`)
+on a timed loop, entirely separate from the Streamlit dashboard process.
+Full deployment design: `design/RADAR_WORKER_DEPLOYMENT.md`. This is not
+a redesign of the provider model, scoring, AI writer, IR/RSS, news, the
+Postgres bridge, or Signals publication policy — every pipeline function
+this worker calls is the same one `scripts/run_scan.py`'s existing
+one-shot invocation already uses.
+
+**Configuration (all new, all default OFF)**: `EDGE_RADAR_LIVE_SCAN_ENABLED`
+(master switch — absent/false, the worker prints a message and exits
+`0`, doing nothing at all), `EDGE_RADAR_SCAN_INTERVAL_MINUTES` (default
+60, floored to a 60-second minimum), `EDGE_RADAR_WORKER_DB_BACKEND` /
+`EDGE_RADAR_WORKER_STATE_DB_PATH` / `EDGE_RADAR_WORKER_STATE_DB_URL` —
+deliberately separate `Settings` fields from the dashboard's own
+`EDGE_DB_BACKEND`/`EDGE_STATE_DB_PATH`/`EDGE_STATE_DB_URL`, so a
+dashboard secrets misconfiguration can never point the worker at the
+wrong database or vice versa. None of these five fields is read by
+`app.py` or any UI page — confirmed by `test_radar_worker.py`'s own
+tests of `_build_worker_settings`.
+
+**Backend**: `backend_factory.get_scan_status_repository()` is new and,
+unlike every other factory function in that module, has **no JSON
+branch at all** — `db_backend` of `"json"` or anything unrecognized
+raises `BackendConfigurationError` rather than ever returning a working
+JSON-backed object. `"sqlite"` (local/test-only) and `"postgres"`
+(the only supported target for a real deployed dashboard+worker pair)
+are backed by two new, independently-implemented modules —
+`src/data_access/state_db/scan_status_repository.py` and
+`src/data_access/postgres_state_db/scan_status_repository.py` — storing
+one row per provider (per-provider granularity, not per-issuer, by
+explicit decision) in a new `provider_scan_status` table
+(`CURRENT_SCHEMA_VERSION` 1 → 2 in both backends' `schema.py`, via the
+existing forward-only `_MIGRATIONS` tuple pattern). No existing table,
+repository, or migration was altered.
+
+`edgar_service.get_edgar_companies`/`dart.radar_service.get_radar_companies`
+now also recognize `"postgres"` (previously only `"sqlite"` routed
+through a repository, `"postgres"` silently fell through to the JSON
+cache — a real gap this phase closes) — both functions' own `run_scan()`
+now passes `settings` through, so identifier resolution follows
+whichever backend `run_scan()` was actually configured with. This is a
+no-op for every existing caller: `(settings.db_backend or "json")`
+already defaulted to `"json"`, the exact branch every caller took
+before. Two existing tests that had asserted the old, narrower
+limitation (`test_run_scan_and_process_candidate_now_do_not_route_identifier_reads_through_sqlite`
+in `test_backend_factory_phase2b.py`, and
+`test_run_scan_injected_sqlite_repository_produces_equivalent_candidate`
+in both `test_edgar_service.py` and `test_radar_service.py`) were
+replaced/updated to assert the new, intentional behavior — the same
+obsolete-boundary-test pattern established in Phase 4J-1, never a
+silent deletion.
+
+**Identifier resolution stays manual**: `scripts/resolve_tracked_identifiers.py`
+is a new, standalone, explicit bootstrap command (`--source {edgar,dart}
+--backend {sqlite,postgres} ...`) — EDINET has no `--source` choice at
+all, since its five tracked issuers' identifiers are already hardcoded.
+It calls only the existing, unmodified `cik_resolver.resolve_and_cache()`/
+`corp_code_resolver.resolve_and_cache()`, writing results via the
+existing `upsert_resolved_identifier()` (insert-or-replace, so re-running
+is idempotent). The worker itself never imports or calls this script,
+and never resolves an identifier on its own — confirmed by
+`test_radar_worker.py`'s provider-tick tests, which prove an unresolved
+issuer is simply skipped for that tick (the same behavior
+`scan_service.scan()` already has today), never resolved inline.
+
+**The critical safety finding this phase discovered and mitigated**: a
+pre-existing, out-of-session-added feature —
+`edgar_pipeline.run_pipeline`'s `auto_publish_enabled` parameter, driven
+by `Settings.edgar_auto_publish_enabled`/`EDGE_EDGAR_AUTO_PUBLISH_ENABLED`
+— could, if left on its ambient value, let this worker autonomously set
+a fact-complete 424B5 offering candidate to `PUBLISHED`, directly
+violating this phase's own core invariant. `radar_worker._build_worker_settings()`
+closes this structurally: it always constructs its own settings via
+`dataclasses.replace(ambient, ..., edgar_auto_publish_enabled=False)`,
+regardless of what `EDGE_EDGAR_AUTO_PUBLISH_ENABLED` is set to in the
+worker's own process environment. DART and EDINET have no equivalent
+mechanism at all (confirmed by grep — `radar_pipeline.py`/`edinet_pipeline.py`
+take no `auto_publish_enabled` parameter). A dedicated test,
+`test_build_worker_settings_forces_edgar_auto_publish_disabled_even_when_ambient_enables_it`,
+proves this directly rather than by inspection. The worker never sets
+`PUBLISHED`, `MONITORING`, or `DISMISSED` by any other path either —
+`record_review_decision()` remains the sole route to any of those three
+statuses; the worker never imports `review_actions` or constructs a
+`SignalRepository` at all.
+
+**Provider isolation and locking**: each of EDGAR/DART/EDINET is
+attempted inside its own try/except per tick — a missing credential or a
+network failure for one provider is recorded only in that provider's own
+`provider_scan_status` row (`failure_code` = the exception's class name
+only, never a raw message) and never prevents the other configured
+providers from running in the same round; a failed tick preserves the
+provider's prior `cursor_value`/`last_successful_at`/counts rather than
+erasing them. A non-blocking, per-`(provider, backend)` file lock
+(`fcntl.flock`, standard-library only, no new dependency) means an
+overlapping scan attempt for the same provider is skipped for that tick,
+never queued or duplicated; the lock is released automatically by the OS
+if the worker process dies, so no manual staleness/timeout logic is
+needed. Graceful shutdown (`SIGTERM`/`SIGINT`) is checked between
+providers and between ticks, never interrupting a scan already in
+progress.
+
+**Radar Inbox UI**: a new, collapsed "Continuous worker status only —
+not a candidate feed (read-only)" expander reads per-provider status
+through this dashboard's own, already-existing (Phase 4B)
+`settings.db_backend`/`settings.state_db_url` bridge — the same bridge
+`get_signal_repository()` and `_build_items()`'s own sqlite branch
+already use — and renders exactly one of: this dashboard's own backend
+not being sqlite/postgres (the default, "json", today — the expected
+state this phase, since no hosting is provisioned), the configured
+store being unreachable, a provider with no scan ever run, a provider
+whose last attempt failed, or a healthy provider with its last-success
+time and counts. It never reads or requires
+`radar_worker_db_backend`/`radar_worker_state_db_path`/
+`radar_worker_state_db_url` — those three fields are worker-only,
+confirmed by a structural (AST-based) guard test,
+`tests/test_radar_worker_dsn_boundary.py`, scanning every file under
+`src/ui/` plus `app.py`/`src/data_access/container.py` for any actual
+attribute access to them (not a string-match guard, which would
+false-positive on this very explanation). If an operator wants this
+expander to show real data, they separately point this dashboard's own
+`EDGE_DB_BACKEND`/`EDGE_STATE_DB_URL` at the same physical database the
+worker's own `EDGE_RADAR_WORKER_DB_BACKEND`/`EDGE_RADAR_WORKER_STATE_DB_URL`
+targets — an operational choice made entirely outside this phase's
+code, which never bridges the two itself. This is a pure read — no
+write, no scan, no identifier resolution — and never renders an API
+key, DSN, `EDGE_*` environment-variable name, raw exception, stack
+trace, internal resolver command, or unresolved-issuer list;
+`failure_code` itself is never displayed, only a fixed "did not
+complete" phrase, confirmed by a test seeding a real
+`ConnectionResetError`-shaped failure_code and asserting it never
+appears in the rendered page text.
+
+**The worker autonomously ingests and persists candidates and records
+sanitized provider status. Rendering worker-persisted candidates in the
+normal Streamlit dashboard requires a separately approved dashboard
+persistence-read bridge.** No such bridge exists today: `_build_items()`
+(Radar Inbox's own candidate/filing-event list) recognizes only
+`"sqlite"`, not `"postgres"`, for candidate/filing-event reads — a
+`"postgres"`-configured dashboard falls through to its JSON branch,
+which is empty in a hosted deployment. This phase does not add,
+broaden, or touch that function — no dashboard Postgres candidate
+bridge, `app.py` change, `container.py` change, or normal dashboard
+backend-selection change occurred. A worker-detected candidate is
+therefore visible today only via the sanitized status expander's own
+per-provider counts (`candidates_created`, a count only, never the
+candidate records themselves) — never as a browsable item in Radar
+Inbox's own list, and never as a Signal (Signals stays strictly
+`PUBLISHED`-only, and the worker never publishes — see above).
+
+**Correction made during this phase's own review, before any commit**:
+an earlier draft of the status expander built a worker-shaped `Settings`
+object from within the dashboard process
+(`dataclasses.replace(settings, db_backend=settings.radar_worker_db_backend,
+state_db_path=settings.radar_worker_state_db_path,
+state_db_url=settings.radar_worker_state_db_url)`) so it could connect
+directly to the worker's own configured store — which meant the
+dashboard *did* read/require `EDGE_RADAR_WORKER_STATE_DB_URL`, violating
+the "worker-only environment" boundary this same entry documents above.
+Caught and corrected before staging: the expander now reads only the
+dashboard's own pre-existing `db_backend`/`state_db_url`, as described
+above. No commit or push had occurred at the point this was caught.
+
+**Scope**: exactly as proposed, with the one addition described in the
+correction above (no scope expansion — a boundary fix). No live IR/RSS
+ingestion, news ingestion, AI-generated research, scoring/materiality
+change, worker hosting-platform provisioning, dashboard Postgres
+candidate-read bridge, `app.py`/`container.py` change, or
+Signals-policy change occurred or is implied by this phase. Worker
+hosting is documented (`design/RADAR_WORKER_DEPLOYMENT.md`) but not
+chosen, provisioned, configured, or deployed.
+
+**Execution status, stated precisely**: new/changed tests across
+`tests/test_state_db_scan_status_repository.py`,
+`tests/test_state_db_postgres_scan_status_repository.py`,
+`tests/test_backend_factory_scan_status.py`,
+`tests/test_backend_factory_postgres.py` (one new test),
+`tests/test_resolve_tracked_identifiers.py`, `tests/test_radar_worker.py`,
+`tests/test_radar_inbox_worker_status.py`, `tests/test_radar_worker_dsn_boundary.py`
+(the DSN-boundary structural guard, added during this phase's own
+correction pass), `tests/test_radar_worker_safety_invariants.py` (belt-
+and-suspenders structural proofs of the PUBLISHED/scan-on-render
+invariants), `tests/test_radar_worker_no_secrets_guard.py`, plus the
+obsolete-boundary test replacements in `test_backend_factory_phase2b.py`
+and `test_radar_service.py`/`test_edgar_service.py` — **91 passed, 1
+skipped** (the skip is a real-Postgres-container test, which skips
+softly without the local disposable Postgres password set; none
+failed). The full existing suite was also run this phase: **1314
+passed, 59 skipped, 3 failed** — all 3 failures are the same
+pre-existing, unrelated `DECISIONS.md`-prose-scanning guard-test false
+positives already recorded in this file's Theme Registry Foundation and
+earlier entries
+(`test_phase2b_files_never_reference_real_local_state_or_real_signal_ids`
+and its Phase 3A/3B0 siblings), reconfirmed via `git stash` against this
+phase's own base commit before any of this phase's files existed. No
+real EDGAR/DART/EDINET network call, no real Postgres connection, no
+real worker process, and no scheduled/deployed hosting occurred anywhere
+in this phase. Staging, committing, and pushing this phase's changes
+remain separately approved actions, per this phase's own explicit
+instruction to stop for review first.

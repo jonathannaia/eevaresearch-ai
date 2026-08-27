@@ -197,8 +197,9 @@ class _FakeTranslationProvider:
 
 
 def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_path, monkeypatch):
+    from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
+
     samsung_corp_code = "corp-005930"
-    _seed_corp_codes(tmp_path, ["005930", "000660"])
     monkeypatch.setattr(radar_service, "_client", lambda settings: _make_dart_client(samsung_corp_code))
     monkeypatch.setattr(radar_service, "_translation_provider", lambda settings: _FakeTranslationProvider())
     settings = Settings(
@@ -206,6 +207,20 @@ def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_p
         db_backend="sqlite", state_db_path=tmp_path / "state.db",
     )
     repo = backend_factory.get_candidate_repository(settings, "OpenDART / DART")
+    # Durable-State Phase 4M-0: run_scan() now resolves identifiers from
+    # the *same* configured backend (see radar_service.get_radar_companies'
+    # own docstring) — a SQLite-backend scan must seed the SQLite
+    # identifier repository, not the on-disk JSON cache, matching
+    # test_edgar_service.py's own sibling fix for the same phase.
+    id_repo = backend_factory.get_identifier_repository(settings, "OpenDART / DART")
+    for krx_code in ("005930", "000660"):
+        upsert_resolved_identifier(
+            id_repo.conn, "OpenDART / DART", krx_code,
+            ResolvedIdentifierRecord(
+                identifier=f"corp-{krx_code}", display_name="Test Co",
+                resolution_method="synthetic-test-fixture", retrieved_at="2026-08-10T00:00:00+00:00",
+            ),
+        )
 
     report = radar_service.run_scan(settings, candidate_repository=repo)
 
@@ -215,5 +230,7 @@ def test_run_scan_injected_sqlite_repository_produces_equivalent_candidate(tmp_p
     candidate = next(iter(stored.values()))
     assert candidate.filing.rcept_no == _DART_RCEPT_NO
     assert candidate.filing.corp_code == samsung_corp_code
-    # The SQLite path never touched the JSON candidate store this call.
+    # The SQLite path never touched the JSON candidate store or the JSON
+    # identifier cache this call.
     assert not (tmp_path / "dart_candidates.json").exists()
+    assert not (tmp_path / "dart_corp_codes.json").exists()

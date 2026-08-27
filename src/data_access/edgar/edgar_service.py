@@ -31,17 +31,17 @@ class EdgarReadiness:
 
 
 def get_edgar_companies(cache_dir: Path, settings: Settings | None = None) -> tuple[TrackedCompany, ...]:
-    """`settings` is additive and optional (Durable-State Phase 2B) — see
-    backend_factory.py's module docstring. Omitted, behavior is
-    unchanged (reads the on-disk edgar_ciks.json cache via cik_resolver
-    directly). Supplied with `settings.db_backend == "sqlite"`, reads the
-    SQLite-backed identifier repository instead — a read-only lookup
-    either way, never a live resolution. `run_scan`/`process_candidate_now`
-    below deliberately do NOT pass `settings` to this function — see
-    their own note on why identifier resolution during an actual scan/
-    process action stays JSON-only this phase."""
-    use_sqlite = settings is not None and (settings.db_backend or "json").strip().lower() == "sqlite"
-    if use_sqlite:
+    """`settings` is additive and optional (Durable-State Phase 2B;
+    extended to Postgres in Phase 4M-0) — see backend_factory.py's
+    module docstring. Omitted, behavior is unchanged (reads the on-disk
+    edgar_ciks.json cache via cik_resolver directly). Supplied with
+    `settings.db_backend` of `"sqlite"` or `"postgres"`, reads the
+    matching backend-specific identifier repository instead — a
+    read-only lookup either way, never a live resolution; this function
+    itself never calls cik_resolver.resolve_and_cache()."""
+    backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
+    use_repository_backend = backend in ("sqlite", "postgres")
+    if use_repository_backend:
         records = backend_factory.get_identifier_repository(settings, _EDGAR_SOURCE).load_identifiers()
         resolved = {ticker: record.identifier for ticker, record in records.items()}
     else:
@@ -80,8 +80,22 @@ def run_scan(
     entry point in production this phase — every candidate-store touch
     inside this one call routes through the given collaborator instead.
     See edgar_pipeline.run_pipeline's own docstring for the full
-    single-backend-atomicity contract this inherits unchanged."""
-    companies = get_edgar_companies(settings.cache_dir)
+    single-backend-atomicity contract this inherits unchanged.
+
+    Durable-State Phase 4M-0: `settings` is now passed through to
+    get_edgar_companies() (previously omitted here), so a `"sqlite"`/
+    `"postgres"` `db_backend` resolves identifiers from that backend's
+    own identifier repository instead of always the on-disk JSON cache.
+    This is a no-op for every existing caller: `(settings.db_backend or
+    "json")` already defaults to `"json"`, the exact branch this
+    function always took before. `auto_publish_enabled` is unchanged and
+    still reads `settings.edgar_auto_publish_enabled` directly — a
+    separate, pre-existing feature this phase does not alter. Any
+    caller that must guarantee this scan can never autonomously publish
+    (scripts/radar_worker.py does) is responsible for passing a
+    `settings` object with `edgar_auto_publish_enabled=False` forced —
+    see that script's own docstring for why."""
+    companies = get_edgar_companies(settings.cache_dir, settings)
     return edgar_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
