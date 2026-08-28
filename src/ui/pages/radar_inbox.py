@@ -147,10 +147,20 @@ def _render_missing_configuration(
         )
     if not edinet_readiness.subscription_key_configured:
         lines.append("EDGE_EDINET_SUBSCRIPTION_KEY is not configured.")
+    # Phase B (UI audit): the top-level state is now one calm sentence —
+    # the full env-var/resolver/unresolved-company dump moves into a
+    # collapsed expander below, unchanged in content. Readiness logic and
+    # the `lines` construction above are untouched.
     empty_state(
         "Radar Inbox is not configured",
-        " ".join(lines) + " Add the missing configuration to your local .env and restart the app.",
+        "None of the live filing sources (DART, EDGAR, EDINET) are configured in this environment. "
+        "See configuration details below for exactly what's missing.",
     )
+    with st.expander("Configuration details", expanded=False):
+        st.markdown(
+            f'<div class="er-muted">{" ".join(lines)} Add the missing configuration to your local .env and restart the app.</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _parse_rcept_date(raw: str) -> date | None:

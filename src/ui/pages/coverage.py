@@ -88,16 +88,31 @@ def _render_seed_coverage() -> None:
         empty_state("No seed issuers configured yet.")
         return
 
-    search_col, theme_col, layer_col, source_col, country_col = st.columns(5)
-    search = search_col.text_input("Search", key="coverage-seed-search", placeholder="Company or ticker…")
     theme_options = sorted({t for i in SEED_ISSUERS for t in i.themes})
     layer_options = sorted({layer for i in SEED_ISSUERS for layer in i.supply_chain_layers})
     source_options = sorted({source_name_for_seed_issuer(i) for i in SEED_ISSUERS})
     country_options = sorted({i.country_or_jurisdiction for i in SEED_ISSUERS if i.country_or_jurisdiction})
-    theme_filter = theme_col.multiselect("Theme", theme_options, key="coverage-seed-theme")
-    layer_filter = layer_col.multiselect("Layer", layer_options, key="coverage-seed-layer")
-    source_filter = source_col.multiselect("Source", source_options, key="coverage-seed-source")
-    country_filter = country_col.multiselect("Jurisdiction", country_options, key="coverage-seed-country")
+
+    # Phase B (UI audit): only render the Layer multiselect when it has
+    # options — today's seed data has none, so it rendered as a dead
+    # control beside three working ones. Reappears automatically once
+    # any seed issuer has a populated supply_chain_layers value.
+    dimensions = [
+        ("theme", "Theme", theme_options, "coverage-seed-theme"),
+        ("layer", "Layer", layer_options, "coverage-seed-layer"),
+        ("source", "Source", source_options, "coverage-seed-source"),
+        ("country", "Jurisdiction", country_options, "coverage-seed-country"),
+    ]
+    active_dimensions = [d for d in dimensions if d[2]]
+    cols = st.columns(1 + len(active_dimensions))
+    search = cols[0].text_input("Search", key="coverage-seed-search", placeholder="Company or ticker…")
+    selected: dict[str, list[str]] = {name: [] for name, _, _, _ in dimensions}
+    for col, (name, label, options, key) in zip(cols[1:], active_dimensions):
+        selected[name] = col.multiselect(label, options, key=key)
+    theme_filter = selected["theme"]
+    layer_filter = selected["layer"]
+    source_filter = selected["source"]
+    country_filter = selected["country"]
 
     filtered = filter_seed_issuers(
         SEED_ISSUERS,
@@ -116,7 +131,7 @@ def _render_seed_coverage() -> None:
 
 def _render_discovery_queue() -> None:
     section_header("Discovery queue", "Unverified portfolio-map candidates — not tracked, not scan-eligible.")
-    with st.expander(f"{len(DISCOVERY_STUBS)} discovery proposals (not active coverage)", expanded=False):
+    with st.expander(f"{len(DISCOVERY_STUBS)} discovery proposals — not active coverage", expanded=False):
         if not DISCOVERY_STUBS:
             empty_state("No discovery proposals yet.")
             return
@@ -134,7 +149,7 @@ def _render_coverage_notes() -> None:
         "Coverage notes",
         "Open normalization items — documented, not silently resolved. None of these affect current scan eligibility.",
     )
-    with st.expander("Known category conflicts", expanded=False):
+    with st.expander(f"{len(KNOWN_CATEGORY_CONFLICTS)} known category conflicts", expanded=False):
         if not KNOWN_CATEGORY_CONFLICTS:
             empty_state("No known conflicts recorded.")
         for conflict in KNOWN_CATEGORY_CONFLICTS:

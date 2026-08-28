@@ -176,14 +176,20 @@ def signal_card(
                 unsafe_allow_html=True,
             )
             if signal.excerpt:
-                st.markdown(
-                    f'<div class="er-muted" style="font-size:0.72rem; margin-top:0.3rem;">Original ({signal.original_language}):</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f'<div class="er-excerpt" style="font-size:0.85rem; margin:0.15rem 0 0.3rem;">{signal.excerpt}</div>',
-                    unsafe_allow_html=True,
-                )
+                # Phase B (UI audit): the original-language excerpt (often
+                # long, e.g. a full Korean filing) collapses behind an
+                # opt-in expander — the English translation above remains
+                # the default reading path. Nothing here is removed: the
+                # original stays the evidence of record, one click away.
+                with st.expander("Show original filing", expanded=False):
+                    st.markdown(
+                        f'<div class="er-muted" style="font-size:0.72rem;">Original ({signal.original_language}):</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        f'<div class="er-excerpt" style="font-size:0.85rem; margin:0.15rem 0 0.3rem;">{signal.excerpt}</div>',
+                        unsafe_allow_html=True,
+                    )
         elif signal.excerpt:
             st.markdown(
                 f'<div class="er-excerpt" style="font-size:0.85rem; margin:0.3rem 0;">{signal.excerpt}</div>',

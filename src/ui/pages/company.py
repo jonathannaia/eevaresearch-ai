@@ -59,6 +59,17 @@ def render() -> None:
     with header_cols[1]:
         demo_badge("Sample")
 
+    # Phase B (UI audit): a single top-of-page notice instead of relying
+    # on "Placeholder —" repeated across nearly every section below —
+    # those individual strings are this ticker's own seed data (thesis,
+    # bull/base/bear factors, market expectation, etc.), not page
+    # template text, so they're left exactly as recorded.
+    st.markdown(
+        '<div class="er-muted" style="font-size:0.82rem;">Template preview — most fields below are placeholder '
+        "content for validating this page's layout, not real company data.</div>",
+        unsafe_allow_html=True,
+    )
+
     with st.container(key=f"cta-secondary-save-watchlist-{ticker.symbol}"):
         if st.button("Save to watchlist", key=f"company-save-{ticker.symbol}"):
             st.session_state[TRIGGER_KEY] = ticker.symbol

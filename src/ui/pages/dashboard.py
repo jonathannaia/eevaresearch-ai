@@ -40,7 +40,14 @@ def _render_todays_read(ctx) -> None:
     themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
     metrics = ctx.market_data_provider.get_rotation_metrics()
     ranked = rank_by_performance(metrics)
-    section_header("Today's Read")
+    # Phase B (UI audit): a locally-scoped, slightly heavier label — this
+    # and Priority Signals are the page's two primary modules — rather
+    # than editing the shared section_header() component, which every
+    # other section on every other page also uses.
+    st.markdown(
+        '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>',
+        unsafe_allow_html=True,
+    )
     with st.container(border=True, key="card-todays-read"):
         if not ranked or ranked[0].theme_slug not in themes:
             st.markdown('<div class="er-muted">Not enough sample data yet to build a read.</div>', unsafe_allow_html=True)
@@ -60,13 +67,34 @@ def _render_todays_read(ctx) -> None:
         # Separation from the sentence above (so these read as distinct
         # actions, not a continuation of the paragraph) comes from the
         # cta-tertiary wrapper's own top margin in styles.css.
+        # Phase B (UI audit): these were plain prose anchors and read as
+        # continuation of the paragraph above rather than actions. Same
+        # hrefs/fragment-jump/container keys — only the anchor's own
+        # inline styling changed, to visually match the secondary-pill
+        # treatment already defined in assets/styles.css (same tokens:
+        # var(--hairline-2), var(--text), 999px radius), since that CSS
+        # targets Streamlit's own stPageLink/stBaseButton elements, not a
+        # raw markdown <a>.
+        _secondary_pill_style = (
+            "display:inline-flex; align-items:center; justify-content:center; "
+            "box-sizing:border-box; min-height:2.5rem; padding:0.5rem 1.1rem; "
+            "border:1px solid var(--hairline-2); border-radius:999px; "
+            "color:var(--text); font-size:0.85rem; font-weight:600; "
+            "text-decoration:none; white-space:nowrap;"
+        )
         link_cols = st.columns([2, 2, 1], gap="medium")
         with link_cols[0]:
             with st.container(key="cta-tertiary-read-rotation"):
-                st.markdown('<a href="#capital-rotation-snapshot" style="font-size:0.85rem; color:var(--text-2); white-space:nowrap;">Open Capital Rotation →</a>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<a href="#capital-rotation-snapshot" style="{_secondary_pill_style}">Open Capital Rotation →</a>',
+                    unsafe_allow_html=True,
+                )
         with link_cols[1]:
             with st.container(key="cta-tertiary-read-signals"):
-                st.markdown('<a href="#priority-signals" style="font-size:0.85rem; color:var(--text-2); white-space:nowrap;">Review priority signals →</a>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<a href="#priority-signals" style="{_secondary_pill_style}">Review priority signals →</a>',
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_theme_health(ctx) -> None:
@@ -118,7 +146,12 @@ def _render_theme_health(ctx) -> None:
 
 def _render_priority_signals(ctx) -> None:
     st.markdown('<div id="priority-signals"></div>', unsafe_allow_html=True)
-    section_header("Priority Signals")
+    # Phase B (UI audit): same heavier local emphasis as Today's Read
+    # above — this page's two primary modules.
+    st.markdown(
+        '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Priority Signals</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="er-muted" style="font-size:0.78rem; margin:-0.3rem 0 0.6rem 0;">'
         "Highest-conviction sample signals by direction, strength, and evidence.</div>",
@@ -151,7 +184,13 @@ def _render_priority_signals(ctx) -> None:
 
 
 def _render_watchlist_changes(ctx) -> None:
-    section_header("Watchlist Changes")
+    # Phase B (UI audit): visually secondary relative to Today's Read /
+    # Priority Signals above — lighter weight/opacity only, same label
+    # text and position, not reordered or hidden.
+    st.markdown(
+        '<div class="er-section-label" style="opacity:0.7;">Watchlist Changes</div>',
+        unsafe_allow_html=True,
+    )
     if "watchlists" not in st.session_state:
         st.session_state["watchlists"] = seed_watchlists()
     lists = st.session_state["watchlists"]

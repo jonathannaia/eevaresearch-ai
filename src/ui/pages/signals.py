@@ -99,13 +99,31 @@ def render(signal_repository: SignalRepository | None = None) -> None:
                     del st.query_params["watchlist"]
                     st.rerun()
 
-    filter_cols = st.columns([3, 3, 3, 3, 2], vertical_alignment="bottom")
-    theme_filter = filter_cols[0].multiselect("Theme", sorted(themes.values()), key="signals-filter-theme")
-    direction_filter = filter_cols[1].multiselect("Direction", sorted({s.direction.value for s in signals}), key="signals-filter-direction")
-    strength_filter = filter_cols[2].multiselect("Strength", sorted({s.strength.value for s in signals}), key="signals-filter-strength")
-    horizon_filter = filter_cols[3].multiselect("Time horizon", sorted({s.horizon.value for s in signals}), key="signals-filter-horizon")
+    # Phase B (UI audit): Direction/Time horizon only render once they have
+    # more than one possible value — with a single real value each today,
+    # they narrowed nothing and read as broken. Theme and Strength always
+    # render. Reappears automatically once a second value exists for
+    # either dimension; keys, filtering, and Clear-filters behavior are
+    # otherwise unchanged.
+    direction_options = sorted({s.direction.value for s in signals})
+    horizon_options = sorted({s.horizon.value for s in signals})
+    dimensions = [
+        ("theme", "Theme", sorted(themes.values()), "signals-filter-theme", True),
+        ("direction", "Direction", direction_options, "signals-filter-direction", len(direction_options) > 1),
+        ("strength", "Strength", sorted({s.strength.value for s in signals}), "signals-filter-strength", True),
+        ("horizon", "Time horizon", horizon_options, "signals-filter-horizon", len(horizon_options) > 1),
+    ]
+    active_dimensions = [d for d in dimensions if d[4]]
+    filter_cols = st.columns([3] * len(active_dimensions) + [2], vertical_alignment="bottom")
+    selected: dict[str, list[str]] = {name: [] for name, *_ in dimensions}
+    for col, (name, label, options, key, _show) in zip(filter_cols[:-1], active_dimensions):
+        selected[name] = col.multiselect(label, options, key=key)
+    theme_filter = selected["theme"]
+    direction_filter = selected["direction"]
+    strength_filter = selected["strength"]
+    horizon_filter = selected["horizon"]
     active_filter_count = len(theme_filter) + len(direction_filter) + len(strength_filter) + len(horizon_filter)
-    with filter_cols[4]:
+    with filter_cols[-1]:
         with st.container(key="cta-tertiary-clear-filters"):
             if st.button("Clear filters", key="clear-filters-visible", width="stretch", disabled=active_filter_count == 0):
                 _clear_filters()

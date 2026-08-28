@@ -85,13 +85,31 @@ def _logo_data_uri() -> str | None:
     return f"data:image/png;base64,{encoded}"
 
 
+@st.cache_data(show_spinner=False)
+def _css_text_cached(mtime: float) -> str:
+    # `mtime` (the file's own last-modified time) is the cache key, not
+    # the CSS content or path — a `st.cache_data` singleton, invalidated
+    # automatically the instant the file changes on disk. This is what
+    # lets this be cached at all without reintroducing the dev-reload
+    # problem the previous, deliberately-uncached version called out.
+    # Deliberately NOT underscore-prefixed: Streamlit excludes
+    # underscore-prefixed parameters from the cache key entirely (see
+    # radar_inbox.py's own `_settings` convention for the same rule used
+    # the other way around) — this argument is exactly what must be
+    # hashed for invalidation to work at all.
+    return _CSS_PATH.read_text(encoding="utf-8")
+
+
 def _css_text() -> str:
-    # Deliberately uncached (unlike the logo data-URI) — it's a cheap local
-    # read, and caching it meant CSS edits needed a process restart to
-    # take effect during development.
     if not _CSS_PATH.exists():
         return ""
-    return _CSS_PATH.read_text(encoding="utf-8")
+    try:
+        mtime = _CSS_PATH.stat().st_mtime
+    except OSError:
+        # Fall back to an uncached read rather than fail — matches the
+        # pre-existing behavior for any filesystem hiccup.
+        return _CSS_PATH.read_text(encoding="utf-8")
+    return _css_text_cached(mtime)
 
 
 def load_css() -> None:
