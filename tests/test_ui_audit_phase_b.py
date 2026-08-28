@@ -177,15 +177,21 @@ def test_signal_card_does_not_add_an_expander_when_there_is_no_translation():
 # --- Dashboard: button-style CTAs and visual hierarchy ---
 
 def test_dashboard_todays_read_links_are_no_longer_plain_prose_anchors():
+    """Superseded in part by Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md):
+    Today's Read's primary CTA now jumps to the new Market Map section
+    (now the page's primary module) instead of Capital Rotation (now a
+    collapsed, secondary expander) — same anchor-jump mechanism and pill
+    styling, just a different label/target. The secondary ghost-link CTA
+    to Priority Signals is unchanged."""
     at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Open Capital Rotation" in all_text
+    assert "Explore Market Map" in all_text
     assert "Review priority signals" in all_text
     # Pill-button visual treatment applied directly to the anchor.
     assert "border-radius:999px" in all_text
-    assert 'href="#capital-rotation-snapshot"' in all_text
+    assert 'href="#market-map"' in all_text
     assert 'href="#priority-signals"' in all_text
 
 
@@ -196,7 +202,14 @@ def test_dashboard_shows_visual_hierarchy_between_primary_and_secondary_modules(
     element above the fold") demoted it back to the same standard weight
     as Capital Rotation/Catalysts, leaving Today's Read as the page's one
     primary element. This test is revised in place to check that reverted
-    hierarchy rather than duplicated as a separate Phase C test file."""
+    hierarchy rather than duplicated as a separate Phase C test file.
+
+    Superseded again in part by Phase E1 (design/
+    DASHBOARD_MARKET_MAP_PHASE_E.md): Capital Rotation moved into a
+    collapsed `st.expander`, so its heading text now lives in the
+    expander's own `label` rather than as a rendered `er-section-label`
+    markdown div — checked via `at.expander` instead of `all_text` below,
+    everything else unchanged."""
     at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
@@ -205,8 +218,9 @@ def test_dashboard_shows_visual_hierarchy_between_primary_and_secondary_modules(
     assert all_text.count("font-weight:600; font-size:0.92rem") == 1
     assert "opacity:0.7" in all_text  # Watchlist Changes
     # Nothing was removed, reordered, or hidden — every module still renders.
-    for heading in ("Today's Read", "Priority Signals", "Capital Rotation", "Next Catalysts", "Watchlist Changes"):
+    for heading in ("Today's Read", "Priority Signals", "Next Catalysts", "Watchlist Changes"):
         assert heading in all_text
+    assert "Capital Rotation — demo snapshot" in {e.label for e in at.expander}
 
 
 # --- Company: template-preview notice ---

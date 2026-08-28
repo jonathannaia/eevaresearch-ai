@@ -4107,3 +4107,119 @@ failed** — the 1 failure is the same pre-existing `DECISIONS.md`-prose
 guard false positive recorded throughout this file. The full existing
 suite was also run this phase: see the accompanying report for the
 combined result and the reconciled pre-existing-vs-regression breakdown.
+
+## Phase E1 — Dashboard Market Map (Verified Capabilities Only)
+
+Approved implementation of the MVP spec recommended by the discovery-only
+Phase E report (`design/DASHBOARD_MARKET_MAP_PHASE_E.md`, preserved
+unchanged in this same commit). That report established, by direct code
+inspection, that this repository has **no quote, price, market-cap, or
+regional market-news/summary capability anywhere** — real or
+provider-backed — and that Capital Rotation is 100% static demo seed data
+(`data/seed/rotation_metrics.json`, fixed `as_of` 2026-08-15, `is_demo:
+true` on every record). This phase builds the Dashboard's new primary
+visual module strictly within those verified limits — it does not add,
+simulate, or approximate a price/news capability that does not exist.
+
+**What shipped**:
+- **Market Map** (`src/ui/components/market_map.py`, grouping logic in
+  `src/logic/market_map.py`) — a theme-grouped navigator over the one
+  authoritative company registry, `src/config/tracked_companies.py`
+  (`TRACKED_COMPANIES`). No second theme/company mapping is created;
+  `group_companies_by_theme()` reads that tuple directly and lists a
+  multi-theme company (Samsung Electronics, SK Hynix) under every theme
+  it belongs to, per the report's explicit recommendation, rather than
+  picking one "primary" theme and silently dropping the other. Every
+  tile shows the company's real name and existing identifier (ticker for
+  SEC EDGAR, KRX code for DART, EDINET code for EDINET — never presented
+  as a quote-lookup key) plus the fixed, honest line **"Price coverage
+  not connected"** — never a dash, blank value, or invented number.
+  Equal-size tiles only; nothing encodes market cap, confidence, or
+  movement, since no authoritative number exists for any of those today.
+  Each theme section caps at 6 tiles with a "+N more — view all in
+  Themes" link into the existing Themes page for overflow, rather than a
+  new "show all" control. Clicking "Investigate →" sets a single
+  selected-company key in session state; a compact detail region renders
+  once, beneath the whole map (not a per-tile dialog) — company name,
+  every theme it belongs to, listing exchange, and real evidence via
+  `SignalRepository.get_all_signals()` filtered on `Signal.
+  exchange_symbol` (populated only on a genuine (source, stock_code)
+  match against this same registry — never guessed). A match renders
+  through the existing `signal_card` component, inheriting its
+  Fact/Interpretation/Inference/Uncertainty distinction unmodified; no
+  match renders the exact line **"No verified catalyst linked yet"**
+  rather than inferring a catalyst. Handoffs reuse three existing routes
+  only — Company (`get_page("company")`, `?symbol=`), Radar Inbox, and
+  Research — no new page or query-param scheme was introduced.
+- **Regional Brief** (`src/ui/components/regional_brief.py`) — a compact
+  `st.tabs` view (United States / South Korea / Japan / China), smaller
+  and lower on the page than the Market Map. US/KR/JP each read up to 3
+  real, dated `FilingEvent`s for that region's actual filing source (SEC
+  EDGAR / OpenDART / EDINET) via `backend_factory.
+  get_filing_event_repository` — the same read-only, backend-aware
+  accessor `radar_inbox.py` already uses, not a new provider or cache
+  format — labeled truthfully as "Recent issuer disclosures from tracked
+  coverage," never "market news" or "market summary." An empty result
+  (e.g. EDINET, which has never had a live scan run against it) shows
+  "No recent tracked-issuer disclosures available.", never a fabricated
+  item. China shows a fixed, honest state — "China coverage is not
+  connected yet." / "Eeva currently has no tracked China issuers or
+  filing-source coverage." — since no CNINFO/HKEX adapter and no tracked
+  China issuer exists anywhere in the registry; nothing is invented to
+  give it false parity with the other three tabs.
+- **Capital Rotation** relocated into a collapsed `st.expander("Capital
+  Rotation — demo snapshot")` beneath Theme Health/Priority Signals — its
+  data source (`data/seed/rotation_metrics.json`) and computation
+  (`src/logic/theme_metrics.py`) are completely untouched; only its
+  Dashboard position and label changed. The panel's own freshness chip
+  now shows the metric's real `as_of` date (rendered "Aug 15, 2026") via
+  the existing `freshness_chip` component, instead of implying "now" —
+  the smallest of the two options the Phase E report proposed for this
+  exact problem.
+- **Today's Read**'s primary CTA now jumps to `#market-map` ("Explore
+  Market Map →") instead of the now-secondary Capital Rotation anchor;
+  its secondary CTA to Priority Signals is unchanged.
+- Dashboard render order is now: Today's Read → Market Map → Regional
+  Brief → Theme Health → Priority Signals → Capital Rotation (collapsed)
+  → Next Catalysts → Watchlist Changes. No existing module was deleted
+  or had its underlying logic altered — Theme Health, Priority Signals,
+  Catalysts, and Watchlist Changes render exactly as before, just lower
+  on the page.
+
+**What did not ship, deliberately**: any price/quote value (real or
+placeholder), any movement/return figure, any market-cap or liquidity
+encoding, any regional market-news/summary narrative, any China filing
+adapter or tracked China issuer, any new environment variable, secret,
+dependency, network call, worker, scheduler, or database migration. A
+dedicated test (`tests/test_ui_audit_phase_e.py::
+test_phase_e1_introduces_no_quote_provider_network_or_secret_dependency`)
+greps the three new files for exactly this list of forbidden imports and
+patterns.
+
+**Scope**: `src/logic/market_map.py` (new), `src/ui/components/
+market_map.py` (new), `src/ui/components/regional_brief.py` (new),
+`src/ui/pages/dashboard.py` (Market Map/Regional Brief wiring, Capital
+Rotation relocated into an expander, Today's Read CTA retargeted,
+render-order change only), four assertions revised in place in
+`tests/test_ui_audit_phase_b.py`/`tests/test_ui_audit_phase_c.py` where
+Capital Rotation's heading moved from a rendered markdown div into the
+new expander's own `label` and the primary CTA's anchor target changed
+(the underlying behavior each test protects — visually distinct
+primary/secondary CTAs, every module still present — is unchanged and
+still checked, just against the new label/anchor). No change to
+`app.py`, routing, auth, worker behavior, deployment, configuration,
+secrets, any database schema, `tracked_companies.py`'s data, or any
+source/scan/candidate/signal pipeline.
+
+**Execution status, stated precisely**: `tests/test_ui_audit_phase_e.py`
+(new, 16 tests) — **16 passed**. Full existing suite re-run after this
+phase's changes: **1437 passed, 3 failed, 70 skipped** — the 3 failures
+are the same pre-existing `DECISIONS.md`-prose false positives already
+recorded throughout this file (`test_phase2b_files_never_reference_
+real_local_state_or_real_signal_ids`, `test_phase3a_files_never_
+reference_real_local_state_or_real_signal_ids`, `test_phase3b0_files_
+never_reference_real_local_state_or_real_signal_ids` — all three fail
+because this file's own prose contains the literal strings `data/cache`
+and `.streamlit/secrets.toml`, which their guard can't distinguish from
+a real reference); confirmed unchanged before and after this phase's
+edits, and not touched by any file this phase modifies.

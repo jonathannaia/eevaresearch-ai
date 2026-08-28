@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.config.settings import get_settings
 from src.data_access.container import get_repositories
-from src.logic.formatting import fmt_pct
+from src.logic.formatting import fmt_date, fmt_pct
+from src.logic.market_map import group_companies_by_theme
 from src.logic.theme_metrics import leaders_and_laggards, rank_by_performance
 from src.logic.unread import is_unread
 from src.logic.watchlist_risk import is_moving_against_thesis
@@ -32,6 +34,8 @@ from src.models.models import Direction
 from src.ui.components.badges import direction_dot_html
 from src.ui.components.cards import catalyst_timeline_row, priority_signal_row
 from src.ui.components.freshness import freshness_chip
+from src.ui.components.market_map import render_market_map
+from src.ui.components.regional_brief import render_regional_brief
 from src.ui.components.section import section_header
 from src.ui.pages.watchlists import WATCHLIST_NAMES, seed_watchlists
 from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
@@ -110,9 +114,9 @@ def _render_todays_read(ctx) -> None:
         )
         link_cols = st.columns([2, 2, 3], gap="medium")
         with link_cols[0]:
-            with st.container(key="cta-primary-read-rotation"):
+            with st.container(key="cta-primary-read-market-map"):
                 st.markdown(
-                    f'<a href="#capital-rotation-snapshot" style="{_PRIMARY_PILL_STYLE}">Open Capital Rotation →</a>',
+                    f'<a href="#market-map" style="{_PRIMARY_PILL_STYLE}">Explore Market Map →</a>',
                     unsafe_allow_html=True,
                 )
         with link_cols[1]:
@@ -242,13 +246,19 @@ def _render_watchlist_changes(ctx) -> None:
 
 
 def _render_rotation_snapshot(ctx) -> None:
-    """Supporting evidence beneath the editorial summary (Today's Read) —
-    same standard section-header weight as Catalysts/Priority Signals."""
-    st.markdown('<div id="capital-rotation-snapshot"></div>', unsafe_allow_html=True)
-    section_header("Capital Rotation", "Relative performance · sample data")
+    """Secondary, collapsed disclosure (Phase E1, design/
+    DASHBOARD_MARKET_MAP_PHASE_E.md) — Capital Rotation is 100% static
+    demo seed data (data/seed/rotation_metrics.json, fixed as_of
+    2026-08-15 on every record) and must never read as "today" or
+    "live". The panel_header's freshness chip is passed that real as_of
+    date explicitly (not "now") so the truthful date is what a reader
+    sees, not an implied current one."""
     themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
     metrics = ctx.market_data_provider.get_rotation_metrics()
     ranked = rank_by_performance(metrics)
+    as_of = fmt_date(ranked[0].as_of) if ranked else "2026-08-15"
+    freshness_chip("demo", timestamp=as_of, key="fresh-rotation-snapshot")
+    st.markdown('<div class="er-muted" style="margin-top:0.2rem;">Relative performance · sample data, not current</div>', unsafe_allow_html=True)
     if not ranked:
         st.caption("No rotation data loaded.")
         return
@@ -293,6 +303,27 @@ def _render_rotation_snapshot(ctx) -> None:
             st.page_link(themes_page, label="See full rotation →")
 
 
+def _render_market_map(ctx) -> None:
+    """Primary visual/research module (Phase E1, design/
+    DASHBOARD_MARKET_MAP_PHASE_E.md) — a theme-grouped navigator over
+    Eeva's tracked-company universe (src/config/tracked_companies.py, the
+    one authoritative source — see src/logic/market_map.py). No price,
+    quote, or movement data exists anywhere in this build, so every tile
+    and the map itself say "Price coverage not connected" rather than a
+    dash, blank space, or invented value."""
+    themes = ctx.theme_repository.get_all_themes()
+    companies_by_theme = group_companies_by_theme([t.slug for t in themes])
+    render_market_map(ctx, themes, companies_by_theme)
+
+
+def _render_regional_brief(settings) -> None:
+    """Compact supporting module beneath the Market Map (Phase E1) — real,
+    dated tracked-issuer filing titles for US/KR/JP; an explicit "not
+    connected yet" state for China (see src/ui/components/
+    regional_brief.py for why no other honest state is available)."""
+    render_regional_brief(settings)
+
+
 def _render_catalysts(ctx) -> None:
     section_header("Next Catalysts")
     upcoming = ctx.catalyst_repository.get_upcoming_catalysts(limit=3)
@@ -305,15 +336,26 @@ def _render_catalysts(ctx) -> None:
 
 def render() -> None:
     ctx = get_repositories()
+    settings = get_settings()
 
     # Phase C: the "Market Overview" page title + subtitle are gone — the
     # sidebar's own active-nav highlight already establishes "you are on
     # Dashboard," and Today's Read (below) is now the first thing on the
     # page. The freshness chip that used to sit beside the title now sits
     # beside Today's Read's own heading instead.
+    #
+    # Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): Market Map is now
+    # the primary visual/research module, with the Regional Brief right
+    # beneath it — Capital Rotation moves into a collapsed, truthfully
+    # labeled expander (it is 100% static demo data, never "today" or
+    # "live"). Theme Health and Priority Signals keep their existing
+    # secondary weight and underlying logic, just lower on the page.
     _render_todays_read(ctx)
+    _render_market_map(ctx)
+    _render_regional_brief(settings)
     _render_theme_health(ctx)
     _render_priority_signals(ctx)
-    _render_rotation_snapshot(ctx)
+    with st.expander("Capital Rotation — demo snapshot", expanded=False):
+        _render_rotation_snapshot(ctx)
     _render_catalysts(ctx)
     _render_watchlist_changes(ctx)

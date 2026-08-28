@@ -93,11 +93,15 @@ def test_dashboard_has_no_dividers_between_modules():
 
 
 def test_dashboard_primary_and_secondary_cta_are_visually_distinct():
+    """Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): the primary CTA's
+    anchor target moved from Capital Rotation (now a secondary, collapsed
+    expander) to the new Market Map section — same pill-vs-ghost visual
+    contrast this test checks, unchanged."""
     at = _run_dashboard()
     all_text = " ".join(m.value for m in at.markdown)
     # Primary: filled midnight-blue pill with the shared glow recipe.
-    assert 'href="#capital-rotation-snapshot"' in all_text
-    primary_start = all_text.index('href="#capital-rotation-snapshot"')
+    assert 'href="#market-map"' in all_text
+    primary_start = all_text.index('href="#market-map"')
     primary_chunk = all_text[primary_start : primary_start + 400]
     assert "background:var(--invert-bg)" in primary_chunk
     assert "box-shadow" in primary_chunk
@@ -130,11 +134,19 @@ def test_dashboard_breadth_measure_is_labeled():
 def test_dashboard_keeps_every_module_and_priority_signals_is_no_longer_emphasized():
     """Phase C's product rule (one clear primary element per page) demotes
     Priority Signals back to the same standard weight as Capital
-    Rotation/Catalysts — Today's Read is the page's one primary element."""
+    Rotation/Catalysts — Today's Read is the page's one primary element.
+
+    Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): Capital Rotation's
+    heading now lives in its collapsed `st.expander`'s own `label` rather
+    than a rendered markdown div — checked separately below via
+    `at.expander`; Market Map and Regional Brief are new primary/secondary
+    modules this phase adds, checked here too since "nothing removed" now
+    also means "the new required modules are actually present"."""
     at = _run_dashboard()
     all_text = " ".join(m.value for m in at.markdown)
-    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Capital Rotation", "Next Catalysts", "Watchlist Changes"):
+    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts", "Watchlist Changes", "Market Map", "Regional Brief"):
         assert heading in all_text
+    assert "Capital Rotation — demo snapshot" in {e.label for e in at.expander}
     todays_read_heavy = '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>'
     assert todays_read_heavy in all_text
     assert '>Priority Signals</div>' in all_text or 'Priority Signals' in all_text
