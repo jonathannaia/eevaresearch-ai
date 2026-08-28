@@ -1,0 +1,246 @@
+"""UI/product audit Phase D (design/DECISIONS.md) — "calm editorial
+research website" pass on Themes, Signals, Coverage, and the sidebar:
+concise theme headers before tab content, an explanatory empty state (plus
+a clearly display-only example card) for Signals, a Coverage table that
+doesn't show an all-empty column, and readable sentence-case sidebar
+chrome. Every test here is a pure rendering/content/order check via
+AppTest, or a direct unit check on a pure function — no data loading,
+navigation, auth, worker, or database code is touched by this phase, and
+none of that is exercised here."""
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+from streamlit.testing.v1 import AppTest
+
+from src.config.settings import Settings
+from src.models.issuer import CoverageState, Issuer, LifecycleState
+
+HARNESS_DIR = Path(__file__).parent / "apptest_pages"
+REPO_ROOT = Path(__file__).parent.parent
+
+
+def _flatten(node, out: list[tuple[str, str | None]]) -> None:
+    cls = type(node).__name__
+    if cls not in ("Block", "SpecialBlock", "Column", "UnknownElement"):
+        out.append((cls, getattr(node, "label", None) or getattr(node, "value", None)))
+    children = getattr(node, "children", None)
+    if children:
+        for k in sorted(children.keys(), key=lambda x: (isinstance(x, str), x)):
+            _flatten(children[k], out)
+
+
+def _ordered(at) -> list[tuple[str, str | None]]:
+    out: list[tuple[str, str | None]] = []
+    _flatten(at.main, out)
+    return out
+
+
+def _text_excluding_stylesheet(at) -> str:
+    return " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+
+
+# ============================== THEMES ==============================
+
+def _run_themes():
+    at = AppTest.from_file(str(HARNESS_DIR / "themes_page.py"), default_timeout=15)
+    at.run()
+    return at
+
+
+def test_themes_retains_all_outer_and_inner_tabs():
+    at = _run_themes()
+    assert not at.exception
+    tab_labels = [t.label for t in at.get("tab")]
+    for theme_name in ("AI Buildout", "Humanoids", "Space", "Memory", "Photonics"):
+        assert theme_name in tab_labels
+    for sub_tab in ("Map", "Rotation", "Companies", "Catalysts"):
+        assert sub_tab in tab_labels
+
+
+def test_themes_has_no_redundant_outer_subtitle():
+    at = _run_themes()
+    all_text = _text_excluding_stylesheet(at)
+    assert "Organized research across the five themes" not in all_text
+
+
+def test_themes_map_tab_disclaimer_removed_but_investigate_guidance_kept():
+    at = _run_themes()
+    all_text = _text_excluding_stylesheet(at)
+    assert "Informational — these layers aren't drill-down links" not in all_text
+    # Real analytical content, not a disclaimer, is preserved.
+    assert all_text.count("What to investigate") == 5  # once per theme
+
+
+def test_themes_concise_header_renders_before_the_selected_view_tabs():
+    at = _run_themes()
+    ordered = _ordered(at)
+    name_idx = next(i for i, (c, v) in enumerate(ordered) if c == "Tab" and v == "AI Buildout")
+    # A rendered status tag looks like '<span class="er-status-tag ...'; a
+    # bare "er-status-tag" substring also matches the stylesheet's own
+    # ".er-status-tag { ... }" class *definition* (element 0, the whole
+    # compiled CSS block) — the more specific opening-tag form only
+    # matches an actual usage.
+    status_idx = next(
+        i for i, (c, v) in enumerate(ordered) if c == "Markdown" and v and '<span class="er-status-tag' in str(v)
+    )
+    map_tab_idx = next(i for i, (c, v) in enumerate(ordered) if c == "Tab" and v == "Map")
+    assert name_idx < status_idx < map_tab_idx
+
+
+def test_themes_related_signals_appears_before_subtheme_rotation_framework_note():
+    """Real (sometimes populated) content before the permanently-empty
+    "Sub-theme rotation" framework note (Phase D)."""
+    at = _run_themes()
+    ordered = _ordered(at)
+    related_signals_idx = next(
+        i for i, (c, v) in enumerate(ordered) if c == "Markdown" and v == '<div class="er-section-label">Related signals</div>'
+    )
+    subtheme_rotation_idx = next(
+        i for i, (c, v) in enumerate(ordered) if c == "Markdown" and v and "Sub-theme rotation" in str(v) and "er-section-label" in str(v)
+    )
+    assert related_signals_idx < subtheme_rotation_idx
+
+
+def test_themes_ask_research_still_wired_at_source_level():
+    """get_page() returns None in this isolated per-page AppTest harness
+    (same limitation documented in tests/test_ui_audit_phase_a.py) — the
+    real st.page_link call never renders here regardless. Checked at the
+    source level instead: exactly one Ask Research call site per theme
+    iteration (a single call inside the per-theme render function)."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes.py").read_text(encoding="utf-8")
+    assert source.count('label="Ask Research →"') == 1
+    assert 'get_page("research")' in source
+
+
+# ============================== SIGNALS ==============================
+
+def _run_signals_empty():
+    tmp_path = Path(tempfile.mkdtemp())
+    settings = Settings(cache_dir=tmp_path)
+    with patch("src.data_access.container.get_settings", return_value=settings):
+        at = AppTest.from_file(str(HARNESS_DIR / "signals_page.py"), default_timeout=15)
+        at.run()
+    return at
+
+
+def test_signals_empty_state_explains_what_a_signal_is_and_offers_next_actions():
+    at = _run_signals_empty()
+    assert not at.exception
+    all_text = _text_excluding_stylesheet(at)
+    assert "No eligible signals yet" in all_text
+    assert "Signals appear when a filing matches a tracked theme and meets the confidence threshold" in all_text
+    # Internal implementation detail should not leak into this primary
+    # empty state's own explanatory copy.
+    for internal_detail in ("worker", "pipeline", "scan_service", "candidate_store"):
+        assert internal_detail not in all_text.lower()
+
+
+def test_signals_empty_state_actions_are_wired_at_source_level():
+    """Same isolated-harness get_page() limitation as Themes above."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "signals.py").read_text(encoding="utf-8")
+    assert 'action_label="Review Radar Inbox →"' in source
+    assert 'action_page=get_page("radar_inbox")' in source
+    assert 'action_label_2="Explore Themes →"' in source
+    assert 'action_page_2=get_page("themes")' in source
+
+
+def test_signals_example_card_is_unmistakably_labeled_and_uses_fictional_content():
+    at = _run_signals_empty()
+    all_text = _text_excluding_stylesheet(at)
+    assert "What a Signal looks like" in all_text
+    assert ":gray-badge[Example]" in all_text  # demo_badge()'s own st.badge serialization
+    assert "Example — not a live result" in all_text
+    assert "Fictional Robotics Co." in all_text
+    # Doesn't read as, or borrow copy from, any real filing/company
+    # elsewhere in the app.
+    for real_marker in ("SK Hynix", "Marvell", "Advanced Micro Devices", "AMD", "SEC EDGAR", "OpenDART"):
+        assert real_marker not in all_text
+
+
+def test_signals_example_card_never_touches_repository_filters_or_counts():
+    """Static proof of decoupling, not just an observed absence: the
+    example-card function takes no arguments and its source never
+    references the signal repository, filter state, or the "N of M
+    signals shown" count line — it cannot influence any of them because
+    it has no path to reach them."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "signals.py").read_text(encoding="utf-8")
+    start = source.index("def _render_example_signal_card")
+    end = source.index("\ndef render(")
+    body = source[start:end]
+    assert "def _render_example_signal_card() -> None:" in body
+    # Strip the function's own docstring first — it explains this safety
+    # property in prose (using these same words), which would otherwise
+    # false-positive against a check for them in the actual code.
+    docstring_end = body.index('"""', body.index('"""') + 3) + 3
+    code_only = body[docstring_end:]
+    for forbidden in ("signal_repository", "ctx.", "filtered", "get_all_signals", "signals_shown", "st.session_state"):
+        assert forbidden not in code_only
+
+    at = _run_signals_empty()
+    all_text = _text_excluding_stylesheet(at)
+    # The "N of M signals shown" caption only renders past the early
+    # return in the empty branch — proof the example card didn't get
+    # counted into it (it isn't even reached).
+    assert "signals shown" not in all_text
+
+
+# ============================== COVERAGE ==============================
+
+def _issuer(supply_chain_layers=()) -> Issuer:
+    return Issuer(
+        issuer_id="test-issuer-1", legal_name="Test Issuer Co.", country_or_jurisdiction="United States",
+        coverage_state=CoverageState.SEED, lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="TEST", primary_exchange="NASDAQ", themes=("ai-buildout",),
+        supply_chain_layers=supply_chain_layers,
+    )
+
+
+def test_seed_row_omits_layer_column_when_excluded_and_includes_it_when_not():
+    from src.ui.pages.coverage import _seed_row
+
+    without_layer = _seed_row(_issuer(), include_layer_column=False)
+    assert "Layer(s)" not in without_layer
+
+    with_layer = _seed_row(_issuer(supply_chain_layers=("compute-accelerators",)), include_layer_column=True)
+    assert with_layer["Layer(s)"] == "compute-accelerators"
+    # Same relative column position either way (Theme(s) then Layer(s)
+    # then Coverage) — dict insertion order is what st.dataframe uses.
+    keys = list(with_layer.keys())
+    assert keys.index("Theme(s)") < keys.index("Layer(s)") < keys.index("Coverage")
+
+
+def test_coverage_page_hides_empty_layer_column_with_a_quiet_note():
+    at = AppTest.from_file(str(HARNESS_DIR / "coverage_page.py"), default_timeout=15)
+    at.run()
+    assert not at.exception
+    seed_table = at.dataframe[0].value
+    assert "Layer(s)" not in seed_table.columns
+    captions = [c.value for c in at.caption]
+    assert "Layer assignments aren't available for the current issuer set yet." in captions
+    # Live-count expander labels are untouched by this phase.
+    expander_titles = {e.label for e in at.expander}
+    assert "21 discovery proposals — not active coverage" in expander_titles
+    assert "4 known category conflicts" in expander_titles
+
+
+# ============================== SIDEBAR ==============================
+
+def test_sidebar_watchlists_heading_is_sentence_case():
+    at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=15)
+    at.run()
+    assert not at.exception
+    sidebar_text = " ".join(m.value for m in at.sidebar.get("markdown"))
+    assert "My watchlists" in sidebar_text
+    assert "My Watchlists" not in sidebar_text
+    assert "MY WATCHLISTS" not in sidebar_text.upper() or "MY WATCHLISTS" not in sidebar_text
+
+
+def test_sidebar_watchlists_heading_does_not_change_navigation_destinations():
+    """Label text only — the underlying page_link target is untouched."""
+    source = (REPO_ROOT / "src" / "ui" / "ui.py").read_text(encoding="utf-8")
+    assert 'st.page_link(watchlists_page, label="My watchlists")' in source
+    # No new route/page key introduced for this.
+    assert source.count('pages.get("watchlists")') == 1

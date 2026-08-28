@@ -34,48 +34,18 @@ def _infer_direction(relative_performance_pct: float):
     return Direction.MIXED
 
 
-def _render_theme_summary(theme: Theme, ctx: AppContext) -> None:
-    """Current read + why it matters + the one real cross-page action
-    (Ask Research). No fake jump-links into the nested tabs below — plain
-    st.tabs can't be pre-selected from outside, so the copy just names
-    which tab to check instead of faking a button for it."""
-    metric = ctx.market_data_provider.get_rotation_metric_for_theme(theme.slug)
-    research_page = get_page("research")
-    with st.container(border=True, key=f"card-theme-summary-{theme.slug}"):
-        if metric:
-            direction = _infer_direction(metric.relative_performance_pct)
-            top = st.columns([3, 2])
-            with top[0]:
-                st.markdown(direction_status_tag_html(direction), unsafe_allow_html=True)
-            breadth_note = (
-                "participation looks broad across the theme's tracked names"
-                if metric.breadth_pct >= 50
-                else "participation looks concentrated in a smaller subset of names"
-            )
-            st.markdown(
-                f'<div style="margin-top:0.5rem;">{theme.name} is reading '
-                f'<strong>{direction.value.lower()}</strong> this sample snapshot '
-                f'({fmt_pct(metric.relative_performance_pct)} relative performance, {metric.breadth_pct:.0f}% breadth) — '
-                f'{breadth_note}. Check the Rotation tab for the read, Companies for exposure, or Catalysts for timing.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(f'<div class="er-muted">No rotation read for {theme.name} yet this sample.</div>', unsafe_allow_html=True)
-        if research_page is not None:
-            with st.container(key=f"cta-secondary-theme-ask-research-{theme.slug}"):
-                st.page_link(research_page, label="Ask Research →")
-
-
 def _render_map_tab(theme: Theme) -> None:
     panel_header("Supply-chain layers", key=f"fresh-map-{theme.slug}")
-    st.markdown(
-        '<div class="er-muted" style="margin-bottom:0.5rem;">Informational — these layers aren\'t drill-down '
-        "links in this phase. Use Companies for the tracked-ticker view.</div>",
-        unsafe_allow_html=True,
-    )
     sub_cols = st.columns(min(len(theme.subthemes), 3) or 1)
     for i, sub in enumerate(theme.subthemes):
         with sub_cols[i % len(sub_cols)]:
+            # Shared card treatment (same [class*="st-key-card-"] rule as
+            # every other card in the app) with no colored top bar — these
+            # cards don't carry a status, so nothing would be honest to
+            # color-code (Phase D, design/DECISIONS.md). The hover-brighten
+            # is already suppressed for this card-subtheme- prefix in
+            # assets/styles.css so a non-interactive card doesn't imply
+            # otherwise.
             with st.container(border=True, key=f"card-subtheme-{sub.slug}"):
                 st.markdown(f'<div class="er-card-title" style="font-size:0.95rem;">{sub.name}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="er-muted">{sub.description}</div>', unsafe_allow_html=True)
@@ -83,11 +53,14 @@ def _render_map_tab(theme: Theme) -> None:
         # UX-refinement pass: this exact guidance used to repeat verbatim
         # on every subtheme card above (identical text N times per theme,
         # 5 themes) — same content, stated once for the whole layer grid
-        # instead, immediately below it.
+        # instead, immediately below it. Phase D: the separate "Informational
+        # — these layers aren't drill-down links in this phase" framing
+        # sentence is gone (the cards' own suppressed hover already makes
+        # that plain without a caption saying so); this analytical note is
+        # kept since it's real guidance, not a disclaimer.
         st.markdown(
-            '<div class="er-muted" style="font-size:0.76rem; margin-top:0.4rem; padding-top:0.4rem; '
-            'border-top:1px solid var(--hairline);"><strong>What to investigate:</strong> which companies '
-            "sit in each layer, and whether the bottleneck is here or elsewhere in the chain.</div>",
+            '<div class="er-muted" style="font-size:0.76rem; margin-top:0.5rem;"><strong>What to investigate:</strong> '
+            "which companies sit in each layer, and whether the bottleneck is here or elsewhere in the chain.</div>",
             unsafe_allow_html=True,
         )
 
@@ -123,13 +96,11 @@ def _render_rotation_tab(theme: Theme, ctx: AppContext, is_leader: bool) -> None
             key=f"theme-rotation-{theme.slug}",
         )
 
-    section_header("Sub-theme rotation", "Framework only in this phase — subtheme-level rotation metrics aren't populated yet.")
-    empty_state(
-        "Sub-theme rotation isn't populated yet.",
-        "Once subtheme-level metrics exist (Phase 2+), this tab would show rotation within the theme "
-        "(e.g. DRAM vs. HBM within Memory) using the same leaders/laggards pattern as the Dashboard panel.",
-    )
-
+    # Phase D: real (sometimes populated) content before the permanently-
+    # empty "Sub-theme rotation" framework note — that section is always
+    # an empty state in this phase, so it reads as supporting/future
+    # context rather than something to wade through before Related
+    # signals, which is genuinely useful the moment a theme has any.
     section_header("Related signals")
     theme_signals = ctx.signal_repository.get_signals_for_theme(theme.slug)
     if not theme_signals:
@@ -143,6 +114,13 @@ def _render_rotation_tab(theme: Theme, ctx: AppContext, is_leader: bool) -> None
     else:
         for s in theme_signals:
             signal_card(s, evidence_repository=ctx.evidence_repository, theme_name=theme.name)
+
+    section_header("Sub-theme rotation", "Framework only in this phase — subtheme-level rotation metrics aren't populated yet.")
+    empty_state(
+        "Sub-theme rotation isn't populated yet.",
+        "Once subtheme-level metrics exist (Phase 2+), this tab would show rotation within the theme "
+        "(e.g. DRAM vs. HBM within Memory) using the same leaders/laggards pattern as the Dashboard panel.",
+    )
 
 
 def _render_companies_tab(theme: Theme, ctx: AppContext) -> None:
@@ -177,11 +155,47 @@ def _render_catalysts_tab(theme: Theme, ctx: AppContext) -> None:
 
 
 def _render_theme_detail(theme: Theme, ctx: AppContext, leader_slug: str | None) -> None:
-    st.markdown(theme_icon_html(theme.slug), unsafe_allow_html=True)
-    st.markdown(f'<div class="er-page-title" style="font-size:1.6rem;">{theme.name}</div>', unsafe_allow_html=True)
-    st.write(theme.description)
+    """Concise header (theme identity + status + one current-state
+    sentence) directly followed by the Map/Rotation/Companies/Catalysts
+    tabs (Phase D, design/DECISIONS.md) — collapses the previous icon +
+    title + description paragraph + separate bordered summary card (four
+    reading steps before the tabs) into one compact block, so the
+    selected sub-view's own content is reachable immediately below it.
+    "Ask Research" stays available as a small secondary bridge in the
+    header itself rather than inside whichever tab happens to be open, so
+    it doesn't compete with that tab's content."""
+    metric = ctx.market_data_provider.get_rotation_metric_for_theme(theme.slug)
+    research_page = get_page("research")
 
-    _render_theme_summary(theme, ctx)
+    head_cols = st.columns([5, 2], vertical_alignment="center")
+    with head_cols[0]:
+        st.markdown(theme_icon_html(theme.slug), unsafe_allow_html=True)
+        st.markdown(f'<div class="er-page-title" style="font-size:1.4rem; margin-bottom:0;">{theme.name}</div>', unsafe_allow_html=True)
+    with head_cols[1]:
+        if metric:
+            direction = _infer_direction(metric.relative_performance_pct)
+            st.markdown(
+                f'<div style="text-align:right; margin-top:0.6rem;">{direction_status_tag_html(direction)}</div>',
+                unsafe_allow_html=True,
+            )
+
+    if metric:
+        direction = _infer_direction(metric.relative_performance_pct)
+        breadth_note = (
+            "broad participation" if metric.breadth_pct >= 50 else "participation concentrated in a smaller subset of names"
+        )
+        st.markdown(
+            f'<div class="er-muted" style="margin:0.1rem 0 0.5rem 0;">{theme.description} Reading '
+            f'<strong>{direction.value.lower()}</strong> this sample snapshot '
+            f'({fmt_pct(metric.relative_performance_pct)}, {metric.breadth_pct:.0f}% breadth) — {breadth_note}.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(f'<div class="er-muted" style="margin:0.1rem 0 0.5rem 0;">{theme.description}</div>', unsafe_allow_html=True)
+
+    if research_page is not None:
+        with st.container(key=f"cta-secondary-theme-ask-research-{theme.slug}"):
+            st.page_link(research_page, label="Ask Research →")
 
     map_tab, rotation_tab, companies_tab, catalysts_tab = st.tabs(["Map", "Rotation", "Companies", "Catalysts"])
     with map_tab:
@@ -198,8 +212,11 @@ def render() -> None:
     ctx = get_repositories()
     themes = ctx.theme_repository.get_all_themes()
 
+    # Phase D: the subtitle here used to just restate the tab names the
+    # user is about to see (Map/Rotation/Companies/Catalysts) — removed as
+    # redundant; the per-theme header below (name + status + one sentence)
+    # now carries that framing per selected theme instead.
     st.markdown('<div class="er-page-title">Themes</div>', unsafe_allow_html=True)
-    st.write("Organized research across the five themes EevaResearch tracks — supply-chain layers, rotation, companies, and catalysts.")
 
     if not themes:
         empty_state("No themes loaded.")

@@ -29,19 +29,28 @@ from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
 
 
-def _seed_row(issuer: Issuer) -> dict:
-    return {
+def _seed_row(issuer: Issuer, include_layer_column: bool) -> dict:
+    # Phase D (design/DECISIONS.md): the Layer(s) column is only included
+    # when at least one seed issuer anywhere has a populated
+    # supply_chain_layers value — same underlying field/data-model
+    # support either way, just not a column of all-"—" dashes when
+    # nothing has been assigned yet. Dict insertion order keeps it in the
+    # same relative position (after Theme(s), before Coverage) whenever
+    # it is included.
+    row = {
         "Company": issuer.legal_name,
         "Ticker": issuer.primary_ticker or "—",
         "Exchange": issuer.primary_exchange or "—",
         "Jurisdiction": issuer.country_or_jurisdiction or "—",
         "Source": source_name_for_seed_issuer(issuer),
         "Theme(s)": ", ".join(issuer.themes) if issuer.themes else "—",
-        "Layer(s)": ", ".join(issuer.supply_chain_layers) if issuer.supply_chain_layers else "—",
-        "Coverage": issuer.coverage_state.value,
-        "Lifecycle": issuer.lifecycle_state.value,
-        "Scan eligibility": "Eligible",
     }
+    if include_layer_column:
+        row["Layer(s)"] = ", ".join(issuer.supply_chain_layers) if issuer.supply_chain_layers else "—"
+    row["Coverage"] = issuer.coverage_state.value
+    row["Lifecycle"] = issuer.lifecycle_state.value
+    row["Scan eligibility"] = "Eligible"
+    return row
 
 
 def _discovery_label(issuer: Issuer) -> str:
@@ -125,7 +134,13 @@ def _render_seed_coverage() -> None:
     if not filtered:
         empty_state("No seed issuers match these filters.", "Clear a filter to see more results.")
         return
-    st.dataframe([_seed_row(i) for i in filtered], hide_index=True, width="stretch")
+
+    include_layer_column = bool(layer_options)
+    if not include_layer_column:
+        # Quiet, contextual note — only shown when the column is actually
+        # absent, not a permanent caveat sitting above the table either way.
+        st.caption("Layer assignments aren't available for the current issuer set yet.")
+    st.dataframe([_seed_row(i, include_layer_column) for i in filtered], hide_index=True, width="stretch")
     st.markdown(f'<div class="er-muted">{len(filtered)} of {len(SEED_ISSUERS)} seed issuers</div>', unsafe_allow_html=True)
 
 

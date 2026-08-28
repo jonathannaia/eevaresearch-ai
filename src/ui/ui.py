@@ -219,9 +219,17 @@ def render_sidebar(current_key: str) -> None:
             # so the group-label look comes from a CSS rule targeting this
             # container's key instead of nesting.
             with st.container(key="navitem-watchlists-header"):
-                st.page_link(watchlists_page, label="My Watchlists")
+                st.page_link(watchlists_page, label="My watchlists")
         else:
-            st.markdown('<div class="er-rail-group-label">My Watchlists</div>', unsafe_allow_html=True)
+            # Same sentence-case, non-uppercase treatment as the CSS rule
+            # below for the real page_link case — kept in sync manually
+            # since this fallback can't share a CSS class with a widget
+            # that isn't rendered.
+            st.markdown(
+                '<div style="font-size:0.78rem; font-weight:600; color:var(--text-2); '
+                'margin:var(--space-5) 0 var(--space-1) 0.25rem;">My watchlists</div>',
+                unsafe_allow_html=True,
+            )
 
         from src.ui.pages.watchlists import WATCHLIST_NAMES, seed_watchlists
 

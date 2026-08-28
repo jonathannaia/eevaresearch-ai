@@ -357,19 +357,21 @@ a:hover { color: var(--accent-hover); }
 /* sidebar contrast fix — see :root comment. */
 .er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
 
-/* "My Watchlists" group header, styled as a link — a real page_link
+/* "My watchlists" group header, styled as a link — a real page_link
    dressed to read as a group label (Streamlit can't nest a widget inside
-   a raw markdown div, so this targets the wrapping container's key). */
+   a raw markdown div, so this targets the wrapping container's key).
+   Phase D (design/DECISIONS.md): sentence case, not tiny all-caps
+   letter-spaced text — that treatment read as low-contrast/hard to parse
+   at a glance next to the plain Workspace nav links just above it. Same
+   existing --text-2 color/type-scale family as the rest of the sidebar,
+   just a size/weight one step down from the 0.83rem primary nav links so
+   it stays visually secondary to them, per Phase D's own requirement. */
 .st-key-navitem-watchlists-header { margin: var(--space-5) 0 var(--space-1) 0; }
 .st-key-navitem-watchlists-header [data-testid="stPageLink"] a {
     padding: 0 0.25rem !important; background: transparent !important;
 }
 .st-key-navitem-watchlists-header [data-testid="stPageLink"] a p {
-    font-size: 0.66rem !important; font-weight: 600 !important; letter-spacing: 0.08em;
-    /* sidebar contrast fix — see :root comment (default and hover are now
-       the same color; the hover rule below is a harmless no-op kept for
-       clarity/symmetry with the watchlist-shortcut rule just below it). */
-    text-transform: uppercase; color: var(--text-2) !important;
+    font-size: 0.78rem !important; font-weight: 600 !important; color: var(--text-2) !important;
 }
 .st-key-navitem-watchlists-header [data-testid="stPageLink"] a:hover p { color: var(--text-2) !important; }
 
