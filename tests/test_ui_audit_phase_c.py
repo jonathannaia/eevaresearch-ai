@@ -309,14 +309,15 @@ def _run_radar(tmp_path, **settings_overrides):
 def test_radar_default_view_is_needs_your_decision_with_all_filings_beside_it(tmp_path):
     """Phase F1 (design/DECISIONS.md): "All filings" -> "Captured
     filings" — label text only, same default/secondary view order and
-    underlying logic."""
+    underlying logic. Phase R1: "Needs your decision" -> "Latest" — same
+    supersession, same underlying `candidate is not None` filter."""
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000001", "일반 공고")])
     at = _run_radar(tmp_path)
     assert not at.exception
     radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Needs your decision", "Captured filings"]
-    assert radio.value == "Needs your decision"
+    assert radio.options == ["Latest", "Captured filings"]
+    assert radio.value == "Latest"
 
 
 def test_radar_ingestion_status_is_one_merged_collapsed_disclosure(tmp_path):

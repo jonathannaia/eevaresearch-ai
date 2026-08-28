@@ -125,9 +125,8 @@ def test_default_freshness_wording_never_uses_a_prohibited_word(tmp_path):
     ))
     at = _run(settings)
     assert not at.exception
-    # The freshness line specifically — the page's own existing copy
-    # elsewhere (e.g. "Automated primary-filing discovery" in the page
-    # subtitle) predates this phase and is out of scope to rewrite here.
+    # The freshness line specifically, isolated from the rest of the
+    # page's own copy (which this test doesn't otherwise constrain).
     freshness_line = next(
         m.value for m in at.markdown
         if m.value.strip().startswith('<div class="er-muted" style="margin-top:0.4rem;">Filing data')
@@ -174,14 +173,17 @@ def test_ingestion_status_expander_is_collapsed_by_default(tmp_path):
 
 # ============================== CAPTURED FILINGS LABEL ==============================
 
-def test_captured_filings_replaces_all_filings_and_needs_your_decision_stays_default(tmp_path):
+def test_captured_filings_replaces_all_filings_and_latest_is_default(tmp_path):
+    """Phase R1: "Needs your decision" -> "Latest" — label text only,
+    same underlying `candidate is not None` view filter."""
     _seed_one_dart_filing(tmp_path)
     at = _run(_settings(cache_dir=tmp_path))
     assert not at.exception
     radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Needs your decision", "Captured filings"]
-    assert radio.value == "Needs your decision"
+    assert radio.options == ["Latest", "Captured filings"]
+    assert radio.value == "Latest"
     assert "All filings" not in _text(at)
+    assert "Needs your decision" not in _text(at)
 
 
 # ============================== EDINET STAYS NOT ENABLED BY DEFAULT ==============================

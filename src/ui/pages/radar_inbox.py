@@ -42,7 +42,6 @@ from src.logic import review_actions
 from src.logic.radar_freshness import categorize_source_status, compute_radar_freshness, effective_interval_minutes
 from src.models.models import CandidateSignal, CandidateStatus
 from src.ui.components.empty_state import empty_state
-from src.ui.components.freshness import freshness_chip
 from src.ui.components.radar_card import candidate_row
 from src.ui.components.radar_status import RadarItem, status_label
 
@@ -53,10 +52,13 @@ _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation,
 # design/DECISIONS.md): the raw "every FilingEvent, every source, no cap"
 # list could grow to hundreds of cards, each with several nested
 # containers/expanders/buttons — rendering all of them at once was found
-# live to make the app's own sidebar navigation unreliable. "Needs your
-# decision" (candidates only — renamed from "Signals & review queue" in
-# the Phase C editorial-simplicity pass, same underlying view/filter/
-# ordering logic) is the default, useful view; "Captured filings"
+# live to make the app's own sidebar navigation unreliable. "Latest"
+# (candidates only — renamed from "Needs your decision" in Phase R1,
+# design/DECISIONS.md, itself renamed from "Signals & review queue" in
+# the Phase C editorial-simplicity pass — same underlying view/filter/
+# ordering logic every time: `candidate is not None`, never gated on
+# review status, so an already-Published or -Dismissed item still shows
+# here exactly as before) is the default, useful view; "Captured filings"
 # (temporarily relabeled from "All filings" in Phase F1, design/
 # DECISIONS.md — only candidate-linked filings are durably persisted
 # under Postgres/SQLite today, so "All filings" could read as a stronger
@@ -65,7 +67,7 @@ _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation,
 # same as the default view if it ever grows past one page. No page ever
 # renders more than PAGE_SIZE cards' worth of widgets, regardless of view
 # or filters.
-_SIGNALS_VIEW = "Needs your decision"
+_SIGNALS_VIEW = "Latest"
 _ALL_FILINGS_VIEW = "Captured filings"
 PAGE_SIZE = 20
 
@@ -620,29 +622,20 @@ def render() -> None:
         "EDINET": edinet_readiness.ready,
     }
 
-    header_cols = st.columns([4, 2])
-    with header_cols[0]:
-        st.markdown('<div class="er-page-title">Radar Inbox</div>', unsafe_allow_html=True)
-        st.markdown('<div class="er-muted">Automated primary-filing discovery</div>', unsafe_allow_html=True)
-    with header_cols[1]:
-        st.markdown('<div style="text-align:right; margin-top:0.8rem;">', unsafe_allow_html=True)
-        freshness_chip("live" if (dart_readiness.ready or edgar_readiness.ready or edinet_readiness.ready) else "demo", key="fresh-radar-head")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if dart_readiness.ready:
-        st.markdown(f'<div class="er-muted">{_DART_SCOPE_LINE}</div>', unsafe_allow_html=True)
-    if edgar_readiness.ready:
-        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_EDGAR_SCOPE_LINE}</div>', unsafe_allow_html=True)
-    if edinet_readiness.ready:
-        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{snapshot.edinet_scope_line}</div>', unsafe_allow_html=True)
+    # Phase R1 (design/DECISIONS.md): the default header is now title +
+    # exactly one subtitle — no credential-driven "Live" chip, no tracked-
+    # company/theme scope dump, no source-setup/resolver/pilot language,
+    # no pipeline-mechanics sentence. None of that information is deleted
+    # — every line below moved into the existing collapsed "Ingestion
+    # status" disclosure, unchanged in content, just no longer part of
+    # the first thing a normal user sees. The Phase F1 freshness line
+    # (below, after the readiness gate) is the only default-view
+    # statement about source status, and it already derives strictly
+    # from durable provider_scan_status — untouched by this phase.
+    st.markdown('<div class="er-page-title">Radar Inbox</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="er-muted" style="margin-top:0.2rem;">Live primary filings · Korea DART + SEC EDGAR pilots '
-        '(EDINET seam present, not yet a live pilot)</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="er-muted" style="margin-top:0.4rem;">Candidate signals are rule-based filing flags, '
-        'not published market interpretations.</div>',
+        '<div class="er-muted">Radar watches tracked companies for material filings, theme developments, '
+        'and high-confidence signals.</div>',
         unsafe_allow_html=True,
     )
 
@@ -673,8 +666,28 @@ def render() -> None:
     # and piece of operational detail is unchanged, just gathered under
     # one header instead of two.
     with st.expander("Ingestion status"):
+        # Phase R1: relocated verbatim from the default header — same
+        # scope-line content/computation (_DART_SCOPE_LINE,
+        # _EDGAR_SCOPE_LINE, snapshot.edinet_scope_line are all untouched),
+        # only shown here now instead of by default.
+        if dart_readiness.ready:
+            st.markdown(f'<div class="er-muted">{_DART_SCOPE_LINE}</div>', unsafe_allow_html=True)
+        if edgar_readiness.ready:
+            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_EDGAR_SCOPE_LINE}</div>', unsafe_allow_html=True)
+        if edinet_readiness.ready:
+            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{snapshot.edinet_scope_line}</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="er-muted">Source scans can take time and are intended for local/admin use.</div>',
+            '<div class="er-muted" style="margin-top:0.2rem;">Korea DART + SEC EDGAR pilots configured '
+            '(EDINET seam present, not yet a live pilot)</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="er-muted" style="margin-top:0.4rem;">Candidate signals are rule-based filing flags, '
+            'not published market interpretations.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="er-muted" style="margin-top:0.6rem;">Source scans can take time and are intended for local/admin use.</div>',
             unsafe_allow_html=True,
         )
         scan_cols = st.columns([2, 2, 2, 2])
@@ -738,10 +751,10 @@ def render() -> None:
         return
 
     # View selector — the top-level content control (Requirement 1):
-    # "Needs your decision" (candidate-only, the useful default) vs. "All
-    # filings" (the full raw inventory, opt-in) — a compact segmented
-    # control right beside the default view. Read-only: switching views
-    # never creates a signal, mutates a status, or invokes processing.
+    # "Latest" (candidate-only, the useful default) vs. "Captured filings"
+    # (the fuller inventory, opt-in) — a compact segmented control right
+    # beside the default view. Read-only: switching views never creates a
+    # signal, mutates a status, or invokes processing.
     view_mode = st.radio(
         "View", [_SIGNALS_VIEW, _ALL_FILINGS_VIEW], key="radar-view-mode", horizontal=True,
     )
@@ -766,11 +779,16 @@ def render() -> None:
     min_date = parsed_dates[0] if parsed_dates else date.today()
     max_date = parsed_dates[-1] if parsed_dates else date.today()
 
-    search_col, source_col, theme_col, status_col, date_col = st.columns([2, 2, 2, 2, 3])
+    # Phase R1 (design/DECISIONS.md): Status moved into Advanced filters
+    # — a research feed's default viewport doesn't need a human-review-
+    # workflow filter front and center. Same key ("radar-filter-status"),
+    # same options computation, same filtering logic below — only the
+    # widget's container moved; _clear_filters()'s own _FILTER_KEYS tuple
+    # is untouched, since it clears by session-state key, not position.
+    search_col, source_col, theme_col, date_col = st.columns([2, 2, 2, 3])
     search_query = search_col.text_input("Search", key="radar-filter-search", placeholder="Company or filing title…")
     source_filter = source_col.multiselect("Source", sources, key="radar-filter-source")
     theme_filter = theme_col.multiselect("Theme", themes, key="radar-filter-theme")
-    status_filter = status_col.multiselect("Status", statuses, key="radar-filter-status")
     date_range = date_col.date_input(
         "Filed between", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="radar-filter-dates",
     )
@@ -778,13 +796,14 @@ def render() -> None:
     adv_col, clear_col = st.columns([6, 2])
     with adv_col:
         with st.expander("Advanced filters"):
-            adv_cols = st.columns(3)
-            company_filter = adv_cols[0].multiselect("Company", companies, key="radar-filter-company")
-            language_filter = adv_cols[1].selectbox(
+            adv_cols = st.columns(4)
+            status_filter = adv_cols[0].multiselect("Status", statuses, key="radar-filter-status")
+            company_filter = adv_cols[1].multiselect("Company", companies, key="radar-filter-company")
+            language_filter = adv_cols[2].selectbox(
                 "Language", ["All", "Korean original", "Korean + English translation", "Translation unavailable"],
                 key="radar-filter-language",
             )
-            confidence_filter = adv_cols[2].multiselect("Detection confidence", ["Moderate", "High"], key="radar-filter-confidence")
+            confidence_filter = adv_cols[3].multiselect("Detection confidence", ["Moderate", "High"], key="radar-filter-confidence")
     with clear_col:
         # Phase C: a quiet inline text action rather than a separate
         # full-width button — same cta-tertiary-* ghost-link treatment

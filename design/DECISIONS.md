@@ -4372,3 +4372,141 @@ softly without the local disposable Postgres password set). Full
 existing suite re-run after this phase's changes: see the accompanying
 report for the exact combined count and confirmation that only the same
 three pre-existing `DECISIONS.md`-prose guard failures remain.
+
+## Phase R1 — Autonomous-Radar Feed UI Simplification
+
+Presentation, terminology, and documentation-only phase. Radar Inbox's
+default view is redesigned to read as an autonomous research feed rather
+than a human approval queue — no candidate workflow status, review
+action, signal-eligibility rule, worker, scheduler, source, translation,
+retry, deployment, database, dependency, environment variable, secret,
+or GitHub Actions behavior changed. The Phase F1 durable freshness line
+(design/DECISIONS.md) is untouched and remains the only user-facing
+source-freshness statement.
+
+**Discovery finding this phase is grounded in**: `src/logic/
+signal_decision_policy.py::decide_signal_route()` already auto-routes
+some SEC EDGAR candidates to `MONITORING` (SC 13G filings, periodic
+10-Q/10-K reports) or `DISMISSED` (empty extracted text) with no human
+click, and can route a fully-evidenced 424B5 offering to `PUBLISH` when
+`auto_publish_enabled` is true — that flag defaults false and is
+additionally forced false, structurally, inside
+`scripts/radar_worker.py` (Phase 4M-0's own safety invariant), so this
+one `PUBLISH` route cannot autonomously publish anything once a worker
+is deployed unless that separate safeguard is itself revisited. DART has
+one narrower auto-filter (`ownership_materiality.py` → `NOT_MATERIAL`,
+one rule category only); EDINET has none — every extracted EDINET
+candidate becomes `NEEDS_REVIEW`. This asymmetry is unchanged by this
+phase; it's cited here because it's why "verified" was rejected as a
+view name (see below) rather than adopted as the more ambitious label.
+
+**Header** (`src/ui/pages/radar_inbox.py::render()`): reduced to title +
+exactly one subtitle — "Radar watches tracked companies for material
+filings, theme developments, and high-confidence signals." Removed from
+the default view (relocated, not deleted, into the existing collapsed
+"Ingestion status" expander): the credential-driven `freshness_chip(
+"live" if any-readiness else "demo", ...)` header chip (which conflated
+*configuration* with *actual scan activity* — exactly the kind of
+default "Live" claim the truthfulness rule prohibits), the DART/EDGAR
+tracked-company scope lines, the dynamic EDINET scope line (tracked-
+company count, FilingEvent/CandidateSignal counts, last-scan status),
+the "Live primary filings · ... (EDINET seam present, not yet a live
+pilot)" sentence (the "Live primary filings" prefix was dropped
+entirely — a genuine deletion, not a relocation, since it was the one
+literal "Live" claim in that line; the remaining "Korea DART + SEC EDGAR
+pilots configured (EDINET seam present, not yet a live pilot)" fragment
+moved into Ingestion status unchanged), and the "Candidate signals are
+rule-based filing flags, not published market interpretations" sentence.
+None of the underlying readiness/scope computations changed — only
+where they render.
+
+**Views and filters**: `_SIGNALS_VIEW` renamed `"Needs your decision"` →
+`"Latest"` (same `candidate is not None` filter as always — never gated
+on review status, so an already-Published or -Dismissed item still
+appears here exactly as before). `"Captured filings"` (Phase F1)
+unchanged. The Status multiselect moved from the default filter row into
+the existing "Advanced filters" expander (now 4 columns: Status,
+Company, Language, Confidence) — same session-state key
+(`radar-filter-status`), same options computation, same filtering logic;
+`_clear_filters()`'s `_FILTER_KEYS` tuple is untouched since it clears by
+key, not position. The default row is now exactly Search/Source/Theme/
+Date — the same `st.date_input` "Filed between" widget as before,
+unchanged (no new timeframe-preset control was introduced, to avoid any
+new query model).
+
+**Filing cards** (`src/ui/components/radar_card.py`, substantially
+restructured): default-visible anatomy is now issuer+ticker, source+
+filing date, a new "Filing type" line (reads the existing `FilingEvent.
+pblntf_ty` field — real SEC form codes for EDGAR, EDINET's own formCode;
+omitted, never fabricated, for DART, which has no such field), "Why this
+matters" (relabeled from "Why flagged" — `_why_flagged_phrases` renamed
+`_why_this_matters_phrases`, phrase-generation logic byte-for-byte
+unchanged), theme, and the existing honest "Detection confidence: {level}"
+line (`dart_rules.format_confidence_label`, unchanged). One primary
+control, **"Investigate →"** — the same `st.expander` this file already
+used as "Details," relabeled and promoted to the one prominent
+interactive element (per the approved "least complex existing stable
+Streamlit pattern" instruction — no new drawer, no DOM hack). Quiet
+secondary links (a small, de-emphasized row using the app's existing
+`cta-tertiary-*` ghost-link container-key convention): the original-
+filing link (unchanged target/behavior) and, new, a "Company" link
+reusing the exact `get_page("company")` / `?symbol=` route Market Map
+already established in Phase E1 — no new route. A "related evidence/
+Radar" link was deliberately omitted: no existing route lets this page
+link into itself pre-filtered by company, and the approved plan's own
+qualifier ("where valid existing routes/actions already exist")
+excludes inventing one this phase.
+
+Moved inside the Investigate expander, unchanged in every other respect
+(wording, status transitions, storage, eligibility effects, permission
+behavior, audit trail): the evidence-status panel, the analyst view,
+original-language excerpt and its translation, the translation-
+unavailable tag, the materiality-assessment line, the "Prepare analyst
+view"/retry document-preparation action, the Publish/Monitor/Exclude
+review-decision panel and its note field, and the nested "Technical
+details" expander (state history, extraction/translation-state raw
+values) — nested `st.expander` inside `st.expander` was already proven
+to work in this exact file before this phase (the pre-existing "Details"
+→ "Technical details" nesting), so no flattening was needed. The
+previously-separate, always-collapsed "EDINET form codes" expander is
+now folded into the evidence-status panel's own rows inside Investigate
+(same three exact labels — "Ordinance code," "Form code," "Document type
+code" — same unconditioned-on-candidate rendering rule) rather than
+kept as a second sibling expander, since Investigate is now the one
+collapsed detail area for the whole card.
+
+**Documentation correction** (`src/logic/signal_decision_policy.py`,
+no behavior change): its docstring's claim that "shadow mode never
+changes the candidate's actual workflow status" was already false
+before this phase — `edgar_pipeline.py` demonstrably sets
+`CandidateStatus` from this function's returned route. Corrected to
+state plainly that `TIMELINE`/`ARCHIVE` routes do set `MONITORING`/
+`DISMISSED` with no human involvement, that a narrow 424B5 `PUBLISH`
+route exists, and that automatic publishing stays disabled/forced-off in
+the worker regardless. `decide_signal_route()`'s own logic is untouched;
+only its docstring changed.
+
+**Scope discipline**: no Render service, Postgres instance, secret,
+environment variable, schedule, source enablement, GitHub Actions
+workflow, dependency, database schema, repository, candidate-status
+transition, review-decision behavior, signal-eligibility rule, or
+translation/retry behavior changed. `decide_signal_route()`'s own
+auto-routing and auto-publish behavior is byte-for-byte unchanged.
+Verified directly (not just asserted) by `tests/test_ui_audit_phase_r1.py`'s
+own diff-based guards and its direct re-execution of
+`decide_signal_route()`/`is_eligible_for_signal()` against known
+fixtures.
+
+**Execution status, stated precisely**: new
+`tests/test_ui_audit_phase_r1.py` (15 tests) — **15 passed**. Focused
+re-run of every file this phase touches or could regress
+(`test_radar_inbox_page.py`, `test_ui_audit_phase_c.py`,
+`test_radar_inbox_freshness_line.py`, `test_radar_inbox_worker_status.py`,
+`test_radar_inbox_postgres_candidates.py`, `test_radar_inbox_dashboard_cache.py`,
+`test_navigation.py`, `test_radar_worker.py`,
+`test_radar_worker_safety_invariants.py`, `test_analyst_view.py`, and
+the Phase A/B/D/E UI-audit files): all green. Full existing suite
+re-run after this phase's changes: see the accompanying report for the
+exact combined count and confirmation that only the same three
+pre-existing `DECISIONS.md`-prose guard failures remain.
+

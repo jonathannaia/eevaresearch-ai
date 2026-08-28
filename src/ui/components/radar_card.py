@@ -1,9 +1,23 @@
-"""Radar Inbox's per-item row + detail — a dense filing-review layout,
-not a Signal-Board-style card. Deliberately reuses the app's existing
-tokens/chip conventions (evidence_chips.py's dashed/outline treatment,
-freshness.py's live/demo chip) rather than inventing a new visual system,
-while keeping every label Radar-specific (radar_status.py) so a Radar
-item is never mistaken for a curated, published Signal.
+"""Radar Inbox's per-item row + detail — a research-feed card (Phase R1,
+design/DECISIONS.md), not a review-task form. Default-visible anatomy is
+issuer/ticker, source/date, filing type, "Why this matters," theme, and
+detection confidence, plus one primary action ("Investigate →") and quiet
+secondary links (original filing, company). Everything operational —
+document-preparation ("Prepare analyst view"/retry), the Publish/Monitor/
+Exclude review decision, translation/materiality/technical detail, and
+state history — moved inside the Investigate expander (the same
+`st.expander` this file already used as "Details," just relabeled and
+promoted to the one primary control, per the approved plan's "least
+complex existing stable Streamlit pattern" instruction — no new drawer,
+no DOM hack). None of those controls' wording, status transitions,
+storage, eligibility effects, or audit trail changed — only where they
+render.
+
+Deliberately reuses the app's existing tokens/chip conventions
+(evidence_chips.py's dashed/outline treatment, freshness.py's live/demo
+chip) rather than inventing a new visual system, while keeping every
+label Radar-specific (radar_status.py) so a Radar item is never mistaken
+for a curated, published Signal.
 """
 from __future__ import annotations
 
@@ -24,13 +38,15 @@ from src.ui.components.radar_status import (
     status_pill,
     translation_unavailable_tag_html,
 )
+from src.ui.ui import get_page
 
 _TRANSLATION_LABEL = "Machine translation · For convenience · Verify against the original-language source"
+_INVESTIGATE_LABEL = "Investigate →"
 
 _PREPARE_ANALYST_VIEW_LABEL = "Prepare analyst view"
 _RETRY_ANALYST_VIEW_LABEL = "Retry analyst view preparation"
 _PREPARING_SPINNER_TEXT = "Preparing analyst view — retrieving and interpreting the filing…"
-_ANALYST_VIEW_CAPTION = "When ready, the analyst-ready summary appears in this filing’s Details."
+_ANALYST_VIEW_CAPTION = "When ready, the analyst-ready summary appears above."
 _UNAVAILABLE_REASON = "Preparation is unavailable until this source is configured."
 
 _REVIEW_NOTE_LABEL = "Review note"
@@ -44,7 +60,7 @@ _EXCLUDE_NOTE_REQUIRED_REASON = "A note is required before excluding — explain
 _REVIEW_DECISION_ERROR = "Could not record this decision — the candidate may no longer exist. Refresh and try again."
 
 
-def _why_flagged_phrases(matched_rules: list[str]) -> list[str]:
+def _why_this_matters_phrases(matched_rules: list[str]) -> list[str]:
     """Parses matched-rule strings into short, human-readable phrases —
     presentation-only, no rule-engine logic here. Handles both real rule
     shapes in this app: DART's dart_rules.evaluate_report_name
@@ -68,6 +84,16 @@ def _why_flagged_phrases(matched_rules: list[str]) -> list[str]:
         else:
             phrases.append(rule)
     return phrases
+
+
+def _filing_type_label(filing: FilingEvent) -> str | None:
+    """`pblntf_ty` holds a real per-filing type code for EDGAR (e.g.
+    "8-K", "10-Q") and EDINET (its own formCode) — see FilingEvent's own
+    docstring. DART's disclosure-list response never echoes a type code
+    per row, so this is always empty for DART; omitted rather than shown
+    as a blank or guessed value, matching this app's existing "never
+    fabricate" discipline."""
+    return filing.pblntf_ty or None
 
 
 def _detail_row(label: str, value: str) -> None:
@@ -97,6 +123,16 @@ def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | Non
         _detail_row("Document processing", "Not started")
         _detail_row("Translation", "Available after document processing")
     _detail_row(evidence_document_id_label(filing.source_name), filing.rcept_no)
+    if filing.source_name == "EDINET":
+        # Gate 8.1 detail (previously its own sibling "EDINET form codes"
+        # expander; Phase R1 folds it in here instead, since Investigate
+        # already is the one collapsed detail area for this card) — same
+        # three rows, same exact labels, unconditioned by candidate
+        # presence. "—" means the code was genuinely absent on the source
+        # record; any other value is shown verbatim.
+        _detail_row("Ordinance code", filing.ordinance_code or "—")
+        _detail_row("Form code", filing.pblntf_ty or "—")
+        _detail_row("Document type code", filing.pblntf_detail_ty or "—")
 
 
 def _render_process_action(candidate_id: str, label: str, key: str, ready: bool, on_process: Callable[[str], None]) -> None:
@@ -143,7 +179,11 @@ def _render_review_actions(
     its own, same separation the existing on_process callback already
     uses. Exclude requires a non-whitespace note and a second, explicit
     "Confirm exclude" click before anything is written; Publish/Monitor
-    are single-click with an optional note."""
+    are single-click with an optional note.
+
+    Phase R1: rendered inside the Investigate expander now, not in the
+    card's default body — same function, same wording, same status
+    transitions/storage/eligibility effects, only relocated."""
     note_key = f"radar-review-note-{candidate.id}"
     pending_exclude_key = f"radar-exclude-pending-{candidate.id}"
     error_key = f"radar-review-error-{candidate.id}"
@@ -195,6 +235,112 @@ def _render_review_actions(
         st.markdown(f'<div class="er-muted" style="margin-top:0.15rem; font-size:0.78rem;">{st.session_state[error_key]}</div>', unsafe_allow_html=True)
 
 
+def _render_investigate_body(
+    filing: FilingEvent,
+    candidate: CandidateSignal,
+    on_process: Callable[[str], None] | None,
+    process_ready: bool,
+    on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None,
+) -> None:
+    """Everything that used to sit directly in the card body or in a
+    separate "Details" expander, now gathered behind the one Investigate
+    control (Phase R1) — source/provenance, evidence, the original-
+    language excerpt and its translation, materiality, the document-
+    preparation action, the human review decision, and the technical/
+    audit-trail detail. Nothing here changed except position: no
+    wording, status transition, storage call, or eligibility effect was
+    touched."""
+    _evidence_status_panel(filing, candidate)
+    render_analyst_view(filing, candidate)
+    if candidate.excerpt_original:
+        st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Original-language excerpt</strong></div>', unsafe_allow_html=True)
+        st.markdown(f'<div>{candidate.excerpt_original}</div>', unsafe_allow_html=True)
+    if candidate.excerpt_translation is not None:
+        st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
+        st.markdown(f'<div>{candidate.excerpt_translation.translated_text}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="er-muted" style="margin-top:0.2rem;">'
+            f'{candidate.excerpt_translation.provider} · English translation · translated at {candidate.excerpt_translation.translated_at}</div>',
+            unsafe_allow_html=True,
+        )
+    unavailable_tag = translation_unavailable_tag_html(RadarItem(filing=filing, candidate=candidate))
+    if unavailable_tag:
+        st.markdown(f'<div style="margin-top:0.3rem;">{unavailable_tag}</div>', unsafe_allow_html=True)
+    if candidate.materiality_assessment != "Not assessed":
+        st.markdown(
+            f'<div class="er-muted" style="margin-top:0.3rem;">Potential materiality: {candidate.materiality_assessment}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if on_process is not None:
+        if candidate.status == CandidateStatus.PROCESSING_DEFERRED:
+            st.markdown('<div style="margin-top:0.5rem;"></div>', unsafe_allow_html=True)
+            _render_process_action(
+                candidate.id, _PREPARE_ANALYST_VIEW_LABEL, f"process-{candidate.id}", process_ready, on_process,
+            )
+            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
+        elif retry_policy.is_retryable(candidate):
+            eligibility = retry_policy.retry_eligibility(candidate)
+            st.markdown('<div style="margin-top:0.5rem;"></div>', unsafe_allow_html=True)
+            if eligibility.eligible:
+                _render_process_action(
+                    candidate.id, _RETRY_ANALYST_VIEW_LABEL, f"retry-{candidate.id}", process_ready, on_process,
+                )
+                st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
+            elif eligibility.reason == "Retry limit reached":
+                st.button(
+                    "Retry limit reached · Review original filing", key=f"retry-{candidate.id}",
+                    disabled=True, use_container_width=True,
+                )
+            else:
+                st.button(
+                    f"Retry available in {eligibility.cooldown_remaining_seconds}s",
+                    key=f"retry-{candidate.id}", disabled=True, use_container_width=True,
+                )
+
+    if on_review_decision is not None:
+        _render_review_actions(candidate, on_review_decision)
+
+    with st.expander("Technical details"):
+        _detail_row(evidence_document_id_label(filing.source_name), filing.rcept_no)
+        _detail_row("Filer", filing.flr_nm)
+        _detail_row("Filed", filing.rcept_dt)
+        _detail_row("Retrieved", filing.retrieved_at)
+        _detail_row("Extraction state", candidate.extraction_state.value)
+        _detail_row("Translation state", candidate.translation_state.value)
+        _detail_row("Excerpt quality", candidate.excerpt_quality.value)
+        if candidate.state_history:
+            st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>State history</strong></div>', unsafe_allow_html=True)
+            for transition in candidate.state_history:
+                detail = f" — {transition.detail}" if transition.detail else ""
+                st.markdown(
+                    f'<div class="er-muted" style="margin-left:0.8rem;">{transition.at} · {transition.status.value}{detail}</div>',
+                    unsafe_allow_html=True,
+                )
+
+
+def _render_quiet_links(filing: FilingEvent) -> None:
+    """Secondary access — de-emphasized (the same cta-tertiary-* ghost
+    treatment used everywhere else in the app for a low-emphasis action),
+    never the card's primary interaction. Company links only when a
+    stock/ticker code exists on the filing, reusing the exact existing
+    Company-page route/query-param pattern Market Map already established
+    (get_page("company"), ?symbol=) — no new route. A "related evidence/
+    Radar" link is deliberately omitted: no existing route lets this page
+    link into itself pre-filtered by company, and inventing one is out of
+    scope for this phase."""
+    link_cols = st.columns([2, 2, 5])
+    with link_cols[0]:
+        with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
+            st.link_button(f"Open original {filing.source_name} filing ↗", filing.source_url, use_container_width=True)
+    if filing.stock_code:
+        company_page = get_page("company")
+        if company_page is not None:
+            with link_cols[1]:
+                with st.container(key=f"cta-tertiary-radar-company-{filing.rcept_no}"):
+                    st.page_link(company_page, label="Company", query_params={"symbol": filing.stock_code})
+
+
 def candidate_row(
     item: RadarItem, on_process: Callable[[str], None] | None = None, process_ready: bool = True,
     on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None = None,
@@ -219,111 +365,32 @@ def candidate_row(
             st.markdown(f'<div style="margin-top:0.2rem;">{candidate.title_translation.translated_text}</div>', unsafe_allow_html=True)
             st.markdown(f'<span class="er-chip er-chip-inference">{_TRANSLATION_LABEL}</span>', unsafe_allow_html=True)
 
+        filing_type = _filing_type_label(filing)
+        if filing_type:
+            st.markdown(f'<div class="er-muted" style="margin-top:0.3rem;">Filing type: {filing_type}</div>', unsafe_allow_html=True)
+
+        if candidate is not None:
+            phrases = _why_this_matters_phrases(candidate.matched_rules)
+            if phrases:
+                st.markdown('<div class="er-muted" style="margin-top:0.3rem;"><strong>Why this matters:</strong></div>', unsafe_allow_html=True)
+                for phrase in phrases:
+                    st.markdown(f'<div class="er-muted" style="margin-left:0.8rem;">• {phrase}</div>', unsafe_allow_html=True)
+
         theme_label = filing.theme_slug.replace("-", " ").title() if filing.theme_slug else ""
         if theme_label:
             st.markdown(f'<div class="er-muted" style="margin-top:0.3rem;">{theme_label}</div>', unsafe_allow_html=True)
-
-        if filing.source_name == "EDINET":
-            # Gate 8.1: shown unconditionally (not gated behind
-            # `candidate is not None` like the "Details" expander below)
-            # because an EDINET FilingEvent realistically never has a
-            # candidate while the category map stays empty — gating this
-            # behind a candidate would mean it never renders in practice.
-            # "—" means the code was genuinely absent on the source
-            # record; any other value is shown verbatim, exactly as
-            # received, never interpreted.
-            with st.expander("EDINET form codes"):
-                _detail_row("Ordinance code", filing.ordinance_code or "—")
-                _detail_row("Form code", filing.pblntf_ty or "—")
-                _detail_row("Document type code", filing.pblntf_detail_ty or "—")
 
         if candidate is not None:
             st.markdown(
                 f'<div class="er-muted" style="margin-top:0.2rem;">{dart_rules.format_confidence_label(candidate.confidence)}</div>',
                 unsafe_allow_html=True,
             )
-            phrases = _why_flagged_phrases(candidate.matched_rules)
-            if phrases:
-                st.markdown('<div class="er-muted" style="margin-top:0.2rem;"><strong>Why flagged:</strong></div>', unsafe_allow_html=True)
-                for phrase in phrases:
-                    st.markdown(f'<div class="er-muted" style="margin-left:0.8rem;">• {phrase}</div>', unsafe_allow_html=True)
 
-            if candidate.materiality_assessment != "Not assessed":
-                st.markdown(
-                    f'<div class="er-muted" style="margin-top:0.2rem;">Potential materiality: {candidate.materiality_assessment}</div>',
-                    unsafe_allow_html=True,
-                )
-
-            unavailable_tag = translation_unavailable_tag_html(item)
-            if unavailable_tag:
-                st.markdown(unavailable_tag, unsafe_allow_html=True)
-
-        action_cols = st.columns([2, 2, 4])
-        with action_cols[0]:
-            st.link_button(f"Open original {filing.source_name} filing ↗", filing.source_url, use_container_width=True)
-
-        if candidate is not None and on_process is not None:
-            with action_cols[1]:
-                if candidate.status == CandidateStatus.PROCESSING_DEFERRED:
-                    _render_process_action(
-                        candidate.id, _PREPARE_ANALYST_VIEW_LABEL, f"process-{candidate.id}", process_ready, on_process,
-                    )
-                    st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
-                elif retry_policy.is_retryable(candidate):
-                    eligibility = retry_policy.retry_eligibility(candidate)
-                    if eligibility.eligible:
-                        _render_process_action(
-                            candidate.id, _RETRY_ANALYST_VIEW_LABEL, f"retry-{candidate.id}", process_ready, on_process,
-                        )
-                        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
-                    elif eligibility.reason == "Retry limit reached":
-                        st.button(
-                            "Retry limit reached · Review original filing", key=f"retry-{candidate.id}",
-                            disabled=True, use_container_width=True,
-                        )
-                    else:
-                        st.button(
-                            f"Retry available in {eligibility.cooldown_remaining_seconds}s",
-                            key=f"retry-{candidate.id}", disabled=True, use_container_width=True,
-                        )
-
-        if candidate is not None and on_review_decision is not None:
-            _render_review_actions(candidate, on_review_decision)
+        _render_quiet_links(filing)
 
         if candidate is not None:
-            with st.expander("Details"):
-                _evidence_status_panel(filing, candidate)
-                render_analyst_view(filing, candidate)
-                if candidate.excerpt_original:
-                    st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Original-language excerpt</strong></div>', unsafe_allow_html=True)
-                    st.markdown(f'<div>{candidate.excerpt_original}</div>', unsafe_allow_html=True)
-                if candidate.excerpt_translation is not None:
-                    st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
-                    st.markdown(f'<div>{candidate.excerpt_translation.translated_text}</div>', unsafe_allow_html=True)
-                    st.markdown(
-                        f'<div class="er-muted" style="margin-top:0.2rem;">'
-                        f'{candidate.excerpt_translation.provider} · English translation · translated at {candidate.excerpt_translation.translated_at}</div>',
-                        unsafe_allow_html=True,
-                    )
-                # Developer-facing detail — extraction mechanics, cache/
-                # pipeline state, audit trail — relocated here, not
-                # removed, per the approved Phase 1 UI reorganization.
-                with st.expander("Technical details"):
-                    _detail_row(evidence_document_id_label(filing.source_name), filing.rcept_no)
-                    _detail_row("Filer", filing.flr_nm)
-                    _detail_row("Filed", filing.rcept_dt)
-                    _detail_row("Retrieved", filing.retrieved_at)
-                    _detail_row("Extraction state", candidate.extraction_state.value)
-                    _detail_row("Translation state", candidate.translation_state.value)
-                    _detail_row("Excerpt quality", candidate.excerpt_quality.value)
-                    if candidate.state_history:
-                        st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>State history</strong></div>', unsafe_allow_html=True)
-                        for transition in candidate.state_history:
-                            detail = f" — {transition.detail}" if transition.detail else ""
-                            st.markdown(
-                                f'<div class="er-muted" style="margin-left:0.8rem;">{transition.at} · {transition.status.value}{detail}</div>',
-                                unsafe_allow_html=True,
-                            )
+            with st.expander(_INVESTIGATE_LABEL):
+                _render_investigate_body(filing, candidate, on_process, process_ready, on_review_decision)
         else:
-            with st.expander("Details"):
+            with st.expander(_INVESTIGATE_LABEL):
                 _evidence_status_panel(filing, None)

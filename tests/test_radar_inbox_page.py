@@ -30,7 +30,9 @@ _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 # queue"/"All filing events" — same underlying view/filter/ordering logic.
 # Phase F1 (design/DECISIONS.md): "All filings" -> "Captured filings" —
 # label text only, same view/filter/ordering logic again.
-_SIGNALS_VIEW = "Needs your decision"
+# Phase R1 (design/DECISIONS.md): "Needs your decision" -> "Latest" —
+# same supersession, same underlying `candidate is not None` filter.
+_SIGNALS_VIEW = "Latest"
 _ALL_FILINGS_VIEW = "Captured filings"
 
 
@@ -261,7 +263,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         at.run()
 
         assert not at.exception
-        # Default view ("Needs your decision"): the 3 candidates render,
+        # Default view ("Latest"): the 3 candidates render,
         # but `new_filing` — a bare FilingEvent with no CandidateSignal —
         # is excluded. Its own report title is a precise, non-coincidental
         # marker (unlike the "New filing" status label, which also appears
@@ -287,7 +289,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     button_labels = {b.label for b in at.button}
     assert "Prepare analyst view" in button_labels
     assert any("Retry limit reached" in label for label in button_labels)
-    assert "When ready, the analyst-ready summary appears in this filing’s Details." in all_text
+    assert "When ready, the analyst-ready summary appears above." in all_text
 
 
 # --- "Prepare analyst view" UX fix: spinner-covered, readiness-gated,
@@ -319,7 +321,7 @@ def test_radar_inbox_retry_eligible_candidate_shows_retry_label_and_caption(tmp_
     all_text = " ".join(m.value for m in at.markdown)
     button_labels = {b.label for b in at.button}
     assert "Retry analyst view preparation" in button_labels
-    assert "When ready, the analyst-ready summary appears in this filing’s Details." in all_text
+    assert "When ready, the analyst-ready summary appears above." in all_text
     retry_button = next(b for b in at.button if b.label == "Retry analyst view preparation")
     assert retry_button.disabled is False
 
@@ -434,9 +436,12 @@ def test_radar_inbox_shows_not_material_label_for_routine_ownership_candidate(tm
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "Not material · routine ownership update" in all_text
-    # Live/demo isolation: this page's own scope banner is present, and
-    # nothing here claims a broader market-conviction/investment reading.
-    assert "Live primary filings · Korea DART + SEC EDGAR pilots" in all_text
+    # Live/demo isolation: this page's own scope note is present (Phase
+    # R1: relocated into the collapsed Ingestion status disclosure, same
+    # content, minus the "Live" prefix this phase removed — see
+    # design/DECISIONS.md), and nothing here claims a broader market-
+    # conviction/investment reading.
+    assert "Korea DART + SEC EDGAR pilots configured" in all_text
     assert "market conviction" not in all_text.lower()
     assert "investment confidence" not in all_text.lower()
 
@@ -740,10 +745,12 @@ def test_radar_inbox_analyst_view_edinet_never_labels_a_code_match_as_a_keyword_
     # see test_analyst_view.py's own unit test for the exact contract):
     # a routing-code match, correctly never called a keyword match.
     assert "Annual securities report — matched by filing type/form code (010:030000:120)" in all_text
-    # Note: the separate, pre-existing "Why flagged:" list elsewhere on
-    # this same card still mislabels EDINET code matches as "keyword
-    # match" (radar_card.py's _why_flagged_phrases) — a real, known gap
-    # this task's scope did not include fixing. Not yet documented in
+    # Note: the separate, pre-existing "Why this matters:" list elsewhere
+    # on this same card (relabeled from "Why flagged:" in Phase R1,
+    # design/DECISIONS.md — radar_card.py's _why_this_matters_phrases,
+    # renamed from _why_flagged_phrases, content unchanged) still
+    # mislabels EDINET code matches as "keyword match" — a real, known
+    # gap this task's scope did not include fixing. Not yet documented in
     # design/DECISIONS.md.
 
 
@@ -837,9 +844,10 @@ def test_radar_inbox_analyst_view_excerpt_at_exact_threshold_boundary(tmp_path):
 def test_radar_inbox_technical_details_expander_preserves_relocated_fields(tmp_path):
     """Confirms the reorganization moved developer-facing fields into a
     nested, collapsed expander rather than deleting them — the outer
-    "Details" expander and the inner "Technical details" expander both
-    exist, and every relocated field is still present somewhere in the
-    rendered output."""
+    "Investigate →" expander (renamed from "Details" in Phase R1, design/
+    DECISIONS.md) and the inner "Technical details" expander both exist,
+    and every relocated field is still present somewhere in the rendered
+    output."""
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000105", "일반 공고")
     _seed_filing_events(tmp_path, [filing])
@@ -858,7 +866,7 @@ def test_radar_inbox_technical_details_expander_preserves_relocated_fields(tmp_p
 
     assert not at.exception
     expander_labels = [e.label for e in at.expander]
-    assert "Details" in expander_labels
+    assert "Investigate →" in expander_labels
     assert "Technical details" in expander_labels
 
     all_text = " ".join(m.value for m in at.markdown)

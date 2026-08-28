@@ -1,8 +1,30 @@
-"""Deterministic, shadow-mode signal routing for extracted SEC EDGAR filings.
+"""Deterministic signal routing for extracted SEC EDGAR filings.
 
-This module is pure: it performs no I/O and does not mutate candidates.
-The EDGAR pipeline may record its recommendation in state history, but
-shadow mode never changes the candidate's actual workflow status.
+This module is pure: it performs no I/O and does not mutate candidates —
+`decide_signal_route()` only returns a `SignalDecision`, it never writes
+one. The name "shadow" here refers to how this policy was introduced,
+not to its current effect: it is not shadow-only today.
+
+Corrected (Phase R1, design/DECISIONS.md): an earlier version of this
+docstring claimed shadow mode "never changes the candidate's actual
+workflow status" — that is no longer accurate and this module's own
+behavior already contradicted it before this correction. In
+`src/data_access/edgar/edgar_pipeline.py`, the route this function
+returns *does* set the candidate's real `CandidateStatus`: `TIMELINE`
+sets `MONITORING`, `ARCHIVE` sets `DISMISSED`, and `PUBLISH` sets
+`PUBLISHED` — but only when `auto_publish_enabled` is also true (`REVIEW`,
+and a `PUBLISH` route while `auto_publish_enabled` is false, both fall
+through to `NEEDS_REVIEW`, the human-gated status). Today, only a
+narrow, fully-evidenced 424B5 offering (offering language, a dollar
+amount, a share/note quantity, and proceeds language all present in the
+extracted excerpt) can ever reach `PUBLISH`. `auto_publish_enabled`
+itself defaults to false and is additionally forced false, structurally,
+inside `scripts/radar_worker.py` regardless of its own process
+environment (Durable-State Phase 4M-0's own safety invariant) — so this
+policy's one `PUBLISH` route cannot autonomously publish anything once a
+worker is deployed unless that separate, already-documented safeguard is
+itself revisited. This correction is documentation only; no behavior in
+this module or `edgar_pipeline.py` changed.
 """
 from __future__ import annotations
 
