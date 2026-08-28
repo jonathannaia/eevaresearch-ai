@@ -3,64 +3,86 @@
    for all app styling, loaded once via src/ui/ui.py::load_css(). No inline
    <style> blocks anywhere else.
 
-   Midnight-navy visual-theme redesign (design/DECISIONS.md): every token
-   below is a re-mapping of the previous neutral-gray palette onto a navy
-   ground with a blue accent — layout, components, copy, and the pill/glow
-   button *mechanics* are unchanged; only the color values feeding them
-   moved. Verified against WCAG contrast math at redesign time: primary
-   text ≥13:1, secondary text ≥8.3:1, muted text ≥4.5:1, and the four
-   status accents (blue/teal/amber/rose) ≥5.4:1 against every surface tone
-   below — all comfortably clear of the 4.5:1 (normal text) / 3:1 (UI
-   controls, focus indicators) AA minimums this pass targets.
+   Light editorial visual-theme redesign (design/DECISIONS.md): a full
+   replacement of the shared token system, not an additive layer over the
+   prior midnight-navy pass (commit 6e34c76) — every background/text/
+   border/accent token below is redefined for a white-card, off-white-page
+   editorial look with a midnight-blue primary action. Layout, components,
+   copy, and the pill/glow button *mechanics* are unchanged; only the color
+   values feeding them moved. Verified against WCAG contrast math at
+   redesign time: primary text ≥16:1, secondary text ≥9.4:1, muted text
+   ≥4.5:1 (once panel-appropriate — see the --text-3/--text-4 note below),
+   and the three status accents (green/amber/rose) ≥4.4:1 against every
+   surface tone below — all clear of the 4.5:1 (normal text) / 3:1 (UI
+   controls, focus indicators) AA minimums this pass targets. Two values
+   were nudged slightly off their literally-specified hex to actually clear
+   3:1 (the functional border) — see that token's own comment for the
+   before/after math; this is called out again in the redesign's commit
+   message and PR-facing report, not just here.
 
    Direction color (added in the UX-refinement pass, explicitly approved as
-   NOT a reversal of the black/white system): muted green/rose/amber are
+   NOT a reversal of the black/white system): green/amber/rose are
    restrained SEMANTIC accents only — small dots, thin rails, small arrows,
    subtle metric accents, compact status tags, tiny chart-state markers.
    Never large card backgrounds, never bright/neon, never colored headings,
    never decorative. Glyph + text-weight still carry direction on their own;
-   color is an additional accent, not a replacement. Now brighter (teal/
-   amber/rose rather than the previous muted sage/gold/dusty-rose) since the
-   darker navy ground needs more saturated accents to read at the same
-   restrained, small-footprint sizes — the *usage* rule (dots/rails/pills
-   only, never fills) is unchanged.
+   color is an additional accent, not a replacement. Darker/more saturated
+   than a pastel would be, specifically so they still read as text-weight
+   (4.5:1+) when used as chip/glyph foreground, not just as a 3:1 dot fill.
 
    Motion is restricted to two instances (breadth-bar fill, live-status-dot
    pulse), both gated by prefers-reduced-motion. */
 
 :root {
     /* Backgrounds — page / sidebar / card / elevated-hover / native-widget. */
-    --bg: #07111F;
-    --rail: #0A1628;
-    --surface: #101F35;
-    --surface-2: #152944;
-    --surface-3: #1B3352;
-    --surface-input: #0D1A2D;
+    --bg: #F8FAFC;
+    --rail: #F1F5F9;
+    --surface: #FFFFFF;
+    --surface-2: #F8FBFF;
+    /* Third elevation tier for track/badge/disabled fills (breadth-bar
+       track, unread-count badge, disabled-button background) — not one of
+       the seven given tokens (the palette only names 5 surface roles), but
+       every one of those roles is already spoken for by --bg/--rail/
+       --surface/--surface-2/--surface-input, so this fills the one
+       remaining internal role the previous palette's --surface-3 also
+       filled, kept deliberately subtle (contrast ~1.2:1 against white —
+       barely differentiated, by design, for a "track" rather than a card). */
+    --surface-3: #E2E8F0;
+    --surface-input: #FFFFFF;
     /* Borders: --hairline is decorative (dividers, footer rules, chart
-       gridlines) with no contrast floor of its own; --hairline-2 is a
+       gridlines) with no contrast floor of its own. --hairline-2 is the
        functional UI-component boundary (secondary-button/input/chip
-       outlines) and is kept ≥3:1 against every surface above — the AA
-       non-text-contrast minimum for a boundary that itself has to convey
-       where a control is. */
-    --hairline: #243A57;
-    --hairline-2: #5578A0;
-    --text: #F1F5F9;
-    --text-2: #B8C5D6;
+       outlines) — kept ≥3:1 against every surface above, which the
+       literally-specified #8FA6BF does not quite clear on its own
+       (2.29:1-2.51:1 measured against these four backgrounds); #7A8DA2 is
+       that same color ~15% darker, chosen as the lightest step that still
+       clears 3:1 in the worst case (sidebar, 3.11:1). Input surfaces are
+       white-on-white with their container card, so this border is the
+       *only* way an input's boundary is perceivable here — not a
+       decorative nicety. */
+    --hairline: #D9E2EC;
+    --hairline-2: #7A8DA2;
+    --text: #0F172A;
+    --text-2: #334155;
     /* Only three text tiers in this palette (Primary/Secondary/Muted) —
        the previous four-tier ramp's two dimmest steps (text-3/text-4)
        both collapse onto the one Muted value rather than inventing a
-       shade outside the given palette. */
-    --text-3: #8091A8;
-    --text-4: #8091A8;
+       shade outside the given palette. Muted (#64748B) clears 4.5:1 on
+       --bg/--surface/--surface-2 (4.55-4.76:1) but falls just short on
+       --rail specifically (4.34:1) — the handful of sidebar-only labels
+       that would otherwise use it are bumped to --text-2 at their call
+       sites below instead (search "sidebar contrast fix" in this file). */
+    --text-3: #64748B;
+    --text-4: #64748B;
     /* Primary CTA fill/label — same role as before (the button/chip's
-       highest-emphasis pair), now the primary accent blue with a dark
-       navy label for contrast (7.5:1) instead of white-on-white. */
-    --invert-bg: #60A5FA;
-    --invert-fg: #07111F;
-    --glow: rgba(96, 165, 250, .24);
-    --accent: #60A5FA;
-    --accent-hover: #93C5FD;
-    --focus: #93C5FD;
+       highest-emphasis pair): midnight-blue fill, white label (14.6:1). */
+    --invert-bg: #102A43;
+    --invert-fg: #FFFFFF;
+    --glow: rgba(22, 62, 104, .18);
+    --accent: #102A43;
+    --accent-hover: #163E68;
+    --focus: #2563EB;
+    --link: #1D4ED8;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
@@ -68,15 +90,20 @@
     --font-mono: "JetBrains Mono", monospace;
     --font-serif: "Source Serif 4", "Noto Serif JP", "Noto Serif KR", "Noto Serif SC", serif;
     /* Restrained semantic direction accents only — see note above.
-       Teal = positive/live/confirmed, amber = watch/uncertain,
-       rose = risk/negative. Never used as a large fill (dots/rails/
-       tinted-pill backgrounds only). */
-    --pos: #34D399;
-    --pos-dim: rgba(52, 211, 153, .16);
-    --neg: #FB7185;
-    --neg-dim: rgba(251, 113, 133, .16);
-    --mix: #F6C65B;
-    --mix-dim: rgba(246, 198, 91, .16);
+       Green = positive/confirmed, amber = watch/uncertain, rose =
+       risk/negative. Never used as a large fill (dots/rails/tinted-pill
+       backgrounds only). The *-dim tints are deliberately much lower
+       alpha (.06) than the color's own saturation would suggest — on a
+       white ground, mixing more of a dark status color into the tint
+       darkens the pill background and erodes the text-on-tint contrast;
+       .06 is the lightest alpha that still clears 4.5:1 for every one of
+       the three colors used as text on its own tint. */
+    --pos: #087F5B;
+    --pos-dim: rgba(8, 127, 91, .06);
+    --neg: #B4233C;
+    --neg-dim: rgba(180, 35, 60, .06);
+    --mix: #9A6700;
+    --mix-dim: rgba(154, 103, 0, .06);
     /* Spacing rhythm (final polish pass) — a shared scale so every
        component reaches for one of these instead of a one-off margin.
        4: tight label/value pair. 8: related inline metadata. 12: small
@@ -156,6 +183,13 @@
 html, body, [class*="css"] { font-family: var(--font-ui); }
 h1, h2, h3 { font-family: var(--font-ui); letter-spacing: -0.006em; color: var(--text); }
 p, li, span, div { letter-spacing: -0.006em; }
+/* Accessible link color (6.4-6.7:1 against every surface) for any plain
+   content link — every nav/button/pill <a> above has its own higher-
+   specificity and/or !important color rule elsewhere in this file and
+   wins the cascade regardless, so this only reaches genuinely plain,
+   unclassed anchors (e.g. native markdown-syntax links). */
+a { color: var(--link); }
+a:hover { color: var(--accent-hover); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
@@ -297,7 +331,11 @@ p, li, span, div { letter-spacing: -0.006em; }
 .er-rail-brand [data-testid="stPageLink"] a p { font-weight: 600 !important; font-size: 14.5px !important; }
 .er-rail-group-label {
     font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-    color: var(--text-4); margin: var(--space-5) 0 var(--space-2) 0.25rem;
+    /* sidebar contrast fix: --text-4/muted is 4.34:1 on --rail, just under
+       AA's 4.5:1 for normal text — --text-2/secondary (9.4:1) instead,
+       here and at the other sidebar-only call sites noted in the :root
+       comment above. */
+    color: var(--text-2); margin: var(--space-5) 0 var(--space-2) 0.25rem;
 }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a {
     color: var(--text-2) !important; border-radius: var(--r-sm);
@@ -312,10 +350,12 @@ p, li, span, div { letter-spacing: -0.006em; }
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
-    font-size: 0.68rem; color: var(--text-3); margin-top: 0.25rem;
+    /* sidebar contrast fix — see :root comment. */
+    font-size: 0.68rem; color: var(--text-2); margin-top: 0.25rem;
 }
 .er-rail-footlinks { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.4rem; }
-.er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-3); }
+/* sidebar contrast fix — see :root comment. */
+.er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
 
 /* "My Watchlists" group header, styled as a link — a real page_link
    dressed to read as a group label (Streamlit can't nest a widget inside
@@ -326,7 +366,10 @@ p, li, span, div { letter-spacing: -0.006em; }
 }
 .st-key-navitem-watchlists-header [data-testid="stPageLink"] a p {
     font-size: 0.66rem !important; font-weight: 600 !important; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--text-4) !important;
+    /* sidebar contrast fix — see :root comment (default and hover are now
+       the same color; the hover rule below is a harmless no-op kept for
+       clarity/symmetry with the watchlist-shortcut rule just below it). */
+    text-transform: uppercase; color: var(--text-2) !important;
 }
 .st-key-navitem-watchlists-header [data-testid="stPageLink"] a:hover p { color: var(--text-2) !important; }
 
@@ -346,7 +389,10 @@ p, li, span, div { letter-spacing: -0.006em; }
    are personal filter shortcuts, not primary destinations, and shouldn't
    read with the same visual weight as Dashboard/Themes/Signals/Research. */
 [class*="st-key-navitem-watchlist-"] [data-testid="stPageLink"] a p {
-    font-size: 0.78rem !important; color: var(--text-3) !important;
+    /* sidebar contrast fix — see :root comment. The hover background
+       rule two rules above (transparent -> --surface) still carries the
+       hover affordance even though text color no longer changes. */
+    font-size: 0.78rem !important; color: var(--text-2) !important;
 }
 [class*="st-key-navitem-watchlist-"] [data-testid="stPageLink"] a:hover p {
     color: var(--text-2) !important;
@@ -416,16 +462,18 @@ p, li, span, div { letter-spacing: -0.006em; }
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"] {
     background: var(--invert-bg) !important; color: var(--invert-fg) !important;
     border: none !important; border-radius: 999px !important; font-weight: 600 !important;
-    /* Restrained blue glow (not neon): a thin accent-tinted ring, the
-       --glow blur (rgba(96,165,250,.24) — same value used by the
-       live-status dot and breadth-bar leader, the app's other two glow
-       spots), and a plain dark drop shadow for depth. */
-    box-shadow: 0 0 0 1px rgba(96,165,250,.35), 0 0 22px var(--glow), 0 2px 10px rgba(0,0,0,.4) !important;
+    /* Soft navy-blue aura (not neon): a thin navy-tinted ring, the --glow
+       blur (rgba(22,62,104,.18) — the specified primary-CTA-glow value,
+       reused for the live-status dot and breadth-bar leader, the app's
+       other two glow spots), and a navy-tinted drop shadow for depth
+       (replacing the previous pure-black shadow — reads softer against a
+       white/off-white page than a hard black shadow would). */
+    box-shadow: 0 0 0 1px rgba(16,42,67,.25), 0 0 22px var(--glow), 0 2px 10px rgba(16,42,67,.18) !important;
     transition: box-shadow .22s ease, background .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(96,165,250,.55), 0 0 26px rgba(96,165,250,.42), 0 4px 16px rgba(0,0,0,.45) !important;
+    box-shadow: 0 0 0 1px rgba(22,62,104,.45), 0 0 26px rgba(22,62,104,.32), 0 4px 16px rgba(22,62,104,.24) !important;
     background: var(--accent-hover) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
@@ -489,8 +537,8 @@ p, li, span, div { letter-spacing: -0.006em; }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-/* Focus ring uses the dedicated --focus token (#93C5FD) rather than a
-   plain white or muted-text color — ≥9:1 against every surface in this
+/* Focus ring uses the dedicated --focus token (#2563EB) rather than a
+   plain dark or muted-text color — ≥4.7:1 against every surface in this
    palette, well past the 3:1 AA minimum for a focus indicator, and reads
    as an intentional accent ring rather than a generic outline. */
 .btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: 3px; }
@@ -506,7 +554,7 @@ p, li, span, div { letter-spacing: -0.006em; }
     outline: 2px solid var(--focus) !important; outline-offset: 2px;
 }
 
-/* ---------- native widget surfaces (midnight-navy redesign) ----------
+/* ---------- native widget surfaces (light editorial redesign) ----------
    Text inputs, selects, multiselects, date inputs, chat input, dataframes,
    expanders, tabs, and the native `st.button(type="primary")` variant (the
    3 "Scan ... now" buttons on Radar Inbox — the only native-primary
@@ -552,9 +600,9 @@ p, li, span, div { letter-spacing: -0.006em; }
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] { background-color: var(--accent) !important; }
 [data-testid="stDataFrame"] { border: 1px solid var(--hairline-2) !important; border-radius: var(--r-sm) !important; }
 /* The one native-primary-type button in the app (Radar Inbox's "Scan ...
-   now" — see module note above): dark label on the accent fill, same
-   pairing/contrast as the custom primary-CTA pill, so it doesn't default
-   to Streamlit's own white-on-accent text. */
+   now" — see module note above): explicit white-on-navy pairing matching
+   the custom primary-CTA pill, rather than relying on Streamlit's own
+   default text-color choice for a primary-type button. */
 [data-testid="stBaseButton-primary"] {
     background: var(--invert-bg) !important; color: var(--invert-fg) !important;
     border: none !important;
@@ -594,7 +642,11 @@ p, li, span, div { letter-spacing: -0.006em; }
 }
 .er-chip-fact { background: var(--invert-bg); color: var(--invert-fg); cursor: pointer; }
 .er-chip-fact:hover { box-shadow: 0 0 0 1px var(--invert-bg); }
-.er-chip-interpretation { background: rgba(255, 255, 255, .16); color: var(--text); }
+/* A translucent white overlay (the previous value) is invisible against a
+   white/near-white card — a translucent navy wash instead, using the same
+   CTA-navy RGB at low alpha (8%; 15.3:1 text contrast at that alpha),
+   still restrained/light rather than a solid tinted fill. */
+.er-chip-interpretation { background: rgba(16, 42, 67, .08); color: var(--text); }
 .er-chip-inference { background: transparent; color: var(--text-2); border: 1px solid var(--hairline-2); }
 .er-chip-uncertainty { background: transparent; color: var(--text-2); border: 1px dashed var(--hairline-2); }
 
