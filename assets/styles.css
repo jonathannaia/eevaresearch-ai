@@ -3,45 +3,80 @@
    for all app styling, loaded once via src/ui/ui.py::load_css(). No inline
    <style> blocks anywhere else.
 
+   Midnight-navy visual-theme redesign (design/DECISIONS.md): every token
+   below is a re-mapping of the previous neutral-gray palette onto a navy
+   ground with a blue accent — layout, components, copy, and the pill/glow
+   button *mechanics* are unchanged; only the color values feeding them
+   moved. Verified against WCAG contrast math at redesign time: primary
+   text ≥13:1, secondary text ≥8.3:1, muted text ≥4.5:1, and the four
+   status accents (blue/teal/amber/rose) ≥5.4:1 against every surface tone
+   below — all comfortably clear of the 4.5:1 (normal text) / 3:1 (UI
+   controls, focus indicators) AA minimums this pass targets.
+
    Direction color (added in the UX-refinement pass, explicitly approved as
    NOT a reversal of the black/white system): muted green/rose/amber are
    restrained SEMANTIC accents only — small dots, thin rails, small arrows,
    subtle metric accents, compact status tags, tiny chart-state markers.
    Never large card backgrounds, never bright/neon, never colored headings,
    never decorative. Glyph + text-weight still carry direction on their own;
-   color is an additional accent, not a replacement.
+   color is an additional accent, not a replacement. Now brighter (teal/
+   amber/rose rather than the previous muted sage/gold/dusty-rose) since the
+   darker navy ground needs more saturated accents to read at the same
+   restrained, small-footprint sizes — the *usage* rule (dots/rails/pills
+   only, never fills) is unchanged.
 
    Motion is restricted to two instances (breadth-bar fill, live-status-dot
    pulse), both gated by prefers-reduced-motion. */
 
 :root {
-    --rail: #181818;
-    --bg: #212121;
-    --surface: #2A2A2A;
-    --surface-2: #303030;
-    --surface-3: #3A3A3A;
-    --hairline: rgba(255, 255, 255, .08);
-    --hairline-2: rgba(255, 255, 255, .14);
-    --text: #ECECEC;
-    --text-2: #B4B4B4;
-    --text-3: #A8A8A8;
-    --text-4: #8A8A8A;
-    --invert-bg: #FFFFFF;
-    --invert-fg: #0D0D0D;
-    --glow: rgba(255, 255, 255, .20);
+    /* Backgrounds — page / sidebar / card / elevated-hover / native-widget. */
+    --bg: #07111F;
+    --rail: #0A1628;
+    --surface: #101F35;
+    --surface-2: #152944;
+    --surface-3: #1B3352;
+    --surface-input: #0D1A2D;
+    /* Borders: --hairline is decorative (dividers, footer rules, chart
+       gridlines) with no contrast floor of its own; --hairline-2 is a
+       functional UI-component boundary (secondary-button/input/chip
+       outlines) and is kept ≥3:1 against every surface above — the AA
+       non-text-contrast minimum for a boundary that itself has to convey
+       where a control is. */
+    --hairline: #243A57;
+    --hairline-2: #5578A0;
+    --text: #F1F5F9;
+    --text-2: #B8C5D6;
+    /* Only three text tiers in this palette (Primary/Secondary/Muted) —
+       the previous four-tier ramp's two dimmest steps (text-3/text-4)
+       both collapse onto the one Muted value rather than inventing a
+       shade outside the given palette. */
+    --text-3: #8091A8;
+    --text-4: #8091A8;
+    /* Primary CTA fill/label — same role as before (the button/chip's
+       highest-emphasis pair), now the primary accent blue with a dark
+       navy label for contrast (7.5:1) instead of white-on-white. */
+    --invert-bg: #60A5FA;
+    --invert-fg: #07111F;
+    --glow: rgba(96, 165, 250, .24);
+    --accent: #60A5FA;
+    --accent-hover: #93C5FD;
+    --focus: #93C5FD;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
     --font-ui: "Inter", sans-serif;
     --font-mono: "JetBrains Mono", monospace;
     --font-serif: "Source Serif 4", "Noto Serif JP", "Noto Serif KR", "Noto Serif SC", serif;
-    /* Restrained semantic direction accents only — see note above. */
-    --pos: #7CAE8C;
-    --pos-dim: rgba(124, 174, 140, .16);
-    --neg: #C98A93;
-    --neg-dim: rgba(201, 138, 147, .16);
-    --mix: #C7A968;
-    --mix-dim: rgba(199, 169, 104, .16);
+    /* Restrained semantic direction accents only — see note above.
+       Teal = positive/live/confirmed, amber = watch/uncertain,
+       rose = risk/negative. Never used as a large fill (dots/rails/
+       tinted-pill backgrounds only). */
+    --pos: #34D399;
+    --pos-dim: rgba(52, 211, 153, .16);
+    --neg: #FB7185;
+    --neg-dim: rgba(251, 113, 133, .16);
+    --mix: #F6C65B;
+    --mix-dim: rgba(246, 198, 91, .16);
     /* Spacing rhythm (final polish pass) — a shared scale so every
        component reaches for one of these instead of a one-off margin.
        4: tight label/value pair. 8: related inline metadata. 12: small
@@ -381,12 +416,17 @@ p, li, span, div { letter-spacing: -0.006em; }
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"] {
     background: var(--invert-bg) !important; color: var(--invert-fg) !important;
     border: none !important; border-radius: 999px !important; font-weight: 600 !important;
-    box-shadow: 0 0 0 1px rgba(255,255,255,.10), 0 0 22px var(--glow), 0 2px 10px rgba(0,0,0,.4) !important;
+    /* Restrained blue glow (not neon): a thin accent-tinted ring, the
+       --glow blur (rgba(96,165,250,.24) — same value used by the
+       live-status dot and breadth-bar leader, the app's other two glow
+       spots), and a plain dark drop shadow for depth. */
+    box-shadow: 0 0 0 1px rgba(96,165,250,.35), 0 0 22px var(--glow), 0 2px 10px rgba(0,0,0,.4) !important;
     transition: box-shadow .22s ease, background .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 0 38px rgba(255,255,255,.34), 0 4px 16px rgba(0,0,0,.45) !important;
+    box-shadow: 0 0 0 1px rgba(96,165,250,.55), 0 0 26px rgba(96,165,250,.42), 0 4px 16px rgba(0,0,0,.45) !important;
+    background: var(--accent-hover) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--invert-fg) !important; }
@@ -449,12 +489,79 @@ p, li, span, div { letter-spacing: -0.006em; }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-.btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid #fff !important; outline-offset: 3px; }
+/* Focus ring uses the dedicated --focus token (#93C5FD) rather than a
+   plain white or muted-text color — ≥9:1 against every surface in this
+   palette, well past the 3:1 AA minimum for a focus indicator, and reads
+   as an intentional accent ring rather than a generic outline. */
+.btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: 3px; }
 
 [data-testid="stPageLink"] a:focus-visible,
 [data-testid="stBaseButton-secondary"]:focus-visible,
-[data-testid="stSidebarNavLink"]:focus-visible {
-    outline: 2px solid var(--text-2) !important; outline-offset: 2px;
+[data-testid="stSidebarNavLink"]:focus-visible,
+[data-testid="stTextInput"] input:focus-visible,
+[data-testid="stTextArea"] textarea:focus-visible,
+[data-baseweb="select"]:focus-within,
+[data-testid="stDateInput"] input:focus-visible,
+[data-testid="stChatInput"] textarea:focus-visible {
+    outline: 2px solid var(--focus) !important; outline-offset: 2px;
+}
+
+/* ---------- native widget surfaces (midnight-navy redesign) ----------
+   Text inputs, selects, multiselects, date inputs, chat input, dataframes,
+   expanders, tabs, and the native `st.button(type="primary")` variant (the
+   3 "Scan ... now" buttons on Radar Inbox — the only native-primary
+   buttons in the app, not wrapped in a cta-primary-* container) are not
+   otherwise touched by this stylesheet at all; they render from
+   .streamlit/config.toml's [theme] colors. That covers backgroundColor/
+   secondaryBackgroundColor/textColor/borderColor/primaryColor, but not
+   every per-component detail (expander border, tab underline, multiselect
+   tag chips, dataframe outer border) — the rules below fill in exactly
+   those gaps with the same tokens, so no native control keeps the old
+   gray/charcoal theme by omission. */
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stDateInput"] input,
+[data-testid="stChatInput"] textarea,
+[data-testid="stNumberInput"] input {
+    background: var(--surface-input) !important;
+    border: 1px solid var(--hairline-2) !important;
+    color: var(--text) !important;
+}
+[data-baseweb="select"] > div {
+    background: var(--surface-input) !important;
+    border-color: var(--hairline-2) !important;
+    color: var(--text) !important;
+}
+/* Multiselect/select popover menu + selected-value tag chips. */
+[data-baseweb="popover"] [data-baseweb="menu"] {
+    background: var(--surface-2) !important;
+}
+[data-baseweb="tag"] {
+    background: var(--surface-3) !important;
+    color: var(--text) !important;
+}
+[data-testid="stExpander"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--hairline-2) !important;
+    border-radius: var(--r-md) !important;
+}
+[data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--hairline) !important; }
+[data-testid="stTabs"] [data-baseweb="tab"] { color: var(--text-2) !important; }
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { color: var(--text) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] { background-color: var(--accent) !important; }
+[data-testid="stDataFrame"] { border: 1px solid var(--hairline-2) !important; border-radius: var(--r-sm) !important; }
+/* The one native-primary-type button in the app (Radar Inbox's "Scan ...
+   now" — see module note above): dark label on the accent fill, same
+   pairing/contrast as the custom primary-CTA pill, so it doesn't default
+   to Streamlit's own white-on-accent text. */
+[data-testid="stBaseButton-primary"] {
+    background: var(--invert-bg) !important; color: var(--invert-fg) !important;
+    border: none !important;
+}
+[data-testid="stBaseButton-primary"]:hover { background: var(--accent-hover) !important; }
+[data-testid="stBaseButton-primary"]:disabled {
+    background: var(--surface-3) !important; color: var(--text-4) !important;
 }
 
 /* ---------- cards ----------

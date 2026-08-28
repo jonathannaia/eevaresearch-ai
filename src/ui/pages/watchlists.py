@@ -76,7 +76,7 @@ def render() -> None:
                     )
                     if against and e.invalidates_if:
                         st.markdown(
-                            f'<div class="er-muted" style="background:rgba(255,255,255,.025); '
+                            f'<div class="er-muted" style="background:var(--neg-dim); '
                             f'border-radius:var(--r-sm); padding:0.5rem 0.7rem; margin:-0.2rem 0 0.5rem 0; font-size:0.82rem;">'
                             f'<strong style="color:var(--text);">Moving against thesis</strong> — you wrote: "{e.invalidates_if}"</div>',
                             unsafe_allow_html=True,

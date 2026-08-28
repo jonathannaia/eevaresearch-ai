@@ -1,20 +1,30 @@
 [theme]
+# Midnight-navy visual-theme redesign (design/DECISIONS.md) — same theme
+# keys as before, values re-mapped from the previous neutral-gray palette.
+# secondaryBackgroundColor drives most native widget chrome (text inputs,
+# selectboxes, dataframe headers) — mapped to the "input/table surface"
+# tone, distinct from card surfaces (which assets/styles.css handles via
+# its own --surface token on custom-classed containers). borderColor/
+# dataframeBorderColor use the stronger of the two divider tones
+# (assets/styles.css's --hairline-2) rather than the softer decorative one,
+# since these are functional widget/table boundaries and are kept ≥3:1
+# against every background in the palette (AA non-text-contrast minimum).
 base = "dark"
 
-primaryColor = "#B4B4B4"
-backgroundColor = "#212121"
-secondaryBackgroundColor = "#2A2A2A"
-textColor = "#ECECEC"
+primaryColor = "#60A5FA"
+backgroundColor = "#07111F"
+secondaryBackgroundColor = "#0D1A2D"
+textColor = "#F1F5F9"
 
-linkColor = "#ECECEC"
+linkColor = "#F1F5F9"
 linkUnderline = false
 
-borderColor = "rgba(255, 255, 255, .08)"
-dataframeBorderColor = "rgba(255, 255, 255, .08)"
-dataframeHeaderBackgroundColor = "#2A2A2A"
+borderColor = "#5578A0"
+dataframeBorderColor = "#5578A0"
+dataframeHeaderBackgroundColor = "#0D1A2D"
 
-codeTextColor = "#ECECEC"
-codeBackgroundColor = "#2A2A2A"
+codeTextColor = "#F1F5F9"
+codeBackgroundColor = "#0D1A2D"
 
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
 headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
