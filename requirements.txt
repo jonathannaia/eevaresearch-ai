@@ -20,3 +20,15 @@ httpx>=0.27,<1
 # loading of config/eevaresearch_theme_registry.yaml only, via
 # yaml.safe_load exclusively. Never yaml.load.
 PyYAML>=6.0,<7.0
+# Phase T1 (design/DECISIONS.md) — src/logic/formatting.py::
+# fmt_datetime_local() uses stdlib zoneinfo.ZoneInfo("America/New_York")
+# to render the Radar freshness line in Eastern time. zoneinfo itself is
+# stdlib (Python 3.9+, this project runs 3.12 — see runtime.txt), but it
+# depends on the OS actually shipping the IANA time zone database; local
+# verification (macOS) succeeded via system tzdata with no extra
+# package, but Render's Linux runtime image has no confirmed system
+# tzdata. This package is CPython's own documented, portable fallback —
+# pure data, no compiled code — added defensively so
+# ZoneInfo("America/New_York") can never raise ZoneInfoNotFoundError in
+# production regardless of the underlying image.
+tzdata>=2024.1

@@ -921,6 +921,12 @@ def render() -> None:
             item, on_process=_on_process,
             process_ready=process_readiness_by_source.get(item.filing.source_name, False),
             on_review_decision=_on_review_decision,
+            # Phase T1 (design/DECISIONS.md): "Latest" suppresses internal/
+            # non-actionable status pills (and shows a quiet note for a
+            # genuine retrieval/parse failure); "Captured filings" always
+            # shows the complete, real status — that view's whole purpose
+            # is truthful completeness.
+            show_full_status=(view_mode != _SIGNALS_VIEW),
         )
 
     # Pagination controls render after the results, not above them (Phase

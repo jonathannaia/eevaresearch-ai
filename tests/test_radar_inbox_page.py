@@ -268,11 +268,21 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         # is excluded. Its own report title is a precise, non-coincidental
         # marker (unlike the "New filing" status label, which also appears
         # verbatim inside assets/styles.css's own design-system comments).
+        # Phase T1 (design/DECISIONS.md): "Latest" suppresses the internal
+        # "Needs review"/"Processing deferred" *status pills* entirely,
+        # and shows the quiet failure note instead of the raw "Retrieval
+        # failed" pill — same three candidates, different top-of-card
+        # treatment. The words themselves still legitimately appear
+        # elsewhere on the page (e.g. inside Investigate's own state-
+        # history audit trail, which AppTest renders regardless of the
+        # expander's collapsed state) — checked as the specific pill
+        # markup, not a bare substring, to avoid a false failure there.
         default_text = " ".join(m.value for m in at.markdown)
         assert "일반 공고" not in default_text
-        assert "Needs review" in default_text
-        assert "Processing deferred" in default_text
-        assert "Retrieval failed" in default_text
+        assert 'er-status-tag er-tag-mix">Needs review' not in default_text
+        assert 'er-status-tag er-tag-neutral">Processing deferred' not in default_text
+        assert 'er-status-tag er-tag-neg">Retrieval failed' not in default_text
+        assert "Source document could not be retrieved." in default_text
 
         at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
@@ -280,6 +290,8 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "일반 공고" in all_text  # the bare event's own title, now visible
+    # "Captured filings" always shows the complete, real status (Phase T1)
+    # — the whole point of that view is truthful completeness.
     assert "Needs review" in all_text
     assert "Processing deferred" in all_text
     assert "Retrieval failed" in all_text
@@ -406,8 +418,14 @@ def test_radar_inbox_clicking_prepare_analyst_view_calls_processing_once_and_rer
 
     assert not at.exception
     assert calls == ["cand-click-now"]  # called exactly once
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Needs review" in all_text  # re-rendered from the persisted CandidateStatus
+    # Phase T1 (design/DECISIONS.md): "Needs review" no longer renders as
+    # a visible pill on the default "Latest" view — the persisted status
+    # change is instead proven by the "Prepare analyst view" button
+    # disappearing (it only renders for PROCESSING_DEFERRED/retry-eligible
+    # statuses, neither of which NEEDS_REVIEW is), confirming the card
+    # re-rendered from the persisted store, not an optimistic local value.
+    button_labels_after = {b.label for b in at.button}
+    assert "Prepare analyst view" not in button_labels_after
     button_labels = {b.label for b in at.button}
     assert "Prepare analyst view" not in button_labels  # no longer PROCESSING_DEFERRED
     assert "Retry analyst view preparation" not in button_labels  # NEEDS_REVIEW isn't retryable

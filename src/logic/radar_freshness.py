@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
-from src.logic.formatting import fmt_datetime
+from src.logic.formatting import fmt_datetime_local
 
 DEFAULT_INTERVAL_MINUTES = 60
 STALE_THRESHOLD_MULTIPLIER = 3
@@ -106,15 +106,15 @@ def compute_radar_freshness(
 
     if recent and not stale:
         latest = max(ts for _, ts in recent)
-        return RadarFreshness("all_recent", f"Filing data last refreshed {fmt_datetime(latest.isoformat())}.")
+        return RadarFreshness("all_recent", f"Filing data last refreshed {fmt_datetime_local(latest.isoformat())}.")
 
     if stale and not recent:
         latest = max(ts for _, ts in stale)
         return RadarFreshness(
-            "all_stale", f"Filing data may be out of date · Last successful update {fmt_datetime(latest.isoformat())}.",
+            "all_stale", f"Filing data may be out of date · Last successful update {fmt_datetime_local(latest.isoformat())}.",
         )
 
     latest_recent = max(ts for _, ts in recent)
     return RadarFreshness(
-        "partial", f"Some sources refreshed as recently as {fmt_datetime(latest_recent.isoformat())}; others are delayed.",
+        "partial", f"Some sources refreshed as recently as {fmt_datetime_local(latest_recent.isoformat())}; others are delayed.",
     )

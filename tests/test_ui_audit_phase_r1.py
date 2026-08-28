@@ -389,6 +389,14 @@ def test_phase_r1_introduces_no_worker_deployment_secret_or_dependency_change():
 
 
 def test_phase_r1_does_not_touch_edgar_dart_edinet_scan_pipelines_or_worker():
+    """Runs against `git diff HEAD`, so this also covers any later,
+    still-uncommitted phase on top of the Phase R1 commit (e.g. Phase T1)
+    — `requirements.txt` is deliberately NOT in this forbidden set:
+    Phase T1 (design/DECISIONS.md) was separately, explicitly approved to
+    add exactly one dependency (`tzdata`, for reliable zoneinfo behavior)
+    there. Every scan/pipeline/worker/translation-provider/retry-policy/
+    GitHub-Actions file below must still never appear in the diff,
+    regardless of which phase is currently uncommitted."""
     import subprocess
 
     result = subprocess.run(
@@ -400,7 +408,7 @@ def test_phase_r1_does_not_touch_edgar_dart_edinet_scan_pipelines_or_worker():
         "src/data_access/edgar/scan_service.py", "src/data_access/edgar/edgar_pipeline.py",
         "src/data_access/edinet/scan_service.py", "src/data_access/edinet/edinet_pipeline.py",
         "src/data_access/translation/deepl_provider.py", "src/data_access/translation/translation_service.py",
-        "src/data_access/dart/retry_policy.py", "requirements.txt", ".github/workflows/manual-scan.yml",
+        "src/data_access/dart/retry_policy.py", ".github/workflows/manual-scan.yml",
     }
     # Only meaningful when run against a real git checkout with this
     # phase's changes staged/unstaged (not from an installed package) —

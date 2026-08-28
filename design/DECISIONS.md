@@ -4510,3 +4510,96 @@ re-run after this phase's changes: see the accompanying report for the
 exact combined count and confirmation that only the same three
 pre-existing `DECISIONS.md`-prose guard failures remain.
 
+## Phase T1 — Radar Local-Time Display and Safe Status Demotion
+
+Narrow presentation-layer phase, grounded in the preceding read-only
+Radar feed-trust audit. No worker, Render, Postgres, schedule, source
+enablement, GitHub Actions, data model, database schema, repository,
+scan/pipeline behavior, candidate-status transition, auto-routing,
+Signal eligibility, translation behavior, or retry behavior changed.
+
+**Eastern-time freshness display** (`src/logic/formatting.py`, new
+`fmt_datetime_local()` — a distinctly-named function, `fmt_datetime()`
+itself untouched and still UTC, so no call site's meaning silently
+changes): converts a UTC ISO timestamp to `ZoneInfo("America/New_York")`
+before formatting, using `%Z` to read the live "EDT"/"EST" abbreviation
+from the IANA tzdata database itself for the actual date being
+formatted — never a hardcoded offset or suffix, so it is automatically
+correct on both sides of a DST transition. Storage and the recent/stale
+threshold comparison in `src/logic/radar_freshness.py::
+categorize_source_status()` remain in UTC, untouched — this is a
+formatting-layer change at the one point a timestamp becomes a display
+string, applied at that module's three existing Phase F1 call sites
+(`all_recent`/`all_stale`/`partial`). The `no_scan_yet`/`unavailable`
+states never format a timestamp and are unchanged.
+
+**`tzdata` added to `requirements.txt`**: local verification confirmed
+`ZoneInfo("America/New_York")` already works without it on this
+developer machine (macOS ships system tzdata), but Render's Linux
+runtime image has no confirmed system tzdata, and the risk of a missing
+database is an app-breaking `ZoneInfoNotFoundError` in production. Per
+CPython's own zoneinfo documentation, the `tzdata` PyPI package is the
+recommended, fully portable fallback — pure data, no compiled code — so
+it was added defensively rather than leaving this unverified in
+production. No other dependency was added or changed.
+
+**Status-pill suppression** (`src/ui/components/radar_status.py`, new
+`default_card_status_html()`; `src/ui/components/radar_card.py`, new
+`show_full_status` parameter on `candidate_row()`; `src/ui/pages/
+radar_inbox.py`, one call-site change): the default "Latest" view
+(`show_full_status=False`) suppresses the visible status pill entirely,
+with no replacement label, for eleven internal/non-actionable workflow
+states — `NEEDS_REVIEW`, `CANDIDATE_DETECTED`, `QUEUED_FOR_PROCESSING`,
+`EXTRACTION_PENDING`, `EXTRACTED`, `TRANSLATION_PENDING`, `TRANSLATED`,
+`PROCESSING_DEFERRED`, `MONITORING`, `DISMISSED`, `NOT_MATERIAL` — since
+none conveys a real signal to a researcher (per the audit, `NEEDS_REVIEW`
+is today's statistical-majority "not yet triaged" state, not a sign of
+trouble). For the two genuine-failure statuses, `RETRIEVAL_FAILED` and
+`PARSE_FAILED`, the default card instead renders one quiet, honest note
+— **"Source document could not be retrieved."** — using the existing
+`er-chip-uncertainty` dashed/outline treatment from `evidence_chips.py`
+(transparent background, muted text, dashed border) rather than the loud
+solid-fill `er-status-tag er-tag-neg` pill, so it reads as "genuinely
+incomplete," never "wrong," "dismissed," or "irrelevant," and remains
+distinguishable without relying on color alone. `PUBLISHED`, the
+transient `RETRIEVAL_IN_PROGRESS`, and the bare "New filing" state were
+not named for suppression and render exactly as before. "Captured
+filings" (`show_full_status=True`) always shows the complete, real
+status pill unchanged — that view's whole purpose, established in Phase
+F1, is truthful completeness, not a polished feed. Neither
+`status_bucket()`, `status_label()`, nor `status_pill_html()` themselves
+changed — only which one of them a given card's top row renders. The
+full raw status remains available inside Investigate's own evidence-
+status panel either way, unaffected by this phase. Retry behavior,
+wording, and the underlying (audit-confirmed) document-cache limitation
+that currently prevents a retrieval/parse retry from making a genuinely
+new request are all unchanged — no claim of retry reliability was added
+or implied anywhere in this phase's new copy.
+
+**Scope discipline**: verified directly by
+`tests/test_ui_audit_phase_t1.py`'s own diff-based guards (no
+scan/pipeline/worker/translation-provider/retry-policy/signal-promotion/
+signal-decision-policy/review-actions/GitHub-Actions file touched; the
+only dependency-file addition is `tzdata`) and by direct re-execution of
+`is_eligible_for_signal()` against known fixtures (`PUBLISHED` remains
+the sole eligible status).
+
+**Execution status, stated precisely**: new `tests/test_ui_audit_phase_t1.py`
+(18 tests) — **18 passed**; `tests/test_formatting.py` extended with 6
+new `fmt_datetime_local`/`fmt_datetime` tests — all passed. Two
+pre-existing tests revised in place for the new pill-suppression
+behavior (`test_radar_inbox_renders_populated_list_with_expected_statuses`,
+`test_radar_inbox_clicking_prepare_analyst_view_calls_processing_once_and_rerenders_from_persisted_status`
+in `tests/test_radar_inbox_page.py`) — same underlying persisted-status
+proof, checked against the specific pill markup or an actionable button's
+presence instead of a bare substring, since the word itself still
+legitimately appears inside Investigate's own state-history audit trail.
+One Phase R1 diff-guard test (`test_phase_r1_does_not_touch_edgar_dart_edinet_scan_pipelines_or_worker`)
+had `requirements.txt` removed from its forbidden-path set, since this
+phase was separately, explicitly approved to add exactly one dependency
+there. Focused re-run across every touched/related file: **184 passed**.
+Full existing suite re-run after this phase's changes: **1505 passed, 3
+failed, 70 skipped** — the 3 failures are the same pre-existing
+`DECISIONS.md`-prose guard false positives, confirmed identical to the
+prior baseline.
+

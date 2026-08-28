@@ -80,6 +80,56 @@ def status_pill(item: RadarItem) -> None:
     st.markdown(status_pill_html(item), unsafe_allow_html=True)
 
 
+# Phase T1 (design/DECISIONS.md) — internal, non-user-actionable workflow
+# states that convey no real signal to a researcher reading the default
+# Latest card: already-classified outcomes (MONITORING/DISMISSED/
+# NOT_MATERIAL), in-flight pipeline bookkeeping (CANDIDATE_DETECTED
+# through PROCESSING_DEFERRED), and NEEDS_REVIEW itself (today's
+# statistical-majority "not yet triaged" state, not a sign of trouble —
+# see the Phase T1 audit). Suppressed entirely on the default card, with
+# no replacement label — the raw, complete status remains available via
+# status_pill()/status_label() wherever a caller still wants it (Evidence
+# status inside Investigate already shows a plain-language review state
+# via evidence_review_label()). PUBLISHED and the transient
+# RETRIEVAL_IN_PROGRESS, and the "New filing" bare-filing state, are
+# deliberately NOT in this set — none were named for suppression, so the
+# existing pill keeps rendering for them exactly as before.
+_SUPPRESSED_ON_DEFAULT_CARD = frozenset({
+    CandidateStatus.NEEDS_REVIEW, CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.QUEUED_FOR_PROCESSING,
+    CandidateStatus.EXTRACTION_PENDING, CandidateStatus.EXTRACTED, CandidateStatus.TRANSLATION_PENDING,
+    CandidateStatus.TRANSLATED, CandidateStatus.PROCESSING_DEFERRED, CandidateStatus.MONITORING,
+    CandidateStatus.DISMISSED, CandidateStatus.NOT_MATERIAL,
+})
+
+# The two genuine-failure statuses this phase gives a quiet, honest,
+# non-color-only note instead of the loud `er-tag-neg` pill. Reuses
+# evidence_chips.py's existing dashed/outline "uncertainty" treatment
+# (transparent background, muted text, dashed border — see
+# assets/styles.css) rather than a new visual system: this reads as
+# "genuinely incomplete," never as "wrong," "dismissed," or "irrelevant."
+_RETRIEVAL_FAILURE_STATUSES = frozenset({CandidateStatus.RETRIEVAL_FAILED, CandidateStatus.PARSE_FAILED})
+RETRIEVAL_FAILURE_NOTE = "Source document could not be retrieved."
+
+
+def default_card_status_html(item: RadarItem) -> str | None:
+    """The one status indicator shown at the top of the default Latest/
+    Captured-filings card — None (render nothing) for a suppressed
+    internal state, the quiet failure note for a genuine retrieval/parse
+    failure, or the existing status_pill_html() unchanged for everything
+    else (PUBLISHED, RETRIEVAL_IN_PROGRESS, "New filing"). Does not
+    change `status_bucket()`/`status_label()`/`status_pill_html()`
+    themselves — those still return the real, complete status for any
+    other caller (e.g. inside Investigate)."""
+    if item.is_new_filing:
+        return status_pill_html(item)
+    status = item.candidate.status
+    if status in _RETRIEVAL_FAILURE_STATUSES:
+        return f'<span class="er-chip er-chip-uncertainty">{RETRIEVAL_FAILURE_NOTE}</span>'
+    if status in _SUPPRESSED_ON_DEFAULT_CARD:
+        return None
+    return status_pill_html(item)
+
+
 def translation_unavailable_tag_html(item: RadarItem) -> str | None:
     """A separate small tag for the one reachable case the brief's
     "Translation unavailable" bucket actually maps to: a NEEDS_REVIEW

@@ -30,12 +30,13 @@ from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
 from src.ui.components.analyst_view import render_analyst_view
 from src.ui.components.radar_status import (
     RadarItem,
+    default_card_status_html,
     evidence_document_id_label,
     evidence_native_text_label,
     evidence_review_label,
     evidence_source_link_label,
     evidence_translation_label,
-    status_pill,
+    status_pill_html,
     translation_unavailable_tag_html,
 )
 from src.ui.ui import get_page
@@ -344,14 +345,36 @@ def _render_quiet_links(filing: FilingEvent) -> None:
 def candidate_row(
     item: RadarItem, on_process: Callable[[str], None] | None = None, process_ready: bool = True,
     on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None = None,
+    show_full_status: bool = False,
 ) -> None:
+    """`show_full_status` (Phase T1, design/DECISIONS.md) — False (the
+    default, used by the "Latest" view) suppresses internal/non-
+    actionable status pills and shows a quiet note for a genuine
+    retrieval/parse failure instead of the loud raw pill; True (used by
+    "Captured filings," the fuller/opt-in inventory view) always shows
+    the complete, real status_pill_html() unchanged, since that view's
+    whole purpose is truthful completeness. Neither path changes
+    `status_bucket()`/`status_label()`/the stored status itself — only
+    which HTML this one component renders."""
     filing = item.filing
     candidate = item.candidate
 
     with st.container(border=True, key=f"radar-item-{filing.rcept_no}"):
         top_cols = st.columns([3, 3, 2, 2], vertical_alignment="center")
         with top_cols[0]:
-            status_pill(item)
+            # Phase T1 (design/DECISIONS.md): internal, non-actionable
+            # workflow states (Needs review, Candidate detected, ...)
+            # render nothing here in the default "Latest" view — they
+            # convey no real signal to a researcher; a genuine retrieval/
+            # parse failure renders a quiet, honest note instead of the
+            # loud red status pill; everything else (Published, a bare
+            # new filing) is unchanged. "Captured filings" always shows
+            # the complete, real status. The full, real status remains
+            # available inside Investigate's own evidence-status panel
+            # either way.
+            indicator = status_pill_html(item) if show_full_status else default_card_status_html(item)
+            if indicator:
+                st.markdown(indicator, unsafe_allow_html=True)
         with top_cols[1]:
             st.markdown(f'<div class="er-muted">{filing.corp_name} · {filing.stock_code}</div>', unsafe_allow_html=True)
         with top_cols[2]:
