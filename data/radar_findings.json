@@ -1,6 +1,244 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "AI Rack Density’s Real Limits: Power, Cooling, Failure Risk",
+    "summary": "As AI racks exceed 100 kW power consumption, physical limitations in power delivery and cooling infrastructure—rather than chip availability—are becoming the constraining factor for further density increases.",
+    "source_url": "https://www.datacenterknowledge.com/ai-data-centers/ai-rack-density-s-real-limits-power-cooling-failure-risk",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 09:00:00 GMT",
+    "retrieved_at": "2026-08-28T13:36:18+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly discusses infrastructure constraints for AI rack deployment, core to data center buildout requirements",
+    "url_hash": "0fa5f6513e1d75f7",
+    "id": "0fa5f6513e1d75f7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DOE Retreat on Transmission Corridors Tests the Case for Building Ahead",
+    "summary": "The Department of Energy declined three proposed transmission corridors despite its own study highlighting data center load growth, creating uncertainty about how far in advance utilities should plan transmission expansion to support AI infrastructure.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/doe-retreat-on-transmission-corridors-tests-the-case-for-building-ahead",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 13:12:06 GMT",
+    "retrieved_at": "2026-08-28T13:36:16+00:00",
+    "tickers": [],
+    "relevance_reason": "directly addresses electricity transmission infrastructure planning challenges driven by data center load growth from AI buildout",
+    "url_hash": "bd86c07b61fbac80",
+    "id": "bd86c07b61fbac80"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Chip Industry Week in Review",
+    "summary": "A semiconductor industry review covering topics including AI hardware developments, HBM versus HBC technology, capacity buildout, Nvidia and Synopsys earnings, and Taiwan semiconductor dependence.",
+    "source_url": "https://semiengineering.com/chip-industry-week-in-review-153/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 07:01:37 +0000",
+    "retrieved_at": "2026-08-28T13:36:12+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Covers chip industry developments including AI hardware, capacity buildout, foundry activity, and Nvidia earnings relevant to AI infrastructure.",
+    "url_hash": "f6b7191062865bbc",
+    "id": "f6b7191062865bbc"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Volato Group signs merger agreement with AI infrastructure company Alignment Engine, Inc.",
+    "summary": "Volato Group signed a merger agreement with Alignment Engine, Inc., an AI infrastructure company, in a transaction valuing Alignment Engine at $500 million.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/volato-group-signs-merger-agreement-with-ai-infrastructure-company-alignment-engine-inc/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 09:39:05 +0000",
+    "retrieved_at": "2026-08-28T13:35:59+00:00",
+    "tickers": [
+      {
+        "ticker": "SOAR",
+        "company_name": "Volato Group",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Merger involves an AI infrastructure company, directly relevant to AI buildout scope.",
+    "url_hash": "7950eb45f23088a8",
+    "id": "7950eb45f23088a8"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DCD Talks: How power distribution manufacturers are keeping pace with AI-driven demand with Mark Swift, Starline, a brand of Legrand",
+    "summary": "Mark Swift from Starline, a Legrand brand, discusses how power manufacturers are scaling AI infrastructure through smarter design approaches.",
+    "source_url": "https://www.datacenterdynamics.com/en/videos/dcd-talks-how-power-distribution-manufacturers-are-keeping-pace-with-ai-driven-demand-with-mark-swift-starline-a-brand-of-legrand/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 09:40:18 +0000",
+    "retrieved_at": "2026-08-28T13:35:58+00:00",
+    "tickers": [
+      {
+        "ticker": "LGDFY",
+        "company_name": "Legrand",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Discusses power distribution manufacturers' scaling efforts to meet AI infrastructure demand",
+    "url_hash": "e07f26e8cac825e4",
+    "id": "e07f26e8cac825e4"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Grid connection requests for data centers in Italy top 95GW",
+    "summary": "Grid connection requests for data centers in Italy have reached 95GW, representing a significant increase from only 1GW of applications in 2021 according to grid operator Terna.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/grid-connection-requests-for-data-centers-in-italy-top-95gw/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 10:01:28 +0000",
+    "retrieved_at": "2026-08-28T13:35:55+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses data center grid connection demand, which directly relates to AI infrastructure buildout and power requirements.",
+    "url_hash": "7ceb4e9cd3b18898",
+    "id": "7ceb4e9cd3b18898"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NDC-Garbe proposes data center development in Leopoldsdorf, Austria",
+    "summary": "NDC-Garbe has proposed a data center development in Leopoldsdorf, Austria, representing a second facility announced for the area after CloudHQ's earlier data center announcement this year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ndc-garbe-proposes-data-center-development-in-leopoldsdorf-austria/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 10:10:42 +0000",
+    "retrieved_at": "2026-08-28T13:35:54+00:00",
+    "tickers": [],
+    "relevance_reason": "Concrete data center development announcement directly relevant to AI infrastructure buildout.",
+    "url_hash": "9ec4af19180c800d",
+    "id": "9ec4af19180c800d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "T1 Energy secures approval to convert solar manufacturing campus in Mo i Rana, Norway, into 50MW data center",
+    "summary": "T1 Energy secured approval to convert a solar manufacturing campus in Mo i Rana, Norway into a 50MW data center with expansion options.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/t1-energy-secures-approval-to-convert-solar-manufacturing-campus-in-mo-i-rana-norway-into-50mw-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 10:38:02 +0000",
+    "retrieved_at": "2026-08-28T13:35:53+00:00",
+    "tickers": [],
+    "relevance_reason": "Company is converting an industrial facility into a data center for AI infrastructure, directly relevant to AI Buildout scope.",
+    "url_hash": "2ff18028eac2bbd3",
+    "id": "2ff18028eac2bbd3"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Warehouses De Pauw announces two data center projects in Ilfov County, Romania",
+    "summary": "Warehouses De Pauw announced two data center projects in Ilfov County, Romania with a combined power demand of 380MW.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/warehouses-de-pauw-announces-two-data-center-projects-in-ilfov-county-romania/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 10:50:28 +0000",
+    "retrieved_at": "2026-08-28T13:35:51+00:00",
+    "tickers": [],
+    "relevance_reason": "Article describes data center projects with specific power infrastructure requirements, directly relevant to AI Buildout scope.",
+    "url_hash": "78dc4ecae4847346",
+    "id": "78dc4ecae4847346"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Alibaba Cloud launches its first cloud region in Brazil",
+    "summary": "Alibaba Cloud launched its first cloud region in Brazil with two new data centers offering cloud services and agent-based AI services for local businesses.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/alibaba-brazil/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 11:00:31 +0000",
+    "retrieved_at": "2026-08-28T13:35:50+00:00",
+    "tickers": [
+      {
+        "ticker": "BABA",
+        "company_name": "Alibaba Group Holding Limited",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Cloud infrastructure expansion involving new data centers for AI services falls directly under AI Buildout scope.",
+    "url_hash": "355a239756707593",
+    "id": "355a239756707593"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Digital Realty breaks ground on fourth data center in Zurich, Switzerland",
+    "summary": "Digital Realty is breaking ground on its fourth data center in Zurich, Switzerland, with a capacity addition of 15MW.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/digital-realty-breaks-ground-on-fourth-data-center-in-zurich-switzerland/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 11:30:28 +0000",
+    "retrieved_at": "2026-08-28T13:35:48+00:00",
+    "tickers": [
+      {
+        "ticker": "DLR",
+        "company_name": "Digital Realty",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Data center buildout directly relevant to AI infrastructure scope.",
+    "url_hash": "7f51d6865aa5d78f",
+    "id": "7f51d6865aa5d78f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia pauses some cloud revenue sharing deals - report",
+    "summary": "Nvidia has paused certain cloud revenue sharing deals due to concerns about potential antitrust scrutiny.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/nvidia-pauses-some-cloud-revenue-sharing-deals-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 12:00:27 +0000",
+    "retrieved_at": "2026-08-28T13:35:47+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "directly concerns Nvidia's cloud business model which relates to AI infrastructure and hyperscaler relationships",
+    "url_hash": "9d1e3eb66e02fc03",
+    "id": "9d1e3eb66e02fc03"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "New Jersey governor signs law requiring data centers to report energy and water use",
+    "summary": "New Jersey's governor signed a law requiring data centers to report their energy and water consumption, following the establishment of a new rate class for data centers in July.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/new-jersey-governor-signs-law-requiring-data-centers-to-report-energy-and-water-use/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 12:30:31 +0000",
+    "retrieved_at": "2026-08-28T13:35:46+00:00",
+    "tickers": [],
+    "relevance_reason": "Regulatory requirement for data centers to report energy and water usage directly impacts AI infrastructure operational costs and compliance.",
+    "url_hash": "f78ed1f22d597c2d",
+    "id": "f78ed1f22d597c2d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "atNorth signs contract with YIT for additional data center building at campus in Finland",
+    "summary": "atNorth has signed a contract with YIT for construction of an additional data center building at its campus in Finland.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/atnorth-signs-contract-with-yit-for-additional-data-center-building-at-campus-in-finland/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 13:00:35 +0000",
+    "retrieved_at": "2026-08-28T13:35:44+00:00",
+    "tickers": [],
+    "relevance_reason": "directly concerns data center infrastructure expansion",
+    "url_hash": "f0cf81d8170ce50f",
+    "id": "f0cf81d8170ce50f"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "How Data Centers Are Using AI to Run Cooler and Smarter",
     "summary": "Digital Realty, AWS, DPR Construction, and Schneider Electric are using AI technologies to improve data center cooling and operational efficiency.",
     "source_url": "https://www.datacenterknowledge.com/data-center-software/how-data-centers-are-using-ai-to-run-cooler-and-smarter",
