@@ -227,3 +227,82 @@ def test_filing_event_helper_never_opens_its_own_transaction():
     from src.data_access.postgres_state_db import filing_event_repository
 
     assert "transaction" not in filing_event_repository._upsert_filing_event_no_transaction.__code__.co_names
+
+
+# --- Durable-State Phase 4M-3 — batched (non-N+1) load_candidates() ---
+# Replaces the previous 1 + 3*N per-candidate query pattern with exactly
+# 3 queries total regardless of candidate count. See
+# design/DECISIONS.md's Phase 4M-3 entry for the full rationale.
+
+
+def _counting_execute(conn):
+    """Wraps conn.execute to count calls, returning the count list and a
+    restore function. Used to prove load_candidates() issues a bounded,
+    small number of queries regardless of how many candidates exist —
+    never one that scales with candidate count."""
+    calls = []
+    original_execute = conn.execute
+
+    def _wrapped(*args, **kwargs):
+        calls.append(args[0] if args else kwargs.get("query"))
+        return original_execute(*args, **kwargs)
+
+    conn.execute = _wrapped
+    return calls
+
+
+def test_load_candidates_issues_a_bounded_query_count_regardless_of_row_count(pg_conn):
+    filings = [_filing(rcept_no=f"acc-{i}", corp_code=f"000000{i:04d}") for i in range(8)]
+    candidates = [_candidate(f"cand-{i}", filings[i]) for i in range(8)]
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", candidates)
+
+    calls = _counting_execute(pg_conn)
+    loaded = candidate_repository.load_candidates(pg_conn, "SEC EDGAR")
+
+    assert len(loaded) == 8
+    # Exactly 3 queries: candidates, filing_events (via load_filing_events),
+    # state_transitions — never one that scales with the 8 rows above
+    # (the old per-candidate pattern would have issued 1 + 3*8 = 25).
+    assert len(calls) == 3
+
+
+def test_load_candidates_batched_result_matches_per_row_get_candidate_exactly(pg_conn):
+    """Object-equivalence proof: the batched hydration path must produce
+    byte-identical CandidateSignal objects to the existing, unchanged
+    single-row get_candidate() path — a query-count change only, never a
+    behavior change."""
+    filing1 = _filing(rcept_no="acc-batch-1")
+    filing2 = _filing(rcept_no="acc-batch-2", corp_code="0000320193")
+    candidate1 = _candidate("cand-batch-1", filing1, confidence="High")
+    candidate2 = _candidate(
+        "cand-batch-2", filing2,
+        state_history=[
+            StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at="2026-01-01T00:00:00+00:00"),
+            StateTransition(status=CandidateStatus.NEEDS_REVIEW, at="2026-01-02T00:00:00+00:00", detail="promoted"),
+        ],
+    )
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate1, candidate2])
+
+    batched = candidate_repository.load_candidates(pg_conn, "SEC EDGAR")
+    individually = {
+        cid: candidate_repository.get_candidate(pg_conn, cid) for cid in ("cand-batch-1", "cand-batch-2")
+    }
+
+    assert batched == individually
+
+
+def test_load_candidates_empty_source_returns_empty_dict_without_extra_queries(pg_conn):
+    calls = _counting_execute(pg_conn)
+    assert candidate_repository.load_candidates(pg_conn, "SEC EDGAR") == {}
+    assert len(calls) == 1  # only the initial candidates query — no filing/history queries for zero rows
+
+
+# Note: a test simulating "candidate references a missing filing_events
+# row" was considered but dropped — the schema's own foreign key
+# (candidates.(source, filing_corp_code, filing_rcept_no) ->
+# filing_events) makes that state genuinely unreachable via any real SQL
+# path (confirmed directly: attempting to delete the parent row while a
+# candidate still references it raises psycopg.errors.ForeignKeyViolation).
+# The LookupError branch in both _row_to_candidate and
+# _row_to_candidate_from_lookups remains as defensive code for a
+# same-invariant violation this database cannot actually produce.

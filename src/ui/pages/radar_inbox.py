@@ -24,6 +24,7 @@ via `filing.source_name`, never blended into one undifferentiated
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -478,16 +479,52 @@ def _load_dashboard_snapshot(cache_dir, config_fingerprint: tuple[str, bool], _s
     Every call this function makes was already read-only before this
     phase (see each callee's own docstring) — this function performs no
     write, no scan, and no external HTTP call of its own; it only
-    changes *how often* those existing reads run, not *what* they do."""
+    changes *how often* those existing reads run, not *what* they do.
+
+    Durable-State Phase 4M-3 — minimal, non-sensitive timing
+    instrumentation: every `print()` below only ever includes elapsed
+    milliseconds, an item count, and `config_fingerprint` (already a
+    non-secret two-tuple of the backend name and a presence boolean —
+    never a DSN, credential, SQL statement, query parameter, or filing
+    content). The mere presence of the first "cache MISS" line in a
+    given request's logs is itself the diagnostic signal this phase
+    needs: on an `st.cache_data` cache HIT, this function body — and
+    every print() in it — never executes at all for that rerun; seeing
+    no lines for a request proves the cache was reused, seeing them
+    proves this was a genuine miss."""
+    _snapshot_started_at = time.monotonic()
+    print(f"[radar_inbox] dashboard snapshot cache MISS — executing (config={config_fingerprint})")
+
+    _step_started_at = time.monotonic()
     dart_readiness = _dart_readiness_or_unavailable(_settings)
+    print(f"[radar_inbox]   dart_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+
+    _step_started_at = time.monotonic()
     edgar_readiness = _edgar_readiness_or_unavailable(_settings)
+    print(f"[radar_inbox]   edgar_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+
+    _step_started_at = time.monotonic()
     edinet_readiness = edinet_service.edinet_readiness(_settings)
+    print(f"[radar_inbox]   edinet_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+
+    _step_started_at = time.monotonic()
     # Matches render()'s own pre-existing condition exactly (line below,
     # in render() itself) — only computed when EDINET is ready, so an
     # unconfigured/not-ready EDINET costs nothing extra here either.
     edinet_scope_line = _edinet_scope_line(cache_dir, _settings) if edinet_readiness.ready else ""
+    print(f"[radar_inbox]   edinet_scope_line: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+
+    _step_started_at = time.monotonic()
     worker_status_state, worker_status_statuses = _worker_scan_status_snapshot(_settings)
+    print(f"[radar_inbox]   worker_status: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+
+    _step_started_at = time.monotonic()
     items = _build_items(cache_dir, _settings)
+    print(f"[radar_inbox]   build_items: {(time.monotonic() - _step_started_at) * 1000:.1f}ms ({len(items)} items)")
+
+    total_ms = (time.monotonic() - _snapshot_started_at) * 1000
+    print(f"[radar_inbox] dashboard snapshot TOTAL: {total_ms:.1f}ms (config={config_fingerprint})")
+
     return _DashboardSnapshot(
         dart_readiness=dart_readiness,
         edgar_readiness=edgar_readiness,

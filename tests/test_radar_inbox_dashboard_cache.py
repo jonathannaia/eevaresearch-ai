@@ -205,3 +205,75 @@ def test_dashboard_snapshot_path_never_calls_a_live_scan_or_process_function(tmp
     fingerprint = radar_inbox._dashboard_config_fingerprint(settings)
     snapshot = radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
     assert snapshot is not None  # completed without tripping any forbidden call above
+
+
+# --- Durable-State Phase 4M-3 — timing/instrumentation proves cache hit vs miss, and cache-key stability ---
+
+def test_cache_miss_log_line_appears_once_for_two_calls_within_ttl(tmp_path, capsys):
+    """The instrumentation's own diagnostic contract: the 'cache MISS'
+    line (and every per-step timing line) must print on the first call
+    and must NOT print again on a second call served from cache — its
+    mere absence on the second call is the proof a cache hit occurred."""
+    settings = _settings(cache_dir=tmp_path)
+    fingerprint = radar_inbox._dashboard_config_fingerprint(settings)
+
+    radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
+    first_output = capsys.readouterr().out
+    assert "dashboard snapshot cache MISS" in first_output
+    assert "dashboard snapshot TOTAL" in first_output
+
+    radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
+    second_output = capsys.readouterr().out
+    assert second_output == ""  # nothing printed at all — proves the function body did not run
+
+
+def test_timing_logs_never_contain_a_dsn_or_credential(tmp_path, capsys):
+    settings = _settings(cache_dir=tmp_path, db_backend="postgres", state_db_url="postgres://user:pw@example.invalid/db")
+    fingerprint = radar_inbox._dashboard_config_fingerprint(settings)
+
+    radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
+    output = capsys.readouterr().out
+
+    assert "postgres://" not in output
+    assert "example.invalid" not in output
+    assert "pw" not in output
+    # The fingerprint IS expected in the logs — but only its safe, already-
+    # non-secret shape (backend name + presence boolean), confirmed here.
+    assert str(fingerprint) in output
+    assert fingerprint == ("postgres", True)
+
+
+def test_dashboard_config_fingerprint_is_stable_across_equivalent_settings_instances(tmp_path):
+    """Two separately-constructed Settings objects with the same
+    backend/state_db_url-presence must produce an identical, equal
+    fingerprint — the cache key must not depend on object identity or
+    field values Streamlit would need to hash."""
+    settings_a = _settings(cache_dir=tmp_path, db_backend="postgres", state_db_url="postgres://a")
+    settings_b = _settings(cache_dir=tmp_path, db_backend="postgres", state_db_url="postgres://completely-different-b")
+
+    fingerprint_a = radar_inbox._dashboard_config_fingerprint(settings_a)
+    fingerprint_b = radar_inbox._dashboard_config_fingerprint(settings_b)
+
+    # Same backend, both have a URL present -> same fingerprint, even
+    # though the DSNs themselves differ (the fingerprint deliberately
+    # never encodes the DSN's own value — see its own docstring).
+    assert fingerprint_a == fingerprint_b == ("postgres", True)
+
+
+def test_ordinary_render_never_calls_clear_on_the_dashboard_snapshot_cache(tmp_path, monkeypatch):
+    """No unconditional invalidation on ordinary render: a plain page
+    load/refresh (no button clicked) must never call .clear() on the
+    cached snapshot function — only the explicit action handlers
+    (_on_process, _on_review_decision, and a clicked Scan button) may."""
+    settings = _settings(cache_dir=tmp_path)
+    calls = []
+    monkeypatch.setattr(radar_inbox._load_dashboard_snapshot, "clear", lambda: calls.append(1))
+
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        assert not at.exception
+        at.run()
+        assert not at.exception
+
+    assert calls == []

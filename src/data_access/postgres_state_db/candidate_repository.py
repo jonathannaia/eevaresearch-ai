@@ -26,6 +26,7 @@ from src.models.models import (
     CandidateStatus,
     ExcerptQuality,
     ExtractionState,
+    FilingEvent,
     StateTransition,
     Translation,
     TranslationState,
@@ -105,9 +106,82 @@ def get_candidate_version(conn: psycopg.Connection, candidate_id: str) -> int | 
     return row["version"] if row is not None else None
 
 
+def _row_to_candidate_from_lookups(
+    row, filing: FilingEvent, state_history: list[StateTransition],
+) -> CandidateSignal:
+    """Same field mapping as `_row_to_candidate` above, but takes the
+    filing and state-history it needs as already-fetched arguments
+    instead of querying for them itself — the batched-read counterpart
+    `load_candidates()` uses below. `_row_to_candidate` itself is left
+    unchanged and still used by `get_candidate()` (a genuine single-row
+    lookup has no N+1 to avoid)."""
+    return CandidateSignal(
+        id=row["id"],
+        filing=filing,
+        matched_rules=json.loads(row["matched_rules_json"]),
+        confidence=row["confidence"],
+        status=CandidateStatus(row["status"]),
+        extraction_state=ExtractionState(row["extraction_state"]),
+        translation_state=TranslationState(row["translation_state"]),
+        excerpt_quality=ExcerptQuality(row["excerpt_quality"]),
+        excerpt_original=row["excerpt_original"],
+        title_translation=_translation_from_json(row["title_translation_json"]),
+        excerpt_translation=_translation_from_json(row["excerpt_translation_json"]),
+        reviewed_at=row["reviewed_at"],
+        reviewed_note=row["reviewed_note"],
+        state_history=state_history,
+        materiality_assessment=row["materiality_assessment"],
+    )
+
+
 def load_candidates(conn: psycopg.Connection, source: str) -> dict[str, CandidateSignal]:
-    rows = conn.execute("SELECT id FROM candidates WHERE source = %s", (source,)).fetchall()
-    return {row["id"]: get_candidate(conn, row["id"]) for row in rows}
+    """Durable-State Phase 4M-3 — batched, bounded-query hydration:
+    exactly 3 queries total regardless of candidate count (one for every
+    candidate row, one for every filing_events row for this source, one
+    for every state_transitions row across every candidate id in this
+    source), replacing the previous 1 + 3*N per-candidate query pattern
+    (`get_candidate()` called once per row, each doing its own
+    filing_events + state_transitions lookup — see
+    design/DECISIONS.md's Phase 4M-3 entry for the full performance
+    rationale this responds to). Returns the identical `CandidateSignal`
+    shape as before — a query-count change only, never a domain-model
+    change. The filing lookup reuses `filing_event_repository.load_filing_events()`
+    directly rather than a new query: every candidate's own
+    `filing.source_name` already equals this function's own `source`
+    argument by construction (the same invariant `upsert_new_candidates()`
+    already relies on when it inserts a candidate's parent filing_events
+    row first)."""
+    candidate_rows = conn.execute("SELECT * FROM candidates WHERE source = %s", (source,)).fetchall()
+    if not candidate_rows:
+        return {}
+
+    filings_by_key = {
+        (f.corp_code, f.rcept_no): f for f in filing_event_repository.load_filing_events(conn, source)
+    }
+
+    candidate_ids = [row["id"] for row in candidate_rows]
+    history_rows = conn.execute(
+        "SELECT candidate_id, status, at, detail FROM state_transitions "
+        "WHERE candidate_id = ANY(%s) ORDER BY candidate_id, id ASC",
+        (candidate_ids,),
+    ).fetchall()
+    history_by_candidate_id: dict[str, list[StateTransition]] = {cid: [] for cid in candidate_ids}
+    for h in history_rows:
+        history_by_candidate_id[h["candidate_id"]].append(
+            StateTransition(status=CandidateStatus(h["status"]), at=h["at"], detail=h["detail"])
+        )
+
+    result: dict[str, CandidateSignal] = {}
+    for row in candidate_rows:
+        filing = filings_by_key.get((row["filing_corp_code"], row["filing_rcept_no"]))
+        if filing is None:
+            raise LookupError(
+                f"candidate {row['id']!r} references a missing filing_events row "
+                f"({row['source']!r}, {row['filing_corp_code']!r}, {row['filing_rcept_no']!r}) — "
+                "this indicates a foreign-key/data-integrity problem, not an absent candidate."
+            )
+        result[row["id"]] = _row_to_candidate_from_lookups(row, filing, history_by_candidate_id[row["id"]])
+    return result
 
 
 def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now: str) -> None:
