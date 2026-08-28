@@ -162,6 +162,18 @@ class Settings:
     # src/ui/beta_gate.py); no identity/sign-in exists yet this phase.
     private_beta_auth_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_PRIVATE_BETA_AUTH_ENABLED"))
     private_beta_allowed_emails: frozenset[str] = field(default_factory=lambda: _parse_beta_allowed_emails("EDGE_PRIVATE_BETA_ALLOWED_EMAILS"))
+    # Throwaway UI-review deployment gate (never merged — lives only on a
+    # short-lived review/* branch, deleted along with its Render service
+    # after feedback). Disabled by default so every existing deployment
+    # (eevaresearch.com, the production Render service, Streamlit
+    # Community Cloud) is completely unaffected — this flag being unset
+    # is what keeps app.py's own review-mode branch dead code for them.
+    # When enabled, app.py bypasses the Google st.user/private-beta gate
+    # entirely (the review deployment has no Google OAuth credentials at
+    # all) in favor of a single, independent shared-token check against
+    # review_access_token — never a real identity, never real user data.
+    review_mode_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_REVIEW_MODE_ENABLED"))
+    review_access_token: str | None = field(default_factory=lambda: os.getenv("EDGE_REVIEW_ACCESS_TOKEN") or None)
     # R2 remote-cache sync (dormant infrastructure — see
     # src/data_access/remote_cache/ — nothing in the app reads/writes
     # through these yet). Disabled by default so every existing page and

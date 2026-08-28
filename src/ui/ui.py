@@ -12,7 +12,7 @@ from typing import Callable
 
 import streamlit as st
 
-from src.config.settings import APP_NAME, APP_VERSION
+from src.config.settings import APP_NAME, APP_VERSION, get_settings
 
 METHODOLOGY_STATEMENT = (
     "EevaResearch separates source-backed facts, market interpretation, model "
@@ -293,9 +293,26 @@ def get_page(name: str):
     return st.session_state.get("_pages", {}).get(name)
 
 
+def _render_review_mode_banner() -> None:
+    """Throwaway UI-review deployment marker — renders only when
+    EDGE_REVIEW_MODE_ENABLED is set (never on eevaresearch.com, the
+    production Render service, or Streamlit Community Cloud). Runs once
+    per page via with_chrome() below, the single shared entry point
+    every page (including Home) already routes through."""
+    if get_settings().review_mode_enabled:
+        st.markdown(
+            '<div style="background:#B45309; color:#fff; padding:0.5rem 1rem; '
+            'font-weight:600; text-align:center; border-radius:4px; margin-bottom:0.75rem;">'
+            "⚠ LOCAL/PRIVATE REVIEW BUILD — sample data only, not for production use"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = True) -> Callable[[], None]:
     def _wrapped() -> None:
         load_css()
+        _render_review_mode_banner()
         if show_sidebar:
             render_sidebar(nav_key)
 

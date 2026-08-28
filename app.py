@@ -20,7 +20,7 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access.container import get_repositories
 from src.logic.unread import seed_initial_last_seen
-from src.ui.beta_gate import evaluate_beta_gate
+from src.ui.beta_gate import evaluate_beta_gate, review_token_matches
 from src.ui.pages import (
     about,
     company,
@@ -144,29 +144,55 @@ st.session_state.setdefault(READ_IDS_KEY, set())
 # value.
 _beta_settings = get_settings()
 
-_beta_is_logged_in = getattr(st.user, "is_logged_in", False)
-_beta_email = st.user.get("email") if _beta_is_logged_in else None
+if _beta_settings.review_mode_enabled:
+    # Throwaway UI-review deployment gate — never present on
+    # eevaresearch.com, the production Render service, or Streamlit
+    # Community Cloud, since EDGE_REVIEW_MODE_ENABLED is unset there.
+    # This branch never touches st.user/st.login at all — the review
+    # deployment has no Google OAuth credentials configured, so
+    # accessing st.user would raise StreamlitAuthError; a single,
+    # independent shared-token check replaces the whole private-beta
+    # gate instead. Fails closed if the token itself isn't configured
+    # (an unset review_access_token can never match any query param).
+    if not review_token_matches(_beta_settings.review_access_token, st.query_params.get("token")):
+        st.title("Private review")
+        st.info("This is a temporary, private review build. Access requires a valid token.")
+        st.stop()
+else:
+    # Private-beta access foundation, Phase 1 (design/DECISIONS.md) — no
+    # identity/sign-in exists yet, so `email` is always None; the flag
+    # defaults to disabled, which keeps this a no-op and every page
+    # working exactly as before. If a deployment enables the flag ahead
+    # of real sign-in wiring, this fails closed with a neutral
+    # placeholder rather than ever running `selected.run()`
+    # unauthenticated. The placeholder wording distinguishes an
+    # unconfigured allowlist from "sign-in just isn't wired up yet"
+    # purely to be honest with whoever operates the deployment — it
+    # never displays the allowlist itself, its size, any email, or the
+    # gate's internal reason value.
+    _beta_is_logged_in = getattr(st.user, "is_logged_in", False)
+    _beta_email = st.user.get("email") if _beta_is_logged_in else None
 
-if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
-    st.title("Private beta")
-    st.write("Sign in with your approved Google account to access EevaResearch AI.")
-    st.button("Continue with Google", on_click=st.login, args=("google",))
-    st.stop()
+    if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
+        st.title("Private beta")
+        st.write("Sign in with your approved Google account to access EevaResearch AI.")
+        st.button("Continue with Google", on_click=st.login, args=("google",))
+        st.stop()
 
-_beta_gate_decision = evaluate_beta_gate(_beta_settings, email=_beta_email)
+    _beta_gate_decision = evaluate_beta_gate(_beta_settings, email=_beta_email)
 
-if not _beta_gate_decision.allowed:
-    st.title("Private beta")
-    if _beta_settings.private_beta_allowed_emails:
-        st.error("This Google account is not approved for the private beta.")
-        if _beta_is_logged_in:
-            st.button("Sign out", on_click=st.logout)
-    else:
-        st.info(
-            "Private beta access is being configured. "
-            "Approved beta accounts have not been configured on this deployment yet."
-        )
-    st.stop()
+    if not _beta_gate_decision.allowed:
+        st.title("Private beta")
+        if _beta_settings.private_beta_allowed_emails:
+            st.error("This Google account is not approved for the private beta.")
+            if _beta_is_logged_in:
+                st.button("Sign out", on_click=st.logout)
+        else:
+            st.info(
+                "Private beta access is being configured. "
+                "Approved beta accounts have not been configured on this deployment yet."
+            )
+        st.stop()
 
 selected = st.navigation(list(pages.values()), position="hidden")
 selected.run()

@@ -45,3 +45,15 @@ def evaluate_beta_gate(settings: Settings, email: str | None) -> BetaGateDecisio
         return BetaGateDecision(allowed=True, reason=BetaGateReason.ALLOWED_EMAIL)
 
     return BetaGateDecision(allowed=False, reason=BetaGateReason.INVITE_REQUIRED)
+
+
+def review_token_matches(configured_token: str | None, provided_token: str | None) -> bool:
+    """Pure comparison for the throwaway UI-review deployment's
+    shared-token gate (app.py, EDGE_REVIEW_MODE_ENABLED) — extracted
+    here so it's testable without a Streamlit runtime, same as
+    evaluate_beta_gate() above. Fails closed: an unconfigured
+    (None/blank) token can never match anything, including a blank
+    provided value — there is no "open" state for this gate."""
+    if not (configured_token or "").strip():
+        return False
+    return provided_token == configured_token
