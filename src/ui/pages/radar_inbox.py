@@ -52,13 +52,15 @@ _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation,
 # design/DECISIONS.md): the raw "every FilingEvent, every source, no cap"
 # list could grow to hundreds of cards, each with several nested
 # containers/expanders/buttons — rendering all of them at once was found
-# live to make the app's own sidebar navigation unreliable. Signals &
-# review queue (candidates only) is the default, useful view; All filing
-# events is opt-in and always paginated, same as Signals if it ever grows
-# past one page. No page ever renders more than PAGE_SIZE cards' worth of
-# widgets, regardless of view or filters.
-_SIGNALS_VIEW = "Signals & review queue"
-_ALL_FILINGS_VIEW = "All filing events"
+# live to make the app's own sidebar navigation unreliable. "Needs your
+# decision" (candidates only — renamed from "Signals & review queue" in
+# the Phase C editorial-simplicity pass, same underlying view/filter/
+# ordering logic) is the default, useful view; "All filings" (renamed from
+# "All filing events") is opt-in and always paginated, same as the default
+# view if it ever grows past one page. No page ever renders more than
+# PAGE_SIZE cards' worth of widgets, regardless of view or filters.
+_SIGNALS_VIEW = "Needs your decision"
+_ALL_FILINGS_VIEW = "All filings"
 PAGE_SIZE = 20
 
 _FILTER_KEYS = (
@@ -350,44 +352,54 @@ def _render_worker_status(state: str, statuses: dict | None) -> None:
     `_worker_scan_status_snapshot()`, called once per
     `_load_dashboard_snapshot()` refresh (Durable-State Phase 4M-2)
     rather than once per render — never a write method, and never
-    displays failure_code's own raw value."""
-    with st.expander("Continuous worker status only — not a candidate feed (read-only)"):
-        st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
-        if state == "not_configured":
+    displays failure_code's own raw value.
+
+    Phase C (editorial-simplicity pass): no longer its own top-level
+    expander — Streamlit can't nest expanders, and this is now called
+    from inside render()'s single merged "Ingestion status" disclosure
+    alongside the scan controls, so it renders a plain sub-heading
+    instead. Content/wording below is otherwise unchanged."""
+    st.markdown(
+        '<div class="er-muted" style="margin-top:0.6rem;"><strong>Continuous worker status</strong> — '
+        'not a candidate feed (read-only)</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
+    if state == "not_configured":
+        st.markdown(
+            '<div class="er-muted" style="margin-top:0.4rem;">This dashboard is not configured with a '
+            'sqlite/postgres backend, so no worker status can be shown here. See '
+            'design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker deployment path.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    if state == "unreachable":
+        st.markdown(
+            '<div class="er-muted" style="margin-top:0.4rem;">This dashboard\'s own configured store could not '
+            'be reached right now.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    for provider in _WORKER_TRACKED_PROVIDERS:
+        status = statuses.get(provider)
+        if status is None:
             st.markdown(
-                '<div class="er-muted" style="margin-top:0.4rem;">This dashboard is not configured with a '
-                'sqlite/postgres backend, so no worker status can be shown here. See '
-                'design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker deployment path.</div>',
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: no continuous scan has run yet.</div>',
                 unsafe_allow_html=True,
             )
-            return
-        if state == "unreachable":
+        elif status.failure_code:
             st.markdown(
-                '<div class="er-muted" style="margin-top:0.4rem;">This dashboard\'s own configured store could not '
-                'be reached right now.</div>',
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: last continuous scan attempt did not complete '
+                f'(last success: {status.last_successful_at or "never"}).</div>',
                 unsafe_allow_html=True,
             )
-            return
-        for provider in _WORKER_TRACKED_PROVIDERS:
-            status = statuses.get(provider)
-            if status is None:
-                st.markdown(
-                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: no continuous scan has run yet.</div>',
-                    unsafe_allow_html=True,
-                )
-            elif status.failure_code:
-                st.markdown(
-                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: last continuous scan attempt did not complete '
-                    f'(last success: {status.last_successful_at or "never"}).</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: healthy · last successful scan {status.last_successful_at} · '
-                    f'{status.candidates_created} candidate(s) created, {status.skipped_unresolved_count} skipped '
-                    f'(unresolved identifier).</div>',
-                    unsafe_allow_html=True,
-                )
+        else:
+            st.markdown(
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: healthy · last successful scan {status.last_successful_at} · '
+                f'{status.candidates_created} candidate(s) created, {status.skipped_unresolved_count} skipped '
+                f'(unresolved identifier).</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def _edgar_readiness_or_unavailable(settings: Settings) -> edgar_service.EdgarReadiness:
@@ -584,11 +596,15 @@ def render() -> None:
         _render_missing_configuration(dart_readiness, edgar_readiness, edinet_readiness)
         return
 
-    # Data controls moved into a collapsed, explicitly-labeled expander —
-    # scanning is a local/admin action, not something every visit needs
-    # front-and-center. Behavior/code paths below are unchanged from
-    # before this move; only the surrounding container changed.
-    with st.expander("Data controls (local/admin)"):
+    # Ingestion status (Phase C, editorial-simplicity pass) — one calm,
+    # default-collapsed disclosure combining scan controls (previously its
+    # own "Data controls (local/admin)" expander) and continuous-worker
+    # status (previously its own separate expander — Streamlit can't nest
+    # expanders, so _render_worker_status no longer opens one of its own;
+    # see that function's docstring). Every underlying control, action,
+    # and piece of operational detail is unchanged, just gathered under
+    # one header instead of two.
+    with st.expander("Ingestion status"):
         st.markdown(
             '<div class="er-muted">Source scans can take time and are intended for local/admin use.</div>',
             unsafe_allow_html=True,
@@ -630,16 +646,16 @@ def render() -> None:
         _render_scan_result("edgar_last_scan_report", "edgar_last_scan_error")
         _render_scan_result("edinet_last_scan_report", "edinet_last_scan_error")
 
-    if dart_scan_clicked or edgar_scan_clicked or edinet_scan_clicked:
-        # A manual "Scan ... now" click just wrote fresh data (JSON/SQLite)
-        # this same rerun — invalidate the cached snapshot and re-fetch so
-        # the admin who clicked it sees their own scan's results
-        # immediately, exactly like before this phase's caching was added,
-        # rather than waiting up to the 60-second TTL.
-        _load_dashboard_snapshot.clear()
-        snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
+        if dart_scan_clicked or edgar_scan_clicked or edinet_scan_clicked:
+            # A manual "Scan ... now" click just wrote fresh data (JSON/SQLite)
+            # this same rerun — invalidate the cached snapshot and re-fetch so
+            # the admin who clicked it sees their own scan's results
+            # immediately, exactly like before this phase's caching was added,
+            # rather than waiting up to the 60-second TTL.
+            _load_dashboard_snapshot.clear()
+            snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
 
-    _render_worker_status(snapshot.worker_status_state, snapshot.worker_status_statuses)
+        _render_worker_status(snapshot.worker_status_state, snapshot.worker_status_statuses)
 
     items = snapshot.items
 
@@ -651,9 +667,10 @@ def render() -> None:
         return
 
     # View selector — the top-level content control (Requirement 1):
-    # Signals & review queue (candidate-only, the useful default) vs. All
-    # filing events (the full raw inventory, opt-in). Read-only: switching
-    # views never creates a signal, mutates a status, or invokes processing.
+    # "Needs your decision" (candidate-only, the useful default) vs. "All
+    # filings" (the full raw inventory, opt-in) — a compact segmented
+    # control right beside the default view. Read-only: switching views
+    # never creates a signal, mutates a status, or invokes processing.
     view_mode = st.radio(
         "View", [_SIGNALS_VIEW, _ALL_FILINGS_VIEW], key="radar-view-mode", horizontal=True,
     )
@@ -664,7 +681,7 @@ def render() -> None:
         empty_state(
             "No candidate signals yet",
             "No filing currently meets the configured candidate rules.",
-            action_label="Show all filing events",
+            action_label="Show all filings",
             on_click=_switch_to_all_filings,
             key="radar-no-signals",
         )
@@ -698,8 +715,14 @@ def render() -> None:
             )
             confidence_filter = adv_cols[2].multiselect("Detection confidence", ["Moderate", "High"], key="radar-filter-confidence")
     with clear_col:
+        # Phase C: a quiet inline text action rather than a separate
+        # full-width button — same cta-tertiary-* ghost-link treatment
+        # used for every other low-emphasis action in the app. Same key,
+        # on_click, and behavior as before; only the surrounding
+        # container/width changed.
         st.markdown('<div style="margin-top:1.6rem;"></div>', unsafe_allow_html=True)
-        st.button("Clear all filters", key="radar-clear-filters-btn", on_click=_clear_filters, use_container_width=True)
+        with st.container(key="cta-tertiary-clear-radar-filters"):
+            st.button("Clear all filters", key="radar-clear-filters-btn", on_click=_clear_filters)
 
     filtered = view_items
     if search_query and search_query.strip():
@@ -806,6 +829,17 @@ def render() -> None:
     range_start = start_idx + 1 if total_items else 0
     range_end = min(end_idx, total_items)
 
+    for item in page_items:
+        candidate_row(
+            item, on_process=_on_process,
+            process_ready=process_readiness_by_source.get(item.filing.source_name, False),
+            on_review_decision=_on_review_decision,
+        )
+
+    # Pagination controls render after the results, not above them (Phase
+    # C) — the first result should be reachable without scrolling past
+    # page-navigation chrome first. Page-index computation above this
+    # loop is unchanged; only where these controls are drawn moved.
     summary_cols = st.columns([1, 1, 6])
     with summary_cols[0]:
         if st.button("← Previous", key="radar-page-prev", disabled=current_page <= 1, use_container_width=True):
@@ -820,11 +854,4 @@ def render() -> None:
             f'<div class="er-muted" style="margin-top:0.5rem;">{total_items} of {len(view_items)} items · '
             f'Page {current_page} of {total_pages} (showing {range_start}–{range_end})</div>',
             unsafe_allow_html=True,
-        )
-
-    for item in page_items:
-        candidate_row(
-            item, on_process=_on_process,
-            process_ready=process_readiness_by_source.get(item.filing.source_name, False),
-            on_review_decision=_on_review_decision,
         )

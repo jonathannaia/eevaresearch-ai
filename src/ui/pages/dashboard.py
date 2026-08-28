@@ -4,6 +4,20 @@ Today's Read, Theme Health, 2-3 Priority Signals, a compact Capital
 Rotation snapshot, 2-3 Catalysts, and 1-2 Watchlist Changes only. Full
 signal discovery lives on Signals, full watchlist management on
 Watchlists, full rotation detail on each theme's Rotation tab.
+
+Phase C (editorial-simplicity pass, design/DECISIONS.md): the page-level
+"Market Overview" title/subtitle is gone — the sidebar's own active-nav
+highlight already establishes "you are on Dashboard," so repeating that in
+a page title read as redundant admin-tool chrome. Today's Read is now the
+first, strongest, and only "primary" module on the page (Priority Signals
+reverts to the same supporting-section weight as Catalysts/Watchlist
+Changes — it was briefly promoted to a second "primary" module in the
+prior UI-audit pass, but this phase's product rule is one clear primary
+element per page). The stacked full-width st.divider() rule between every
+module is gone too, replaced by the vertical spacing every section header
+already carries via --space-6 (assets/styles.css's own documented "32:
+between major Dashboard modules" token) — removing the divider doesn't
+remove any spacing, since that margin was never coming from the divider.
 """
 from __future__ import annotations
 
@@ -15,7 +29,7 @@ from src.logic.theme_metrics import leaders_and_laggards, rank_by_performance
 from src.logic.unread import is_unread
 from src.logic.watchlist_risk import is_moving_against_thesis
 from src.models.models import Direction
-from src.ui.components.badges import direction_rail_class, direction_status_tag_html
+from src.ui.components.badges import direction_dot_html
 from src.ui.components.cards import catalyst_timeline_row, priority_signal_row
 from src.ui.components.freshness import freshness_chip
 from src.ui.components.section import section_header
@@ -24,6 +38,28 @@ from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
 
 PRIORITY_SIGNAL_COUNT = 3
 WATCHLIST_ALERT_COUNT = 2
+
+# Phase C: the two Today's Read actions must not read as visually
+# identical outlined buttons — one filled primary pill, one quiet ghost
+# text link. These are same-page fragment jumps (#capital-rotation-
+# snapshot / #priority-signals), not real st.page_link targets, so the
+# shared cta-primary-*/cta-tertiary-* CSS (which selects specifically for
+# Streamlit's own stPageLink/stBaseButton descendants) can't reach a raw
+# <a> automatically — the exact same declarations from those CSS rules
+# are duplicated here inline instead, rather than inventing new colors.
+_PRIMARY_PILL_STYLE = (
+    "display:inline-flex; align-items:center; justify-content:center; "
+    "box-sizing:border-box; min-height:2.5rem; padding:0.5rem 1.1rem; "
+    "background:var(--invert-bg); color:var(--invert-fg); "
+    "border:none; border-radius:999px; font-weight:600; font-size:0.85rem; "
+    "text-decoration:none; white-space:nowrap; "
+    "box-shadow: 0 0 0 1px rgba(16,42,67,.25), 0 0 22px var(--glow), 0 2px 10px rgba(16,42,67,.18);"
+)
+_GHOST_LINK_STYLE = (
+    "display:inline-flex; align-items:center; box-sizing:border-box; min-height:2.5rem; "
+    "color:var(--text-3); font-size:0.85rem; font-weight:500; "
+    "text-decoration:none; white-space:nowrap;"
+)
 
 
 def _infer_direction(relative_performance_pct: float) -> Direction:
@@ -36,18 +72,26 @@ def _infer_direction(relative_performance_pct: float) -> Direction:
 
 def _render_todays_read(ctx) -> None:
     """One evidence-labeled editorial paragraph derived from existing
-    rotation-metrics logic — the thing a new user reads first."""
+    rotation-metrics logic — the first, strongest, and only "primary"
+    element on the page (Phase C). The card itself is the shared white
+    card surface plus one added rule (.st-key-card-todays-read in
+    assets/styles.css) giving it a restrained midnight-blue left-edge
+    accent — no new fill, gradient, or one-off visual system."""
     themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
     metrics = ctx.market_data_provider.get_rotation_metrics()
     ranked = rank_by_performance(metrics)
-    # Phase B (UI audit): a locally-scoped, slightly heavier label — this
-    # and Priority Signals are the page's two primary modules — rather
-    # than editing the shared section_header() component, which every
-    # other section on every other page also uses.
-    st.markdown(
-        '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>',
-        unsafe_allow_html=True,
-    )
+
+    head_cols = st.columns([4, 2])
+    with head_cols[0]:
+        st.markdown(
+            '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>',
+            unsafe_allow_html=True,
+        )
+    with head_cols[1]:
+        st.markdown('<div style="text-align:right; margin-top:0.3rem;">', unsafe_allow_html=True)
+        freshness_chip("demo", key="fresh-dashboard-head")
+        st.markdown("</div>", unsafe_allow_html=True)
+
     with st.container(border=True, key="card-todays-read"):
         if not ranked or ranked[0].theme_slug not in themes:
             st.markdown('<div class="er-muted">Not enough sample data yet to build a read.</div>', unsafe_allow_html=True)
@@ -64,60 +108,41 @@ def _render_todays_read(ctx) -> None:
             f'{second_line}</div>',
             unsafe_allow_html=True,
         )
-        # Separation from the sentence above (so these read as distinct
-        # actions, not a continuation of the paragraph) comes from the
-        # cta-tertiary wrapper's own top margin in styles.css.
-        # Phase B (UI audit): these were plain prose anchors and read as
-        # continuation of the paragraph above rather than actions. Same
-        # hrefs/fragment-jump/container keys — only the anchor's own
-        # inline styling changed, to visually match the secondary-pill
-        # treatment already defined in assets/styles.css (same tokens:
-        # var(--hairline-2), var(--text), 999px radius), since that CSS
-        # targets Streamlit's own stPageLink/stBaseButton elements, not a
-        # raw markdown <a>.
-        _secondary_pill_style = (
-            "display:inline-flex; align-items:center; justify-content:center; "
-            "box-sizing:border-box; min-height:2.5rem; padding:0.5rem 1.1rem; "
-            "border:1px solid var(--hairline-2); border-radius:999px; "
-            "color:var(--text); font-size:0.85rem; font-weight:600; "
-            "text-decoration:none; white-space:nowrap;"
-        )
-        link_cols = st.columns([2, 2, 1], gap="medium")
+        link_cols = st.columns([2, 2, 3], gap="medium")
         with link_cols[0]:
-            with st.container(key="cta-tertiary-read-rotation"):
+            with st.container(key="cta-primary-read-rotation"):
                 st.markdown(
-                    f'<a href="#capital-rotation-snapshot" style="{_secondary_pill_style}">Open Capital Rotation →</a>',
+                    f'<a href="#capital-rotation-snapshot" style="{_PRIMARY_PILL_STYLE}">Open Capital Rotation →</a>',
                     unsafe_allow_html=True,
                 )
         with link_cols[1]:
             with st.container(key="cta-tertiary-read-signals"):
                 st.markdown(
-                    f'<a href="#priority-signals" style="{_secondary_pill_style}">Review priority signals →</a>',
+                    f'<a href="#priority-signals" style="{_GHOST_LINK_STYLE}">Review priority signals →</a>',
                     unsafe_allow_html=True,
                 )
 
 
 def _render_theme_health(ctx) -> None:
+    """Quick-scan card row, standardized to the shared card treatment
+    (Phase C) — the previous per-card injected <style> for a colored top
+    border was a one-off visual pattern not used anywhere else on the
+    page/product; the direction glyph+text below already carries the same
+    signal without it. The pill-style status tag is now a small semantic
+    dot+text (direction_dot_html, the same shared component Themes/
+    Company/Signals already use for this) instead of a tinted-background
+    pill — same underlying direction data and terminology, less visual
+    weight. "Breadth" gets its own small metric-label above the bar so the
+    measure is named, not just implied by the number beside it."""
     section_header("Theme Health")
     themes = ctx.theme_repository.get_all_themes()
     metrics = {m.theme_slug: m for m in ctx.market_data_provider.get_rotation_metrics()}
     themes_page = get_page("themes")
     cols = st.columns(min(len(themes), 5) or 1)
-    rail_var = {"er-rail-pos": "var(--pos)", "er-rail-neg": "var(--neg)", "er-rail-mix": "var(--mix)"}
     for i, (col, theme) in enumerate(zip(cols, themes)):
         metric = metrics.get(theme.slug)
         with col:
             key = f"card-breadth-{theme.slug}"
-            if metric is not None:
-                # Thin top rail carrying the same restrained direction
-                # color as the status tag below it — a second, faster scan
-                # cue (usability follow-up) alongside the existing pill,
-                # not a replacement for it.
-                color = rail_var[direction_rail_class(_infer_direction(metric.relative_performance_pct))]
-                st.markdown(
-                    f'<style>.st-key-{key} {{ border-top: 2px solid {color} !important; }}</style>',
-                    unsafe_allow_html=True,
-                )
             with st.container(border=True, key=key):
                 st.markdown(f'<div class="er-metric-label">{theme.name}</div>', unsafe_allow_html=True)
                 if metric is None:
@@ -125,16 +150,17 @@ def _render_theme_health(ctx) -> None:
                     continue
                 st.markdown(f'<div class="er-metric-value">{fmt_pct(metric.relative_performance_pct)}</div>', unsafe_allow_html=True)
                 st.markdown(
-                    f'<div class="er-muted" style="margin-top:var(--space-1);">{metric.breadth_pct:.0f}% breadth</div>',
+                    f'<div class="er-metric-label" style="margin-top:var(--space-2);">Breadth</div>'
+                    f'<div class="er-muted" style="margin-top:var(--space-1);">{metric.breadth_pct:.0f}%</div>',
                     unsafe_allow_html=True,
                 )
                 st.markdown(
-                    f'<div class="bar" style="margin-top:var(--space-3);">'
+                    f'<div class="bar" style="margin-top:var(--space-1);">'
                     f'<i style="--w:{metric.breadth_pct:.0f}%; animation-delay:{i * 40}ms;"></i></div>',
                     unsafe_allow_html=True,
                 )
                 st.markdown(
-                    f'<div style="margin-top:var(--space-2);">{direction_status_tag_html(_infer_direction(metric.relative_performance_pct))}</div>',
+                    f'<div style="margin-top:var(--space-2);">{direction_dot_html(_infer_direction(metric.relative_performance_pct))}</div>',
                     unsafe_allow_html=True,
                 )
                 # Only real if it opens Themes — it does (page_link, not a
@@ -145,18 +171,12 @@ def _render_theme_health(ctx) -> None:
 
 
 def _render_priority_signals(ctx) -> None:
+    """Lower-priority supporting section (Phase C) — same standard
+    section-header weight as Capital Rotation/Catalysts, not the elevated
+    "second primary module" treatment from the prior UI-audit pass; Today's
+    Read is this page's one primary element."""
     st.markdown('<div id="priority-signals"></div>', unsafe_allow_html=True)
-    # Phase B (UI audit): same heavier local emphasis as Today's Read
-    # above — this page's two primary modules.
-    st.markdown(
-        '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Priority Signals</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="er-muted" style="font-size:0.78rem; margin:-0.3rem 0 0.6rem 0;">'
-        "Highest-conviction sample signals by direction, strength, and evidence.</div>",
-        unsafe_allow_html=True,
-    )
+    section_header("Priority Signals", "Highest-conviction sample signals by direction, strength, and evidence.")
     signals = ctx.signal_repository.get_all_signals()
     if not signals:
         st.caption("No signals loaded.")
@@ -184,9 +204,9 @@ def _render_priority_signals(ctx) -> None:
 
 
 def _render_watchlist_changes(ctx) -> None:
-    # Phase B (UI audit): visually secondary relative to Today's Read /
-    # Priority Signals above — lighter weight/opacity only, same label
-    # text and position, not reordered or hidden.
+    # Lower-priority supporting section (Phase C, carried over from the
+    # prior UI-audit pass) — lighter weight/opacity only, same label text
+    # and position, not reordered or hidden.
     st.markdown(
         '<div class="er-section-label" style="opacity:0.7;">Watchlist Changes</div>',
         unsafe_allow_html=True,
@@ -222,13 +242,10 @@ def _render_watchlist_changes(ctx) -> None:
 
 
 def _render_rotation_snapshot(ctx) -> None:
+    """Supporting evidence beneath the editorial summary (Today's Read) —
+    same standard section-header weight as Catalysts/Priority Signals."""
     st.markdown('<div id="capital-rotation-snapshot"></div>', unsafe_allow_html=True)
-    section_header("Capital Rotation")
-    st.markdown(
-        '<div class="er-muted" style="font-size:0.78rem; margin:-0.3rem 0 0.6rem 0;">'
-        "Relative performance · sample data</div>",
-        unsafe_allow_html=True,
-    )
+    section_header("Capital Rotation", "Relative performance · sample data")
     themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
     metrics = ctx.market_data_provider.get_rotation_metrics()
     ranked = rank_by_performance(metrics)
@@ -289,26 +306,14 @@ def _render_catalysts(ctx) -> None:
 def render() -> None:
     ctx = get_repositories()
 
-    header_cols = st.columns([4, 2])
-    with header_cols[0]:
-        st.markdown('<div class="er-page-title">Market Overview</div>', unsafe_allow_html=True)
-    with header_cols[1]:
-        st.markdown('<div style="text-align:right; margin-top:0.3rem;">', unsafe_allow_html=True)
-        freshness_chip("demo", key="fresh-dashboard-head")
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown(
-        '<div class="er-page-subtitle">Theme leadership, signals, catalysts, and watchlist changes.</div>',
-        unsafe_allow_html=True,
-    )
-
+    # Phase C: the "Market Overview" page title + subtitle are gone — the
+    # sidebar's own active-nav highlight already establishes "you are on
+    # Dashboard," and Today's Read (below) is now the first thing on the
+    # page. The freshness chip that used to sit beside the title now sits
+    # beside Today's Read's own heading instead.
     _render_todays_read(ctx)
-    st.divider()
     _render_theme_health(ctx)
-    st.divider()
     _render_priority_signals(ctx)
-    st.divider()
     _render_rotation_snapshot(ctx)
-    st.divider()
     _render_catalysts(ctx)
-    st.divider()
     _render_watchlist_changes(ctx)

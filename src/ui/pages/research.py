@@ -6,6 +6,18 @@ st.session_state only — nothing persists across a reload.
 
 Answers with a `claims` breakdown render via the evidence spine (brief §7);
 older-shape answers fall back to the plain five-section layout.
+
+Phase C (editorial-simplicity pass, design/DECISIONS.md): the question
+input is now a plain st.text_input + primary "Ask" button pinned near the
+top of the page, not st.chat_input — Streamlit docks chat_input to the
+bottom of its container unconditionally, which made it impossible to
+satisfy this phase's product rule ("the question input is the obvious
+first interaction, placed directly under the prompt"). The same top
+input/button is used for every question, first or follow-up, so it's the
+one way to ask something — the old "Start a research thread" empty state
+and its separate "New thread" button are gone (they were two more paths to
+the same action). Thread history/rendering and the demo-answer lookup are
+otherwise unchanged.
 """
 from __future__ import annotations
 
@@ -16,13 +28,10 @@ import streamlit as st
 from src.data_access.container import get_repositories
 from src.logic.formatting import fmt_date
 from src.models.models import ChatAnswer
-from src.ui.components.badges import claim_type_badge, demo_badge
-from src.ui.components.empty_state import empty_state
+from src.ui.components.badges import demo_badge
 from src.ui.components.evidence_spine import evidence_spine_row
-from src.ui.components.section import section_header
 
 SESSION_KEY = "chat_messages"
-FOCUS_COMPOSER_KEY = "_focus_composer_pending"
 
 # Category mapped from each suggested question's actual content — brief
 # wants a Company/Theme/Compare/Catalyst/Risk-check taxonomy, but only
@@ -49,10 +58,6 @@ _USER_AVATAR = (
 )
 
 
-def _focus_composer() -> None:
-    st.session_state[FOCUS_COMPOSER_KEY] = True
-
-
 def _render_answer_card(answer: ChatAnswer) -> None:
     with st.container(border=True, key=f"card-answer-{abs(hash(answer.question))}"):
         top = st.columns([4, 1])
@@ -61,19 +66,26 @@ def _render_answer_card(answer: ChatAnswer) -> None:
         with top[1]:
             demo_badge("Sample")
 
-        badge_row = st.columns([1, 1, 4])
-        with badge_row[0]:
-            claim_type_badge(answer.claim_type, has_source=bool(answer.sources))
-        with badge_row[1]:
-            st.badge(f"Confidence: {answer.confidence.value}", color="gray")
-        with badge_row[2]:
-            st.markdown(f'<div class="er-muted">Freshness: {answer.freshness}</div>', unsafe_allow_html=True)
+        # Phase C: evidence type + confidence + freshness collapse into one
+        # quiet inline metadata line rather than three equal-weight pill
+        # badges. The evidence-type *label* (Fact/Interpretation/Inference/
+        # Uncertainty) is still shown, plainly, as text — only its previous
+        # colored-chip rendering is gone at this answer-summary level.
+        st.markdown(
+            f'<div class="er-muted" style="font-size:0.78rem; margin:0.1rem 0 0.6rem 0;">'
+            f'{answer.claim_type.value} · Confidence: {answer.confidence.value} · Freshness: {answer.freshness}</div>',
+            unsafe_allow_html=True,
+        )
 
         if answer.claims:
             # Evidence spine (brief §7) — each claim gets its own left-gutter
             # bar segment; segments must abut exactly to read as one
             # continuous line, so is_first/is_last are set precisely on the
             # first/last row rather than every row getting its own margin.
+            # answer_claim_type (Phase C) suppresses the per-claim chip when
+            # it just repeats the answer.claim_type already named above —
+            # only a claim whose type differs (e.g. an Uncertainty aside in
+            # an Interpretation answer) still shows its own chip.
             for i, claim in enumerate(answer.claims):
                 evidence = claim.evidence[0] if claim.evidence else None
                 evidence_spine_row(
@@ -85,6 +97,7 @@ def _render_answer_card(answer: ChatAnswer) -> None:
                     source_label=(f"{evidence.source_name} · {evidence.source_type}" if evidence else None),
                     is_first=(i == 0),
                     is_last=(i == len(answer.claims) - 1),
+                    answer_claim_type=answer.claim_type,
                 )
         else:
             st.markdown(f"**What happened**\n\n{answer.what_happened}")
@@ -106,35 +119,58 @@ def render() -> None:
     st.markdown('<div class="er-page-title">Research</div>', unsafe_allow_html=True)
     st.write("Ask a research question and get a structured, evidence-labeled answer.")
 
+    # The one clear prompt + input + primary action (Phase C) — the
+    # obvious first interaction on the page, and the one way to start or
+    # continue a thread (typing a follow-up here works the same way).
+    st.markdown(
+        '<div class="er-section-label" style="color:var(--text); font-weight:600; '
+        'font-size:0.92rem; margin-top:var(--space-4);">What would you like to investigate?</div>',
+        unsafe_allow_html=True,
+    )
+    with st.form("research-ask-form", clear_on_submit=True, border=False):
+        input_cols = st.columns([5, 1], vertical_alignment="bottom")
+        with input_cols[0]:
+            question = st.text_input(
+                "Research question", key="research-question-input",
+                placeholder="Ask about a company, theme, filing, catalyst, or market move.",
+                label_visibility="collapsed",
+            )
+        with input_cols[1]:
+            with st.container(key="cta-primary-research-ask"):
+                asked = st.form_submit_button("Ask", width="stretch")
+    if asked and question and question.strip():
+        st.session_state.setdefault(SESSION_KEY, []).append(question.strip())
+        st.rerun()
+
+    # Suggested questions: subtle text links beneath the input (Phase C),
+    # not full-width bordered buttons competing with it for attention —
+    # same cta-tertiary-* ghost-link treatment used for every other
+    # low-emphasis action in the app.
     suggested = ctx.research_answer_provider.get_suggested_questions()
     if suggested:
-        section_header("Suggested research questions")
         by_category: dict[str, list[str]] = {}
         for q in suggested:
             by_category.setdefault(_QUESTION_CATEGORY.get(q, "Theme"), []).append(q)
+        st.markdown(
+            '<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-3);">Or try one of these:</div>',
+            unsafe_allow_html=True,
+        )
         for category in _CATEGORY_ORDER:
             items = by_category.get(category)
             if not items:
                 continue
-            st.markdown(f'<div class="er-muted" style="font-size:0.76rem; margin:0.3rem 0 0.2rem 0;">{category}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="er-muted" style="font-size:0.72rem; margin:0.3rem 0 0.1rem 0;">{category}</div>', unsafe_allow_html=True)
             cols = st.columns(len(items))
             for col, q in zip(cols, items):
                 with col:
-                    if st.button(q, key=f"suggested-{q}", width="stretch"):
-                        st.session_state.setdefault(SESSION_KEY, []).append(q)
-
-    st.divider()
+                    with st.container(key=f"cta-tertiary-suggested-{q}"):
+                        if st.button(q, key=f"suggested-{q}"):
+                            st.session_state.setdefault(SESSION_KEY, []).append(q)
+                            st.rerun()
 
     messages = st.session_state.setdefault(SESSION_KEY, [])
-    if not messages:
-        empty_state(
-            "Start a research thread",
-            "Ask about a company, theme, filing, catalyst, or market move.",
-            action_label="New thread",
-            on_click=_focus_composer,
-            key="research-no-threads",
-        )
-    else:
+    if messages:
+        st.divider()
         for q in messages:
             # Streamlit's default "assistant" avatar renders as a colored
             # icon, which the zero-accent-colour rule (brief §5) rules out
@@ -144,22 +180,6 @@ def render() -> None:
                 st.write(q)
             with st.chat_message("assistant", avatar=str(_LOGO_PATH) if _LOGO_PATH.exists() else None):
                 _render_answer_card(ctx.research_answer_provider.get_answer(q))
-
-    if st.session_state.pop(FOCUS_COMPOSER_KEY, False):
-        st.iframe(
-            "<script>var el = window.parent.document.querySelector('textarea[data-testid=\"stChatInputTextArea\"]'); "
-            "if (el) { el.focus(); }</script>",
-            height=1,
-        )
-
-    typed = st.chat_input("Ask a research question...")
-    if typed:
-        # chat_input is rendered after the messages read/render block above,
-        # so the value appended here wouldn't show until a second rerun
-        # without this explicit rerun — unlike the suggested-question
-        # buttons above, which append before that same read happens.
-        st.session_state.setdefault(SESSION_KEY, []).append(typed)
-        st.rerun()
 
     # One concise, permanent, non-intrusive note — not a dismissible banner
     # (those train people to dismiss without reading), and not repeated

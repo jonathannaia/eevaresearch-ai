@@ -26,8 +26,10 @@ from src.models.models import (
 )
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
-_SIGNALS_VIEW = "Signals & review queue"
-_ALL_FILINGS_VIEW = "All filing events"
+# Phase C (editorial-simplicity pass): renamed from "Signals & review
+# queue"/"All filing events" — same underlying view/filter/ordering logic.
+_SIGNALS_VIEW = "Needs your decision"
+_ALL_FILINGS_VIEW = "All filings"
 
 
 @pytest.fixture(autouse=True)
@@ -177,15 +179,15 @@ def test_radar_inbox_shows_all_three_edinet_form_codes_for_a_softbank_shaped_eve
         at.run()
 
         assert not at.exception
-        # This filing has no CandidateSignal, so the default Signals &
-        # review queue view must show the calm empty state instead — never
+        # This filing has no CandidateSignal, so the default "Needs your
+        # decision" view must show the calm empty state instead — never
         # fabricate a signal for it, never fall back to a raw-inventory dump.
         default_text = " ".join(m.value for m in at.markdown)
         assert "No candidate signals yet" in default_text
         assert "no filing currently meets the configured candidate rules" in default_text.lower()
         assert "有価証券報告書" not in default_text  # the bare filing's own title is not shown here
         action_labels = {b.label for b in at.button}
-        assert "Show all filing events" in action_labels
+        assert "Show all filings" in action_labels
 
         # get_settings must still be patched for this second run — AppTest
         # re-executes the harness script synchronously on `.run()`.
@@ -257,7 +259,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         at.run()
 
         assert not at.exception
-        # Default view (Signals & review queue): the 3 candidates render,
+        # Default view ("Needs your decision"): the 3 candidates render,
         # but `new_filing` — a bare FilingEvent with no CandidateSignal —
         # is excluded. Its own report title is a precise, non-coincidental
         # marker (unlike the "New filing" status label, which also appears
@@ -893,7 +895,7 @@ def test_radar_inbox_data_controls_expander_present_with_warning_and_scans_untou
 
     assert not at.exception
     expander_titles = {e.label for e in at.expander}
-    assert "Data controls (local/admin)" in expander_titles
+    assert "Ingestion status" in expander_titles
     all_text = " ".join(m.value for m in at.markdown)
     assert "Source scans can take time and are intended for local/admin use." in all_text
     # Scan buttons still exist, unclicked — the guard fixture would have
@@ -912,7 +914,7 @@ def test_radar_inbox_bare_event_shows_translation_availability_copy(tmp_path):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
         # No candidate anywhere in this fixture, so Signals view is empty —
-        # switch to All filing events to reach the bare event's own card.
+        # switch to All filings to reach the bare event's own card.
         at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
 

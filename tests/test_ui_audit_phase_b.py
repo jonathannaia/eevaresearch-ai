@@ -190,11 +190,19 @@ def test_dashboard_todays_read_links_are_no_longer_plain_prose_anchors():
 
 
 def test_dashboard_shows_visual_hierarchy_between_primary_and_secondary_modules():
+    """Superseded in part by Phase C (design/DECISIONS.md): Priority
+    Signals was briefly a second "primary" module here, matching Today's
+    Read's heavier weight — Phase C's product rule ("one clear primary
+    element above the fold") demoted it back to the same standard weight
+    as Capital Rotation/Catalysts, leaving Today's Read as the page's one
+    primary element. This test is revised in place to check that reverted
+    hierarchy rather than duplicated as a separate Phase C test file."""
     at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "font-weight:600" in all_text  # Today's Read / Priority Signals
+    assert "font-weight:600; font-size:0.92rem" in all_text  # Today's Read only
+    assert all_text.count("font-weight:600; font-size:0.92rem") == 1
     assert "opacity:0.7" in all_text  # Watchlist Changes
     # Nothing was removed, reordered, or hidden — every module still renders.
     for heading in ("Today's Read", "Priority Signals", "Capital Rotation", "Next Catalysts", "Watchlist Changes"):

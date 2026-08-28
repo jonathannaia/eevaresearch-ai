@@ -629,6 +629,12 @@ a:hover { color: var(--accent-hover); }
 /* Subtheme/Map cards don't open anything (UX-refinement pass) — suppress
    the hover brighten so they don't visually imply they're clickable. */
 [class*="st-key-card-subtheme-"]:hover { background: var(--surface) !important; }
+/* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
+   page's one "primary" content well: same shared white card as every
+   other card above, plus a restrained midnight-blue left-edge accent rule
+   marking it as the page's lead element. No new fill, gradient, or
+   one-off visual system — one border-side on the existing card shape. */
+.st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
 
 /* ---------- theme icon motifs ---------- */
 .er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }
