@@ -13,6 +13,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
+from src.data_access import backend_factory
 from src.data_access.dart import candidate_store, retry_policy
 from src.models.models import (
     CandidateSignal,
@@ -1304,3 +1305,48 @@ def test_radar_inbox_review_decision_none_result_shows_error_and_does_not_rerun_
     assert "Could not record this decision" in all_text
     reloaded = candidate_store.load_candidates(tmp_path)[candidate.id]
     assert reloaded.status == CandidateStatus.NEEDS_REVIEW  # unchanged — not silently treated as success
+
+
+# --- Durable-State Phase 4M-1 — SQLite candidate rendering through a full
+# page render (closes a pre-existing gap: only test_backend_factory_phase2b.py
+# exercised radar_inbox._build_items' own sqlite branch directly before this;
+# no test rendered the actual page against a sqlite-backed candidate store). ---
+
+
+def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tmp_path):
+    # DART, not EDGAR: dart_readiness only needs its own two tracked
+    # companies (Samsung Electronics + SK Hynix) resolved to become
+    # ready — EDGAR's tracked registry has 25 companies, all of which
+    # would need a resolved identifier for edgar_readiness.ready to be
+    # True, which isn't this test's concern.
+    filing = _filing("20260812000200", "실적 발표")
+    candidate = _needs_review_candidate("cand-sqlite-1", filing)
+    settings = Settings(
+        dart_api_key="dart-key", translation_api_key="deepl-key", edgar_user_agent=None,
+        edinet_subscription_key=None, cache_dir=tmp_path, db_backend="sqlite", state_db_path=tmp_path / "state.db",
+    )
+    backend_factory.get_candidate_repository(settings, "OpenDART / DART").upsert_new_candidates([candidate])
+    # dart_readiness() checks corp_code resolution independently of the
+    # candidate/filing data above (it reads the identifier repository,
+    # not any filing's own corp_code) — without this, every source would
+    # be unready and the page would show its "not configured" state
+    # instead of ever reaching _build_items().
+    from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
+
+    id_repo = backend_factory.get_identifier_repository(settings, "OpenDART / DART")
+    for krx_code, corp_code, name in [("005930", "00126380", "삼성전자"), ("000660", "00164779", "SK 하이닉스")]:
+        upsert_resolved_identifier(
+            id_repo.conn, "OpenDART / DART", krx_code,
+            ResolvedIdentifierRecord(identifier=corp_code, display_name=name, resolution_method="synthetic-test-fixture", retrieved_at=_now_iso()),
+        )
+
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "실적 발표" in all_text
+    assert "Needs review" in all_text
+    # No JSON candidate file was ever created for this sqlite-backed render.
+    assert not (tmp_path / "dart_candidates.json").exists()

@@ -4010,3 +4010,100 @@ real worker process, and no scheduled/deployed hosting occurred anywhere
 in this phase. Staging, committing, and pushing this phase's changes
 remain separately approved actions, per this phase's own explicit
 instruction to stop for review first.
+
+## Durable-State Phase 4M-1 — Dashboard Live-Candidate Read Bridge
+
+Radar Inbox's `_build_items()` and `_edinet_scope_line()` now recognize
+`"postgres"` alongside `"sqlite"` for candidate/filing-event reads — the
+same one-line class of fix Phase 4M-0 already applied to
+`get_edgar_companies`/`get_radar_companies`. With the dashboard's own,
+already-existing (Phase 4B) `EDGE_DB_BACKEND=postgres`/
+`EDGE_STATE_DB_URL` pointed at the same physical database
+`scripts/radar_worker.py` writes to (via its own, separate
+`EDGE_RADAR_WORKER_*` variables — never read by this phase's code),
+Radar Inbox now displays the persisted `CandidateSignal`/`FilingEvent`
+records the worker created. No schema, migration, repository, or
+factory-function change was needed: `backend_factory.get_candidate_repository`/
+`get_filing_event_repository` already fully supported `"postgres"`
+(Phase 4B/4E), and `PostgresCandidateRepository`/`SqliteCandidateRepository`
+already hydrate an identical `CandidateSignal`/`FilingEvent` shape —
+confirmed by inspection before writing any code, not assumed.
+
+**Per-source fail-closed reads**: a new `_load_source_items()` helper
+centralizes the backend branch for all three sources; a repository-
+construction or read failure (an incomplete or unreachable Postgres
+configuration, most realistically) is caught and degrades to an empty
+result for *that source only* — mirroring `scripts/radar_worker.py`'s
+own per-provider isolation — never a page crash, never a leaked
+exception, DSN, or `EDGE_RADAR_WORKER_*` name. `_edinet_scope_line()`
+gets the identical treatment for its own filing/candidate counts.
+
+**A necessary correction discovered during this phase's own testing,
+still entirely within `radar_inbox.py` (no other file touched)**:
+`edgar_readiness()`/`radar_readiness()` — via `get_edgar_companies()`/
+`get_radar_companies()`, wired to Postgres in Phase 4M-0 — raise an
+uncaught `BackendConfigurationError` when `db_backend="postgres"` but
+`state_db_url` is missing, blank, or unreachable. Uncaught, this crashed
+the whole page before `_build_items()` ever ran, directly violating this
+phase's own explicit fail-closed requirement. New
+`_edgar_readiness_or_unavailable()`/`_dart_readiness_or_unavailable()`
+wrappers catch this and degrade to a `.ready == False` result (keeping
+the already-safe, non-secret `user_agent_configured`/`dart_key_configured`/
+`translation_key_configured` booleans honest; only `unresolved_companies`
+is forced to a placeholder, non-leaking value) — the same fail-closed
+discipline as everywhere else in this phase, reached via the *same
+already-approved file*, not a scope expansion into `edgar_service.py`/
+`radar_service.py`. EDINET needs no equivalent wrapper: `get_edinet_companies()`
+takes no `settings` argument and never touches a backend at all.
+
+**Deterministic ordering**: `_build_items()`'s sort is now a two-pass
+stable sort — ascending by `(source_name, rcept_no)` first, then stably
+descending by `rcept_dt` — so two same-date filings (which Postgres's
+own `load_filing_events()`, with no `ORDER BY`, does not guarantee a
+consistent relative order for) render in the identical relative order
+on every page load, never depending on repository/dict iteration order.
+
+**Review controls (Decision 1, explicit)**: Process/Publish/Monitor/
+Dismiss remain fully available for Postgres-backed candidates, exactly
+as for JSON/SQLite — no code suppresses them based on which backend a
+candidate was read from. This is not new capability: `review_actions.record_review_decision`
+already recognized `"postgres"` since Phase 4J-1, and Radar Inbox's own
+`_on_process`/`_on_review_decision` callbacks already threaded `settings`
+through unconditionally; this phase's read fix is what makes that
+already-existing support reachable through the UI for the first time.
+Page *render* itself remains strictly read-only — `_build_items()`/
+`_edinet_scope_line()`/`_render_worker_status()` call only `load_*`
+methods, never `upsert_new_candidates`/`update_candidate` — proven by a
+dedicated test that seeds a candidate, renders the page with no click at
+all, and asserts its `version` and `status` are byte-identical
+afterward.
+
+**"Live" labeling unchanged**: the existing `freshness_chip("live" if
+<any readiness>.ready else "demo", ...)` is driven by credential
+readiness, not by backend or worker status — this phase adds no new
+"live" claim tied to Postgres alone; a candidate being stored in
+Postgres is never, by itself, presented as evidence of live scanning.
+
+**Scope**: exactly as approved, plus the one necessary readiness
+correction described above (same file, required to meet this phase's
+own fail-closed requirement — not a scope expansion). No change to
+`app.py`, `container.py`, `backend_factory.py`, any worker script, any
+provider pipeline, any resolver, any database schema, authentication,
+the theme registry, `ontology.py`, `signal_promotion.py`,
+`review_actions.py`, `CandidateStatus` policy, or Signals page behavior.
+No new setting and no new dependency were added.
+
+**Execution status, stated precisely**: new tests across
+`tests/test_radar_inbox_postgres_candidates.py` (new, 11 tests) and
+`tests/test_radar_inbox_page.py` (one new SQLite full-page-render test)
+— **4 passed, 8 skipped** (the skips are the real-Postgres-container
+tests, which skip softly without the local disposable Postgres password
+set; none failed). Re-running every existing test in both touched files
+plus every Phase 4M-0 test file this phase's own review re-verifies
+(`test_radar_inbox_worker_status.py`, `test_backend_factory_phase2b.py`,
+`test_radar_worker_dsn_boundary.py`, `test_radar_worker_safety_invariants.py`,
+`test_radar_worker_no_secrets_guard.py`): **69 passed, 8 skipped, 1
+failed** — the 1 failure is the same pre-existing `DECISIONS.md`-prose
+guard false positive recorded throughout this file. The full existing
+suite was also run this phase: see the accompanying report for the
+combined result and the reconciled pre-existing-vs-regression breakdown.

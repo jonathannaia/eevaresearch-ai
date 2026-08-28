@@ -89,18 +89,29 @@ def _edinet_scope_line(cache_dir, settings: Settings | None = None) -> str:
     claim EDINET is calibrated, actively monitored, current, autonomous,
     or producing live signals — it isn't; zero live scans have run.
 
-    `settings` is additive and optional (Durable-State Phase 2B) — see
-    backend_factory.py's module docstring. Omitted, behavior is
-    unchanged. `get_edinet_companies` is untouched either way — EDINET's
-    five tracked companies have their identifiers hardcoded directly in
-    tracked_companies.py, never resolved from a runtime cache (see that
-    module's own docstring), so there is no identifier-cache read here
-    to wire in the first place."""
+    `settings` is additive and optional (Durable-State Phase 2B; extended
+    to Postgres in Phase 4M-1) — see backend_factory.py's module
+    docstring. Omitted, behavior is unchanged. `get_edinet_companies` is
+    untouched either way — EDINET's five tracked companies have their
+    identifiers hardcoded directly in tracked_companies.py, never
+    resolved from a runtime cache (see that module's own docstring), so
+    there is no identifier-cache read here to wire in the first place.
+
+    Durable-State Phase 4M-1: `"postgres"` is now recognized alongside
+    `"sqlite"` — a repository-construction or read failure is caught and
+    degrades to a count of zero for this line only, never a raw
+    exception or crash; the same fail-closed discipline as
+    `_build_items`/`_render_worker_status`."""
     company_count = len(edinet_service.get_edinet_companies(cache_dir))
-    use_sqlite = settings is not None and (settings.db_backend or "json").strip().lower() == "sqlite"
-    if use_sqlite:
-        filing_count = len(backend_factory.get_filing_event_repository(settings, "EDINET").load_filing_events())
-        candidate_count = len(backend_factory.get_candidate_repository(settings, "EDINET").load_candidates())
+    backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
+    use_repository_backend = backend in ("sqlite", "postgres")
+    if use_repository_backend:
+        try:
+            filing_count = len(backend_factory.get_filing_event_repository(settings, "EDINET").load_filing_events())
+            candidate_count = len(backend_factory.get_candidate_repository(settings, "EDINET").load_candidates())
+        except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
+            filing_count = 0
+            candidate_count = 0
     else:
         filing_count = len(edinet_scan_service.load_filing_events(cache_dir))
         candidate_count = len(candidate_store.load_candidates(cache_dir, edinet_pipeline.CANDIDATE_STORE_FILENAME))
@@ -155,44 +166,83 @@ def _parse_rcept_date(raw: str) -> date | None:
         return None
 
 
+def _load_source_items(source: str, cache_dir, settings: Settings | None, json_filings, json_candidates):
+    """Durable-State Phase 2B (sqlite) / 4M-1 (postgres) — the one place
+    `_build_items` decides, per source, whether to read through a
+    repository (sqlite/postgres) or the existing JSON path. `json_filings`/
+    `json_candidates` are zero-arg thunks so each call site supplies its
+    own already-correct JSON loader/filename without this function
+    needing to know DART/EDGAR/EDINET's differing JSON conventions.
+
+    A repository-construction or read failure (misconfigured or
+    unreachable Postgres, most realistically) is caught here and
+    degrades to an empty result for *this source only* — mirroring
+    scripts/radar_worker.py's own per-provider isolation: one source's
+    read problem never prevents another source's items from rendering,
+    and never raises past this page's own render() call. Read-only
+    either way — this function never calls a repository's write
+    methods."""
+    backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
+    if backend in ("sqlite", "postgres"):
+        try:
+            filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
+            candidates = backend_factory.get_candidate_repository(settings, source).load_candidates()
+        except Exception:  # noqa: BLE001 — fail closed per source; never leak a raw connection/config error
+            return (), {}
+        return filings, candidates
+    return json_filings(), json_candidates()
+
+
 def _build_items(cache_dir, settings: Settings | None = None) -> list[RadarItem]:
-    """`settings` is additive and optional (Durable-State Phase 2B) —
-    see backend_factory.py's module docstring. Omitted, every read goes
-    through scan_service.py/candidate_store.py directly, exactly as
-    before this phase. Supplied with `settings.db_backend == "sqlite"`,
-    every read instead goes through the SQLite-backed filing-event/
-    candidate repositories — this is a read-only display path either
-    way; no write happens here regardless of backend."""
-    use_sqlite = settings is not None and (settings.db_backend or "json").strip().lower() == "sqlite"
+    """`settings` is additive and optional (Durable-State Phase 2B;
+    extended to Postgres in Phase 4M-1) — see backend_factory.py's
+    module docstring. Omitted, every read goes through
+    scan_service.py/candidate_store.py directly, exactly as before this
+    phase. Supplied with `settings.db_backend` of `"sqlite"` or
+    `"postgres"`, every read instead goes through that backend's
+    filing-event/candidate repositories via `_load_source_items` above —
+    this is a read-only display path in every case; no write happens
+    here regardless of backend, and a Postgres-backed candidate keeps
+    whatever `CandidateStatus` it already has (rendering never mutates
+    it — only an explicit, separately-clicked review action does, via
+    the existing `_on_process`/`_on_review_decision` callbacks below,
+    unchanged by this phase)."""
     items: list[RadarItem] = []
 
-    if use_sqlite:
-        dart_filings = backend_factory.get_filing_event_repository(settings, "OpenDART / DART").load_filing_events()
-        dart_candidates = backend_factory.get_candidate_repository(settings, "OpenDART / DART").load_candidates()
-    else:
-        dart_filings = dart_scan_service.load_filing_events(cache_dir)
-        dart_candidates = candidate_store.load_candidates(cache_dir)
+    dart_filings, dart_candidates = _load_source_items(
+        "OpenDART / DART", cache_dir, settings,
+        lambda: dart_scan_service.load_filing_events(cache_dir),
+        lambda: candidate_store.load_candidates(cache_dir),
+    )
     dart_by_rcept_no = {c.filing.rcept_no: c for c in dart_candidates.values()}
     items += [RadarItem(filing=f, candidate=dart_by_rcept_no.get(f.rcept_no)) for f in dart_filings]
 
-    if use_sqlite:
-        edgar_filings = backend_factory.get_filing_event_repository(settings, "SEC EDGAR").load_filing_events()
-        edgar_candidates = backend_factory.get_candidate_repository(settings, "SEC EDGAR").load_candidates()
-    else:
-        edgar_filings = edgar_scan_service.load_filing_events(cache_dir)
-        edgar_candidates = candidate_store.load_candidates(cache_dir, edgar_pipeline.CANDIDATE_STORE_FILENAME)
+    edgar_filings, edgar_candidates = _load_source_items(
+        "SEC EDGAR", cache_dir, settings,
+        lambda: edgar_scan_service.load_filing_events(cache_dir),
+        lambda: candidate_store.load_candidates(cache_dir, edgar_pipeline.CANDIDATE_STORE_FILENAME),
+    )
     edgar_by_accession_no = {c.filing.rcept_no: c for c in edgar_candidates.values()}
     items += [RadarItem(filing=f, candidate=edgar_by_accession_no.get(f.rcept_no)) for f in edgar_filings]
 
-    if use_sqlite:
-        edinet_filings = backend_factory.get_filing_event_repository(settings, "EDINET").load_filing_events()
-        edinet_candidates = backend_factory.get_candidate_repository(settings, "EDINET").load_candidates()
-    else:
-        edinet_filings = edinet_scan_service.load_filing_events(cache_dir)
-        edinet_candidates = candidate_store.load_candidates(cache_dir, edinet_pipeline.CANDIDATE_STORE_FILENAME)
+    edinet_filings, edinet_candidates = _load_source_items(
+        "EDINET", cache_dir, settings,
+        lambda: edinet_scan_service.load_filing_events(cache_dir),
+        lambda: candidate_store.load_candidates(cache_dir, edinet_pipeline.CANDIDATE_STORE_FILENAME),
+    )
     edinet_by_doc_id = {c.filing.rcept_no: c for c in edinet_candidates.values()}
     items += [RadarItem(filing=f, candidate=edinet_by_doc_id.get(f.rcept_no)) for f in edinet_filings]
 
+    # Deterministic newest-first ordering with a stable secondary
+    # tie-break (Durable-State Phase 4M-1): a Postgres read has no
+    # guaranteed row order of its own (no ORDER BY in load_filing_events),
+    # so two same-date filings could otherwise render in a different
+    # relative order on different page loads. Sorting ascending by
+    # (source_name, rcept_no) first, then stably by rcept_dt descending,
+    # produces the same order on every render — Python's sort is stable,
+    # so equal-date items retain their relative order from the first pass
+    # rather than depending on repository/dict iteration order.
+    items = sorted(items, key=lambda i: (i.filing.source_name, i.filing.rcept_no))
     return sorted(items, key=lambda i: i.filing.rcept_dt, reverse=True)
 
 
@@ -325,10 +375,52 @@ def _render_worker_status(settings: Settings) -> None:
                 )
 
 
+def _edgar_readiness_or_unavailable(settings: Settings) -> edgar_service.EdgarReadiness:
+    """Durable-State Phase 4M-1 — necessary correction discovered while
+    implementing this phase's own fail-closed requirement for the
+    candidate-read bridge. `edgar_readiness()` calls `get_edgar_companies()`,
+    which (since Phase 4M-0 wired `"postgres"` into it) raises
+    `BackendConfigurationError` when `settings.db_backend == "postgres"`
+    but `state_db_url` is missing, blank, or unreachable — uncaught,
+    this crashed the whole page before `_build_items` ever ran, which
+    would have violated this phase's own requirement that an incomplete/
+    unreachable Postgres configuration degrade the page safely rather
+    than crash it. Fixed here, in this already-in-scope file, rather
+    than in edgar_service.py itself — narrowly scoped to exactly this
+    phase's own fail-closed requirement. `user_agent_configured` stays
+    honest (a plain boolean derived from settings, never a secret);
+    `unresolved_companies` is forced non-empty only so `.ready` is
+    correctly `False` when the underlying check itself couldn't run —
+    never a raw exception, DSN, or backend detail."""
+    try:
+        return edgar_service.edgar_readiness(settings)
+    except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
+        return edgar_service.EdgarReadiness(
+            user_agent_configured=bool(settings.edgar_user_agent), unresolved_companies=("status unavailable",),
+        )
+
+
+def _dart_readiness_or_unavailable(settings: Settings) -> radar_service.RadarReadiness:
+    """Same rationale as `_edgar_readiness_or_unavailable` above, for
+    DART's own analogous `get_radar_companies()`/`radar_readiness()`
+    pair. EDINET's own `edinet_readiness()` needs no equivalent wrapper:
+    `get_edinet_companies()` takes no `settings` argument at all and
+    never touches a backend/repository (its five companies' identifiers
+    are hardcoded), so it cannot raise this way."""
+    try:
+        return radar_service.radar_readiness(settings)
+    except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
+        return radar_service.RadarReadiness(
+            dart_key_configured=bool(settings.dart_api_key),
+            translation_key_configured=bool(settings.translation_api_key),
+            unresolved_companies=("status unavailable",),
+        )
+
+
 def render() -> None:
     settings = get_settings()
-    dart_readiness = radar_service.radar_readiness(settings)
-    edgar_readiness = edgar_service.edgar_readiness(settings)
+    dart_readiness = _dart_readiness_or_unavailable(settings)
+    edgar_readiness = _edgar_readiness_or_unavailable(settings)
     edinet_readiness = edinet_service.edinet_readiness(settings)
 
     header_cols = st.columns([4, 2])
