@@ -123,9 +123,6 @@ def render() -> None:
                     if st.button(q, key=f"suggested-{q}", width="stretch"):
                         st.session_state.setdefault(SESSION_KEY, []).append(q)
 
-    with st.expander("Saved threads", expanded=False):
-        st.caption("Not built in this phase — closing or reloading the page clears the conversation.")
-
     st.divider()
 
     messages = st.session_state.setdefault(SESSION_KEY, [])

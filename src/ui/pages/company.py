@@ -113,16 +113,20 @@ def render() -> None:
     section_header("What may be underappreciated")
     st.write(ticker.underappreciated or "Not populated.")
 
-    section_header("Fundamental snapshot", "No live data connected — placeholder fields only, not real figures.")
-    st.dataframe(
-        [{"Metric": m, "Value": "—"} for m in ["Price", "Market cap", "P/E", "Revenue growth", "Gross margin"]],
-        hide_index=True, width="stretch",
+    section_header("Fundamental snapshot")
+    empty_state(
+        "No fundamental data connected yet.",
+        "Price, market cap, P/E, revenue growth, and gross margin require a live market-data source — "
+        "not built in this phase.",
+        key="company-fundamental-snapshot",
     )
 
-    section_header("Technical / relative-strength snapshot", "No live data connected — placeholder fields only.")
-    st.dataframe(
-        [{"Metric": m, "Value": "—"} for m in ["RSI", "Relative strength vs. theme", "50-day trend", "200-day trend"]],
-        hide_index=True, width="stretch",
+    section_header("Technical / relative-strength snapshot")
+    empty_state(
+        "No technical data connected yet.",
+        "RSI, relative strength vs. theme, and trend indicators require a live market-data source — "
+        "not built in this phase.",
+        key="company-technical-snapshot",
     )
 
     section_header("Bull / base / bear")

@@ -79,12 +79,17 @@ def _render_map_tab(theme: Theme) -> None:
             with st.container(border=True, key=f"card-subtheme-{sub.slug}"):
                 st.markdown(f'<div class="er-card-title" style="font-size:0.95rem;">{sub.name}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="er-muted">{sub.description}</div>', unsafe_allow_html=True)
-                st.markdown(
-                    f'<div class="er-muted" style="font-size:0.76rem; margin-top:0.4rem; padding-top:0.4rem; '
-                    f'border-top:1px solid var(--hairline);"><strong>What to investigate:</strong> which companies '
-                    f'sit in this layer, and whether the bottleneck is here or elsewhere in the chain.</div>',
-                    unsafe_allow_html=True,
-                )
+    if theme.subthemes:
+        # UX-refinement pass: this exact guidance used to repeat verbatim
+        # on every subtheme card above (identical text N times per theme,
+        # 5 themes) — same content, stated once for the whole layer grid
+        # instead, immediately below it.
+        st.markdown(
+            '<div class="er-muted" style="font-size:0.76rem; margin-top:0.4rem; padding-top:0.4rem; '
+            'border-top:1px solid var(--hairline);"><strong>What to investigate:</strong> which companies '
+            "sit in each layer, and whether the bottleneck is here or elsewhere in the chain.</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_rotation_tab(theme: Theme, ctx: AppContext, is_leader: bool) -> None:
