@@ -1,6 +1,96 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "How Data Centers Are Using AI to Run Cooler and Smarter",
+    "summary": "Digital Realty, AWS, DPR Construction, and Schneider Electric are using AI technologies to improve data center cooling and operational efficiency.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-software/how-data-centers-are-using-ai-to-run-cooler-and-smarter",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 09:00:00 GMT",
+    "retrieved_at": "2026-08-28T01:56:15+00:00",
+    "tickers": [
+      {
+        "ticker": "DLR",
+        "company_name": "Digital Realty",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Substantively addresses AI infrastructure efficiency through data center cooling and operational optimization",
+    "url_hash": "2ba68b9800d61752",
+    "id": "2ba68b9800d61752"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "‘Out of Hyperbole’: Nvidia’s AI Boom Tests Data Center Infrastructure Limits",
+    "summary": "Nvidia reported an $89B data center quarter while AWS plans to add two million more GPUs, indicating AI infrastructure demand is expanding beyond major hyperscalers.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-chips/-out-of-hyperbole-nvidia-s-ai-boom-tests-data-center-infrastructure-limits",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 14:13:15 GMT",
+    "retrieved_at": "2026-08-28T01:56:13+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon Web Services",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article substantively addresses AI infrastructure buildout and data center expansion, a core component of the AI Buildout scope.",
+    "url_hash": "15c79e6868a9b43f",
+    "id": "15c79e6868a9b43f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Data Center Backlash Reaches the Ballot Box",
+    "summary": "Data center development is becoming politically contentious, with politicians facing campaign backlash over projects they previously promoted as economic development initiatives.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-site-selection/data-center-backlash-is-reaching-the-ballot-box",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 16:53:42 GMT",
+    "retrieved_at": "2026-08-28T01:56:11+00:00",
+    "tickers": [],
+    "relevance_reason": "discusses data center policy and political challenges affecting AI infrastructure buildout",
+    "url_hash": "7513544d5e508681",
+    "id": "7513544d5e508681"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "From GAA To CFET: Scaling Transistors For The AI Era",
+    "summary": "The article examines how backside power delivery and design technology co-optimization enable new transistor structures like GAA and CFET to support AI-era computing demands.",
+    "source_url": "https://semiengineering.com/from-gaa-to-cfet-scaling-transistors-for-the-ai-era/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 07:03:43 +0000",
+    "retrieved_at": "2026-08-28T01:56:06+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses advanced transistor structures (GAA, CFET) and design optimization techniques directly relevant to chip scaling for AI infrastructure",
+    "url_hash": "caed264b4bbf62f8",
+    "id": "caed264b4bbf62f8"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Schwarz Group commits €5.6bn investment in data center in Mecklenburg-Vorpommern, Germany",
+    "summary": "Schwarz Group is committing €5.6 billion to build a data center in Mecklenburg-Vorpommern, Germany, which will be powered entirely by renewable energy.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/schwarz-group-commits-56bn-investment-in-data-center-in-mecklenburg-vorpommern-germany/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 27 Aug 2026 17:32:30 +0000",
+    "retrieved_at": "2026-08-28T01:55:46+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center investment is directly relevant to AI Buildout infrastructure.",
+    "url_hash": "29657b5499f9fec2",
+    "id": "29657b5499f9fec2"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Issues Stack Up With More HBM Layers",
     "summary": "According to Hot Chips 2026, increasing HBM layer density faces significant obstacles including thermal dissipation challenges, limited manufacturing capacity, and constraints from die thinning and TSV (through-silicon via) area expansion.",
     "source_url": "https://semiengineering.com/issues-stack-up-with-more-hbm-layers/",
