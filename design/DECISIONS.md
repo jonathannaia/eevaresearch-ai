@@ -4186,7 +4186,7 @@ simulate, or approximate a price/news capability that does not exist.
   Catalysts, and Watchlist Changes render exactly as before, just lower
   on the page.
 
-**What did not ship, deliberately**: any price/quote value (real or
+**What did not ship, deliberately** (Phase E1): any price/quote value (real or
 placeholder), any movement/return figure, any market-cap or liquidity
 encoding, any regional market-news/summary narrative, any China filing
 adapter or tracked China issuer, any new environment variable, secret,
@@ -4223,3 +4223,152 @@ because this file's own prose contains the literal strings `data/cache`
 and `.streamlit/secrets.toml`, which their guard can't distinguish from
 a real reference); confirmed unchanged before and after this phase's
 edits, and not touched by any file this phase modifies.
+
+## Phase F1 — Autonomous Radar Durable-Observability Code Changes
+
+Narrow code/documentation phase approved ahead of the manual Render
+worker deployment (a separate, later, explicitly-approved action — no
+Render service, Postgres instance, secret, environment variable,
+schedule, or deployment infrastructure changed in this phase). Makes
+Radar Inbox truthful and understandable once a worker is later connected
+to shared Postgres, using only durable `provider_scan_status` records —
+never browser/session time, source code, seed/demo files, page-render
+time, file modification time, or an unpersisted in-session manual-scan
+report.
+
+**Durable user-facing freshness line** (`src/logic/radar_freshness.py`,
+new — pure functions, no Streamlit/database import): `compute_radar_freshness()`
+takes the same `(state, statuses)` pair Radar Inbox's own
+`_worker_scan_status_snapshot()` already produces, plus the set of
+currently-enabled (ready) source display names and the configured
+`EDGE_RADAR_SCAN_INTERVAL_MINUTES`, and returns exactly one of five
+states — checked in this order: (1) no durable backend configured/
+reachable → **"Filing data may not be current."**; (2) at least one
+enabled source has never once completed a scan → **"No completed scan
+yet for this source."** (this check runs before the recency split below,
+so an incomplete picture is never dressed up as "partial" or "all
+recent"); (3) all enabled sources recent → **"Filing data last refreshed
+`<timestamp>`."**; (4) a mix of recent and stale → **"Some sources
+refreshed as recently as `<timestamp>`; others are delayed."**; (5) all
+enabled sources stale → **"Filing data may be out of date · Last
+successful update `<timestamp>`."**. "Stale" is defined as
+`3 × effective_interval_minutes` (a safe 60-minute default only when the
+configured interval is missing/non-positive — never a silent guess when
+a real value exists), shared by both this line and the operator panel's
+own per-source categorization below, via one function,
+`categorize_source_status()`. None of the five messages contains "live,"
+"real-time," "automatic," "continuous," "autonomous," "scheduled," or
+"updating" — proven by a dedicated test that checks every message this
+module can produce, not just spot-checked examples. Rendered in
+`radar_inbox.py` immediately above the "Ingestion status" expander, as a
+plain muted line — no new component, no color-only signal.
+
+**Operator-facing "Ingestion status" clarity** (`src/ui/pages/
+radar_inbox.py::_render_worker_status`, extended, not replaced): now
+takes `readiness_by_provider`/`interval_minutes` in addition to its
+existing `(state, statuses)` — gates every per-source line on readiness
+*first*, so a source that isn't configured at all (EDINET, by default —
+no `EDGE_EDINET_SUBSCRIPTION_KEY` set anywhere) always reads "not
+configured for this deployment," never "no completed scan yet," which
+would wrongly imply it's enabled and simply hasn't run. Among enabled
+sources, `categorize_source_status()` (the same threshold rule as the
+freshness line) distinguishes "configured — no completed scan yet"
+(includes a source whose most recent attempt failed but has never once
+succeeded — folded in deliberately, not a fifth "failed" category, so
+`failure_code` stays unexposed exactly as before this phase), "recently
+successful — last scan `<time>` · `<counts>`", and "stale — last
+successful scan `<time>` · `<counts>`" — four states, distinguished by
+wording alone, never color. Two new fixed lines: "Refresh mode:
+Automatic worker when configured; manual scan controls remain
+available." (always shown), and "Expected scan interval: `<N>` minutes"
+(shown only when the durable status store is actually reachable — `state
+== "ok"`) or, when it isn't, "Automatic worker status is not
+configured." (added to the existing not-configured branch, which keeps
+its prior explanatory sentence and pointer to
+`design/RADAR_WORKER_DEPLOYMENT.md` too). Manual scan buttons and every
+other existing control/readiness presentation are unchanged. Both this
+function's new parameters are populated from one `source_readiness_by_provider`
+dict computed once near the top of `render()` — the exact same three
+readiness booleans `render()` already computed, previously redefined a
+second time later in the function under a different name
+(`process_readiness_by_source`) for the candidate "Process" button
+gating; that duplicate definition is now just an alias for the same
+dict, not a second computation.
+
+**"Captured filings" relabeling** (`_ALL_FILINGS_VIEW`, `radar_inbox.py`):
+"All filings" → "Captured filings" — label text only, `st.radio` choices
+still `["Needs your decision", "Captured filings"]` in the same order,
+same default, same underlying view/filter/ordering/pagination logic,
+same data query. Reason, confirmed by direct code reading (see the
+documentation correction below): under Postgres/SQLite, a `FilingEvent`
+row is only ever durably persisted as a *side effect* of a matching
+candidate (`candidate_repository.upsert_new_candidates()` inserts the
+parent filing row first, inside the same transaction, in both
+`src/data_access/state_db/candidate_repository.py` and
+`src/data_access/postgres_state_db/candidate_repository.py`) — a filing
+that matches no candidate rule is never persisted under those two
+backends, only under JSON. "All filings" therefore could read as a
+stronger completeness claim than the Postgres/SQLite-backed view can
+actually back up; "Captured filings" doesn't claim completeness. The
+"Show all filings" empty-state action label became "Show captured
+filings" for the same reason.
+
+**Documentation corrections** (no behavior change):
+- `design/RADAR_WORKER_DEPLOYMENT.md` — its "Candidate rendering is a
+  separate, unimplemented concern" section was stale: Durable-State
+  Phase 4M-1 (already recorded earlier in this same file) added exactly
+  that bridge — `_build_items()`/`_edinet_scope_line()` recognize
+  `"postgres"` alongside `"sqlite"`. Corrected in place, and the new,
+  real, remaining limitation (the "Captured filings" gap above) is now
+  documented precisely where the stale claim used to be, including that
+  a standalone `FilingEvent` write path is a deferred, unscheduled
+  follow-up, not a Phase F1 deliverable.
+- `src/data_access/edinet/edinet_service.py` — its module docstring
+  still said `get_edinet_companies` "will always return an empty tuple
+  in real use this gate" — stale since Gate 7 added five real EDINET
+  tracked companies with hardcoded, already-live-verified `corp_code`
+  values. Corrected to state plainly that `edinet_readiness(settings).ready`
+  is already `True` the moment `EDGE_EDINET_SUBSCRIPTION_KEY` is
+  configured — there is no separate code-level gate beyond ordinary
+  readiness — and that EDINET remaining unscanned today is a deployment/
+  policy choice (the key has never been configured anywhere), not a code
+  limitation. `edinet_readiness`/`run_scan`/`get_edinet_companies`'s own
+  behavior is unchanged; only the docstrings' factual claims were fixed.
+
+**Scope discipline**: EDGAR, DART, and EDINET enablement is entirely
+unaffected by this phase — no credential was set, no readiness rule
+changed, and EDINET in particular is proven to stay "not configured for
+this deployment" by default via a dedicated test
+(`test_edinet_is_not_enabled_by_default_even_though_its_worker_status_row_would_be_read`).
+No Render service, Postgres instance, GitHub Actions workflow,
+dependency, database schema/migration, network call, worker process, or
+schedule was created or modified. `failure_code` remains unexposed
+everywhere it already was. No distributed lock and no standalone
+`FilingEvent` write path were implemented — both explicitly deferred per
+this phase's own approval.
+
+**Execution status, stated precisely**: new tests across
+`tests/test_radar_freshness.py` (new, 18 tests — pure-function coverage
+of all five states, the 3x-interval threshold and its safe default, and
+a prohibited-words sweep over every message the module can produce) and
+`tests/test_radar_inbox_freshness_line.py` (new, 8 tests — AppTest-based
+checks that the freshness line actually renders on the real page, the
+"Captured filings" relabeling, the collapsed-by-default Ingestion status
+expander, and EDINET's default non-enablement); revised in place across
+`tests/test_radar_inbox_worker_status.py` (new per-source wording plus
+two new tests for the "not configured" and "Refresh mode"/"Expected
+interval" lines), `tests/test_radar_inbox_page.py` and
+`tests/test_ui_audit_phase_c.py` (the "All filings" → "Captured filings"
+label, same views/logic checked). Focused run across every file this
+phase touches or could regress (`test_radar_freshness.py`,
+`test_radar_inbox_freshness_line.py`, `test_radar_inbox_worker_status.py`,
+`test_radar_inbox_page.py`, `test_ui_audit_phase_c.py`,
+`test_radar_worker.py`, `test_radar_worker_safety_invariants.py`,
+`test_radar_worker_dsn_boundary.py`, `test_radar_worker_no_secrets_guard.py`,
+`test_radar_inbox_postgres_candidates.py`, `test_radar_inbox_dashboard_cache.py`,
+`test_navigation.py`): **148 passed, 8 skipped** (the skips are the
+real-Postgres-container tests, unrelated to this phase, which skip
+softly without the local disposable Postgres password set). Full
+existing suite re-run after this phase's changes: see the accompanying
+report for the exact combined count and confirmation that only the same
+three pre-existing `DECISIONS.md`-prose guard failures remain.

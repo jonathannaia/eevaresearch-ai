@@ -65,18 +65,32 @@ write the *same* durable store:
   backend introduced in earlier Durable-State phases — no new database
   technology.
 
-**Candidate rendering is a separate, unimplemented concern.** Even when
-the dashboard and worker are pointed at the same database, Radar
-Inbox's own candidate/filing-event list (`_build_items()`) reads only
-`"sqlite"` for that purpose — it does not yet recognize `"postgres"` at
-all, so it falls through to its JSON branch (empty, in a hosted
-deployment) regardless of `EDGE_DB_BACKEND`. **The worker autonomously
-ingests and persists candidates and records sanitized provider status.
-Rendering worker-persisted candidates in the normal Streamlit dashboard
-requires a separately approved dashboard persistence-read bridge**,
-which this phase does not build. Only the sanitized per-provider status
-counts (never the candidate records themselves) are visible today, via
-the status expander described below.
+**Corrected (Phase F1, design/DECISIONS.md) — candidate rendering is no
+longer a separate, unimplemented concern.** Durable-State Phase 4M-1
+added exactly this bridge: Radar Inbox's own candidate/filing-event list
+(`_build_items()`) and `_edinet_scope_line()` now recognize `"postgres"`
+alongside `"sqlite"`. **When the dashboard's own `EDGE_DB_BACKEND=postgres`/
+`EDGE_STATE_DB_URL` point at the same physical database the worker's own
+`EDGE_RADAR_WORKER_STATE_DB_URL` writes to, worker-persisted candidates
+and filing events are visible in Radar Inbox's normal candidate list —
+no further code change is needed for that.**
+
+**One real, current limitation remains, and is deliberately deferred (not
+fixed) as of Phase F1**: a `FilingEvent` row is only ever durably written
+to Postgres/SQLite as a side effect of a *matching candidate*
+(`candidate_repository.upsert_new_candidates()` inserts the parent
+filing row first, inside the same transaction — see
+`src/data_access/state_db/candidate_repository.py`/
+`src/data_access/postgres_state_db/candidate_repository.py`). A filing
+that triggers no candidate rule is never persisted to the database under
+`sqlite`/`postgres` — only the JSON backend persists every fetched raw
+filing regardless of whether it became a candidate. Practically: Radar
+Inbox's "Captured filings" view (temporarily relabeled from "All
+filings" in this same phase, precisely because of this gap) will show
+fewer items under Postgres/SQLite than the same view would show under
+JSON, for the same underlying scan activity. A standalone `FilingEvent`
+write path (independent of candidate creation) would close this gap; it
+is out of scope for Phase F1 and not scheduled yet.
 
 ## Environment variables
 
@@ -224,7 +238,10 @@ These hold regardless of hosting platform, and are proven by
    `EDGE_RADAR_LIVE_SCAN_ENABLED=true`.
 5. Confirm the Radar Inbox's "Continuous worker status only — not a
    candidate feed (read-only)" section (Phase 4M-0) shows each
-   configured provider as healthy after its first successful tick. This
-   confirms status visibility only — it does not mean worker-detected
-   candidates themselves are browsable in Radar Inbox; see "Candidate
-   rendering is a separate, unimplemented concern" above.
+   configured provider as recently successful after its first
+   successful tick. As of Phase 4M-1/F1 (see the correction above), this
+   also means worker-detected candidates and their filing events are
+   browsable in Radar Inbox's normal candidate list — not status-only —
+   once the dashboard points at the same database, with the one
+   remaining caveat that non-candidate filings aren't durably persisted
+   yet (see the correction above).

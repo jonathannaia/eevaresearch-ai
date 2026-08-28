@@ -1,14 +1,24 @@
-"""EDINET pilot's wiring layer (Japan radar pilot, planning Gate 1).
-Mirrors src/data_access/edgar/edgar_service.py's shape exactly (kept as a
+"""EDINET pilot's wiring layer (Japan radar pilot). Mirrors
+src/data_access/edgar/edgar_service.py's shape exactly (kept as a
 separate module from the DART/EDGAR ones, not merged, so each source has
 its own independent readiness check and client/provider construction).
 
-Gate 1 status: `get_edinet_companies` will always return an empty tuple
-in real use this gate — no company has been added to tracked
-configuration for source "EDINET" (explicitly forbidden this gate, see
-edinet_code_resolver.py's docstring). `edinet_readiness` and `run_scan`
-are still wired up now so a later gate can add tracked companies and a
-resolved-CIK-equivalent cache without touching this module's shape.
+Status (corrected — Phase F1, design/DECISIONS.md): `get_edinet_companies`
+no longer returns an empty tuple. Since Gate 7, five real EDINET tracked
+companies exist in src/config/tracked_companies.py (SoftBank Group,
+Kioxia Holdings, Furukawa Electric, FANUC, ispace) with their
+`corp_code`/`krx_code` already hardcoded (independently live-verified —
+see that module's own docstring), not resolved via a runtime cache the
+way DART/EDGAR are. `edinet_readiness(settings).ready` is therefore
+already True the moment `EDGE_EDINET_SUBSCRIPTION_KEY` is configured —
+there is no separate code-level gate beyond that ordinary readiness
+check. EDINET remaining unscanned in production today is a **deployment/
+policy choice** (the subscription key has never been configured
+anywhere), not a code limitation — see design/RADAR_WORKER_DEPLOYMENT.md
+and radar_inbox.py's own "EDINET has never had a live scan run against
+it" framing. This module's own `run_scan`/`edinet_readiness` shape was
+unchanged by this correction; only this docstring's factual claim was
+wrong.
 """
 from __future__ import annotations
 
@@ -36,12 +46,12 @@ class EdinetReadiness:
 
 
 def get_edinet_companies(cache_dir: Path) -> tuple[TrackedCompany, ...]:
-    """No EDINET-code resolution cache is read here yet — no tracked
-    company has an EDINET code to resolve this gate (see module
-    docstring). Kept parallel in shape to
-    edgar_service.get_edgar_companies so a later gate's addition (an
-    EDINET-code-cache lookup, mirroring cik_resolver's cache) is a small,
-    additive change rather than a new pattern."""
+    """No EDINET-code resolution cache is read here at all — not because
+    no tracked company has an EDINET code (all five do, hardcoded — see
+    module docstring), but because none of them ever need runtime
+    resolution in the first place. `cache_dir` is accepted only to keep
+    this function's shape parallel to edgar_service.get_edgar_companies/
+    dart.radar_service.get_radar_companies, which do need it."""
     return get_tracked_companies_for_source(_EDINET_SOURCE)
 
 

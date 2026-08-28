@@ -307,12 +307,15 @@ def _run_radar(tmp_path, **settings_overrides):
 
 
 def test_radar_default_view_is_needs_your_decision_with_all_filings_beside_it(tmp_path):
+    """Phase F1 (design/DECISIONS.md): "All filings" -> "Captured
+    filings" — label text only, same default/secondary view order and
+    underlying logic."""
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000001", "일반 공고")])
     at = _run_radar(tmp_path)
     assert not at.exception
     radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Needs your decision", "All filings"]
+    assert radio.options == ["Needs your decision", "Captured filings"]
     assert radio.value == "Needs your decision"
 
 
@@ -338,9 +341,10 @@ def test_radar_clear_all_filters_is_still_present_and_functional(tmp_path):
     _seed_filing_events(tmp_path, [_filing("20260812000003", "일반 공고")])
     at = _run_radar(tmp_path)
     # This filing has no CandidateSignal, so the default "Needs your
-    # decision" view is empty — switch to "All filings" to reach the
-    # filter row (same pattern as the existing Radar Inbox test suite).
-    at.radio(key="radar-view-mode").set_value("All filings")
+    # decision" view is empty — switch to "Captured filings" (Phase F1:
+    # renamed from "All filings", same view) to reach the filter row
+    # (same pattern as the existing Radar Inbox test suite).
+    at.radio(key="radar-view-mode").set_value("Captured filings")
     at.run()
     assert not at.exception
     clear_buttons = [b for b in at.button if b.label == "Clear all filters"]
@@ -353,7 +357,7 @@ def test_radar_pagination_controls_render_after_results_not_above(tmp_path):
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)
     at = _run_radar(tmp_path)
-    at.radio(key="radar-view-mode").set_value("All filings")
+    at.radio(key="radar-view-mode").set_value("Captured filings")
     at.run()
     assert not at.exception
 

@@ -39,6 +39,7 @@ from src.data_access.edgar import scan_service as edgar_scan_service
 from src.data_access.edinet import edinet_pipeline, edinet_service
 from src.data_access.edinet import scan_service as edinet_scan_service
 from src.logic import review_actions
+from src.logic.radar_freshness import categorize_source_status, compute_radar_freshness, effective_interval_minutes
 from src.models.models import CandidateSignal, CandidateStatus
 from src.ui.components.empty_state import empty_state
 from src.ui.components.freshness import freshness_chip
@@ -55,12 +56,17 @@ _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation,
 # live to make the app's own sidebar navigation unreliable. "Needs your
 # decision" (candidates only — renamed from "Signals & review queue" in
 # the Phase C editorial-simplicity pass, same underlying view/filter/
-# ordering logic) is the default, useful view; "All filings" (renamed from
-# "All filing events") is opt-in and always paginated, same as the default
-# view if it ever grows past one page. No page ever renders more than
-# PAGE_SIZE cards' worth of widgets, regardless of view or filters.
+# ordering logic) is the default, useful view; "Captured filings"
+# (temporarily relabeled from "All filings" in Phase F1, design/
+# DECISIONS.md — only candidate-linked filings are durably persisted
+# under Postgres/SQLite today, so "All filings" could read as a stronger
+# completeness claim than this view can back up; the underlying query/
+# filter/ordering logic is unchanged) is opt-in and always paginated,
+# same as the default view if it ever grows past one page. No page ever
+# renders more than PAGE_SIZE cards' worth of widgets, regardless of view
+# or filters.
 _SIGNALS_VIEW = "Needs your decision"
-_ALL_FILINGS_VIEW = "All filings"
+_ALL_FILINGS_VIEW = "Captured filings"
 PAGE_SIZE = 20
 
 _FILTER_KEYS = (
@@ -341,7 +347,9 @@ def _worker_scan_status_snapshot(settings: Settings):
     return "ok", statuses
 
 
-def _render_worker_status(state: str, statuses: dict | None) -> None:
+def _render_worker_status(
+    state: str, statuses: dict | None, readiness_by_provider: dict[str, bool], interval_minutes: int | None,
+) -> None:
     """Renders the required states without ever showing an API key,
     DSN, EDGE_* environment-variable name, raw exception, stack trace,
     internal resolver command, or unresolved-issuer list — only provider
@@ -358,18 +366,37 @@ def _render_worker_status(state: str, statuses: dict | None) -> None:
     expander — Streamlit can't nest expanders, and this is now called
     from inside render()'s single merged "Ingestion status" disclosure
     alongside the scan controls, so it renders a plain sub-heading
-    instead. Content/wording below is otherwise unchanged."""
+    instead. Content/wording below is otherwise unchanged.
+
+    Phase F1 (design/DECISIONS.md): each tracked provider now renders one
+    of four distinct, plain-text states — disabled/not configured for
+    this deployment (per `readiness_by_provider`, so EDINET is never
+    implied to be enabled just because its tracked companies exist in
+    code — see src/config/tracked_companies.py), configured but never
+    successfully scanned, recently successful, or stale (per
+    `src.logic.radar_freshness.categorize_source_status`, the same
+    threshold rule the tester-facing freshness line uses) — distinguished
+    by wording alone, not color. A source whose most recent attempt
+    failed but has never once succeeded still reads as "no completed
+    scan yet," not a distinct failure state — `failure_code` stays
+    unexposed here, unchanged from before this phase."""
     st.markdown(
         '<div class="er-muted" style="margin-top:0.6rem;"><strong>Continuous worker status</strong> — '
         'not a candidate feed (read-only)</div>',
         unsafe_allow_html=True,
     )
     st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="er-muted" style="margin-top:0.4rem;">Refresh mode: Automatic worker when configured; '
+        "manual scan controls remain available.</div>",
+        unsafe_allow_html=True,
+    )
     if state == "not_configured":
         st.markdown(
-            '<div class="er-muted" style="margin-top:0.4rem;">This dashboard is not configured with a '
-            'sqlite/postgres backend, so no worker status can be shown here. See '
-            'design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker deployment path.</div>',
+            '<div class="er-muted" style="margin-top:0.4rem;">Automatic worker status is not configured. '
+            "This dashboard is not configured with a sqlite/postgres backend, so no worker status can be "
+            "shown here. See design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker "
+            "deployment path.</div>",
             unsafe_allow_html=True,
         )
         return
@@ -380,24 +407,40 @@ def _render_worker_status(state: str, statuses: dict | None) -> None:
             unsafe_allow_html=True,
         )
         return
+
+    st.markdown(
+        f'<div class="er-muted" style="margin-top:0.4rem;">Expected scan interval: '
+        f'{effective_interval_minutes(interval_minutes)} minutes</div>',
+        unsafe_allow_html=True,
+    )
     for provider in _WORKER_TRACKED_PROVIDERS:
-        status = statuses.get(provider)
-        if status is None:
+        if not readiness_by_provider.get(provider, False):
             st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: no continuous scan has run yet.</div>',
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: not configured for this '
+                f"deployment.</div>",
                 unsafe_allow_html=True,
             )
-        elif status.failure_code:
+            continue
+        status = statuses.get(provider)
+        category = categorize_source_status(status, interval_minutes)
+        if category == "never_scanned":
             st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: last continuous scan attempt did not complete '
-                f'(last success: {status.last_successful_at or "never"}).</div>',
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: configured — no completed '
+                f"scan yet.</div>",
+                unsafe_allow_html=True,
+            )
+        elif category == "stale":
+            st.markdown(
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: stale — last successful scan '
+                f'{status.last_successful_at} · {status.candidates_created} candidate(s) created, '
+                f'{status.skipped_unresolved_count} skipped (unresolved identifier).</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: healthy · last successful scan {status.last_successful_at} · '
-                f'{status.candidates_created} candidate(s) created, {status.skipped_unresolved_count} skipped '
-                f'(unresolved identifier).</div>',
+                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: recently successful — last scan '
+                f'{status.last_successful_at} · {status.candidates_created} candidate(s) created, '
+                f'{status.skipped_unresolved_count} skipped (unresolved identifier).</div>',
                 unsafe_allow_html=True,
             )
 
@@ -565,6 +608,17 @@ def render() -> None:
     dart_readiness = snapshot.dart_readiness
     edgar_readiness = snapshot.edgar_readiness
     edinet_readiness = snapshot.edinet_readiness
+    # Phase F1 (design/DECISIONS.md): computed once, reused by the
+    # tester-facing freshness line, the operator panel's per-source
+    # disabled/never-scanned/recent/stale distinction, and the existing
+    # candidate "Process" button gating below — same three readiness
+    # booleans as before, just named/shared in one place instead of
+    # redefined later in this function.
+    source_readiness_by_provider = {
+        "SEC EDGAR": edgar_readiness.ready,
+        "OpenDART / DART": dart_readiness.ready,
+        "EDINET": edinet_readiness.ready,
+    }
 
     header_cols = st.columns([4, 2])
     with header_cols[0]:
@@ -595,6 +649,20 @@ def render() -> None:
     if not dart_readiness.ready and not edgar_readiness.ready and not edinet_readiness.ready:
         _render_missing_configuration(dart_readiness, edgar_readiness, edinet_readiness)
         return
+
+    # Durable, tester-facing freshness line (Phase F1, design/DECISIONS.md)
+    # — derived only from the same durable provider_scan_status snapshot
+    # the operator panel below reads, never from browser/session time,
+    # source code, seed data, page-render time, file mtimes, or an
+    # unpersisted in-session manual-scan report. Visually secondary
+    # (muted, same treatment as the scope lines above it), immediately
+    # above the results below.
+    enabled_sources = tuple(p for p, ready in source_readiness_by_provider.items() if ready)
+    freshness = compute_radar_freshness(
+        snapshot.worker_status_state, snapshot.worker_status_statuses,
+        enabled_sources, settings.radar_scan_interval_minutes,
+    )
+    st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{freshness.message}</div>', unsafe_allow_html=True)
 
     # Ingestion status (Phase C, editorial-simplicity pass) — one calm,
     # default-collapsed disclosure combining scan controls (previously its
@@ -655,7 +723,10 @@ def render() -> None:
             _load_dashboard_snapshot.clear()
             snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
 
-        _render_worker_status(snapshot.worker_status_state, snapshot.worker_status_statuses)
+        _render_worker_status(
+            snapshot.worker_status_state, snapshot.worker_status_statuses,
+            source_readiness_by_provider, settings.radar_scan_interval_minutes,
+        )
 
     items = snapshot.items
 
@@ -681,7 +752,7 @@ def render() -> None:
         empty_state(
             "No candidate signals yet",
             "No filing currently meets the configured candidate rules.",
-            action_label="Show all filings",
+            action_label="Show captured filings",
             on_click=_switch_to_all_filings,
             key="radar-no-signals",
         )
@@ -788,17 +859,14 @@ def render() -> None:
         _load_dashboard_snapshot.clear()
         return result
 
-    # Reuses the exact same readiness objects computed at the top of
-    # render() for the Scan buttons — a candidate's "Prepare analyst
-    # view"/"Retry analyst view preparation" action needs its own
-    # source's live credentials just as much as a scan does, and must be
-    # disabled (with an honest reason) rather than silently attempted
-    # when they're absent.
-    process_readiness_by_source = {
-        "OpenDART / DART": dart_readiness.ready,
-        "SEC EDGAR": edgar_readiness.ready,
-        "EDINET": edinet_readiness.ready,
-    }
+    # Reuses the exact same readiness dict computed at the top of
+    # render() for the Scan buttons (Phase F1: renamed/shared as
+    # source_readiness_by_provider, same three booleans as before) — a
+    # candidate's "Prepare analyst view"/"Retry analyst view preparation"
+    # action needs its own source's live credentials just as much as a
+    # scan does, and must be disabled (with an honest reason) rather than
+    # silently attempted when they're absent.
+    process_readiness_by_source = source_readiness_by_provider
 
     if not filtered:
         empty_state(

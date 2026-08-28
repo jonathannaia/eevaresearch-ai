@@ -28,8 +28,10 @@ from src.models.models import (
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 # Phase C (editorial-simplicity pass): renamed from "Signals & review
 # queue"/"All filing events" — same underlying view/filter/ordering logic.
+# Phase F1 (design/DECISIONS.md): "All filings" -> "Captured filings" —
+# label text only, same view/filter/ordering logic again.
 _SIGNALS_VIEW = "Needs your decision"
-_ALL_FILINGS_VIEW = "All filings"
+_ALL_FILINGS_VIEW = "Captured filings"
 
 
 @pytest.fixture(autouse=True)
@@ -187,7 +189,7 @@ def test_radar_inbox_shows_all_three_edinet_form_codes_for_a_softbank_shaped_eve
         assert "no filing currently meets the configured candidate rules" in default_text.lower()
         assert "有価証券報告書" not in default_text  # the bare filing's own title is not shown here
         action_labels = {b.label for b in at.button}
-        assert "Show all filings" in action_labels
+        assert "Show captured filings" in action_labels
 
         # get_settings must still be patched for this second run — AppTest
         # re-executes the harness script synchronously on `.run()`.
