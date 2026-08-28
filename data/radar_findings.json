@@ -1,5 +1,236 @@
 [
   {
+    "niche": "Space",
+    "headline": "President Honors NASA’s Artemis II Crew with Highest US Space Award",
+    "summary": "President Trump awarded the Congressional Space Medal of Honor to four astronauts—NASA's Reid Wiseman, Victor Glover, and Christina Koch, plus Canadian Space Agency astronaut Jeremy Hansen—for their service on the Artemis II mission during a ceremony at NASA's Johnson Space Center.",
+    "source_url": "https://www.nasa.gov/news-release/president-honors-nasas-artemis-ii-crew-with-highest-us-space-award/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Fri, 28 Aug 2026 17:37:01 +0000",
+    "retrieved_at": "2026-08-28T23:19:34+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns the Artemis II space mission and NASA's flagship lunar exploration program.",
+    "url_hash": "5d68b6dd85f4c3cc",
+    "id": "5d68b6dd85f4c3cc"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA Awards First Prize in Phase 2 of Agency’s LunaRecycle Challenge",
+    "summary": "NASA awarded MIT's CERBERUZ team first prize in Phase 2 of the LunaRecycle Challenge for developing a recycling solution that grinds mixed waste materials into powder for use in Moon and deep space missions, with total awards of $775,000.",
+    "source_url": "https://www.nasa.gov/directorates/stmd/prizes-challenges-crowdsourcing-program/centennial-challenges/nasa-awards-first-prize-in-phase-2-of-agencys-lunarecycle-challenge/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Fri, 28 Aug 2026 20:30:52 +0000",
+    "retrieved_at": "2026-08-28T23:19:33+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses NASA space mission logistics and technology development for lunar and deep space operations.",
+    "url_hash": "8303660eda7aeb4e",
+    "id": "8303660eda7aeb4e"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "How Locus is getting a grasp on one of robotics biggest challenges: manipulation",
+    "summary": "Locus Robotics acquired Nexera Robotics to enhance its manipulation capabilities through unique soft picking technology.",
+    "source_url": "https://www.therobotreport.com/locus-getting-grasp-one-robotics-biggest-challenges-manipulation/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 13:29:51 +0000",
+    "retrieved_at": "2026-08-28T23:19:30+00:00",
+    "tickers": [
+      {
+        "ticker": "LOCUS",
+        "company_name": "Locus Robotics",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article is about robotics automation capabilities through an acquisition in the manipulation technology space.",
+    "url_hash": "859ba80ddf3b911d",
+    "id": "859ba80ddf3b911d"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "EXL acquires physical AI model developer iMerit",
+    "summary": "EXL has acquired iMerit, a physical AI model developer, with the combined companies stating their expertise and platforms will support developers working on physical AI applications.",
+    "source_url": "https://www.therobotreport.com/exl-acquires-physical-ai-model-developer-imerit/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 17:36:09 +0000",
+    "retrieved_at": "2026-08-28T23:19:28+00:00",
+    "tickers": [
+      {
+        "ticker": "EXLS",
+        "company_name": "EXL Service Holdings",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "EXL's acquisition of iMerit, a physical AI model developer, is directly relevant to humanoid robotics and robotics automation.",
+    "url_hash": "25fb89b62b515dc8",
+    "id": "25fb89b62b515dc8"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Video Friday: Meet Microduck",
+    "summary": "NVIDIA acquired the company behind Pollen Robotics for $12.9 billion, which produced the Microduck, a 25 cm robot with 15 degrees of freedom, autonomous capabilities, and open-source software now available for pre-order at $399. The article also showcases multiple other robotics projects including general-purpose robots from Noble Machines, fish-inspired robots, and dual-arm manipulation robots.",
+    "source_url": "https://spectrum.ieee.org/video-friday-microduck-robot",
+    "source_name": "IEEE Spectrum — Robotics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 16:00:03 +0000",
+    "retrieved_at": "2026-08-28T23:19:25+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article features multiple robotics projects and demonstrations, including mention of NVIDIA's $12.9 billion acquisition related to Pollen Robotics and the Microduck robot.",
+    "url_hash": "c2f2ca6d82e831a7",
+    "id": "c2f2ca6d82e831a7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Anthropic gets its first court win over the Pentagon’s supply-chain risk label",
+    "summary": "A federal judge ruled that the Trump administration illegally designated Anthropic as a supply-chain risk, marking Anthropic's first court win on this matter while a second Pentagon lawsuit remains ongoing.",
+    "source_url": "https://techcrunch.com/2026/08/28/anthropic-gets-its-first-court-win-over-the-pentagons-supply-chain-risk-label/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 12:46:12 +0000",
+    "retrieved_at": "2026-08-28T23:19:20+00:00",
+    "tickers": [
+      {
+        "ticker": "ANTHROPIC",
+        "company_name": "Anthropic",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Anthropic's legal victory against Pentagon supply-chain labeling directly impacts its ability to participate in AI infrastructure and government contracts related to AI buildout.",
+    "url_hash": "ca50f3998f6e2919",
+    "id": "ca50f3998f6e2919"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Neocloud Lambda secures $1B in debt to buy more chips",
+    "summary": "Neocloud Lambda secured $1 billion in debt financing to purchase Nvidia AI chips for leasing to Microsoft, reflecting the capital-intensive nature of AI infrastructure buildout.",
+    "source_url": "https://techcrunch.com/2026/08/28/neocloud-lambda-secures-1b-in-debt-to-buy-more-chips/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 20:24:11 +0000",
+    "retrieved_at": "2026-08-28T23:19:16+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct investment in GPU acquisition for AI infrastructure leasing to hyperscalers.",
+    "url_hash": "7f0374631f4fcd05",
+    "id": "7f0374631f4fcd05"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Trump Targets Foreign Grid Equipment as Data Centers Expand",
+    "summary": "An Executive Order targeting foreign grid equipment has been issued as utilities and data center developers face supply constraints and extended lead times for power infrastructure.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/trump-targets-foreign-grid-equipment-as-data-centers-expand",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 16:58:45 GMT",
+    "retrieved_at": "2026-08-28T23:19:14+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses data center infrastructure challenges and power grid capacity constraints relevant to AI buildout.",
+    "url_hash": "ee07b48355dbb49d",
+    "id": "ee07b48355dbb49d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Generative Design Optimizes Liquid-Cooling Channels For 2.5D And 3D Packages (UM-Dearborn)",
+    "summary": "University of Michigan-Dearborn researchers published a paper on generative design for optimizing liquid-cooling channels in multi-chip packages containing GPUs and CPUs, addressing thermal management for advanced packaging configurations.",
+    "source_url": "https://semiengineering.com/generative-design-optimizes-liquid-cooling-channels-for-2-5d-and-3d-packages-um-dearborn/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 17:34:14 +0000",
+    "retrieved_at": "2026-08-28T23:19:09+00:00",
+    "tickers": [],
+    "relevance_reason": "Technical research on liquid cooling optimization for high-power GPU packages directly addresses cooling infrastructure for AI chip deployments.",
+    "url_hash": "a87a77f42fb2e0ab",
+    "id": "a87a77f42fb2e0ab"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Ferroelectric Tuning Reduces Optical-Interconnect Stalls In LLM Training (Georgia Tech)",
+    "summary": "Georgia Tech researchers published a paper analyzing wafer-scale optical interconnects for mixture-of-experts LLM training, identifying tuning stalls during communication phases and demonstrating 2.7x speedups using ferroelectric-based mitigation.",
+    "source_url": "https://semiengineering.com/ferroelectric-tuning-reduces-optical-interconnect-stalls-in-llm-training-georgia-tech/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 17:41:18 +0000",
+    "retrieved_at": "2026-08-28T23:19:07+00:00",
+    "tickers": [],
+    "relevance_reason": "Technical research directly addressing optical interconnect optimization for LLM training infrastructure, a core AI buildout component.",
+    "url_hash": "e7a496e7e42533f3",
+    "id": "e7a496e7e42533f3"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Open-Source Benchmark Suite For 2.5D/3D Heterogeneous Integration Research in Physical Design (UCLA)",
+    "summary": "UCLA researchers published an open-source benchmark suite for 3D-IC (three-dimensional integrated circuit) design with reusable virtual chiplet models covering compute, memory, I/O, and analog components for physical design research.",
+    "source_url": "https://semiengineering.com/open-source-benchmark-suite-for-2-5d-3d-heterogeneous-integration-research-in-physical-design-ucla/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 17:49:57 +0000",
+    "retrieved_at": "2026-08-28T23:19:05+00:00",
+    "tickers": [],
+    "relevance_reason": "3D-IC chiplet design and heterogeneous integration are core to advanced chip supply chain and AI accelerator architecture.",
+    "url_hash": "f17be35fc83a2576",
+    "id": "f17be35fc83a2576"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "X2M sets up dedicated data center subsidiary and signs a deal for data center project",
+    "summary": "X2M, an Australian IoT company, has established a dedicated data center subsidiary and signed a deal for a data center project as it expands into the data center sector.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/x2m-sets-up-dedicated-data-center-subsidiary-and-signs-a-deal-for-data-center-project/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 14:00:29 +0000",
+    "retrieved_at": "2026-08-28T23:19:04+00:00",
+    "tickers": [],
+    "relevance_reason": "Company is establishing data center infrastructure, which is directly relevant to AI Buildout scope.",
+    "url_hash": "2dbba38e5f0af2ee",
+    "id": "2dbba38e5f0af2ee"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "ESDS Software Solution targets Rs 720 Crore IPO, will use proceeds to expand data center footprint",
+    "summary": "ESDS Software Solution launched an IPO targeting Rs 720 Crore, with proceeds designated for expanding its data center footprint.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/esds-software-solution-targets-rs-720-crore-ipo-will-use-proceeds-to-expand-data-center-footprint/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 16:00:23 +0000",
+    "retrieved_at": "2026-08-28T23:19:00+00:00",
+    "tickers": [],
+    "relevance_reason": "Company plans to use IPO proceeds to expand data center capacity, directly supporting AI infrastructure buildout.",
+    "url_hash": "f849ee43332dac5c",
+    "id": "f849ee43332dac5c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "UK Green Party calls for nationwide data center moratorium",
+    "summary": "The UK Green Party has called for a nationwide moratorium on data centers, proposing that only locally-scaled facilities serving their communities would be permitted.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/uk-green-party-calls-for-nationwide-data-center-moratorium/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 16:02:41 +0000",
+    "retrieved_at": "2026-08-28T23:18:58+00:00",
+    "tickers": [],
+    "relevance_reason": "Proposes policy restrictions on data center development, directly affecting AI infrastructure buildout.",
+    "url_hash": "8d1c46f386f293f6",
+    "id": "8d1c46f386f293f6"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "AI Rack Density’s Real Limits: Power, Cooling, Failure Risk",
     "summary": "As AI racks exceed 100 kW power consumption, physical limitations in power delivery and cooling infrastructure—rather than chip availability—are becoming the constraining factor for further density increases.",
