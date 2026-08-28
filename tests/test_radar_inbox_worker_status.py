@@ -20,14 +20,26 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
-from src.ui.pages.radar_inbox import _WORKER_STATUS_SCOPE_NOTE, _worker_scan_status_snapshot
+from src.ui.pages.radar_inbox import _WORKER_STATUS_SCOPE_NOTE, _load_dashboard_snapshot, _worker_scan_status_snapshot
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
+
+
+@pytest.fixture(autouse=True)
+def _clear_dashboard_snapshot_cache():
+    """Durable-State Phase 4M-2 — see the identical fixture's own
+    docstring in tests/test_radar_inbox_page.py for why this is needed:
+    `_load_dashboard_snapshot`'s `st.cache_data` cache is process-wide,
+    not per-test."""
+    _load_dashboard_snapshot.clear()
+    yield
+    _load_dashboard_snapshot.clear()
 
 
 def _base_settings(**overrides) -> Settings:

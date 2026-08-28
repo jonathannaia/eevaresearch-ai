@@ -31,6 +31,24 @@ _ALL_FILINGS_VIEW = "All filing events"
 
 
 @pytest.fixture(autouse=True)
+def _clear_dashboard_snapshot_cache():
+    """Durable-State Phase 4M-2 — `radar_inbox._load_dashboard_snapshot`
+    is an `st.cache_data`-backed function, so its cache is a process-wide
+    singleton that would otherwise persist across tests in the same
+    pytest run. Most tests here use a unique `tmp_path` as `cache_dir`
+    (itself part of the cache key), which already isolates them from
+    each other — but this fixture makes that isolation explicit and
+    load-bearing rather than incidental, and protects any test whose
+    `Settings` omits `cache_dir` (falling back to the real default path,
+    which multiple tests could otherwise collide on)."""
+    from src.ui.pages.radar_inbox import _load_dashboard_snapshot
+
+    _load_dashboard_snapshot.clear()
+    yield
+    _load_dashboard_snapshot.clear()
+
+
+@pytest.fixture(autouse=True)
 def _guard_against_live_calls(monkeypatch):
     """No test in this file clicks a scan/process control — this just
     makes that guarantee load-bearing rather than incidental. Requirement

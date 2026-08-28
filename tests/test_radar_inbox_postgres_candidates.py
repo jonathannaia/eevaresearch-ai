@@ -26,13 +26,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
+from src.ui.pages.radar_inbox import _load_dashboard_snapshot
 
 from tests._postgres_test_support import pg_isolated_dsn  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def _clear_dashboard_snapshot_cache():
+    """Durable-State Phase 4M-2 — see the identical fixture's own
+    docstring in tests/test_radar_inbox_page.py: `_load_dashboard_snapshot`'s
+    `st.cache_data` cache is process-wide, not per-test, and several
+    tests in this file share the real default `cache_dir` (their
+    `Settings` never overrides it), so this isolation is load-bearing
+    here, not just defensive."""
+    _load_dashboard_snapshot.clear()
+    yield
+    _load_dashboard_snapshot.clear()
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 

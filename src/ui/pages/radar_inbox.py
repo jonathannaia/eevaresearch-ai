@@ -24,6 +24,7 @@ via `filing.source_name`, never blended into one undifferentiated
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import streamlit as st
@@ -327,15 +328,18 @@ def _worker_scan_status_snapshot(settings: Settings):
     return "ok", statuses
 
 
-def _render_worker_status(settings: Settings) -> None:
+def _render_worker_status(state: str, statuses: dict | None) -> None:
     """Renders the required states without ever showing an API key,
     DSN, EDGE_* environment-variable name, raw exception, stack trace,
     internal resolver command, or unresolved-issuer list — only provider
     display names, counts, and timestamps already established elsewhere
     in this codebase as safe to print (see ScanReport's own docstring).
-    Read-only and sanitized: calls only get_all_scan_statuses(), never a
-    write method, and never displays failure_code's own raw value."""
-    state, statuses = _worker_scan_status_snapshot(settings)
+    Read-only and sanitized by construction: this function itself makes
+    no repository call at all — `(state, statuses)` come from
+    `_worker_scan_status_snapshot()`, called once per
+    `_load_dashboard_snapshot()` refresh (Durable-State Phase 4M-2)
+    rather than once per render — never a write method, and never
+    displays failure_code's own raw value."""
     with st.expander("Continuous worker status only — not a candidate feed (read-only)"):
         st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
         if state == "not_configured":
@@ -417,11 +421,91 @@ def _dart_readiness_or_unavailable(settings: Settings) -> radar_service.RadarRea
         )
 
 
+@dataclass(frozen=True)
+class _DashboardSnapshot:
+    """Durable-State Phase 4M-2 — every piece of data `render()` reads
+    on a rerun, bundled so it can be fetched (and cached) as one unit
+    instead of once per field. Nothing here is a secret or a credential
+    — readiness booleans/placeholder strings, a display string, a
+    worker-status snapshot, and the already-public-shaped `RadarItem`
+    list `_build_items` already produces today."""
+
+    dart_readiness: radar_service.RadarReadiness
+    edgar_readiness: edgar_service.EdgarReadiness
+    edinet_readiness: edinet_service.EdinetReadiness
+    edinet_scope_line: str
+    worker_status_state: str
+    worker_status_statuses: dict | None
+    items: list[RadarItem]
+
+
+def _dashboard_config_fingerprint(settings: Settings) -> tuple[str, bool]:
+    """The only input that determines `_load_dashboard_snapshot`'s cache
+    identity below — deliberately never the `Settings` object itself,
+    a DSN, or any credential. Just enough to know when the underlying
+    data source has actually changed: the backend name, and whether a
+    state DB URL is configured *at all* (never its value). A real
+    settings change (e.g. `EDGE_DB_BACKEND` flipped from `"json"` to
+    `"postgres"`) changes this tuple and therefore invalidates the
+    cache; the DSN's own value changing while the backend name and
+    presence stay the same would not — an accepted tradeoff, since that
+    combination (same backend, same "URL present" bit, different actual
+    URL) only happens via a live redeploy, which restarts the process
+    and clears every in-memory cache anyway."""
+    return (settings.db_backend or "json").strip().lower(), bool(settings.state_db_url)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_dashboard_snapshot(cache_dir, config_fingerprint: tuple[str, bool], _settings: Settings) -> _DashboardSnapshot:
+    """Durable-State Phase 4M-2 — the one place `render()` reads
+    readiness/worker-status/candidate data from per rerun, cached for 60
+    seconds so a browser refresh reuses the already-fetched result
+    instead of re-opening every repository connection from scratch (see
+    design/DECISIONS.md's Phase 4M-2 entry for the full performance-
+    diagnosis rationale this responds to).
+
+    `_settings` is deliberately underscore-prefixed: Streamlit's own
+    convention for "pass this argument through, but never hash it into
+    the cache key" (https://docs.streamlit.io — cache_data: "any
+    parameter whose name begins with an underscore ... won't be
+    hashed"). A `Settings` object can carry a DSN and must never become
+    part of a cache key, a log line, or Streamlit's own cache-inspection
+    tooling. `config_fingerprint` (from `_dashboard_config_fingerprint`
+    above) is the only argument that actually determines cache
+    identity; `cache_dir` is a local path, never secret, and is included
+    so a JSON-backend cache_dir change is also respected.
+
+    Every call this function makes was already read-only before this
+    phase (see each callee's own docstring) — this function performs no
+    write, no scan, and no external HTTP call of its own; it only
+    changes *how often* those existing reads run, not *what* they do."""
+    dart_readiness = _dart_readiness_or_unavailable(_settings)
+    edgar_readiness = _edgar_readiness_or_unavailable(_settings)
+    edinet_readiness = edinet_service.edinet_readiness(_settings)
+    # Matches render()'s own pre-existing condition exactly (line below,
+    # in render() itself) — only computed when EDINET is ready, so an
+    # unconfigured/not-ready EDINET costs nothing extra here either.
+    edinet_scope_line = _edinet_scope_line(cache_dir, _settings) if edinet_readiness.ready else ""
+    worker_status_state, worker_status_statuses = _worker_scan_status_snapshot(_settings)
+    items = _build_items(cache_dir, _settings)
+    return _DashboardSnapshot(
+        dart_readiness=dart_readiness,
+        edgar_readiness=edgar_readiness,
+        edinet_readiness=edinet_readiness,
+        edinet_scope_line=edinet_scope_line,
+        worker_status_state=worker_status_state,
+        worker_status_statuses=worker_status_statuses,
+        items=items,
+    )
+
+
 def render() -> None:
     settings = get_settings()
-    dart_readiness = _dart_readiness_or_unavailable(settings)
-    edgar_readiness = _edgar_readiness_or_unavailable(settings)
-    edinet_readiness = edinet_service.edinet_readiness(settings)
+    config_fingerprint = _dashboard_config_fingerprint(settings)
+    snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
+    dart_readiness = snapshot.dart_readiness
+    edgar_readiness = snapshot.edgar_readiness
+    edinet_readiness = snapshot.edinet_readiness
 
     header_cols = st.columns([4, 2])
     with header_cols[0]:
@@ -437,7 +521,7 @@ def render() -> None:
     if edgar_readiness.ready:
         st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_EDGAR_SCOPE_LINE}</div>', unsafe_allow_html=True)
     if edinet_readiness.ready:
-        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_edinet_scope_line(settings.cache_dir, settings)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{snapshot.edinet_scope_line}</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="er-muted" style="margin-top:0.2rem;">Live primary filings · Korea DART + SEC EDGAR pilots '
         '(EDINET seam present, not yet a live pilot)</div>',
@@ -499,9 +583,18 @@ def render() -> None:
         _render_scan_result("edgar_last_scan_report", "edgar_last_scan_error")
         _render_scan_result("edinet_last_scan_report", "edinet_last_scan_error")
 
-    _render_worker_status(settings)
+    if dart_scan_clicked or edgar_scan_clicked or edinet_scan_clicked:
+        # A manual "Scan ... now" click just wrote fresh data (JSON/SQLite)
+        # this same rerun — invalidate the cached snapshot and re-fetch so
+        # the admin who clicked it sees their own scan's results
+        # immediately, exactly like before this phase's caching was added,
+        # rather than waiting up to the 60-second TTL.
+        _load_dashboard_snapshot.clear()
+        snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
 
-    items = _build_items(settings.cache_dir, settings)
+    _render_worker_status(snapshot.worker_status_state, snapshot.worker_status_statuses)
+
+    items = snapshot.items
 
     if not items:
         empty_state(
@@ -597,6 +690,10 @@ def render() -> None:
             edinet_service.process_candidate_now(settings, candidate_id)
         else:
             radar_service.process_candidate_now(settings, candidate_id)
+        # Invalidate the cached dashboard snapshot (Durable-State
+        # Phase 4M-2) so the st.rerun() below re-renders from this
+        # candidate's just-updated status, not a stale cached copy.
+        _load_dashboard_snapshot.clear()
         st.rerun()
 
     def _on_review_decision(candidate_id: str, status: CandidateStatus, note: str) -> CandidateSignal | None:
@@ -612,7 +709,14 @@ def render() -> None:
             filename = edinet_pipeline.CANDIDATE_STORE_FILENAME
         else:
             filename = candidate_store._CACHE_FILENAME
-        return review_actions.record_review_decision(settings.cache_dir, candidate_id, filename, status, note, settings=settings)
+        result = review_actions.record_review_decision(settings.cache_dir, candidate_id, filename, status, note, settings=settings)
+        # Invalidate the cached dashboard snapshot (Durable-State
+        # Phase 4M-2) so the caller's own st.rerun() (radar_card.py, on
+        # success) re-renders from this decision's just-persisted
+        # status, not a stale cached copy. Harmless to clear even when
+        # `result` is None (the decision failed and nothing changed).
+        _load_dashboard_snapshot.clear()
+        return result
 
     # Reuses the exact same readiness objects computed at the top of
     # render() for the Scan buttons — a candidate's "Prepare analyst
