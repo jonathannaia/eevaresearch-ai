@@ -1,5 +1,26 @@
 [
   {
+    "niche": "Humanoids",
+    "headline": "From teach and repeat to SelfPath AI: The next robotics leap",
+    "summary": "John Black, CTO at Boston Dynamics (Brian Corp), discusses building trust for robotics fleets and advances in AI-based autonomous robotics systems like SelfPath AI.",
+    "source_url": "https://www.therobotreport.com/from-teach-repeat-to-selfpath-ai-next-robotics-leap/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 23:25:06 +0000",
+    "retrieved_at": "2026-08-29T20:11:48+00:00",
+    "tickers": [
+      {
+        "ticker": "GOOG",
+        "company_name": "Alphabet Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article discusses advancements in robotics AI and fleet management, which is substantively related to robotics automation.",
+    "url_hash": "bc215ce58257cc98",
+    "id": "bc215ce58257cc98"
+  },
+  {
     "niche": "Space",
     "headline": "SpaceX test-fires Starship Super Heavy booster ahead of critical Flight 14 (video)",
     "summary": "SpaceX test-fired all 33 engines of its Super Heavy booster in preparation for Starship Flight 14, which will be the first orbital test flight of the vehicle.",
