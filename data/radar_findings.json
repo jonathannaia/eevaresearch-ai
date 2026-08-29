@@ -1,6 +1,110 @@
 [
   {
     "niche": "Space",
+    "headline": "President Trump gives Artemis II moon astronauts the Congressional Space Medal of Honor",
+    "summary": "NASA's Artemis II astronauts, who flew around the moon in April, received the Congressional Space Medal of Honor from President Trump.",
+    "source_url": "https://www.space.com/space-exploration/artemis/trump-gives-artemis-ii-moon-astronauts-congressional-space-medal-of-honor",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 12:00:00 +0000",
+    "retrieved_at": "2026-08-29T04:52:21+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses the Artemis II lunar mission, directly relevant to space exploration activities.",
+    "url_hash": "25a45759c7feff45",
+    "id": "25a45759c7feff45"
+  },
+  {
+    "niche": "Space",
+    "headline": "SpaceX Falcon Heavy rocket launching NASA's Roman Space Telescope on Aug. 30: How to watch it live",
+    "summary": "NASA's Nancy Grace Roman Space Telescope is scheduled to launch atop a SpaceX Falcon Heavy rocket on August 30.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-falcon-heavy-rocket-launching-nasas-roman-space-telescope-on-aug-30-how-to-watch-it-live",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 15:00:00 +0000",
+    "retrieved_at": "2026-08-29T04:52:17+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "SpaceX (Tesla)",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "GOOGL",
+        "company_name": "SpaceX (Alphabet parent company is mentioned if private, but SpaceX is private - omitting actual ticker)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX is launching NASA's Roman Space Telescope on a Falcon Heavy rocket, directly involving space launch activities.",
+    "url_hash": "9a2791d055d67950",
+    "id": "9a2791d055d67950"
+  },
+  {
+    "niche": "Space",
+    "headline": "Relive private Chinese rocket's explosive 1st landing attempt (video)",
+    "summary": "LandSpace attempted to land its Zhuque-3 rocket, with newly released video footage documenting the landing attempt.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/relive-private-chinese-rockets-explosive-1st-landing-attempt-video",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 17:00:00 +0000",
+    "retrieved_at": "2026-08-29T04:52:15+00:00",
+    "tickers": [
+      {
+        "ticker": "LAND",
+        "company_name": "LandSpace",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article covers a private Chinese rocket company's landing attempt, directly relevant to space launch scope.",
+    "url_hash": "b6da6008b83c60e6",
+    "id": "b6da6008b83c60e6"
+  },
+  {
+    "niche": "Space",
+    "headline": "What time will SpaceX launch NASA's Roman Space Telscope on Aug. 30? (Full mission timeline)",
+    "summary": "SpaceX is scheduled to launch NASA's Nancy Grace Roman Space Telescope aboard a Falcon Heavy rocket on August 30.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-roman-space-telescope-falcon-heavy-launch-what-time",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 22:31:45 +0000",
+    "retrieved_at": "2026-08-29T04:52:13+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "SpaceX (Tesla)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article covers SpaceX's planned launch of a major space telescope, directly concerning space launch operations.",
+    "url_hash": "974fec5b40ac8bef",
+    "id": "974fec5b40ac8bef"
+  },
+  {
+    "niche": "Space",
+    "headline": "Rocket Report: Europe splashes some cash on launch startups; Pallas-1 nears debut",
+    "summary": "SpaceX will conduct Starlink missions from Florida using Starship going forward.",
+    "source_url": "https://arstechnica.com/space/2026/08/rocket-report-europe-splashes-some-cash-on-launch-startups-pallas-1-nears-debut/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 28 Aug 2026 11:00:39 +0000",
+    "retrieved_at": "2026-08-29T04:52:11+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Discusses operational launch activities and Starlink missions using Starship, directly relevant to space launch scope.",
+    "url_hash": "93fcee45c6de2b3f",
+    "id": "93fcee45c6de2b3f"
+  },
+  {
+    "niche": "Space",
     "headline": "President Honors NASA’s Artemis II Crew with Highest US Space Award",
     "summary": "President Trump awarded the Congressional Space Medal of Honor to four astronauts—NASA's Reid Wiseman, Victor Glover, and Christina Koch, plus Canadian Space Agency astronaut Jeremy Hansen—for their service on the Artemis II mission during a ceremony at NASA's Johnson Space Center.",
     "source_url": "https://www.nasa.gov/news-release/president-honors-nasas-artemis-ii-crew-with-highest-us-space-award/",
