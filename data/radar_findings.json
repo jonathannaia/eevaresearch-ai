@@ -1,5 +1,26 @@
 [
   {
+    "niche": "Space",
+    "headline": "NASA's Roman Space Telescope is ready for launch aboard SpaceX Falcon Heavy rocket",
+    "summary": "NASA's Nancy Grace Roman Space Telescope is scheduled to launch aboard a SpaceX Falcon Heavy rocket on August 30 to conduct astronomical observations.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/nasas-roman-space-telescope-is-ready-for-launch-aboard-spacex-falcon-heavy-rocket",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 29 Aug 2026 22:44:18 +0000",
+    "retrieved_at": "2026-08-29T23:43:58+00:00",
+    "tickers": [
+      {
+        "ticker": "SPACEX",
+        "company_name": "SpaceX",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns space launch infrastructure and a scheduled mission.",
+    "url_hash": "478a619be0fc6c8c",
+    "id": "478a619be0fc6c8c"
+  },
+  {
     "niche": "Humanoids",
     "headline": "From teach and repeat to SelfPath AI: The next robotics leap",
     "summary": "John Black, CTO at Boston Dynamics (Brian Corp), discusses building trust for robotics fleets and advances in AI-based autonomous robotics systems like SelfPath AI.",
