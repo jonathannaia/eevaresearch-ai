@@ -1,6 +1,62 @@
 [
   {
     "niche": "Space",
+    "headline": "SpaceX test-fires Starship Super Heavy booster ahead of critical Flight 14 (video)",
+    "summary": "SpaceX test-fired all 33 engines of its Super Heavy booster in preparation for Starship Flight 14, which will be the first orbital test flight of the vehicle.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-test-fires-starship-super-heavy-booster-ahead-of-key-test-flight",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 29 Aug 2026 14:00:00 +0000",
+    "retrieved_at": "2026-08-29T16:19:55+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX Starship test activity directly within Space scope of launch vehicles and spacecraft development.",
+    "url_hash": "ad4677b234fe91cb",
+    "id": "ad4677b234fe91cb"
+  },
+  {
+    "niche": "Space",
+    "headline": "This Week In Space podcast: Episode 225 — Get a Grip!",
+    "summary": "This Week In Space podcast features a discussion with Adam Kall of KMI about their work on the ISS related to orbital debris mitigation.",
+    "source_url": "https://www.space.com/entertainment/space-movies-shows/this-week-in-space-podcast-episode-225-get-a-grip",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 29 Aug 2026 15:03:54 +0000",
+    "retrieved_at": "2026-08-29T16:19:51+00:00",
+    "tickers": [],
+    "relevance_reason": "Episode discusses orbital debris mitigation work on the ISS, which is substantively relevant to space infrastructure.",
+    "url_hash": "23429ee17ed177a5",
+    "id": "23429ee17ed177a5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia’s AI advantage is moving beyond the GPU",
+    "summary": "Nvidia is advancing its data center AI systems beyond GPU processing power through improved efficiency in network traffic control.",
+    "source_url": "https://techcrunch.com/2026/08/29/nvidias-ai-advantage-is-moving-beyond-the-gpu/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 29 Aug 2026 13:00:00 +0000",
+    "retrieved_at": "2026-08-29T16:19:38+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Discusses advances in Nvidia's AI infrastructure systems architecture for data centers, which falls within AI Buildout scope.",
+    "url_hash": "a85aa69b831be69c",
+    "id": "a85aa69b831be69c"
+  },
+  {
+    "niche": "Space",
     "headline": "President Trump gives Artemis II moon astronauts the Congressional Space Medal of Honor",
     "summary": "NASA's Artemis II astronauts, who flew around the moon in April, received the Congressional Space Medal of Honor from President Trump.",
     "source_url": "https://www.space.com/space-exploration/artemis/trump-gives-artemis-ii-moon-astronauts-congressional-space-medal-of-honor",
