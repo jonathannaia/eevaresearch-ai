@@ -1,6 +1,41 @@
 [
   {
     "niche": "Space",
+    "headline": "Trump calls in to NASA press conference to celebrate launch of Roman Space Telescope, a mission he tried to cancel",
+    "summary": "President Trump called into a NASA press conference on August 30 to congratulate the team on the successful launch of the Nancy Grace Roman Space Telescope.",
+    "source_url": "https://www.space.com/space-exploration/trump-calls-in-to-nasa-press-conference-to-celebrate-launch-of-roman-space-telescope-a-mission-he-tried-to-cancel",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 19:00:00 +0000",
+    "retrieved_at": "2026-08-30T22:15:18+00:00",
+    "tickers": [],
+    "relevance_reason": "directly about space launch mission and spacecraft deployment",
+    "url_hash": "c893e7f998d76a9e",
+    "id": "c893e7f998d76a9e"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Musk’s faster path to more gas turbines comes with pollution problem",
+    "summary": "Elon Musk's SpaceX is establishing a foundry to manufacture turbine blades in-house, aiming to deploy gas power 18 months faster than competitors; however, the gas turbine approach faces environmental and health-related legal challenges.",
+    "source_url": "https://techcrunch.com/2026/08/30/musks-faster-path-to-more-gas-turbines-comes-with-pollution-problem/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 16:54:25 +0000",
+    "retrieved_at": "2026-08-30T22:15:12+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX's infrastructure buildout to accelerate gas turbine deployment for power generation, which directly supports AI data center energy needs.",
+    "url_hash": "a1c125ab1c9f5282",
+    "id": "a1c125ab1c9f5282"
+  },
+  {
+    "niche": "Space",
     "headline": "'What a glorious dawn launch': Why the Roman Space Telescope's picture-perfect liftoff beyond Earth is such a big deal",
     "summary": "The Roman Space Telescope achieved a successful launch into space. The article highlights the significance of this liftoff as a major space mission milestone.",
     "source_url": "https://www.space.com/astronomy/what-a-glorious-dawn-launch-why-the-roman-space-telescopes-picture-perfect-liftoff-beyond-earth-is-such-a-big-deal",
