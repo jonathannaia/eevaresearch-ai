@@ -4,14 +4,14 @@ seam (no provider call — see module docstring). Fully mocked
 EdinetClient, zero network, no Subscription-Key required."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, retry_policy
+from src.data_access.dart import candidate_store
 from src.data_access.edinet import edinet_pipeline
-from src.data_access.edinet.errors import EdinetForbiddenError, EdinetNotFoundError
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, TranslationState
+from src.data_access.edinet.errors import EdinetNotFoundError
+from src.models.models import CandidateStatus, ExtractionState, TranslationState
 
 _TEST_MAP = {"010:030:120": "fictional_category_alpha"}  # fictional key/category, not real EDINET data
 
@@ -360,138 +360,3 @@ def test_status_gate_upstream_still_prevents_non_default_status_filings_from_eve
     # be called against already had default status at persist time.
     from src.data_access.edinet import scan_service
     assert not scan_service._status_fields_are_default({"withdrawalStatus": "1", "docInfoEditStatus": "0", "disclosureStatus": "0"})
-
-
-# --- Automatic retry of stale RETRIEVAL_FAILED/PARSE_FAILED candidates ---
-# Mirrors tests/test_radar_pipeline.py's DART suite exactly — see that
-# file's own comment for the 180-minute (3 x 60 x 1) derivation.
-
-_SCAN_INTERVAL = 60
-_FIRST_BACKOFF_MINUTES = retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * _SCAN_INTERVAL
-
-
-def _failed_candidate(doc_id: str, minutes_ago: int, status: CandidateStatus = CandidateStatus.RETRIEVAL_FAILED, used: int = 1) -> CandidateSignal:
-    now = datetime.now(timezone.utc)
-    queued_ats = [now - timedelta(minutes=minutes_ago) - timedelta(seconds=i) for i in range(used)]
-    history = [StateTransition(status=CandidateStatus.QUEUED_FOR_PROCESSING, at=at.isoformat()) for at in queued_ats]
-    history.append(StateTransition(status=status, at=queued_ats[0].isoformat(), detail="EDINET fetch failure"))
-    filing = FilingEvent(
-        rcept_no=doc_id, corp_code="E00001", corp_name="Acme Test Co", stock_code="1234",
-        report_nm="Test Filing", rcept_dt=datetime.now(timezone.utc).date().isoformat(), flr_nm="Test Filer",
-        pblntf_ty="030", pblntf_detail_ty="120", ordinance_code="010", source_name="EDINET",
-    )
-    return CandidateSignal(
-        id=f"edinet-cand-{doc_id}", filing=filing, matched_rules=["fictional_category_alpha:010:030:120"],
-        confidence="Moderate", status=status, state_history=history,
-    )
-
-
-def test_stale_retrieval_failed_candidate_is_automatically_retried(tmp_path):
-    candidate = _failed_candidate("S100STALE", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({})
-
-    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_called_once()
-    updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)["edinet-cand-S100STALE"]
-    assert updated.extraction_state == ExtractionState.EXTRACTED
-    assert updated.status != CandidateStatus.RETRIEVAL_FAILED
-
-
-def test_fresh_retrieval_failed_candidate_is_not_automatically_retried(tmp_path):
-    candidate = _failed_candidate("S100FRESH", minutes_ago=_FIRST_BACKOFF_MINUTES - 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({})
-
-    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_not_called()
-    updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)["edinet-cand-S100FRESH"]
-    assert len(updated.state_history) == len(candidate.state_history)
-
-
-def test_candidate_at_max_retry_attempts_is_never_automatically_retried(tmp_path):
-    candidate = _failed_candidate(
-        "S100MAXED", minutes_ago=_FIRST_BACKOFF_MINUTES * retry_policy.MAX_RETRY_ATTEMPTS + 1000,
-        used=retry_policy.MAX_RETRY_ATTEMPTS,
-    )
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({})
-
-    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_not_called()
-
-
-def test_automatic_retry_cap_leaves_excess_stale_failures_completely_untouched(tmp_path):
-    candidates = [_failed_candidate(f"S100CAP{i}", minutes_ago=_FIRST_BACKOFF_MINUTES + 1) for i in (1, 2, 3)]
-    candidate_store.upsert_new_candidates(tmp_path, candidates, edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({})
-
-    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    assert client.fetch_document.call_count == retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE
-    store = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    untouched = [c for c in store.values() if len(c.state_history) == 2]
-    assert len(untouched) == 1
-    assert untouched[0].status == CandidateStatus.RETRIEVAL_FAILED
-
-
-def test_automatic_retry_budget_is_independent_of_new_candidate_processing_budget(tmp_path):
-    stale = _failed_candidate("S100STALE", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [stale], edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client(
-        {_today(): _envelope([_result("S100NEW", "E00001", "1234")])},
-        {"S100NEW": b"<html><body><p>New disclosure content.</p></body></html>"},
-    )
-    _run_pipeline_with_map(client, [_ACME], tmp_path)  # detects+persists S100NEW's candidate only
-
-    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL, max_candidates_to_process=1)
-
-    # The stale failure retry runs alongside whatever this tick's own
-    # new/deferred selection does, without changing that selection's own
-    # counts.
-    updated_stale = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)["edinet-cand-S100STALE"]
-    assert updated_stale.extraction_state == ExtractionState.EXTRACTED
-    assert report.candidates_deferred <= 1
-
-
-def test_cached_successful_extraction_is_never_automatically_refetched_due_to_age(tmp_path):
-    client = _make_client(
-        {_today(): _envelope([_result("S100OLD", "E00001", "1234")])},
-        {"S100OLD": b"<html><body><p>Disclosure content.</p></body></html>"},
-    )
-    _run_pipeline_with_map(client, [_ACME], tmp_path)
-    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
-    edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
-    assert client.fetch_document.call_count == 1
-
-    store = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)
-    candidate = store[candidate_id]
-    ancient = datetime.now(timezone.utc) - timedelta(days=30)
-    candidate.state_history = [StateTransition(status=t.status, at=ancient.isoformat(), detail=t.detail) for t in candidate.state_history]
-    candidate_store.update_candidate(tmp_path, candidate, edinet_pipeline.CANDIDATE_STORE_FILENAME)
-
-    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_called_once()
-
-
-def test_manual_process_single_candidate_now_actually_refetches_a_stale_failure(tmp_path):
-    client = _make_client(
-        {_today(): _envelope([_result("S100RETRY2", "E00001", "1234")])},
-        {"S100RETRY2": EdinetForbiddenError(403, "forbidden")},
-    )
-    _run_pipeline_with_map(client, [_ACME], tmp_path)
-    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
-    edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
-    assert client.fetch_document.call_count == 1
-    stored = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate_id]
-    assert stored.status == CandidateStatus.RETRIEVAL_FAILED
-
-    client.fetch_document.side_effect = lambda doc_id, type_: b"<html><body><p>Now healthy.</p></body></html>"
-    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
-
-    assert result.extraction_state == ExtractionState.EXTRACTED
-    assert client.fetch_document.call_count == 2

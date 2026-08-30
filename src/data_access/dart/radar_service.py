@@ -109,7 +109,6 @@ def run_scan(
         _client(settings), _translation_provider(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
-        scan_interval_minutes=settings.radar_scan_interval_minutes,
     )
 
 

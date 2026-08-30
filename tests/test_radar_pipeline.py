@@ -6,15 +6,14 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, document_service, radar_pipeline, retry_policy
+from src.data_access.dart import candidate_store, document_service, radar_pipeline
 from src.data_access.dart.client import DisclosureRecord
 from src.data_access.dart.errors import DartApiError, DartTimeoutError
 from src.data_access.translation.interfaces import TranslationApiError
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, TranslationState
+from src.models.models import CandidateStatus, ExtractionState, TranslationState
 
 _SAMSUNG = TrackedCompany(
     name="Samsung Electronics", exchange="KRX", krx_code="005930", source="OpenDART / DART",
@@ -505,170 +504,3 @@ def test_non_ownership_candidates_are_unaffected_by_the_materiality_gate(tmp_pat
     for candidate in candidates.values():
         assert candidate.status == CandidateStatus.NEEDS_REVIEW
         assert candidate.materiality_assessment == "Not assessed"
-
-
-# --- Automatic retry of stale RETRIEVAL_FAILED/PARSE_FAILED candidates ---
-# scan_interval_minutes=60 -> AUTOMATIC_RETRY_BACKOFF_MULTIPLIER(3) x 60 x
-# attempts_used(1) = 180 minutes required before a first automatic retry.
-
-_SCAN_INTERVAL = 60
-_FIRST_BACKOFF_MINUTES = retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * _SCAN_INTERVAL
-
-
-def _failed_candidate(rcept_no: str, minutes_ago: int, status: CandidateStatus = CandidateStatus.RETRIEVAL_FAILED, used: int = 1) -> CandidateSignal:
-    now = datetime.now(timezone.utc)
-    queued_ats = [now - timedelta(minutes=minutes_ago) - timedelta(seconds=i) for i in range(used)]
-    history = [StateTransition(status=CandidateStatus.QUEUED_FOR_PROCESSING, at=at.isoformat()) for at in queued_ats]
-    history.append(StateTransition(status=status, at=queued_ats[0].isoformat(), detail="DART status 014 rate-limit-shaped failure"))
-    filing = FilingEvent(
-        rcept_no=rcept_no, corp_code="00126380", corp_name="삼성전자", stock_code="005930",
-        report_nm="신규시설투자등", rcept_dt="20260810", flr_nm="삼성전자",
-    )
-    return CandidateSignal(
-        id=f"cand-{rcept_no}", filing=filing,
-        matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
-        confidence="Moderate", status=status, state_history=history,
-    )
-
-
-def test_stale_retrieval_failed_candidate_is_automatically_retried(tmp_path):
-    candidate = _failed_candidate("20260810000001", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate])
-    client = _make_client({"00126380": {1: ([], 0)}})  # no new filings this tick
-    provider = _FakeTranslationProvider(result="translated")
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document_zip.assert_called_once()
-    updated = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
-    assert updated.status == CandidateStatus.NEEDS_REVIEW  # the retry succeeded
-
-
-def test_fresh_retrieval_failed_candidate_is_not_automatically_retried(tmp_path):
-    candidate = _failed_candidate("20260810000001", minutes_ago=_FIRST_BACKOFF_MINUTES - 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate])
-    client = _make_client({"00126380": {1: ([], 0)}})
-    provider = _FakeTranslationProvider()
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document_zip.assert_not_called()
-    updated = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
-    assert updated.status == CandidateStatus.RETRIEVAL_FAILED
-    assert len(updated.state_history) == len(candidate.state_history)  # completely untouched
-
-
-def test_stale_parse_failed_candidate_is_also_automatically_retried(tmp_path):
-    candidate = _failed_candidate("20260810000001", minutes_ago=_FIRST_BACKOFF_MINUTES + 1, status=CandidateStatus.PARSE_FAILED)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate])
-    client = _make_client({"00126380": {1: ([], 0)}})
-    provider = _FakeTranslationProvider()
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document_zip.assert_called_once()
-
-
-def test_candidate_at_max_retry_attempts_is_never_automatically_retried(tmp_path):
-    candidate = _failed_candidate(
-        "20260810000001", minutes_ago=_FIRST_BACKOFF_MINUTES * retry_policy.MAX_RETRY_ATTEMPTS + 1000,
-        used=retry_policy.MAX_RETRY_ATTEMPTS,
-    )
-    candidate_store.upsert_new_candidates(tmp_path, [candidate])
-    client = _make_client({"00126380": {1: ([], 0)}})
-    provider = _FakeTranslationProvider()
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document_zip.assert_not_called()
-
-
-def test_automatic_retry_cap_leaves_excess_stale_failures_completely_untouched(tmp_path):
-    candidates = [_failed_candidate(f"2026081000000{i}", minutes_ago=_FIRST_BACKOFF_MINUTES + 1) for i in (1, 2, 3)]
-    candidate_store.upsert_new_candidates(tmp_path, candidates)
-    client = _make_client({"00126380": {1: ([], 0)}})
-    provider = _FakeTranslationProvider()
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    assert client.fetch_document_zip.call_count == retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE
-    store = candidate_store.load_candidates(tmp_path)
-    # len(state_history) == 2 (QUEUED_FOR_PROCESSING + RETRIEVAL_FAILED)
-    # means this candidate was never picked up this tick at all.
-    untouched = [c for c in store.values() if len(c.state_history) == 2]
-    assert len(untouched) == 1
-    # The untouched candidate must never be relabeled PROCESSING_DEFERRED —
-    # it stays exactly RETRIEVAL_FAILED, byte-for-byte unchanged.
-    assert untouched[0].status == CandidateStatus.RETRIEVAL_FAILED
-
-
-def test_automatic_retry_budget_is_independent_of_new_candidate_processing_budget(tmp_path):
-    stale = _failed_candidate("20260810000099", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [stale])
-    client = _make_client({"00126380": {1: ([_record("20260810000001", "신규시설투자등")], 1)}})
-    provider = _FakeTranslationProvider()
-
-    report = radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL, max_candidates_to_process=1)
-
-    # Unaffected by the stale failure also being retried this same tick.
-    assert report.candidates_detected == 1
-    assert report.candidates_processed == 1
-    assert report.candidates_deferred == 0
-    updated_stale = candidate_store.load_candidates(tmp_path)["cand-20260810000099"]
-    assert updated_stale.status == CandidateStatus.NEEDS_REVIEW  # still got retried, just off-budget
-
-
-def test_no_busy_loop_at_most_one_fetch_per_eligible_stale_candidate_per_tick(tmp_path):
-    candidate = _failed_candidate("20260810000001", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate])
-    client = _make_client({"00126380": {1: ([], 0)}})
-    provider = _FakeTranslationProvider()
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    # Second tick: the candidate already recovered to NEEDS_REVIEW, so it
-    # is no longer RETRIEVAL_FAILED/PARSE_FAILED and is never touched again.
-    client.fetch_document_zip.assert_called_once()
-
-
-def test_cached_successful_extraction_is_never_automatically_refetched_due_to_age(tmp_path):
-    client = _make_client({"00126380": {1: ([_record("20260810000001", "신규시설투자등")], 1)}})
-    provider = _FakeTranslationProvider()
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
-    assert client.fetch_document_zip.call_count == 1
-
-    # Manually age the (real) EXTRACTED candidate's own last transition
-    # far past every automatic-retry backoff window, then run more ticks.
-    store = candidate_store.load_candidates(tmp_path)
-    candidate = next(iter(store.values()))
-    ancient = datetime.now(timezone.utc) - timedelta(days=30)
-    candidate.state_history = [StateTransition(status=t.status, at=ancient.isoformat(), detail=t.detail) for t in candidate.state_history]
-    candidate_store.update_candidate(tmp_path, candidate)
-
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document_zip.assert_called_once()  # never called again
-
-
-def test_manual_process_single_candidate_now_actually_refetches_a_stale_failure(tmp_path):
-    # Reproduces the pre-fix bug directly: get_or_fetch_excerpt used to
-    # always serve a cached failure regardless of caller intent, so the
-    # manual "Retry processing" action never actually retried anything.
-    client = _make_client(
-        {"00126380": {1: ([_record("20260810000001", "신규시설투자등")], 1)}},
-        document_by_rcept={"20260810000001": DartApiError("900", "Undefined error")},
-    )
-    provider = _FakeTranslationProvider(result="translated")
-    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
-    assert client.fetch_document_zip.call_count == 1
-    stored = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
-    assert stored.status == CandidateStatus.RETRIEVAL_FAILED
-
-    # DART is now healthy — simulate a human clicking "Retry processing".
-    client.fetch_document_zip.side_effect = lambda rcept_no: _valid_document_zip()
-    result = radar_pipeline.process_single_candidate(client, provider, "cand-20260810000001", tmp_path)
-
-    assert result.status == CandidateStatus.NEEDS_REVIEW
-    assert result.extraction_state == ExtractionState.EXTRACTED
-    assert client.fetch_document_zip.call_count == 2  # an actual second network attempt happened

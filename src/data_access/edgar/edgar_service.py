@@ -101,7 +101,6 @@ def run_scan(
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
         auto_publish_enabled=settings.edgar_auto_publish_enabled,
-        scan_interval_minutes=settings.radar_scan_interval_minutes,
     )
 
 

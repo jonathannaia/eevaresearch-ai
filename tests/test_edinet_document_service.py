@@ -178,38 +178,6 @@ def test_pdf_fetch_extracts_and_caches_text_only(tmp_path):
     assert "Real evidence sentence" in result.excerpt_original
 
 
-def test_force_refresh_false_still_serves_cached_failure(tmp_path):
-    client = _client(EdinetNotFoundError(404, "not found"))
-    document_service.get_or_fetch_excerpt(client, "S100NOTFOUND", tmp_path)
-
-    result = document_service.get_or_fetch_excerpt(client, "S100NOTFOUND", tmp_path, force_refresh=False)
-
-    assert result.from_cache is True
-    assert client.fetch_document.call_count == 1
-
-
-def test_force_refresh_true_bypasses_a_cached_retrieval_failure(tmp_path):
-    client = MagicMock()
-    client.fetch_document.side_effect = [EdinetNotFoundError(404, "not found"), b"<html><body><p>ok content</p></body></html>"]
-    document_service.get_or_fetch_excerpt(client, "S100NOTFOUND", tmp_path)
-
-    result = document_service.get_or_fetch_excerpt(client, "S100NOTFOUND", tmp_path, force_refresh=True)
-
-    assert result.from_cache is False
-    assert result.state == ExtractionState.EXTRACTED
-    assert client.fetch_document.call_count == 2
-
-
-def test_force_refresh_true_still_never_bypasses_a_cached_success(tmp_path):
-    client = _client(b"<html><body><p>Disclosure summary text.</p></body></html>")
-    document_service.get_or_fetch_excerpt(client, "S100TEST1", tmp_path)
-
-    result = document_service.get_or_fetch_excerpt(client, "S100TEST1", tmp_path, force_refresh=True)
-
-    assert result.from_cache is True
-    assert client.fetch_document.call_count == 1
-
-
 def test_pdf_raw_bytes_are_never_written_to_the_cache_file(tmp_path):
     pdf_bytes = _minimal_pdf("Should never appear as raw bytes on disk.")
     client = _client(pdf_bytes)

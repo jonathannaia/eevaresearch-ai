@@ -74,25 +74,19 @@ def _fetch_with_retry(client: EdgarClient, cik: str, accession_no: str, filename
 
 def get_or_fetch_excerpt(
     client: EdgarClient, cik: str, accession_no: str, filename: str, cache_dir: Path,
-    expected_items: tuple[str, ...] = (), force_refresh: bool = False,
+    expected_items: tuple[str, ...] = (),
 ) -> DocumentFetchResult:
     """For ONE explicitly selected filing only — never a loop over many
     accession numbers. Checks the on-disk cache first, including a
     previously-failed result, so a known-unparseable document isn't
-    retried on every page view — unless `force_refresh` is set
-    (edgar_pipeline.py sets it only when the candidate's own status
-    entering process_candidate() was already RETRIEVAL_FAILED/
-    PARSE_FAILED, i.e. this call IS a retry). A cached EXTRACTED result is
-    never bypassed regardless of `force_refresh` — a successful
-    extraction is never re-fetched due to age.
+    retried on every page view.
 
     `expected_items` is additive/optional — passed through to
     extract_excerpt unchanged (see that function's docstring for the
     item-anchored excerpt this enables for 8-K candidates)."""
     cache = _load_cache(cache_dir)
     cached = cache.get(accession_no)
-    cached_is_success = cached is not None and cached["state"] == ExtractionState.EXTRACTED.value
-    if cached is not None and (cached_is_success or not force_refresh):
+    if cached is not None:
         return DocumentFetchResult(
             accession_no=accession_no, state=ExtractionState(cached["state"]), excerpt_original=cached.get("excerpt_original"),
             detail=cached.get("detail", ""), retrieved_at=cached["retrieved_at"], from_cache=True,

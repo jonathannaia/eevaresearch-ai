@@ -4,14 +4,13 @@ extraction 8-K refinement. Fully mocked EdgarClient, zero network, no
 User-Agent required."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, retry_policy
+from src.data_access.dart import candidate_store
 from src.data_access.edgar import edgar_pipeline
-from src.data_access.edgar.errors import EdgarApiError
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, TranslationState
+from src.models.models import CandidateStatus, ExtractionState, TranslationState
 
 _NVDA = TrackedCompany(
     name="NVIDIA", exchange="NASDAQ", krx_code="NVDA", source="SEC EDGAR",
@@ -394,132 +393,3 @@ def test_complete_424b5_is_published_when_auto_publish_is_enabled(tmp_path):
         transition.detail.startswith("Shadow policy: PUBLISH")
         for transition in candidate.state_history
     )
-
-
-# --- Automatic retry of stale RETRIEVAL_FAILED/PARSE_FAILED candidates ---
-# Mirrors tests/test_radar_pipeline.py's DART suite exactly — see that
-# file's own comment for the 180-minute (3 x 60 x 1) derivation.
-
-_SCAN_INTERVAL = 60
-_FIRST_BACKOFF_MINUTES = retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * _SCAN_INTERVAL
-
-
-def _failed_candidate(accession_no: str, minutes_ago: int, status: CandidateStatus = CandidateStatus.RETRIEVAL_FAILED, used: int = 1) -> CandidateSignal:
-    now = datetime.now(timezone.utc)
-    queued_ats = [now - timedelta(minutes=minutes_ago) - timedelta(seconds=i) for i in range(used)]
-    history = [StateTransition(status=CandidateStatus.QUEUED_FOR_PROCESSING, at=at.isoformat()) for at in queued_ats]
-    history.append(StateTransition(status=status, at=queued_ats[0].isoformat(), detail="EDGAR fetch failure"))
-    filing = FilingEvent(
-        rcept_no=accession_no, corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
-        report_nm="Quarterly report", rcept_dt=datetime.now(timezone.utc).date().isoformat(), flr_nm="NVIDIA",
-        pblntf_ty="10-Q", source_name="SEC EDGAR", primary_document="doc.htm",
-    )
-    return CandidateSignal(
-        id=f"edgar-cand-{accession_no}", filing=filing, matched_rules=["earnings_or_results:10-Q"],
-        confidence="Moderate", status=status, state_history=history,
-    )
-
-
-def test_stale_retrieval_failed_candidate_is_automatically_retried(tmp_path):
-    candidate = _failed_candidate("0001045810-26-000099", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({"0001045810": {"filings": {"recent": _recent([])}}})
-
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_called_once()
-    updated = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)["edgar-cand-0001045810-26-000099"]
-    assert updated.extraction_state == ExtractionState.EXTRACTED
-    assert updated.status != CandidateStatus.RETRIEVAL_FAILED
-
-
-def test_fresh_retrieval_failed_candidate_is_not_automatically_retried(tmp_path):
-    candidate = _failed_candidate("0001045810-26-000099", minutes_ago=_FIRST_BACKOFF_MINUTES - 1)
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({"0001045810": {"filings": {"recent": _recent([])}}})
-
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_not_called()
-    updated = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)["edgar-cand-0001045810-26-000099"]
-    assert len(updated.state_history) == len(candidate.state_history)
-
-
-def test_candidate_at_max_retry_attempts_is_never_automatically_retried(tmp_path):
-    candidate = _failed_candidate(
-        "0001045810-26-000099", minutes_ago=_FIRST_BACKOFF_MINUTES * retry_policy.MAX_RETRY_ATTEMPTS + 1000,
-        used=retry_policy.MAX_RETRY_ATTEMPTS,
-    )
-    candidate_store.upsert_new_candidates(tmp_path, [candidate], edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({"0001045810": {"filings": {"recent": _recent([])}}})
-
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_not_called()
-
-
-def test_automatic_retry_cap_leaves_excess_stale_failures_completely_untouched(tmp_path):
-    candidates = [_failed_candidate(f"0001045810-26-00009{i}", minutes_ago=_FIRST_BACKOFF_MINUTES + 1) for i in (1, 2, 3)]
-    candidate_store.upsert_new_candidates(tmp_path, candidates, edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client({"0001045810": {"filings": {"recent": _recent([])}}})
-
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    assert client.fetch_document.call_count == retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE
-    store = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    untouched = [c for c in store.values() if len(c.state_history) == 2]
-    assert len(untouched) == 1
-    assert untouched[0].status == CandidateStatus.RETRIEVAL_FAILED
-
-
-def test_automatic_retry_budget_is_independent_of_new_candidate_processing_budget(tmp_path):
-    stale = _failed_candidate("0001045810-26-000099", minutes_ago=_FIRST_BACKOFF_MINUTES + 1)
-    candidate_store.upsert_new_candidates(tmp_path, [stale], edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    client = _make_client(
-        {"0001045810": {"filings": {"recent": _recent(["0001045810-26-000001"], forms=["10-Q"])}}},
-        {"0001045810-26-000001": b"<html><body><p>Quarterly content.</p></body></html>"},
-    )
-
-    report = edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL, max_candidates_to_process=1)
-
-    assert report.candidates_detected == 1
-    assert report.candidates_processed == 1
-    assert report.candidates_deferred == 0
-    updated_stale = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)["edgar-cand-0001045810-26-000099"]
-    assert updated_stale.extraction_state == ExtractionState.EXTRACTED
-
-
-def test_cached_successful_extraction_is_never_automatically_refetched_due_to_age(tmp_path):
-    client = _make_client(
-        {"0001045810": {"filings": {"recent": _recent(["0001045810-26-000001"], forms=["10-Q"])}}},
-        {"0001045810-26-000001": b"<html><body><p>Quarterly content.</p></body></html>"},
-    )
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path)
-    assert client.fetch_document.call_count == 1
-
-    store = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)
-    candidate = next(iter(store.values()))
-    ancient = datetime.now(timezone.utc) - timedelta(days=30)
-    candidate.state_history = [StateTransition(status=t.status, at=ancient.isoformat(), detail=t.detail) for t in candidate.state_history]
-    candidate_store.update_candidate(tmp_path, candidate, edgar_pipeline.CANDIDATE_STORE_FILENAME)
-
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, scan_interval_minutes=_SCAN_INTERVAL)
-
-    client.fetch_document.assert_called_once()
-
-
-def test_manual_process_single_candidate_now_actually_refetches_a_stale_failure(tmp_path):
-    client = _make_client(
-        {"0001045810": {"filings": {"recent": _recent(["0001045810-26-000001"], forms=["10-Q"])}}},
-        {"0001045810-26-000001": EdgarApiError(500, "server error")},
-    )
-    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path)
-    assert client.fetch_document.call_count == 1
-    stored = candidate_store.load_candidates(tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME)["edgar-cand-0001045810-26-000001"]
-    assert stored.status == CandidateStatus.RETRIEVAL_FAILED
-
-    client.fetch_document.side_effect = lambda cik, accession_no, filename: b"<html><body><p>Now healthy.</p></body></html>"
-    result = edgar_pipeline.process_single_candidate(client, "edgar-cand-0001045810-26-000001", tmp_path)
-
-    assert result.extraction_state == ExtractionState.EXTRACTED
-    assert client.fetch_document.call_count == 2

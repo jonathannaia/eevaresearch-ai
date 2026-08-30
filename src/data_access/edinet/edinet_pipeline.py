@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, retry_policy
+from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edinet import document_service, edinet_rules, scan_service
 from src.data_access.edinet.client import EdinetClient
@@ -99,13 +99,12 @@ def process_candidate(
     explicit candidate, never a loop. Called both from run_pipeline's
     budgeted loop and from process_single_candidate's on-demand manual
     entry point."""
-    is_retry = candidate.status in (CandidateStatus.RETRIEVAL_FAILED, CandidateStatus.PARSE_FAILED)
     candidate = _transition(candidate, CandidateStatus.QUEUED_FOR_PROCESSING)
     candidate = _transition(candidate, CandidateStatus.RETRIEVAL_IN_PROGRESS)
 
     doc_id = candidate.filing.rcept_no
 
-    doc_result = document_service.get_or_fetch_excerpt(client, doc_id, cache_dir, force_refresh=is_retry)
+    doc_result = document_service.get_or_fetch_excerpt(client, doc_id, cache_dir)
     candidate.extraction_state = doc_result.state
     if doc_result.from_cache:
         counters["cache_hits"] += 1
@@ -262,7 +261,6 @@ def run_pipeline(
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
-    scan_interval_minutes: int = 60,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -270,17 +268,7 @@ def run_pipeline(
     already-processed candidate (document_service's own cache) — this
     function's only new responsibility is deciding *which* eligible
     candidates get processed this run, bounded by
-    `max_candidates_to_process`.
-
-    `scan_interval_minutes` (Radar reliability fix) feeds only
-    retry_policy.automatic_retry_eligible()'s escalating backoff below —
-    see radar_pipeline.run_pipeline's own docstring (DART) for the full
-    shared reasoning; this mirrors it exactly, including that the
-    separately-budgeted stale-failure retry below never touches
-    `max_candidates_to_process`/`candidates_deferred` and never relabels
-    an unreached candidate PROCESSING_DEFERRED.
-
-    Gate 1 note: has zero real callers yet
+    `max_candidates_to_process`. Gate 1 note: has zero real callers yet
     (see edinet_service.py) — `companies` will be empty in real use until
     a later gate adds tracked EDINET companies; fixtures exercise this
     function directly with explicit fictional company data.
@@ -332,22 +320,6 @@ def run_pipeline(
             candidate_store.update_candidate(cache_dir, deferred, CANDIDATE_STORE_FILENAME)
         else:
             candidate_repository.update_candidate(deferred)
-
-    # Automatic retry of stale RETRIEVAL_FAILED/PARSE_FAILED candidates —
-    # separately budgeted, never touches to_process/to_defer above. A
-    # candidate not reached by AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE this
-    # tick is left completely untouched (not PROCESSING_DEFERRED).
-    stale_failures = sorted(
-        (c for c in store.values() if retry_policy.automatic_retry_eligible(c, scan_interval_minutes)),
-        key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no),
-    )[:retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE]
-
-    for candidate in stale_failures:
-        retried = process_candidate(client, candidate, cache_dir, counters, error_counts)
-        if candidate_repository is None:
-            candidate_store.update_candidate(cache_dir, retried, CANDIDATE_STORE_FILENAME)
-        else:
-            candidate_repository.update_candidate(retried)
 
     warnings: list[str] = []
     for message in scan_result.errors:

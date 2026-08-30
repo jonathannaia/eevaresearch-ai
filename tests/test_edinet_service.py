@@ -83,7 +83,7 @@ def test_readiness_never_raises_without_a_configured_key(tmp_path):
 def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     captured = {}
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None, scan_interval_minutes=None):
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"
 
@@ -99,7 +99,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
     captured = {}
     sentinel_repo = object()  # identity check only — no method on it is ever called this test
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None, scan_interval_minutes=None):
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"
 
