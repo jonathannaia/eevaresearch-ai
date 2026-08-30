@@ -48,6 +48,12 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("ir.amd.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="Bloom Energy Corp",
+        feed_url="https://investor.bloomenergy.com/rss/pressrelease.aspx",
+        feed_format="rss",
+        canonical_domains=("investor.bloomenergy.com",),
+    ),
 )
 
 
