@@ -1,5 +1,96 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Molecular Dynamics Study Explains Aluminum Dopant Activation In 4H-SiC (TU Wien, Silvaco)",
+    "summary": "Researchers from TU Wien and Silvaco Europe published a technical paper on dopant activation in aluminum-implanted 4H-SiC semiconductors, studying how implantation conditions affect dopant activation mechanisms at the atomistic level.",
+    "source_url": "https://semiengineering.com/molecular-dynamics-study-explains-aluminum-dopant-activation-in-4h-sic-tu-wien-silvaco/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 07:01:27 +0000",
+    "retrieved_at": "2026-08-30T09:35:48+00:00",
+    "tickers": [
+      {
+        "ticker": "SVCO",
+        "company_name": "Silvaco",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SiC semiconductor material science directly supports AI chip manufacturing and the broader AI accelerator/GPU supply chain.",
+    "url_hash": "3907b4300e7dbd6d",
+    "id": "3907b4300e7dbd6d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Cycle-Level Simulator for Distributed GPUs For AI Workloads (Purdue)",
+    "summary": "Purdue University researchers published a technical paper presenting a cycle-level simulation framework for modern GPU generations including Ampere, Hopper, and Blackwell architectures, with validation against physical silicon showing 99% correlation on H100 GPUs.",
+    "source_url": "https://semiengineering.com/cycle-level-simulator-for-distributed-gpus-for-ai-workloads-purdue/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 07:02:05 +0000",
+    "retrieved_at": "2026-08-30T09:35:46+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Academic research on GPU simulation and architecture directly relevant to AI chip supply chain and GPU accelerator development.",
+    "url_hash": "eebad86747ec5995",
+    "id": "eebad86747ec5995"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Intrinsic Polarization Superjunctions Boost GaN-On-Silicon Power Devices (EPFL)",
+    "summary": "EPFL researchers published a technical paper on intrinsic polarization superjunctions in III-nitride semiconductors for power electronics, focusing on GaN-on-silicon devices that combine wide bandgap properties with cost-effective silicon integration.",
+    "source_url": "https://semiengineering.com/intrinsic-polarization-superjunctions-boost-gan-on-silicon-power-devices-epfl/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 07:03:28 +0000",
+    "retrieved_at": "2026-08-30T09:35:44+00:00",
+    "tickers": [],
+    "relevance_reason": "GaN-on-silicon power devices are critical semiconductor components for AI infrastructure power delivery and efficiency.",
+    "url_hash": "bdb1d763a203263f",
+    "id": "bdb1d763a203263f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "M3D 6T SRAM With BEOL Pass-Gates at 2nm (Georgia Tech, Synopsys)",
+    "summary": "Researchers from Georgia Tech and Synopsys published a technical paper on monolithic-3D 6T SRAM design for the 2nm node, incorporating BEOL IGO pass-gates with silicon nanosheet latch architecture.",
+    "source_url": "https://semiengineering.com/m3d-6t-sram-with-beol-pass-gates-at-2nm-georgia-tech-synopsys/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 07:04:34 +0000",
+    "retrieved_at": "2026-08-30T09:35:43+00:00",
+    "tickers": [
+      {
+        "ticker": "SNPS",
+        "company_name": "Synopsys",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Technical advancement in 2nm semiconductor SRAM architecture directly relevant to AI chip supply chain and accelerator design",
+    "url_hash": "13d4acb3afe78dcb",
+    "id": "13d4acb3afe78dcb"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Hybrid HBM-HBF Architecture in LLM Inference (University of Oxford)",
+    "summary": "Researchers at the University of Oxford published a paper on hybrid High-Bandwidth Memory (HBM) and High-Bandwidth Flash (HBF) architectures for LLM inference, showing that HBF provides 16x more capacity per stack at comparable bandwidth and can address capacity constraints in LLM systems.",
+    "source_url": "https://semiengineering.com/hybrid-hbm-hbf-architecture-in-llm-inference-university-of-oxford/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 07:06:37 +0000",
+    "retrieved_at": "2026-08-30T09:35:41+00:00",
+    "tickers": [],
+    "relevance_reason": "Technical research on high-bandwidth memory architectures for LLM inference systems directly addresses AI infrastructure components and memory optimization.",
+    "url_hash": "19a32fe8a2c27600",
+    "id": "19a32fe8a2c27600"
+  },
+  {
     "niche": "Space",
     "headline": "NASA's Roman Space Telescope is ready for launch aboard SpaceX Falcon Heavy rocket",
     "summary": "NASA's Nancy Grace Roman Space Telescope is scheduled to launch aboard a SpaceX Falcon Heavy rocket on August 30 to conduct astronomical observations.",
