@@ -72,17 +72,23 @@ def _fetch_with_retry(client: EdinetClient, doc_id: str, type_: int) -> bytes:
 
 
 def get_or_fetch_excerpt(
-    client: EdinetClient, doc_id: str, cache_dir: Path, type_: int = 1,
+    client: EdinetClient, doc_id: str, cache_dir: Path, type_: int = 1, force_refresh: bool = False,
 ) -> DocumentFetchResult:
     """For ONE explicitly selected document only — never a loop over many
     docIDs. Checks the on-disk cache first, including a previously-failed
     result, so a known-unparseable document isn't retried on every page
-    view. `type_` defaults to EdinetClient.DOCUMENT_TYPE_ZIP (1) — the
+    view — unless `force_refresh` is set (edinet_pipeline.py sets it only
+    when the candidate's own status entering process_candidate() was
+    already RETRIEVAL_FAILED/PARSE_FAILED, i.e. this call IS a retry). A
+    cached EXTRACTED result is never bypassed regardless of
+    `force_refresh` — a successful extraction is never re-fetched due to
+    age. `type_` defaults to EdinetClient.DOCUMENT_TYPE_ZIP (1) — the
     format request sent to EDINET, not an assertion about the format
     that comes back (see document_extractor.py's module docstring)."""
     cache = _load_cache(cache_dir)
     cached = cache.get(doc_id)
-    if cached is not None:
+    cached_is_success = cached is not None and cached["state"] == ExtractionState.EXTRACTED.value
+    if cached is not None and (cached_is_success or not force_refresh):
         return DocumentFetchResult(
             doc_id=doc_id, state=ExtractionState(cached["state"]), excerpt_original=cached.get("excerpt_original"),
             detail=cached.get("detail", ""), retrieved_at=cached["retrieved_at"], from_cache=True,

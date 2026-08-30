@@ -117,3 +117,41 @@ def test_failed_result_is_also_cached_so_it_is_not_retried_on_next_page_view(tmp
 
     assert second.from_cache is True
     assert client.fetch_document.call_count == 1
+
+
+def test_force_refresh_false_still_serves_cached_failure(tmp_path):
+    client = _client(EdgarApiError(404, "not found"))
+    document_service.get_or_fetch_excerpt(client, "0001045810", "0001045810-26-000001", "doc.htm", tmp_path)
+
+    result = document_service.get_or_fetch_excerpt(
+        client, "0001045810", "0001045810-26-000001", "doc.htm", tmp_path, force_refresh=False,
+    )
+
+    assert result.from_cache is True
+    assert client.fetch_document.call_count == 1
+
+
+def test_force_refresh_true_bypasses_a_cached_retrieval_failure(tmp_path):
+    client = MagicMock()
+    client.fetch_document.side_effect = [EdgarApiError(404, "not found"), b"<html><body><p>Item 2.02 ok</p></body></html>"]
+    document_service.get_or_fetch_excerpt(client, "0001045810", "0001045810-26-000001", "doc.htm", tmp_path)
+
+    result = document_service.get_or_fetch_excerpt(
+        client, "0001045810", "0001045810-26-000001", "doc.htm", tmp_path, force_refresh=True,
+    )
+
+    assert result.from_cache is False
+    assert result.state == ExtractionState.EXTRACTED
+    assert client.fetch_document.call_count == 2
+
+
+def test_force_refresh_true_still_never_bypasses_a_cached_success(tmp_path):
+    client = _client(b"<html><body><p>Item 2.02 Results of Operations.</p></body></html>")
+    document_service.get_or_fetch_excerpt(client, "0001045810", "0001045810-26-000001", "nvda-8k.htm", tmp_path)
+
+    result = document_service.get_or_fetch_excerpt(
+        client, "0001045810", "0001045810-26-000001", "nvda-8k.htm", tmp_path, force_refresh=True,
+    )
+
+    assert result.from_cache is True
+    assert client.fetch_document.call_count == 1

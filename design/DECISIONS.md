@@ -4603,3 +4603,139 @@ failed, 70 skipped** — the 3 failures are the same pre-existing
 `DECISIONS.md`-prose guard false positives, confirmed identical to the
 prior baseline.
 
+## Phase RR1 — Automatic Retrieval Retry for DART, EDGAR, and EDINET
+
+**Problem, confirmed by direct audit against a real stuck DART filing
+(receipt `20260828001916`)**: `document_service.get_or_fetch_excerpt()`
+in all three sources (`src/data_access/{dart,edgar,edinet}/
+document_service.py`) cached a `RETRIEVAL_FAILED`/`PARSE_FAILED` result
+identically to a success, with no bypass path at all — so neither the
+Worker's own per-tick pipeline loop nor the existing manual "Retry
+processing" UI action ever made a second real network request once a
+document was cached as failed. This meant the pre-existing manual retry
+button was itself silently non-functional (it re-ran the full candidate
+state machine and consumed its cooldown/attempt budget, but always
+re-served the same stale cached failure) — a finding surfaced during
+this phase's own design work, not previously diagnosed.
+
+**Fix, two independent layers, additive only**:
+
+1. **`src/data_access/dart/retry_policy.py`** (already the one shared,
+   source-agnostic module behind the manual retry button, despite its
+   `dart/` path — imported generically by `src/ui/components/
+   radar_card.py`/`radar_status.py`): new `automatic_retry_eligible()`,
+   `AUTOMATIC_RETRY_BACKOFF_MULTIPLIER = 3`,
+   `AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE = 2`. Escalating backoff —
+   `3 x scan_interval_minutes x attempts_used` (180/360/540 minutes at
+   the default 60-minute scan interval) — specifically so a backlog of
+   old failures can never all become eligible on the same tick. Shares
+   `MAX_RETRY_ATTEMPTS` with the pre-existing manual-cooldown gate: a
+   manual click and an automatic tick draw from the same budget, since
+   both are one real attempt against the same regulator endpoint. No
+   existing function in this file was modified.
+
+2. **`document_service.get_or_fetch_excerpt()`** (all three sources):
+   new `force_refresh: bool = False` parameter. A cached `EXTRACTED`
+   result is never bypassed regardless of the flag — structurally
+   guarding "a successful extraction is never re-fetched due to age,"
+   not just by caller discipline. Each source's own `process_candidate()`
+   (`radar_pipeline.py`/`edgar_pipeline.py`/`edinet_pipeline.py`) computes
+   `force_refresh` from the candidate's own pre-transition status —
+   `True` only when it entered already `RETRIEVAL_FAILED`/`PARSE_FAILED`
+   — so both `run_pipeline()`'s new stale-failure selection loop *and*
+   the existing manual `process_single_candidate()` path get a real
+   re-fetch attempt through this one shared code path, with no signature
+   change needed on either entry point.
+
+Each `run_pipeline()` gained one new, separately-budgeted selection step
+(capped at `AUTOMATIC_RETRY_MAX_PER_TICK_PER_SOURCE`, reprocessed through
+the existing `process_candidate()` call) after the pre-existing
+new/deferred loop — that loop, its own budget
+(`max_candidates_to_process`/`DEFAULT_MAX_CANDIDATES_PER_SCAN`), and its
+`PROCESSING_DEFERRED` relabeling are completely untouched; a stale
+failure not reached by the retry cap this tick is left byte-for-byte
+unchanged, never relabeled. `scan_interval_minutes` (each source's own
+existing `settings.radar_scan_interval_minutes`/
+`EDGE_RADAR_SCAN_INTERVAL_MINUTES` — no new setting, no new environment
+variable) is threaded through `radar_service.py`/`edgar_service.py`/
+`edinet_service.py`'s existing `run_scan()` into the new parameter.
+
+**Files changed**: `src/data_access/dart/retry_policy.py`,
+`src/data_access/{dart,edgar,edinet}/document_service.py`,
+`src/data_access/dart/radar_pipeline.py`,
+`src/data_access/edgar/edgar_pipeline.py`,
+`src/data_access/edinet/edinet_pipeline.py`,
+`src/data_access/dart/radar_service.py`,
+`src/data_access/edgar/edgar_service.py`,
+`src/data_access/edinet/edinet_service.py`. No scheduler, polling loop,
+worker process, source endpoint, dependency, database schema, or
+environment variable was added. `scripts/radar_worker.py`, Radar Inbox's
+UI/card design/review controls/candidate rules/source coverage/source-
+link design, Daily News, translation provider/configuration, and
+EDINET's own unresolved canonical-URL question were all untouched —
+that URL question remains a separate, still-open item.
+
+**Scope note on applying the fix to all three sources**: DART, EDGAR,
+and EDINET's `document_service.py` files are not one shared function —
+each is independently implemented, though structurally identical in
+shape (cache-check -> bounded fetch-with-retry -> cache-result). The
+same additive `force_refresh` parameter and guard were applied to each
+file individually, on that structural-equivalence basis, per the
+approved scope's own instruction to extend only where "the code paths
+are genuinely equivalent."
+
+**Verification for receipt `20260828001916`**: this document-extraction
+cache lives on local disk per-process (`{source}_document_excerpts.json`
+under `cache_dir`), never in Postgres and never shared between the
+Worker and Web Service processes — confirmed directly, not assumed.
+Deploying this fix to the Worker therefore already clears its own local
+cache as a side effect of the container restart, independent of whether
+the new staleness logic is exercised at all; the real proof of the fix
+is a *later* failure (if one occurs) recovering automatically on a
+subsequent tick with no redeploy and no manual retry in between. A
+Worker-only deployment is sufficient for the Worker's own automatic
+retry behavior; the Web Service picks up the same code the next time it
+is separately redeployed, unaffected either way by this being
+Worker-only this round.
+
+**Test plan executed**: `tests/test_retry_policy.py` — 10 new
+`automatic_retry_eligible()` cases (fresh-vs-stale at both backoff
+windows, `PARSE_FAILED` parity, `MAX_RETRY_ATTEMPTS` cutoff, non-failure
+statuses, zero-attempts fail-closed). `tests/test_{dart,edgar,edinet}_
+document_service.py` — 3-4 new `force_refresh` cases each (bypasses a
+cached failure, never bypasses a cached success, covers both
+`RETRIEVAL_FAILED` and `PARSE_FAILED`). `tests/test_radar_pipeline.py`,
+`tests/test_edgar_pipeline.py`, `tests/test_edinet_pipeline.py` — 8 new
+cases each: stale failure automatically retried; fresh failure left
+completely untouched; `PARSE_FAILED` parity (DART); candidate at
+`MAX_RETRY_ATTEMPTS` never retried; excess stale failures beyond the
+per-tick cap left untouched and never relabeled `PROCESSING_DEFERRED`;
+automatic-retry budget proven independent of the new/deferred budget;
+a cached success proven never re-fetched even after being artificially
+aged past every backoff window; and the manual `process_single_candidate`
+path proven to now make a real second network call against a
+previously-cached failure (direct proof the pre-existing manual-retry
+bug is also fixed). Six existing `run_scan()` unit tests in
+`tests/test_{radar,edgar,edinet}_service.py` (three per source,
+`omits_candidate_repository_by_default`/`passes_through_an_explicitly_
+supplied_repository`) had their `run_pipeline` test doubles extended
+with the new `scan_interval_minutes` keyword to match the real
+signature — no assertion changed.
+
+**Execution status, stated precisely**: full suite after this phase's
+changes: **1544 passed, 6 failed, 70 skipped**. Of the 6: three are the
+same pre-existing `DECISIONS.md`-prose guard false positives as every
+prior phase; one (`test_phase_t1_does_not_add_a_dependency_other_than_
+tzdata`) is confirmed pre-existing and unrelated to this phase — it
+fails identically on a clean checkout at this same commit, since it
+compares `requirements.txt` against `HEAD` and `tzdata` was already
+folded into `HEAD` when Phase T1 was committed; the remaining two
+(`test_phase_r1_does_not_touch_edgar_dart_edinet_scan_pipelines_or_
+worker`, `test_phase_t1_touches_only_presentation_layer_files`) are
+this phase's own diff-guard tests correctly detecting this phase's own
+still-uncommitted changes against those older, narrower phases'
+forbidden-path lists, and are expected to pass again once this phase is
+committed (confirmed by design: both check `git diff --name-only HEAD`,
+which becomes empty against the new HEAD this phase's own commit
+creates).
+

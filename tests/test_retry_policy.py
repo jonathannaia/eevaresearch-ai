@@ -95,3 +95,68 @@ def test_retry_eligible_one_below_max_attempts_and_past_cooldown():
     result = retry_policy.retry_eligibility(candidate, now=_NOW)
     assert result.eligible
     assert result.attempts_used == retry_policy.MAX_RETRY_ATTEMPTS - 1
+
+
+# automatic_retry_eligible — unattended worker-tick retry, escalating
+# backoff (AUTOMATIC_RETRY_BACKOFF_MULTIPLIER x scan_interval_minutes x
+# attempts_used), entirely separate from the manual cooldown above.
+_INTERVAL = 60  # matches EDGE_RADAR_SCAN_INTERVAL_MINUTES's own default
+
+
+def test_automatic_retry_not_eligible_before_first_backoff_window():
+    just_inside = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER - 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [just_inside])
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_eligible_once_first_backoff_window_elapses():
+    just_outside = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [just_outside])
+    assert retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_backoff_escalates_after_second_attempt():
+    # Two prior attempts (used=2) — required wait is now 2x the first
+    # window. Elapsed just past the first window's threshold but still
+    # short of the second's must NOT be eligible.
+    first_attempt = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * 2)
+    second_attempt = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [first_attempt, second_attempt])
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_eligible_after_second_backoff_window_elapses():
+    first_attempt = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * 2 + 5)
+    second_attempt = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER * 2 + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [first_attempt, second_attempt])
+    assert retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_blocked_at_max_attempts_regardless_of_staleness():
+    ancient = [_NOW - timedelta(days=10) - timedelta(seconds=i) for i in range(retry_policy.MAX_RETRY_ATTEMPTS)]
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, ancient)
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_eligible_for_parse_failed_same_as_retrieval_failed():
+    just_outside = _NOW - timedelta(minutes=_INTERVAL * retry_policy.AUTOMATIC_RETRY_BACKOFF_MULTIPLIER + 1)
+    candidate = _candidate(CandidateStatus.PARSE_FAILED, [just_outside])
+    assert retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_for_needs_review():
+    candidate = _candidate(CandidateStatus.NEEDS_REVIEW, [_NOW - timedelta(days=1)])
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_for_candidate_detected():
+    candidate = _candidate(CandidateStatus.CANDIDATE_DETECTED, [])
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_with_zero_recorded_attempts():
+    # A FAILED status with no QUEUED_FOR_PROCESSING history at all is
+    # malformed/unexpected — fails closed (not eligible) rather than
+    # guessing an attempt happened.
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [])
+    assert not retry_policy.automatic_retry_eligible(candidate, _INTERVAL, now=_NOW)

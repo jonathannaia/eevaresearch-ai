@@ -69,15 +69,21 @@ def _fetch_with_retry(client: DartClient, rcept_no: str) -> bytes:
             time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
 
 
-def get_or_fetch_excerpt(client: DartClient, rcept_no: str, cache_dir: Path) -> DocumentFetchResult:
+def get_or_fetch_excerpt(client: DartClient, rcept_no: str, cache_dir: Path, force_refresh: bool = False) -> DocumentFetchResult:
     """For ONE explicitly selected filing only — never a loop over many
     receipt numbers (a caller wanting several must call this once per
     filing, deliberately, not get an implicit bulk sweep). Checks the
     on-disk cache first, including a previously-failed result, so a
-    known-unparseable document isn't retried on every page view."""
+    known-unparseable document isn't retried on every page view — unless
+    `force_refresh` is set (radar_pipeline.py sets it only when the
+    candidate's own status entering process_candidate() was already
+    RETRIEVAL_FAILED/PARSE_FAILED, i.e. this call IS a retry). A cached
+    EXTRACTED result is never bypassed regardless of `force_refresh` — a
+    successful extraction is never re-fetched due to age."""
     cache = _load_cache(cache_dir)
     cached = cache.get(rcept_no)
-    if cached is not None:
+    cached_is_success = cached is not None and cached["state"] == ExtractionState.EXTRACTED.value
+    if cached is not None and (cached_is_success or not force_refresh):
         return DocumentFetchResult(
             rcept_no=rcept_no, state=ExtractionState(cached["state"]), excerpt_original=cached.get("excerpt_original"),
             detail=cached.get("detail", ""), retrieved_at=cached["retrieved_at"], from_cache=True,
