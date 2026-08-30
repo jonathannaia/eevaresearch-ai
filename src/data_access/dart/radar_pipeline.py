@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, document_service, ownership_materiality, scan_service
+from src.data_access.dart import candidate_store, document_service, ownership_materiality, retry_policy, scan_service
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.dart.client import DartClient
 from src.data_access.dart.document_extractor import assess_excerpt_quality
@@ -108,10 +108,11 @@ def process_candidate(
     run_pipeline's budgeted loop and from process_single_candidate's
     on-demand manual entry point (Radar Inbox's Process now/Retry
     actions)."""
+    is_retry = candidate.status == CandidateStatus.RETRIEVAL_FAILED
     candidate = _transition(candidate, CandidateStatus.QUEUED_FOR_PROCESSING)
     candidate = _transition(candidate, CandidateStatus.RETRIEVAL_IN_PROGRESS)
 
-    doc_result = document_service.get_or_fetch_excerpt(client, candidate.filing.rcept_no, cache_dir)
+    doc_result = document_service.get_or_fetch_excerpt(client, candidate.filing.rcept_no, cache_dir, force_refresh=is_retry)
     candidate.extraction_state = doc_result.state
     if doc_result.from_cache:
         counters["cache_hits"] += 1
@@ -196,6 +197,14 @@ def run_pipeline(
     only new responsibility is deciding *which* eligible candidates get
     processed this run, bounded by `max_candidates_to_process`.
 
+    A separate, independently-budgeted selection of stale
+    RETRIEVAL_FAILED candidates (retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK)
+    runs after the new/deferred loop below and never affects
+    `max_candidates_to_process`/`candidates_deferred` in any way; a
+    candidate not reached by that cap is left completely untouched, never
+    relabeled PROCESSING_DEFERRED. PARSE_FAILED is never automatically
+    retried (see retry_policy.py's module docstring for why).
+
     `candidate_repository` (Durable-State Phase 3A) is additive and
     optional. Omitted (the only path any real service entry point uses
     this phase), every candidate-store touch below is exactly today's
@@ -247,6 +256,22 @@ def run_pipeline(
             candidate_store.update_candidate(cache_dir, deferred)
         else:
             candidate_repository.update_candidate(deferred)
+
+    # Automatic retry of stale RETRIEVAL_FAILED candidates — separately
+    # budgeted, never touches to_process/to_defer above. A candidate not
+    # reached by AUTOMATIC_RETRY_MAX_PER_TICK this tick is left completely
+    # untouched (not PROCESSING_DEFERRED). PARSE_FAILED is never included.
+    stale_failures = sorted(
+        (c for c in store.values() if retry_policy.automatic_retry_eligible(c)),
+        key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no),
+    )[:retry_policy.AUTOMATIC_RETRY_MAX_PER_TICK]
+
+    for candidate in stale_failures:
+        retried = process_candidate(client, translation_provider, candidate, cache_dir, counters, error_counts)
+        if candidate_repository is None:
+            candidate_store.update_candidate(cache_dir, retried)
+        else:
+            candidate_repository.update_candidate(retried)
 
     warnings: list[str] = []
     for message in scan_result.errors:

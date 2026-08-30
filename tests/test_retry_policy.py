@@ -95,3 +95,72 @@ def test_retry_eligible_one_below_max_attempts_and_past_cooldown():
     result = retry_policy.retry_eligibility(candidate, now=_NOW)
     assert result.eligible
     assert result.attempts_used == retry_policy.MAX_RETRY_ATTEMPTS - 1
+
+
+# automatic_retry_eligible — unattended worker-tick retry, bounded
+# backoff schedule (AUTOMATIC_RETRY_BACKOFF_SCHEDULE_MINUTES), entirely
+# separate from the manual cooldown above. RETRIEVAL_FAILED only.
+
+_FIRST_BACKOFF, _SECOND_BACKOFF = retry_policy.AUTOMATIC_RETRY_BACKOFF_SCHEDULE_MINUTES
+
+
+def test_automatic_retry_not_eligible_before_first_backoff_window():
+    just_inside = _NOW - timedelta(minutes=_FIRST_BACKOFF - 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [just_inside])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_eligible_once_first_backoff_window_elapses():
+    just_outside = _NOW - timedelta(minutes=_FIRST_BACKOFF + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [just_outside])
+    assert retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_withheld_after_second_failure_until_second_backoff_window():
+    # Two prior attempts (used=2) — required wait is now the *second*
+    # schedule entry, not the first. Elapsed just past the first
+    # window's threshold but still short of the second's must NOT be
+    # eligible — this is exactly the "not every hourly tick" guarantee.
+    first_attempt = _NOW - timedelta(minutes=_SECOND_BACKOFF + _FIRST_BACKOFF)
+    second_attempt = _NOW - timedelta(minutes=_FIRST_BACKOFF + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [first_attempt, second_attempt])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_eligible_after_second_backoff_window_elapses():
+    first_attempt = _NOW - timedelta(minutes=_SECOND_BACKOFF * 2)
+    second_attempt = _NOW - timedelta(minutes=_SECOND_BACKOFF + 1)
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [first_attempt, second_attempt])
+    assert retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_blocked_at_max_attempts_regardless_of_staleness():
+    ancient = [_NOW - timedelta(days=10) - timedelta(seconds=i) for i in range(retry_policy.MAX_RETRY_ATTEMPTS)]
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, ancient)
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_never_eligible_for_parse_failed():
+    # The key narrowing: PARSE_FAILED is excluded even when it would
+    # otherwise be well past the first backoff window.
+    just_outside = _NOW - timedelta(minutes=_FIRST_BACKOFF + 1)
+    candidate = _candidate(CandidateStatus.PARSE_FAILED, [just_outside])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_for_needs_review():
+    candidate = _candidate(CandidateStatus.NEEDS_REVIEW, [_NOW - timedelta(days=1)])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_for_candidate_detected():
+    candidate = _candidate(CandidateStatus.CANDIDATE_DETECTED, [])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
+
+
+def test_automatic_retry_not_eligible_with_zero_recorded_attempts():
+    # A FAILED status with no QUEUED_FOR_PROCESSING history at all is
+    # malformed/unexpected — fails closed (not eligible) rather than
+    # guessing an attempt happened.
+    candidate = _candidate(CandidateStatus.RETRIEVAL_FAILED, [])
+    assert not retry_policy.automatic_retry_eligible(candidate, now=_NOW)
