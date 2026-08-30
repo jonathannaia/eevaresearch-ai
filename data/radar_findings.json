@@ -1,5 +1,47 @@
 [
   {
+    "niche": "Space",
+    "headline": "Liftoff! NASA's Roman Space Telescope soars to the stars on a SpaceX Falcon Heavy rocket in spectacular launch (video)",
+    "summary": "NASA's Nancy Grace Roman Space Telescope launched successfully on a SpaceX Falcon Heavy rocket on August 30, marking the start of a new astronomical mission.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/nasa-roman-space-telescope-launch-success-on-a-spacex-falcon-heavy-rocket-spectacular-launch-video",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 30 Aug 2026 12:56:57 +0000",
+    "retrieved_at": "2026-08-30T14:35:15+00:00",
+    "tickers": [
+      {
+        "ticker": "SPACEX",
+        "company_name": "SpaceX",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article covers a space launch involving NASA's Roman Space Telescope aboard a SpaceX Falcon Heavy rocket, directly relevant to the Space scope.",
+    "url_hash": "05362583d07a4296",
+    "id": "05362583d07a4296"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA’s Dark Universe-Seeking Nancy Grace Roman Space Telescope Launches",
+    "summary": "NASA's Nancy Grace Roman Space Telescope launched aboard a SpaceX Falcon Heavy rocket from Kennedy Space Center and is on a three-month journey to its final orbit.",
+    "source_url": "https://www.nasa.gov/news-release/nasas-dark-universe-seeking-nancy-grace-roman-space-telescope-launches/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Sun, 30 Aug 2026 13:18:06 +0000",
+    "retrieved_at": "2026-08-30T14:35:13+00:00",
+    "tickers": [
+      {
+        "ticker": "SPACEX",
+        "company_name": "Space Exploration Technologies Corp.",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns space launch of NASA's Nancy Grace Roman Space Telescope aboard a SpaceX Falcon Heavy rocket.",
+    "url_hash": "be1799cedcc10449",
+    "id": "be1799cedcc10449"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Molecular Dynamics Study Explains Aluminum Dopant Activation In 4H-SiC (TU Wien, Silvaco)",
     "summary": "Researchers from TU Wien and Silvaco Europe published a technical paper on dopant activation in aluminum-implanted 4H-SiC semiconductors, studying how implantation conditions affect dopant activation mechanisms at the atomistic level.",
