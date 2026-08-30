@@ -4772,3 +4772,122 @@ diff empty against the new HEAD — confirmed by direct re-run after
 committing: **1527 passed, 4 failed, 70 skipped**, the same 4
 pre-existing failures as above.
 
+## Daily News — Slice 1 (Independent Autonomous Discovery Surface)
+
+**Product boundary, stated explicitly**: Daily News is a separate
+product surface from Radar Inbox — its own models
+(`src/models/daily_news_models.py`), its own store (`src/data_access/
+daily_news/daily_news_store.py`, `daily_news_stories.json`), its own
+ingestion pipeline, its own manual trigger, its own public page, and
+its own hidden admin page. Zero reads/writes of any Radar-owned file
+this slice (`dart_candidates.json`, `edgar_candidates.json`,
+`edinet_candidates.json`, any `*_filing_events.json`,
+`radar_pipeline.py`, `radar_worker.py`, `retry_policy.py`, or any Radar
+UI component) — verified both by AST-based import inspection and a
+git-diff guard, not just by convention (`tests/
+test_daily_news_scope_guard.py`). The one deliberate, approved
+exception: `src/config/tracked_companies.py` is read (never written)
+for company identity/ticker/theme, via `feed_registry.
+tracked_company_for()` — the same registry Radar's own three sources
+already use, reused rather than duplicated.
+
+**Dependency added**: `feedparser==6.0.14`, BSD-2-Clause licensed,
+pure-Python wheel (`py3-none-any`) — confirmed via the package's own
+installed metadata, not assumed. Pinned exactly rather than an open
+range, since this is the one dependency this slice was explicitly
+approved to add and no other.
+
+**Pilot feeds — verified live, not guessed** (see the architecture-pass
+conversation for the exact verification method): NVIDIA
+(`https://nvidianews.nvidia.com/releases.xml`), Intel Corp.
+(`https://newsroom.intel.com/feed`), Advanced Micro Devices
+(`https://ir.amd.com/news-events/press-releases/rss`) — all three
+confirmed as real, live, currently-working RSS 2.0 feeds returning
+dated 2026 items. Micron Technology and Rocket Lab were checked and
+excluded (no working public RSS link found on either's current IR
+site) rather than guessed.
+
+**Grounding mechanism, honestly scoped**: no LLM or outside API call is
+made anywhere in this slice — none is approved, and adding one would
+itself be a new external dependency requiring separate approval. The
+"Eeva-authored summary" is therefore a **bounded extractive excerpt**
+of the feed's own `<description>`/`<summary>` field only (HTML-stripped,
+whitespace-normalized, trimmed to `MAX_SUMMARY_CHARS=400` at a sentence
+boundary) — condensation of permitted source text, not independent
+generative paraphrase. This was an explicit, separately-confirmed
+product decision (the alternative considered was: always show the fixed
+fallback sentence this slice, deferring any summary text at all to a
+later, separately-approved slice with a real model call). `summary_
+grounding.py`'s own `UngroundedSummaryError` makes it structurally
+impossible to call the generator without a validated source URL.
+
+**Canonical-URL gate**: HTTPS-only, exact-match against each feed
+source's own explicit `canonical_domains` tuple (no wildcard subdomain
+expansion), rejects the bare homepage, the feed URL itself, and a
+search-result-shaped path/query. One real bug found and fixed during
+live verification against the real AMD feed: a naive `"search" in url`
+substring check incorrectly rejected a genuine announcement whose slug
+contained the word "**research**" — replaced with exact path-segment
+and query-parameter-name matching (`tests/
+test_daily_news_canonical_url.py::
+test_word_containing_search_substring_is_not_falsely_rejected` is the
+regression test for this).
+
+**Live manual-run verification** (via `scripts/
+run_daily_news_discovery.py`, real network calls, no mock data): 3
+sources polled, 40 items discovered, 40 stories published, 0
+suppressed, 0 deduplicated, 0 source failures. Confirmed post-run: all
+four expected domains appear across persisted story URLs
+(`nvidianews.nvidia.com`, `blogs.nvidia.com`, `newsroom.intel.com`,
+`ir.amd.com`) — satisfying the NVIDIA-specific condition that both of
+its own domains be exercised, not just the primary one. 10 of 40 items
+used the fixed fallback sentence (AMD entries with no feed
+description); the rest received a grounded extractive-excerpt summary;
+zero translation-unavailable cases (all three pilot companies publish
+in English only, as expected).
+
+**Files added**: `src/models/daily_news_models.py`;
+`src/data_access/daily_news/{__init__,feed_registry,rss_atom_client,
+canonical_url,summary_grounding,dedup,daily_news_store,
+daily_news_pipeline}.py`; `scripts/run_daily_news_discovery.py`;
+`src/ui/pages/{daily_news,daily_news_admin}.py`. **Files modified**:
+`requirements.txt` (feedparser only), `src/ui/ui.py` (one new
+`PRIMARY_NAV` entry), `app.py` (import + `_RENDER_FNS`/`_URL_PATHS`
+entries + one new hidden `st.Page`, same `visibility="hidden"` pattern
+already used for `company`/`disclaimer`), `tests/test_navigation.py`
+(updated to include the new page keys — an intentional, approved nav
+change, not a regression).
+
+**Not in this slice, by explicit scope**: no scheduled/autonomous Daily
+News worker (manual/admin trigger only); no Render change, environment
+variable, or credential; no EDGAR/DART/EDINET, press-release wire, or
+third-party journalism source; no linked-page fetching (only the feed's
+own fields are ever read); no real generative summarization (see
+grounding mechanism above).
+
+**Test plan executed**: `tests/test_daily_news_canonical_url.py` (13),
+`tests/test_daily_news_summary_grounding.py` (9),
+`tests/test_daily_news_rss_atom_client.py` (6, including malformed-feed
+and network-failure isolation), `tests/test_daily_news_dedup.py` (5),
+`tests/test_daily_news_store.py` (5), `tests/test_daily_news_pipeline.py`
+(10, including source-failure isolation, idempotency, cross-source
+dedup, missing-URL suppression, missing-excerpt fallback, and
+original-language preservation end-to-end), `tests/test_daily_news_
+page.py` (5, AppTest-based, proving the public card's exact five-field
+surface and the absence of any Radar terminology), `tests/
+test_daily_news_scope_guard.py` (3, AST-based import/string-literal
+checks plus the git-diff guard). `tests/test_navigation.py` updated in
+place for the new page keys.
+
+**Execution status, stated precisely**: full suite after this phase's
+changes: **1584 passed, 4 failed, 70 skipped**. All 4 failures are the
+same pre-existing failures carried from every prior phase — three are
+the `DECISIONS.md`-prose guard false positives; the fourth
+(`test_phase_t1_does_not_add_a_dependency_other_than_tzdata`) is the
+already-confirmed-pre-existing, unrelated dependency-guard test that
+fails identically regardless of which dependency is added, since it
+compares against a stale `HEAD` reference from before Phase T1 was
+committed (now showing `feedparser==6.0.14` instead of `tzdata` in its
+mismatch, same underlying pre-existing cause). Zero regressions: no
+previously-passing test failed because of this phase's changes.
+

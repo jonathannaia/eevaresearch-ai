@@ -25,6 +25,8 @@ from src.ui.pages import (
     about,
     company,
     coverage,
+    daily_news,
+    daily_news_admin,
     dashboard,
     disclaimer,
     home,
@@ -49,6 +51,7 @@ st.set_page_config(
 _RENDER_FNS = {
     "dashboard": dashboard.render,
     "radar_inbox": radar_inbox.render,
+    "daily_news": daily_news.render,
     "coverage": coverage.render,
     "themes": themes.render,
     "signals": signals.render,
@@ -60,6 +63,7 @@ _RENDER_FNS = {
 _URL_PATHS = {
     "dashboard": "dashboard",
     "radar_inbox": "radar-inbox",
+    "daily_news": "daily-news",
     "coverage": "coverage",
     "themes": "themes",
     "signals": "signals",
@@ -105,6 +109,13 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     # reachable route via Methodology's cross-link and the page footer.
     pages["disclaimer"] = st.Page(
         with_chrome(disclaimer.render, "disclaimer"), title="Disclaimer", url_path="disclaimer", visibility="hidden",
+    )
+    # Daily News admin/status (Slice 1) — same hidden-but-reachable pattern
+    # as company/disclaimer above: not linked in the sidebar, reachable only
+    # by direct URL, for controlled pilot verification.
+    pages["daily_news_admin"] = st.Page(
+        with_chrome(daily_news_admin.render, "daily_news_admin"),
+        title="Daily News — Admin", url_path="daily-news-admin", visibility="hidden",
     )
     return pages
 

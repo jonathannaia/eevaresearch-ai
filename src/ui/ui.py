@@ -26,6 +26,12 @@ METHODOLOGY_STATEMENT = (
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
     ("radar_inbox", "Radar Inbox"),
+    # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
+    # scoped autonomous discovery surface, not a Radar Inbox view (see the
+    # Radar-vs-Daily-News product clarification the same document records).
+    # Placed next to Radar Inbox for IA/UX grouping only ("what's new" feeds
+    # together) — this has no bearing on their code/data independence.
+    ("daily_news", "Daily News"),
     # Coverage (Phase A, Issuer Registry — design/ISSUER_REGISTRY_FOUNDATION.md):
     # a read-only observability map over the registry, placed next to Radar
     # Inbox since both are "what's in our system" views, distinct from the

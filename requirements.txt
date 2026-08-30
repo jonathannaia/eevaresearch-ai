@@ -32,3 +32,10 @@ PyYAML>=6.0,<7.0
 # ZoneInfo("America/New_York") can never raise ZoneInfoNotFoundError in
 # production regardless of the underlying image.
 tzdata>=2024.1
+# Daily News Slice 1 (design/DECISIONS.md) — parses official company RSS
+# 2.0 and Atom feeds (src/data_access/daily_news/rss_atom_client.py).
+# Pure-Python, BSD-2-Clause licensed, no compiled/native code. Pinned to
+# the exact version verified at implementation time (6.0.14) rather than
+# an open range, since this is the one new dependency this phase was
+# explicitly approved to add and no other.
+feedparser==6.0.14

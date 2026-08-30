@@ -42,7 +42,7 @@ from src.ui.ui import FOOTER_NAV, PRIMARY_NAV
 
 APP_PATH = Path(__file__).parent.parent / "app.py"
 
-_ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + FOOTER_NAV] + ["company", "watchlists", "disclaimer"]
+_ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + FOOTER_NAV] + ["company", "watchlists", "disclaimer", "daily_news_admin"]
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +93,7 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     """Regression guard for requirement #5 (don't change which pages are
     visible, or their labels/order) — asserts the nav tables app.py reads
     from are untouched, plus every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "coverage", "themes", "signals", "research"]
+    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news", "coverage", "themes", "signals", "research"]
     assert [k for k, _ in FOOTER_NAV] == ["methodology", "about"]
 
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
@@ -121,7 +121,7 @@ def test_page_objects_stay_identical_across_reruns_within_the_same_default_phase
         assert pages_a[key] is pages_b[key], f"'{key}' page object was rebuilt across reruns in the same phase"
 
 
-@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "coverage_page.py", "themes_page.py", "signals_page.py", "research_page.py", "methodology_page.py", "about_page.py", "watchlists_page.py"])
+@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "daily_news_page.py", "coverage_page.py", "themes_page.py", "signals_page.py", "research_page.py", "methodology_page.py", "about_page.py", "watchlists_page.py"])
 def test_every_visible_route_renders_through_its_registered_render_callable(harness_file):
     """Every harness here calls the exact same `with_chrome(render_fn, key)`
     callable app.py registers as that route's `st.Page` — not a
