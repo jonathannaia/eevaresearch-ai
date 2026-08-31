@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -137,14 +137,44 @@ _V4_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN evidence_source_member TEXT",
 )
 
+# Radar evidence-packet foundation, Phase 3, Step 2 (design/DECISIONS.md)
+# — isolated Postgres counterpart to state_db/schema.py's own
+# _V5_STATEMENTS (see that module's comment for the full immutability/
+# stable-id rationale). One new, wholly additive, append-only table —
+# no update path exists anywhere in this codebase for it.
+_V5_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE comparison_results (
+        id TEXT PRIMARY KEY,
+        current_candidate_id TEXT NOT NULL,
+        current_source_name TEXT NOT NULL,
+        current_corp_code TEXT NOT NULL,
+        current_document_id TEXT NOT NULL,
+        prior_candidate_id TEXT,
+        prior_document_id TEXT,
+        prior_filed_at TEXT,
+        comparison_status TEXT NOT NULL,
+        comparison_basis TEXT NOT NULL,
+        added_categories_json TEXT NOT NULL,
+        removed_categories_json TEXT NOT NULL,
+        prior_excerpt TEXT,
+        current_excerpt TEXT,
+        limitations_json TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_comparison_results_current_candidate_id ON comparison_results (current_candidate_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 5 later means appending a new (5, (...statements...))
+# Adding schema version 6 later means appending a new (6, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
     (3, _V3_STATEMENTS),
     (4, _V4_STATEMENTS),
+    (5, _V5_STATEMENTS),
 )
 
 

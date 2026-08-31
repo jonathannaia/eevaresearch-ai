@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -181,14 +181,54 @@ _V4_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN evidence_source_member TEXT",
 )
 
+# Radar evidence-packet foundation, Phase 3, Step 2 (design/DECISIONS.md)
+# — one new, wholly additive, append-only table for persisted prior-
+# disclosure comparison results (see
+# src.data_access.comparison_store.ComparisonRecord). No column here is
+# ever updated after insert — there is deliberately no
+# update_comparison_record function anywhere in this codebase, only
+# append/load — so no CHECK/trigger is needed to enforce immutability;
+# it is enforced by which functions exist, exactly like
+# state_transitions' own "insert-only" convention above. `id` is a
+# deterministic, content-addressed stable id (see
+# comparison_store.build_comparison_record_id) — a duplicate INSERT is
+# rejected by this PRIMARY KEY constraint rather than silently
+# overwriting anything. Categories/limitations are stored as JSON-text
+# columns, the same convention `candidates.matched_rules_json` already
+# uses for a variable-length list of strings.
+_V5_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE comparison_results (
+        id TEXT PRIMARY KEY,
+        current_candidate_id TEXT NOT NULL,
+        current_source_name TEXT NOT NULL,
+        current_corp_code TEXT NOT NULL,
+        current_document_id TEXT NOT NULL,
+        prior_candidate_id TEXT,
+        prior_document_id TEXT,
+        prior_filed_at TEXT,
+        comparison_status TEXT NOT NULL,
+        comparison_basis TEXT NOT NULL,
+        added_categories_json TEXT NOT NULL,
+        removed_categories_json TEXT NOT NULL,
+        prior_excerpt TEXT,
+        current_excerpt TEXT,
+        limitations_json TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_comparison_results_current_candidate_id ON comparison_results (current_candidate_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 5 later means appending a new (5, (...statements...))
+# Adding schema version 6 later means appending a new (6, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
     (3, _V3_STATEMENTS),
     (4, _V4_STATEMENTS),
+    (5, _V5_STATEMENTS),
 )
 
 
