@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -166,8 +166,69 @@ _V5_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_comparison_results_current_candidate_id ON comparison_results (current_candidate_id)",
 )
 
+# EevaResearch Phase 4, Step 1 (design/DECISIONS.md) — isolated Postgres
+# counterpart to state_db/schema.py's own _V6_STATEMENTS (see that
+# module's comment for the full immutability/no-hard-FK rationale).
+# Three new, wholly additive, append-only tables — no update path exists
+# anywhere in this codebase for any of them.
+_V6_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE research_cases (
+        id TEXT PRIMARY KEY,
+        trigger_source_type TEXT NOT NULL,
+        trigger_source_id TEXT NOT NULL,
+        trigger_source_name TEXT NOT NULL,
+        trigger_summary TEXT NOT NULL,
+        title TEXT NOT NULL,
+        research_question TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        version INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE research_evidence_items (
+        id TEXT PRIMARY KEY,
+        case_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        source_publisher_or_system TEXT NOT NULL,
+        source_date TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        excerpt_original TEXT NOT NULL,
+        original_language TEXT NOT NULL,
+        added_at TEXT NOT NULL,
+        excerpt_translated TEXT,
+        translation_provider TEXT
+    )
+    """,
+    "CREATE INDEX idx_research_evidence_items_case_id ON research_evidence_items (case_id)",
+    """
+    CREATE TABLE research_assertions (
+        id TEXT PRIMARY KEY,
+        case_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        subject_entity TEXT,
+        object_entity TEXT,
+        role TEXT,
+        affected_entity TEXT,
+        bottleneck_type TEXT,
+        supply_chain_layer TEXT,
+        transmission_path_json TEXT,
+        assertion_status TEXT NOT NULL,
+        evidence_ids_json TEXT NOT NULL,
+        confidence TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        reasoning TEXT,
+        limitations_json TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_research_assertions_case_id ON research_assertions (case_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 6 later means appending a new (6, (...statements...))
+# Adding schema version 7 later means appending a new (7, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -175,6 +236,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (3, _V3_STATEMENTS),
     (4, _V4_STATEMENTS),
     (5, _V5_STATEMENTS),
+    (6, _V6_STATEMENTS),
 )
 
 
