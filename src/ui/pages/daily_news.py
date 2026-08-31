@@ -11,8 +11,18 @@ language story — see below); and a direct "Read original source" link.
 Deliberately excluded from this page: source-class labels, ranking/
 dedup data, internal status, technical failures, and any Radar
 terminology — that detail lives only in daily_news_admin.py.
+
+The public page shows only stories published within a rolling, inclusive
+7*24-hour window (compared in UTC; naive timestamps treated as UTC,
+matching src.logic.formatting.days_ago()'s own convention) — a company
+selector (all companies with any persisted PUBLISHED story, not only
+currently-recent ones) narrows this further. Older stories stay in
+daily_news_store.py's JSON file untouched; this page only ever hides
+them, never deletes anything.
 """
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 import streamlit as st
 
@@ -23,11 +33,45 @@ from src.models.daily_news_models import NewsStory, NewsStoryStatus
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
 
+_FRESHNESS_WINDOW_DAYS = 7
+_ALL_COMPANIES_OPTION = "All companies"
+
 
 def _published_stories(cache_dir) -> list[NewsStory]:
     stories = daily_news_store.load_stories(cache_dir).values()
     published = [s for s in stories if s.status == NewsStoryStatus.PUBLISHED]
     return sorted(published, key=lambda s: s.sources[0].published_at if s.sources else "", reverse=True)
+
+
+def _company_options(stories: list[NewsStory]) -> list[str]:
+    return [_ALL_COMPANIES_OPTION] + sorted({s.company_name for s in stories})
+
+
+def _elapsed_seconds(published_at: str, now: datetime) -> float | None:
+    try:
+        dt = datetime.fromisoformat(published_at)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (now - dt).total_seconds()
+
+
+def _is_recent(story: NewsStory, now: datetime, window_days: int = _FRESHNESS_WINDOW_DAYS) -> bool:
+    """Rolling, inclusive window compared in UTC — a story exactly
+    window_days*24 hours old is included; anything older is not. Uses
+    exact elapsed seconds rather than formatting.days_ago()'s own
+    floor-to-integer-days rounding, which would otherwise let a story
+    up to nearly window_days+1 calendar days old slip through."""
+    if not story.sources or not story.sources[0].published_at:
+        return False
+    elapsed = _elapsed_seconds(story.sources[0].published_at, now)
+    return elapsed is not None and elapsed <= window_days * 86400
+
+
+def _recent_stories(stories: list[NewsStory], now: datetime | None = None) -> list[NewsStory]:
+    now = now or datetime.now(timezone.utc)
+    return [s for s in stories if _is_recent(s, now)]
 
 
 def _render_card(story: NewsStory) -> None:
@@ -53,17 +97,34 @@ def _render_card(story: NewsStory) -> None:
 def render() -> None:
     st.markdown('<div class="er-page-title">Daily News</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="er-muted">Autonomously discovered company updates from official sources.</div>',
+        '<div class="er-muted">Company updates from official sources.</div>',
         unsafe_allow_html=True,
     )
 
     settings = get_settings()
-    stories = _published_stories(settings.cache_dir)
+    all_stories = _published_stories(settings.cache_dir)
+
+    selected_company = st.selectbox("Companies", options=_company_options(all_stories), index=0)
+
+    st.markdown(
+        '<div class="er-muted">Showing official company updates from the past 7 days.</div>',
+        unsafe_allow_html=True,
+    )
 
     section_header("Latest")
-    if not stories:
-        empty_state("No Daily News stories yet.")
+
+    scoped_stories = all_stories
+    if selected_company != _ALL_COMPANIES_OPTION:
+        scoped_stories = [s for s in all_stories if s.company_name == selected_company]
+
+    recent = _recent_stories(scoped_stories)
+
+    if not recent:
+        if selected_company == _ALL_COMPANIES_OPTION:
+            empty_state("No recent company updates in the last 7 days.")
+        else:
+            empty_state(f"No recent updates for {selected_company} in the last 7 days.")
         return
 
-    for story in stories:
+    for story in recent:
         _render_card(story)
