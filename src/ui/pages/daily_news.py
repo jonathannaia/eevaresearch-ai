@@ -79,24 +79,25 @@ def _render_card(story: NewsStory) -> None:
     source = story.sources[0]
     local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
 
-    with st.container(border=True, key=f"daily-news-card-{story.id}"):
+    meta_html = f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>'
+
+    with st.container(border=True):
         if source.image_url:
-            # Compact supporting thumbnail (er-card-thumb, assets/styles.css)
-            # — floated right so it sits beside this card's own separately-
-            # rendered text blocks below without a grid/flex wrapper across
-            # them; never the old full-width hero image.
+            # Dedicated header row (er-card-header, assets/styles.css) —
+            # metadata left, compact thumbnail right, both top-aligned.
+            # Title/summary/link below are untouched normal-flow Streamlit
+            # blocks at full card width; the thumbnail never wraps or sits
+            # in front of them (that was the float layout's defect).
             alt_text = html.escape(source.image_alt or story.headline)
             image_url = html.escape(source.image_url)
             st.markdown(
+                f'<div class="er-card-header">{meta_html}'
                 f'<img class="er-card-thumb" src="{image_url}" alt="{alt_text}" '
-                'onerror="this.style.display=\'none\'" />',
+                'onerror="this.style.display=\'none\'" /></div>',
                 unsafe_allow_html=True,
             )
-
-        st.markdown(
-            f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>',
-            unsafe_allow_html=True,
-        )
+        else:
+            st.markdown(meta_html, unsafe_allow_html=True)
         headline = story.original_title if story.translation_unavailable else story.headline
         st.markdown(f"**{headline}**")
 

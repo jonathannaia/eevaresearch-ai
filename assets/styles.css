@@ -781,32 +781,27 @@ a:hover { color: var(--accent-hover); }
 .er-hero-content { position: relative; z-index: 1; }
 
 /* ---------- Daily News: compact optional item thumbnail ----------
-   A small supporting image only, never a full-width hero. Floated
-   right so the card's existing, separately-rendered text elements
-   (each its own Streamlit block) wrap around it in normal flow — no
-   grid/flex wrapper is needed across those blocks, and the card's
-   height stays governed by the text content rather than the image,
-   since a float doesn't force the container taller than its normal-
-   flow content. */
+   A dedicated header row — metadata left, a small supporting image
+   right, both top-aligned — never a full-width hero and never a float
+   (a float previously left an empty band above the metadata line and
+   put the thumbnail ahead of it in normal flow; a real two-column
+   header avoids both). Title/summary/link render as ordinary Streamlit
+   blocks below this row, at full card width, untouched by the image. */
+.er-card-header {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+}
 .er-card-thumb {
-    float: right;
     width: 160px; height: 100px;
     max-width: 176px; max-height: 112px;
     object-fit: cover;
     border-radius: var(--r-sm);
-    margin: 0 0 0.75rem 1rem;
+    flex-shrink: 0;
 }
 @media (max-width: 640px) {
-    .er-card-thumb { width: 96px; height: 72px; margin-left: 0.75rem; }
+    .er-card-thumb { width: 96px; height: 72px; }
 }
 @media (max-width: 380px) {
     /* Too narrow for a side thumbnail to stay readable next to text —
        hide it rather than ever falling back to a full-width image. */
     .er-card-thumb { display: none; }
-}
-[class*="st-key-daily-news-card-"] {
-    /* Contains the floated .er-card-thumb within the card's own border
-       box, rather than letting it visually overflow past the card's
-       bottom edge on a story with little text beside it. */
-    overflow: hidden;
 }

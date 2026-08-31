@@ -271,8 +271,8 @@ def test_only_stale_stories_shows_the_all_companies_empty_state(tmp_path):
     assert "No recent company updates in the last 7 days." in markdown_text
 
 
-def test_card_with_a_validated_image_uses_the_compact_thumbnail_class(tmp_path):
-    story = _story(sources=(
+def _image_bearing_story() -> "NewsStory":
+    return _story(sources=(
         NewsSourceReference(
             publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
             url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
@@ -282,53 +282,51 @@ def test_card_with_a_validated_image_uses_the_compact_thumbnail_class(tmp_path):
             image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo of the announcement",
         ),
     ))
-    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+
+def test_image_bearing_card_renders_a_dedicated_header_row_with_metadata_and_thumbnail(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
     assert not at.exception
-    markdown_text = " ".join(m.value for m in at.markdown)
-    # Compact thumbnail class (sized/positioned entirely in
-    # assets/styles.css), never the old inline full-width hero style.
-    assert '<img class="er-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in markdown_text
-    assert 'alt="A photo of the announcement"' in markdown_text
-    assert "onerror=" in markdown_text
-    assert "width:100%" not in markdown_text
-    assert "aspect-ratio" not in markdown_text
+    # The metadata line and the thumbnail must be rendered together
+    # inside one "er-card-header" block, not as separate top-level
+    # blocks (which is what the earlier float layout did).
+    header_blocks = [m.value for m in at.markdown if "er-card-header" in m.value and not m.value.strip().startswith("<style")]
+    assert len(header_blocks) == 1
+    header = header_blocks[0]
+    assert "NVIDIA · NVIDIA ·" in header
+    assert '<img class="er-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in header
+    assert 'alt="A photo of the announcement"' in header
+    assert "onerror=" in header
+    # Never the old inline full-width hero style or a float.
+    assert "width:100%" not in header
+    assert "aspect-ratio" not in header
+    assert "float" not in header
 
 
-def test_image_bearing_card_still_shows_title_date_and_source_link(tmp_path):
-    # The thumbnail is supplementary — every other text field the
-    # existing "five approved fields" test checks for a text-only card
-    # must still be present when an image is also rendered.
-    story = _story(sources=(
-        NewsSourceReference(
-            publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
-            url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
-            published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-            retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-            original_language="English", excerpt_original="NVIDIA reported strong quarterly results.",
-            image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo of the announcement",
-        ),
-    ))
-    daily_news_store.upsert_new_stories(tmp_path, [story])
+def test_title_summary_and_link_render_as_separate_full_width_blocks_after_the_header(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
     assert not at.exception
-    markdown_text = " ".join(m.value for m in at.markdown)
-    assert "NVIDIA" in markdown_text
-    assert "NVIDIA Announces Financial Results" in markdown_text
-    assert "NVIDIA reported strong quarterly results." in markdown_text
-    assert "Read original source" in markdown_text
-    assert "https://nvidianews.nvidia.com/news/results" in markdown_text
+    # Title, summary, and the source link must each be their own block,
+    # entirely outside the header wrapper/thumbnail markup — never
+    # wrapped around the image the way the old float layout did.
+    non_header_blocks = [m.value for m in at.markdown if "er-card-header" not in m.value]
+    for text in ("NVIDIA Announces Financial Results", "NVIDIA reported strong quarterly results.", "Read original source"):
+        matches = [b for b in non_header_blocks if text in b]
+        assert matches, f"{text!r} not found outside the header block"
+        assert not any("er-card-thumb" in b for b in matches)
 
 
-def test_card_without_an_image_renders_no_img_tag_and_full_text_card(tmp_path):
+def test_card_without_an_image_renders_no_img_tag_or_header_wrapper(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_story()])  # default _story() has no image_url
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -337,10 +335,13 @@ def test_card_without_an_image_renders_no_img_tag_and_full_text_card(tmp_path):
 
     assert not at.exception
     # Excludes the app chrome's own logo markdown block (unrelated to
-    # Daily News cards) — this proves the card itself renders no <img>.
+    # Daily News cards) — this proves the card itself renders no <img>
+    # and no dedicated header wrapper (reserved only for image-bearing
+    # cards) — the plain text-only layout is preserved exactly.
     card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
     card_text = " ".join(card_markdown)
     assert "<img" not in card_text
+    assert "er-card-header" not in card_text
     assert "NVIDIA Announces Financial Results" in card_text
     assert "Read original source" in card_text
 
@@ -413,9 +414,23 @@ def test_thumbnail_uses_a_landscape_cover_crop_and_a_small_radius():
     assert "border-radius: var(--r-sm)" in css
 
 
-def test_thumbnail_is_floated_beside_text_not_a_full_width_block():
+def test_thumbnail_has_no_float_styling():
+    # The float layout left an empty band above the metadata line and
+    # put the image ahead of the text in normal flow — replaced by a
+    # dedicated header row (er-card-header), never a float.
     css = _css_text()
-    assert "float: right" in css
+    thumb_rule = css.split(".er-card-thumb {")[1].split("}")[0]
+    assert "float" not in thumb_rule
+
+
+def test_card_header_is_a_real_two_column_row_with_a_sixteen_pixel_gap():
+    css = _css_text()
+    assert ".er-card-header" in css
+    header_rule = css.split(".er-card-header {")[1].split("}")[0]
+    assert "display: flex" in header_rule or "display: grid" in header_rule
+    assert "justify-content: space-between" in header_rule
+    assert "align-items: flex-start" in header_rule  # metadata top-aligned with the thumbnail
+    assert "gap: 1rem" in header_rule  # ~16px
 
 
 def test_narrow_breakpoint_shrinks_the_thumbnail_rather_than_going_full_width():
@@ -433,9 +448,8 @@ def test_very_narrow_breakpoint_hides_the_thumbnail_rather_than_stacking_full_wi
     assert "display: none" in very_narrow_block.split("}")[0] + very_narrow_block.split("}")[1]
 
 
-def test_daily_news_card_container_contains_the_floated_thumbnail():
-    # Prevents the thumbnail from visually overflowing past the card's
-    # own bottom border when there isn't much text beside it.
+def test_header_row_never_reappears_as_a_full_width_hero_at_any_breakpoint():
     css = _css_text()
-    assert "st-key-daily-news-card-" in css
-    assert "overflow: hidden" in css.split("st-key-daily-news-card-")[1].split("}")[0]
+    thumb_block = css.split(".er-card-thumb {")[1]
+    assert "width: 100%" not in thumb_block
+    assert "aspect-ratio" not in thumb_block
