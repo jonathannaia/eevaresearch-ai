@@ -66,6 +66,17 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("investors.maxlinear.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="Rockwell Automation",
+        feed_url="https://rockwell2023tf.q4web.com/rss/pressrelease.aspx",
+        feed_format="rss",
+        # One-company exception: Rockwell's dedicated Q4-hosted IR
+        # subdomain, not its own root domain. Exact hostname only —
+        # canonical_url.py's existing set-membership match already
+        # rejects any other q4web.com subdomain; never widen this to a
+        # wildcard/suffix match across q4web.com generally.
+        canonical_domains=("rockwell2023tf.q4web.com",),
+    ),
 )
 
 

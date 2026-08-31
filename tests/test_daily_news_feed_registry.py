@@ -1,8 +1,16 @@
 """feed_registry.PILOT_FEEDS — minimal focused coverage for the Bloom
-Energy, Marvell, and MaxLinear registry additions: each entry is
-recognized with the exact approved fields, resolves to the real tracked
-company, and its item links validate only against its own approved
-canonical-domain allowlist (never another company's domain)."""
+Energy, Marvell, MaxLinear, and Rockwell Automation registry additions:
+each entry is recognized with the exact approved fields, resolves to the
+real tracked company, and its item links validate only against its own
+approved canonical-domain allowlist (never another company's domain).
+
+Rockwell Automation is a one-company exception: its allowlist is a
+single exact hostname on Q4's shared q4web.com platform
+(rockwell2023tf.q4web.com), not Rockwell's own root domain — see
+feed_registry.py's own inline comment. test_rockwell_rejects_other_
+q4web_subdomains below proves the existing exact-match validation
+(never a wildcard/suffix match) correctly rejects a different company's
+q4web.com-hosted subdomain."""
 from __future__ import annotations
 
 from src.data_access.daily_news.canonical_url import validate_canonical_url
@@ -103,9 +111,53 @@ def test_maxlinear_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investor.marvell.com/news-events/press-releases/detail/1031/some-release", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_six_sources():
-    assert len(PILOT_FEEDS) == 6
+def _rockwell_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Rockwell Automation"]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_rockwell_is_registered_with_the_exact_approved_fields():
+    source = _rockwell_source()
+    assert source.feed_url == "https://rockwell2023tf.q4web.com/rss/pressrelease.aspx"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("rockwell2023tf.q4web.com",)
+
+
+def test_rockwell_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("Rockwell Automation")
+    assert company is not None
+    assert company.krx_code == "ROK"
+    assert "humanoids" in company.themes
+
+
+def test_rockwell_item_url_validates_against_its_exact_canonical_domain():
+    source = _rockwell_source()
+    url = "https://rockwell2023tf.q4web.com/news/news-details/2026/Rockwell-Automation-Reports-Third-Quarter-2026-Results/"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_rockwell_rejects_other_q4web_subdomains():
+    # The approved exception is the exact hostname only — never a
+    # wildcard/suffix match across q4web.com. A different company's own
+    # q4web.com-hosted subdomain (e.g. Bloom Energy's, if it were ever
+    # hosted there) must still be rejected.
+    source = _rockwell_source()
+    for other_subdomain_url in (
+        "https://otherco2024xyz.q4web.com/news/news-details/2026/Some-Other-Company-Release/",
+        "https://q4web.com/news/news-details/2026/Bare-Domain-Release/",
+    ):
+        assert not validate_canonical_url(other_subdomain_url, source.canonical_domains, source.feed_url)
+
+
+def test_rockwell_off_domain_url_is_rejected():
+    source = _rockwell_source()
+    assert not validate_canonical_url("https://investor.marvell.com/news-events/press-releases/detail/1031/some-release", source.canonical_domains, source.feed_url)
+
+
+def test_pilot_feeds_now_has_exactly_seven_sources():
+    assert len(PILOT_FEEDS) == 7
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
-        "Marvell Technology, Inc.", "MaxLinear, Inc.",
+        "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation",
     }
