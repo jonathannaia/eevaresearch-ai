@@ -284,13 +284,11 @@ def _image_bearing_story() -> "NewsStory":
     ))
 
 
-def _image_bearing_markdown_block(at) -> str:
-    blocks = [m.value for m in at.markdown if "er-news-card-content" in m.value and not m.value.strip().startswith("<style")]
-    assert len(blocks) == 1
-    return blocks[0]
-
-
-def test_image_bearing_card_renders_one_two_column_content_wrapper(tmp_path):
+def test_image_bearing_story_renders_as_a_plain_text_only_card(tmp_path):
+    # Source-image rendering is disabled: a story with a fully valid,
+    # allowlisted image_url/image_alt must still render as an ordinary
+    # text-only card — no <img>, no image wrapper/column/header class,
+    # regardless of what's stored.
     daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -298,56 +296,22 @@ def test_image_bearing_card_renders_one_two_column_content_wrapper(tmp_path):
         at.run()
 
     assert not at.exception
-    block = _image_bearing_markdown_block(at)
-    # Metadata, headline, summary, and link all live inside the left
-    # "er-news-card-text" column, which is itself a sibling of the
-    # image — one wrapper, two real columns, never a float and never a
-    # separate image-only header row.
-    assert '<div class="er-news-card-text">' in block
-    assert "NVIDIA · NVIDIA ·" in block
-    assert '<img class="er-news-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in block
-    assert 'alt="A photo of the announcement"' in block
-    assert "onerror=" in block
-    assert "float" not in block
-    assert "er-card-header" not in block  # old header-row wrapper fully removed
+    card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
+    card_text = " ".join(card_markdown)
+    assert "<img" not in card_text
+    for forbidden_class in ("er-news-card-content", "er-news-card-text", "er-news-card-thumb", "er-card-header", "er-card-thumb"):
+        assert forbidden_class not in card_text
+    assert "https://iprsoftwaremedia.com/photo.jpg" not in card_text
+    assert "A photo of the announcement" not in card_text
+    # Metadata, headline, summary, and link are all still present.
+    assert "NVIDIA · NVIDIA ·" in card_text
+    assert "NVIDIA Announces Financial Results" in card_text
+    assert "NVIDIA reported strong quarterly results." in card_text
+    assert "Read original source" in card_text
+    assert "https://nvidianews.nvidia.com/news/results" in card_text
 
 
-def test_headline_starts_immediately_after_metadata_within_the_text_column(tmp_path):
-    daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
-
-    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    block = _image_bearing_markdown_block(at)
-    text_column = block.split('<div class="er-news-card-text">')[1].split('<img')[0]
-    meta_index = text_column.index("NVIDIA · NVIDIA ·")
-    headline_index = text_column.index("NVIDIA Announces Financial Results")
-    summary_index = text_column.index("NVIDIA reported strong quarterly results.")
-    link_index = text_column.index("Read original source")
-    # Order within the text column: metadata, headline, summary, link —
-    # the headline immediately follows metadata rather than waiting
-    # below the image, and everything stays inside this one column.
-    assert meta_index < headline_index < summary_index < link_index
-
-
-def test_image_rail_is_a_sibling_column_not_a_float_or_a_header_row(tmp_path):
-    daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
-
-    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    block = _image_bearing_markdown_block(at)
-    # The <img> is a sibling of the text column, closed within the same
-    # outer "er-news-card-content" wrapper — not nested inside the text
-    # column, and not part of any separate full-width header block.
-    assert block.index('<div class="er-news-card-text">') < block.index("<img")
-    text_column = block.split('<div class="er-news-card-text">')[1].split('<img')[0]
-    assert "<img" not in text_column
-
-
-def test_card_without_an_image_renders_no_image_rail_or_content_wrapper(tmp_path):
+def test_card_without_an_image_renders_unchanged(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_story()])  # default _story() has no image_url
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -355,10 +319,6 @@ def test_card_without_an_image_renders_no_image_rail_or_content_wrapper(tmp_path
         at.run()
 
     assert not at.exception
-    # Excludes the app chrome's own logo markdown block (unrelated to
-    # Daily News cards) — this proves the card itself renders no <img>
-    # and no two-column wrapper (reserved only for image-bearing cards)
-    # — the plain text-only layout is preserved exactly.
     card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
     card_text = " ".join(card_markdown)
     assert "<img" not in card_text
@@ -368,47 +328,21 @@ def test_card_without_an_image_renders_no_image_rail_or_content_wrapper(tmp_path
     assert "Read original source" in card_text
 
 
-def test_image_alt_and_url_are_html_escaped_before_rendering(tmp_path):
-    story = _story(sources=(
-        NewsSourceReference(
-            publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
-            url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
-            published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-            retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-            original_language="English", excerpt_original="NVIDIA reported strong quarterly results.",
-            image_url="https://iprsoftwaremedia.com/photo.jpg",
-            image_alt='"><script>alert(1)</script>',
-        ),
-    ))
-    daily_news_store.upsert_new_stories(tmp_path, [story])
-
-    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    markdown_text = " ".join(m.value for m in at.markdown)
-    assert "<script>alert(1)</script>" not in markdown_text
-
-
-def test_headline_and_summary_are_html_escaped_in_the_image_bearing_text_column(tmp_path):
-    # The two-column layout embeds headline/summary directly into the
-    # same unsafe_allow_html block as the image (unlike the plain-
-    # markdown rendering the text-only card still uses), so this is a
-    # new escaping surface that must be covered explicitly.
+def test_translation_unavailable_image_bearing_story_still_shows_original_title_and_caption(tmp_path):
+    # The translation-unavailable path must also fall through to the
+    # plain text-only card when the story happens to carry image data.
     story = _story(
-        headline='"><script>alert("headline")</script>',
-        eeva_summary='"><script>alert("summary")</script>',
         sources=(
             NewsSourceReference(
                 publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
-                url="https://nvidianews.nvidia.com/news/results", title='"><script>alert("headline")</script>',
+                url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
                 published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
                 retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
                 original_language="English",
                 image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo",
             ),
         ),
+        eeva_summary=None, translation_unavailable=True, original_title="삼성전자 신규시설투자 결정",
     )
     daily_news_store.upsert_new_stories(tmp_path, [story])
 
@@ -417,9 +351,12 @@ def test_headline_and_summary_are_html_escaped_in_the_image_bearing_text_column(
         at.run()
 
     assert not at.exception
-    markdown_text = " ".join(m.value for m in at.markdown)
-    assert '<script>alert("headline")</script>' not in markdown_text
-    assert '<script>alert("summary")</script>' not in markdown_text
+    card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
+    card_text = " ".join(card_markdown)
+    caption_text = " ".join(str(c.value) for c in at.caption)
+    assert "<img" not in card_text
+    assert "삼성전자 신규시설투자 결정" in card_text
+    assert "Translation unavailable" in caption_text
 
 
 def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
@@ -435,9 +372,8 @@ def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
     assert "stale-story" in daily_news_store.load_stories(tmp_path)  # still persisted, never deleted
 
 
-# --- Two-column card content styling (assets/styles.css) — static
-# CSS-content checks, since AppTest has no real browser layout engine
-# to measure rendered pixel sizes or line-wrapping/overflow against. ------
+# --- Image-layout CSS is unreachable now that rendering is disabled —
+# confirm the dead rules were actually removed, not just unused. ----------
 
 _CSS_PATH = Path(__file__).parent.parent / "assets" / "styles.css"
 
@@ -446,60 +382,9 @@ def _css_text() -> str:
     return _CSS_PATH.read_text(encoding="utf-8")
 
 
-def test_old_header_row_and_thumbnail_classes_are_fully_removed():
+def test_all_daily_news_image_layout_css_has_been_removed():
     css = _css_text()
-    assert ".er-card-header" not in css
-    assert ".er-card-thumb {" not in css
-
-
-def test_content_wrapper_is_a_real_grid_with_text_and_image_columns():
-    css = _css_text()
-    assert ".er-news-card-content" in css
-    rule = css.split(".er-news-card-content {")[1].split("}")[0]
-    assert "display: grid" in rule
-    assert "grid-template-columns" in rule
-    assert "align-items: start" in rule  # image top-aligned against the text
-    assert "1.125rem" in rule  # ~18px, within the approved 16-20px range
-
-
-def test_text_column_has_min_width_zero_to_prevent_grid_overflow():
-    css = _css_text()
-    assert ".er-news-card-text" in css
-    rule = css.split(".er-news-card-text {")[1].split("}")[0]
-    assert "min-width: 0" in rule
-
-
-def test_desktop_image_target_and_cap_and_landscape_crop():
-    css = _css_text()
-    assert ".er-news-card-thumb" in css
-    rule = css.split(".er-news-card-thumb {")[1].split("}")[0]
-    assert "height: 132px" in rule
-    assert "max-width: 220px" in rule
-    assert "max-height: 146px" in rule
-    assert "object-fit: cover" in rule
-    assert "border-radius: var(--r-sm)" in rule
-    assert "float" not in rule
-    assert "aspect-ratio" not in rule  # never the old full-width/tall hero rule
-
-
-def test_image_column_track_never_exceeds_a_quarter_of_the_card_width():
-    css = _css_text()
-    content_rule = css.split(".er-news-card-content {")[1].split("}")[0]
-    assert "25%" in content_rule
-
-
-def test_narrow_breakpoint_shrinks_the_image_rail_rather_than_going_full_width():
-    css = _css_text()
-    assert "@media (max-width: 640px)" in css
-    narrow_block = css.split("@media (max-width: 640px)")[1].split("@media (max-width: 480px)")[0]
-    assert "112px" in narrow_block
-    assert "height: 84px" in narrow_block
-    assert "width: 100%" not in narrow_block
-
-
-def test_very_narrow_breakpoint_falls_back_to_text_only_layout():
-    css = _css_text()
-    assert "@media (max-width: 480px)" in css
-    very_narrow_block = css.split("@media (max-width: 480px)")[1]
-    assert "grid-template-columns: 1fr" in very_narrow_block.split("}")[0]
-    assert "display: none" in very_narrow_block.split("}")[1]
+    for removed_class in (
+        ".er-card-header", ".er-card-thumb", ".er-news-card-content", ".er-news-card-text", ".er-news-card-thumb",
+    ):
+        assert removed_class not in css

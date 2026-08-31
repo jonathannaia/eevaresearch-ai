@@ -780,37 +780,3 @@ a:hover { color: var(--accent-hover); }
 .er-hero-watermark svg, .er-hero-watermark img { width: 100%; height: 100%; object-fit: contain; }
 .er-hero-content { position: relative; z-index: 1; }
 
-/* ---------- Daily News: compact optional item image rail ----------
-   One two-column grid for the whole card body — the full text column
-   (metadata, headline, summary/caption, link, in that order) on the
-   left, the image as a true sibling column on the right. Never a
-   float (left an empty band above the metadata) and never a separate
-   image-only header row (made the image the tallest thing in a short
-   band instead of sitting beside the full text block). min-width: 0 on
-   the text column is required — without it a CSS grid item's implicit
-   min-width defaults to its content's width, which can force the grid
-   wider than the card and overflow it. */
-.er-news-card-content {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) min(200px, 25%);
-    column-gap: 1.125rem; /* ~18px, within the approved 16-20px range */
-    align-items: start;
-}
-.er-news-card-text { min-width: 0; }
-.er-news-card-thumb {
-    width: 100%; height: 132px;
-    max-width: 220px; max-height: 146px;
-    object-fit: cover;
-    border-radius: var(--r-sm);
-}
-@media (max-width: 640px) {
-    .er-news-card-content { grid-template-columns: minmax(0, 1fr) min(112px, 25%); }
-    .er-news-card-thumb { height: 84px; max-height: 96px; }
-}
-@media (max-width: 480px) {
-    /* Too narrow for a side image to stay readable next to text — fall
-       back to the plain text-only layout rather than ever showing a
-       full-width image. */
-    .er-news-card-content { grid-template-columns: 1fr; }
-    .er-news-card-thumb { display: none; }
-}

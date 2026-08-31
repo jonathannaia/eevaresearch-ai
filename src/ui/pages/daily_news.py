@@ -22,7 +22,6 @@ them, never deletes anything.
 """
 from __future__ import annotations
 
-import html
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -76,61 +75,29 @@ def _recent_stories(stories: list[NewsStory], now: datetime | None = None) -> li
 
 
 def _render_card(story: NewsStory) -> None:
+    # Text-only layout for every card, regardless of whether a validated
+    # image_url/image_alt exists on the story — optional source-image
+    # rendering is disabled for now (UI decision; the underlying
+    # extraction/validation/storage of those fields is untouched, see
+    # rss_atom_client.py / canonical_url.validate_image_url() /
+    # daily_news_models.NewsSourceReference).
     source = story.sources[0]
     local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
 
     with st.container(border=True):
-        if source.image_url:
-            _render_image_bearing_card_content(story, source, local_time)
-        else:
-            _render_text_only_card_content(story, source, local_time)
+        st.markdown(
+            f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>',
+            unsafe_allow_html=True,
+        )
+        headline = story.original_title if story.translation_unavailable else story.headline
+        st.markdown(f"**{headline}**")
 
+        if story.translation_unavailable:
+            st.caption("Translation unavailable — original text shown above.")
+        elif story.eeva_summary:
+            st.write(story.eeva_summary)
 
-def _render_text_only_card_content(story: NewsStory, source, local_time: str) -> None:
-    st.markdown(
-        f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>',
-        unsafe_allow_html=True,
-    )
-    headline = story.original_title if story.translation_unavailable else story.headline
-    st.markdown(f"**{headline}**")
-
-    if story.translation_unavailable:
-        st.caption("Translation unavailable — original text shown above.")
-    elif story.eeva_summary:
-        st.write(story.eeva_summary)
-
-    st.markdown(f"[Read original source →]({source.url})")
-
-
-def _render_image_bearing_card_content(story: NewsStory, source, local_time: str) -> None:
-    # One combined block (er-news-card-content, assets/styles.css) — a
-    # two-column grid with the full text column (metadata, headline,
-    # summary/caption, link, in that order) on the left and the compact
-    # image rail as a true sibling column on the right, never a float
-    # and never a separate image-only header row. Everything embedded
-    # here is untrusted (external feed) content once headline/summary
-    # move off Streamlit's own markdown sanitizer, so each is escaped.
-    headline = story.original_title if story.translation_unavailable else story.headline
-    text_blocks = [
-        f'<div class="er-muted">{html.escape(story.company_name)} · {html.escape(source.publisher)} · {html.escape(local_time)}</div>',
-        f'<div class="er-news-card-title"><strong>{html.escape(headline)}</strong></div>',
-    ]
-    if story.translation_unavailable:
-        text_blocks.append('<div class="er-muted" style="font-size:0.8rem;">Translation unavailable — original text shown above.</div>')
-    elif story.eeva_summary:
-        text_blocks.append(f'<div>{html.escape(story.eeva_summary)}</div>')
-    text_blocks.append(f'<div><a href="{html.escape(source.url)}">Read original source →</a></div>')
-
-    alt_text = html.escape(source.image_alt or story.headline)
-    image_url = html.escape(source.image_url)
-    st.markdown(
-        '<div class="er-news-card-content">'
-        f'<div class="er-news-card-text">{"".join(text_blocks)}</div>'
-        f'<img class="er-news-card-thumb" src="{image_url}" alt="{alt_text}" '
-        'onerror="this.style.display=\'none\'" />'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+        st.markdown(f"[Read original source →]({source.url})")
 
 
 def render() -> None:
