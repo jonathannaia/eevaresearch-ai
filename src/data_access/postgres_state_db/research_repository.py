@@ -61,6 +61,20 @@ def get_research_case(conn: psycopg.Connection, case_id: str) -> ResearchCase | 
     return _row_to_case(row) if row is not None else None
 
 
+def list_recent_cases(conn: psycopg.Connection, limit: int) -> tuple[ResearchCase, ...]:
+    """EevaResearch Phase 4, Step 3C (design/DECISIONS.md) — bounded,
+    read-only, most-recent-first case list, same contract as the SQLite
+    counterpart: one parameterized query, ordered by
+    (created_at DESC, id DESC); `limit <= 0` returns an empty tuple
+    immediately, executing no query at all."""
+    if limit <= 0:
+        return ()
+    rows = conn.execute(
+        "SELECT * FROM research_cases ORDER BY created_at DESC, id DESC LIMIT %s", (limit,),
+    ).fetchall()
+    return tuple(_row_to_case(row) for row in rows)
+
+
 def insert_research_case(conn: psycopg.Connection, case: ResearchCase) -> bool:
     """INSERT-only. Returns True when newly inserted; False when a row
     with this exact stable id already existed — the failed INSERT is

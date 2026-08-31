@@ -156,6 +156,22 @@ def get_research_case(cache_dir: Path, case_id: str, filename: str = _CASES_FILE
     return load_research_cases(cache_dir, filename).get(case_id)
 
 
+def list_recent_cases(cache_dir: Path, limit: int, filename: str = _CASES_FILENAME) -> tuple[ResearchCase, ...]:
+    """EevaResearch Phase 4, Step 3C (design/DECISIONS.md) — bounded,
+    read-only, most-recent-first case list for the tester-facing Research
+    Cases page. Exactly one load_research_cases() call for a positive
+    limit (never a per-case load); `limit <= 0` returns an empty tuple
+    immediately without loading anything. Deterministically ordered by
+    (created_at DESC, id DESC) — never dict/file iteration order — and
+    every `created_at` string is compared exactly as stored, never
+    parsed, reformatted, or generated here."""
+    if limit <= 0:
+        return ()
+    cases = load_research_cases(cache_dir, filename)
+    ordered = sorted(cases.values(), key=lambda case: (case.created_at, case.id), reverse=True)
+    return tuple(ordered[:limit])
+
+
 def _save_research_cases(cache_dir: Path, cases: dict[str, ResearchCase], filename: str = _CASES_FILENAME) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {case_id: asdict(case) for case_id, case in cases.items()}

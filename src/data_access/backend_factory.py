@@ -72,6 +72,7 @@ import psycopg
 
 from src.config.settings import Settings
 from src.data_access import comparison_store
+from src.data_access import research_store
 from src.data_access.comparison_store import ComparisonRecord
 from src.data_access.dart import candidate_store
 from src.data_access.dart import corp_code_resolver
@@ -88,6 +89,7 @@ from src.data_access.postgres_state_db import comparison_repository as postgres_
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
 from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
+from src.data_access.postgres_state_db import research_repository as postgres_research
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
@@ -100,12 +102,14 @@ from src.data_access.state_db import comparison_repository as sqlite_comparisons
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
 from src.data_access.state_db import identifier_repository as sqlite_identifiers
+from src.data_access.state_db import research_repository as sqlite_research
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
 from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
+from src.models.research_case import DependencyAssertion, RelationshipAssertion, ResearchCase, ResearchEvidenceItem
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -582,3 +586,97 @@ def get_comparison_repository(settings: Settings) -> ComparisonRepositoryProtoco
     if backend == "postgres":
         return PostgresComparisonRepository(conn=_require_postgres_connection(settings))
     return JsonComparisonRepository(cache_dir=settings.cache_dir)
+
+
+# --- Research Case repository — EevaResearch Phase 4, Step 3C (design/
+# DECISIONS.md). Read-only by construction: no append/insert/update/
+# delete/bundle-persistence method is exposed here — the only write path
+# for Research Cases remains scripts/create_research_case.py's direct
+# calls to research_store.append_research_case_bundle()/
+# state_db.research_repository.insert_research_case_bundle()/
+# postgres_state_db.research_repository.insert_research_case_bundle(),
+# none of which this factory or its Protocol ever calls. Same
+# `settings.db_backend` selection convention, and the same narrow-
+# Protocol shape, as ComparisonRepositoryProtocol above. ---
+
+class ResearchCaseRepositoryProtocol(Protocol):
+    def list_recent_cases(self, limit: int) -> tuple[ResearchCase, ...]: ...
+    def get_case(self, case_id: str) -> ResearchCase | None: ...
+    def evidence_items_for_case_ids(self, case_ids: Sequence[str]) -> dict[str, tuple[ResearchEvidenceItem, ...]]: ...
+    def assertions_for_case_ids(
+        self, case_ids: Sequence[str],
+    ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]: ...
+
+
+@dataclass(frozen=True)
+class JsonResearchCaseRepository:
+    cache_dir: Path
+
+    def list_recent_cases(self, limit: int) -> tuple[ResearchCase, ...]:
+        return research_store.list_recent_cases(self.cache_dir, limit)
+
+    def get_case(self, case_id: str) -> ResearchCase | None:
+        return research_store.get_research_case(self.cache_dir, case_id)
+
+    def evidence_items_for_case_ids(self, case_ids: Sequence[str]) -> dict[str, tuple[ResearchEvidenceItem, ...]]:
+        return research_store.evidence_items_for_case_ids(self.cache_dir, case_ids)
+
+    def assertions_for_case_ids(
+        self, case_ids: Sequence[str],
+    ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
+        return research_store.assertions_for_case_ids(self.cache_dir, case_ids)
+
+
+@dataclass(frozen=True)
+class SqliteResearchCaseRepository:
+    conn: sqlite3.Connection
+
+    def list_recent_cases(self, limit: int) -> tuple[ResearchCase, ...]:
+        return sqlite_research.list_recent_cases(self.conn, limit)
+
+    def get_case(self, case_id: str) -> ResearchCase | None:
+        return sqlite_research.get_research_case(self.conn, case_id)
+
+    def evidence_items_for_case_ids(self, case_ids: Sequence[str]) -> dict[str, tuple[ResearchEvidenceItem, ...]]:
+        return sqlite_research.get_evidence_items_for_case_ids(self.conn, case_ids)
+
+    def assertions_for_case_ids(
+        self, case_ids: Sequence[str],
+    ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
+        return sqlite_research.get_assertions_for_case_ids(self.conn, case_ids)
+
+
+@dataclass(frozen=True)
+class PostgresResearchCaseRepository:
+    conn: psycopg.Connection
+
+    def list_recent_cases(self, limit: int) -> tuple[ResearchCase, ...]:
+        return postgres_research.list_recent_cases(self.conn, limit)
+
+    def get_case(self, case_id: str) -> ResearchCase | None:
+        return postgres_research.get_research_case(self.conn, case_id)
+
+    def evidence_items_for_case_ids(self, case_ids: Sequence[str]) -> dict[str, tuple[ResearchEvidenceItem, ...]]:
+        return postgres_research.get_evidence_items_for_case_ids(self.conn, case_ids)
+
+    def assertions_for_case_ids(
+        self, case_ids: Sequence[str],
+    ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
+        return postgres_research.get_assertions_for_case_ids(self.conn, case_ids)
+
+
+def get_research_case_repository(settings: Settings) -> ResearchCaseRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as every other
+    factory function above — "json" (default/unrecognized) returns the
+    JSON adapter, "sqlite"/"postgres" open (and migrate) a real
+    connection via the same `_require_sqlite_connection`/
+    `_require_postgres_connection` helpers every other backend-selecting
+    factory already uses. The only caller this phase is
+    src/ui/pages/research_cases.py, once per page render — never once
+    per row/card."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteResearchCaseRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresResearchCaseRepository(conn=_require_postgres_connection(settings))
+    return JsonResearchCaseRepository(cache_dir=settings.cache_dir)

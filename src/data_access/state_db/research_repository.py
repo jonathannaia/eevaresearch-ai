@@ -62,6 +62,20 @@ def get_research_case(conn: sqlite3.Connection, case_id: str) -> ResearchCase | 
     return _row_to_case(row) if row is not None else None
 
 
+def list_recent_cases(conn: sqlite3.Connection, limit: int) -> tuple[ResearchCase, ...]:
+    """EevaResearch Phase 4, Step 3C (design/DECISIONS.md) — bounded,
+    read-only, most-recent-first case list for the tester-facing Research
+    Cases page. One parameterized query, deterministically ordered by
+    (created_at DESC, id DESC); `limit <= 0` returns an empty tuple
+    immediately, executing no SQL at all."""
+    if limit <= 0:
+        return ()
+    rows = conn.execute(
+        "SELECT * FROM research_cases ORDER BY created_at DESC, id DESC LIMIT ?", (limit,),
+    ).fetchall()
+    return tuple(_row_to_case(row) for row in rows)
+
+
 def insert_research_case(conn: sqlite3.Connection, case: ResearchCase) -> bool:
     """INSERT-only: no update/replace/upsert path exists for this table
     anywhere in this codebase. Returns True when newly inserted; False

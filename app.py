@@ -35,6 +35,7 @@ from src.ui.pages import (
     methodology,
     radar_inbox,
     research,
+    research_cases,
     signals,
     themes,
     watchlists,
@@ -121,6 +122,14 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages["daily_news_admin"] = st.Page(
         with_chrome(daily_news_admin.render, "daily_news_admin"),
         title="Daily News — Admin", url_path="daily-news-admin", visibility="hidden",
+    )
+    # Research Cases (Phase 4, Step 3C) — same hidden-but-reachable
+    # pattern as company/disclaimer/daily_news_admin above: not linked in
+    # the sidebar or any nav group, reachable only by direct URL, for
+    # invited-tester review of manually curated research cases.
+    pages["research_cases"] = st.Page(
+        with_chrome(research_cases.render, "research_cases"),
+        title="Research Cases", url_path="research-cases", visibility="hidden",
     )
     return pages
 
