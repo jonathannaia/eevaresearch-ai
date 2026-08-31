@@ -21,6 +21,7 @@ for a curated, published Signal.
 """
 from __future__ import annotations
 
+import html
 from typing import Callable
 
 import streamlit as st
@@ -163,6 +164,17 @@ def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | Non
         _detail_row("Ordinance code", filing.ordinance_code or "—")
         _detail_row("Form code", filing.pblntf_ty or "—")
         _detail_row("Document type code", filing.pblntf_detail_ty or "—")
+    if candidate is not None and candidate.evidence_source_member:
+        # Evidence-packet foundation, Phase 2, Step 2 — the safe archive-
+        # relative ZIP-member path/name an EDINET excerpt was extracted
+        # from (see CandidateSignal.evidence_source_member's own
+        # docstring). Container provenance only, never a clickable/
+        # fetchable reference — plain, HTML-escaped text, since this
+        # value originates from a ZIP member's own filename rather than
+        # an app-generated string. None/empty for EDGAR, DART, and
+        # EDINET's own bare-PDF/HTML/text path, so this row is simply
+        # absent for every card but a ZIP-backed EDINET one.
+        _detail_row("Evidence file", html.escape(candidate.evidence_source_member))
 
 
 def _render_process_action(candidate_id: str, label: str, key: str, ready: bool, on_process: Callable[[str], None]) -> None:

@@ -1460,3 +1460,105 @@ def test_radar_inbox_renders_stably_when_new_evidence_packet_fields_are_absent(t
     all_text = " ".join(m.value for m in at.markdown)
     assert "Why flagged" not in all_text  # no flag_reason row for a candidate without one
     assert "Evidence location" not in all_text  # no location row for a candidate without one
+    assert "Evidence file" not in all_text  # no evidence_source_member row for a candidate without one
+
+
+# --- Evidence-packet foundation, Phase 2, Step 3: EDINET ZIP-member
+# provenance display ("Evidence file"). The underlying `_evidence_status_
+# panel` render logic is source-agnostic (it only checks whether
+# `candidate.evidence_source_member` is truthy) — exactly like the
+# existing Phase 1 tests above, which also attach source-shaped optional
+# fields (an EDGAR-style `EvidenceLocation` section) onto a DART-shaped
+# candidate purely to exercise the display logic, not to simulate a real
+# EDINET pipeline run. ---
+
+
+def test_radar_inbox_renders_evidence_source_member_when_present(tmp_path):
+    _seed_corp_codes(tmp_path)
+    filing = _filing("20260817000003", "유상증자 결정")
+    _seed_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="cand-phase2-step3-present", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="본문 발췌.", evidence_source_member="PublicDoc/0101.pdf",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Evidence file" in all_text
+    assert "PublicDoc/0101.pdf" in all_text
+
+    # Not rendered as a link, button, or otherwise fetchable reference —
+    # the raw markdown/HTML source (what AppTest captures) never wraps
+    # this value in an anchor tag, and no download/button element exists
+    # for it.
+    matching_rows = [m.value for m in at.markdown if "Evidence file" in m.value]
+    assert len(matching_rows) == 1
+    assert "<a " not in matching_rows[0] and "href=" not in matching_rows[0]
+
+
+def test_radar_inbox_escapes_unsafe_characters_in_evidence_source_member(tmp_path):
+    _seed_corp_codes(tmp_path)
+    filing = _filing("20260817000004", "유상증자 결정")
+    _seed_filing_events(tmp_path, [filing])
+    unsafe_member = 'PublicDoc/<script>alert(1)</script>"onerror="x.pdf'
+    candidate = CandidateSignal(
+        id="cand-phase2-step3-unsafe", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="본문 발췌.", evidence_source_member=unsafe_member,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    matching_rows = [m.value for m in at.markdown if "Evidence file" in m.value]
+    assert len(matching_rows) == 1
+    row_html = matching_rows[0]
+    assert "&lt;script&gt;" in row_html
+    assert "<script>" not in row_html  # never rendered as executable/unsafe HTML
+    assert "&quot;" in row_html or "&#x27;" in row_html or '\\"' not in row_html  # the raw quote is not left unescaped to break out of an attribute
+
+
+def test_radar_inbox_evidence_file_row_is_absent_and_no_placeholder_for_edgar_dart_candidates(tmp_path):
+    # Confirms EDGAR/DART/EDINET-non-ZIP cards (evidence_source_member
+    # always None for them) render no "Evidence file" row and no blank/
+    # placeholder line in its place — same guarantee already proven for
+    # flag_reason/evidence_location by the existing "renders stably when
+    # absent" test above, extended to this new field explicitly.
+    _seed_corp_codes(tmp_path)
+    filing = _filing("20260817000005", "일반 공고")
+    _seed_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="cand-phase2-step3-absent", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="본문 발췌.",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    assert candidate.evidence_source_member is None
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Evidence file" not in all_text
+    # Every other existing evidence field from Phase 1 still renders as
+    # before — this row's presence/absence never disturbs them.
+    assert "Original document" in all_text
+    assert "Native text" in all_text
+    assert "Translation" in all_text
