@@ -2,16 +2,26 @@
 fixture-driven. No network. Gate 10.A added real PDF text extraction
 (via pypdf) behind this seam — every PDF fixture below is a small,
 synthetic, hand-built, non-secret PDF constructed in this test file
-itself (never a real EDINET document or copyrighted filing). ZIP/XBRL
-parsing remains explicitly out of scope and still returns
-UNSUPPORTED_FORMAT, unchanged from Gate 1."""
+itself (never a real EDINET document or copyrighted filing). Phase 2,
+Step 1 added bounded ZIP-package extraction (a single allowlisted `.pdf`
+member) behind the same seam — every ZIP fixture below is likewise
+synthetic and built in-test via `zipfile.ZipFile`, never a real EDINET
+document. XBRL interpretation remains explicitly out of scope and still
+falls through to UNSUPPORTED_FORMAT."""
 from __future__ import annotations
 
+import io
+import warnings
+import zipfile
 from unittest.mock import patch
 
 from src.data_access.edinet.document_extractor import (
     MAX_DOCUMENT_SIZE_BYTES,
     MAX_EXCERPT_CHARS,
+    MAX_ZIP_COMPRESSION_RATIO,
+    MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES,
+    MAX_ZIP_MEMBERS,
+    MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
     extract_excerpt,
 )
 from src.models.models import ExtractionState
@@ -64,6 +74,17 @@ def _assemble_pdf(objects: list[bytes]) -> bytes:
     return pdf
 
 
+def _build_zip(members: list[tuple[str, bytes]], compress_type: int = zipfile.ZIP_DEFLATED) -> bytes:
+    """Assembles a real, valid, in-memory ZIP from `(name, bytes)` pairs
+    via the stdlib `zipfile` module itself — never a hand-rolled binary
+    layout. Synthetic and non-secret; never a real EDINET document."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compress_type) as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
 def test_extracts_text_from_plain_html():
     html = "<html><body><p>有価証券報告書 Annual Securities Report summary text.</p></body></html>".encode("utf-8")
     result = extract_excerpt(html)
@@ -111,12 +132,13 @@ def test_html_with_only_tags_and_no_text_returns_parse_failed():
     assert result.state == ExtractionState.PARSE_FAILED
 
 
-def test_real_looking_zip_payload_is_unsupported_format_not_a_crash():
-    # A real ZIP file's magic bytes (PK\x03\x04) are explicitly detected
-    # and refused — ZIP extraction is out of scope for this gate.
+def test_corrupt_zip_shaped_payload_fails_closed_not_a_crash():
+    # ZIP magic bytes (PK\x03\x04) followed by garbage is not a valid
+    # archive (no real end-of-central-directory record) — the ZIP path
+    # (Phase 2, Step 1) must fail closed with PARSE_FAILED, never crash.
     zip_like = b"\x50\x4b\x03\x04\x14\x00\x00\x00\x08\x00" + bytes(range(200))
     result = extract_excerpt(zip_like)
-    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert result.state == ExtractionState.PARSE_FAILED
     assert "ZIP" in result.detail
 
 
@@ -193,10 +215,10 @@ def test_truncated_valid_pdf_returns_parse_failed():
     assert result.state == ExtractionState.PARSE_FAILED
 
 
-def test_zip_magic_when_pdf_expected_is_unsupported_format():
+def test_zip_magic_garbage_when_pdf_expected_returns_parse_failed():
     zip_like = b"\x50\x4b\x03\x04" + bytes(range(200))
     result = extract_excerpt(zip_like)
-    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert result.state == ExtractionState.PARSE_FAILED
     assert "ZIP" in result.detail
 
 
@@ -240,6 +262,332 @@ def test_pdf_result_never_raises_for_garbage_shaped_like_pdf():
     for payload in (b"%PDF-", b"%PDF-1.4", b"%PDF-" + bytes(range(255)), b"%PDF-\x00\x00\x00"):
         result = extract_excerpt(payload)
         assert result.state in ExtractionState
+
+
+# ============================================================
+# Phase 2, Step 1: bounded EDINET ZIP-package extraction (a single
+# allowlisted `.pdf` member). Every fixture is a real, valid, in-memory
+# ZIP assembled via zipfile.ZipFile itself (see _build_zip above) — never
+# a real EDINET document.
+# ============================================================
+
+
+def test_zip_with_one_valid_pdf_member_is_extracted():
+    pdf_bytes = _build_minimal_pdf("Evidence extracted from inside a ZIP package.")
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", pdf_bytes)])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "Evidence extracted from inside a ZIP package" in result.excerpt_original
+
+
+def test_zip_with_pdf_plus_irrelevant_members_reads_only_the_pdf():
+    pdf_bytes = _build_minimal_pdf("The one true selected document.")
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/jpcrp030000-asr-001.xbrl", b"<xbrl>irrelevant</xbrl>"),
+        ("manifest.xml", b"<manifest/>"),
+        ("PublicDoc/0101.htm", b"<html><body>irrelevant html</body></html>"),
+        ("meta/logo.jpg", bytes(range(50))),
+        ("AuditDoc/signature.p7s", bytes(range(30))),
+        ("taxonomy/jppfs_cor.xsd", b"<xsd/>"),
+        ("PublicDoc/0101.pdf", pdf_bytes),
+    ])
+    with patch(
+        "src.data_access.dart.document_extractor._LenientHtmlTextExtractor",
+        side_effect=AssertionError("no non-PDF member may be parsed"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "The one true selected document" in result.excerpt_original
+
+
+def test_zip_with_no_pdf_member_is_unsupported_format():
+    zip_bytes = _build_zip([
+        ("manifest.xml", b"<manifest/>"),
+        ("PublicDoc/0101.htm", b"<html><body>no pdf here</body></html>"),
+    ])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "PDF" in result.detail
+
+
+def test_zip_with_absolute_path_pdf_member_fails_closed_before_reading():
+    zip_bytes = _build_zip([("/etc/evil.pdf", _build_minimal_pdf("should never be read"))])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "unsafe" in result.detail.lower()
+
+
+def test_zip_with_path_traversal_pdf_member_fails_closed_before_reading():
+    zip_bytes = _build_zip([("../../evil.pdf", _build_minimal_pdf("should never be read"))])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "unsafe" in result.detail.lower()
+
+
+def test_zip_with_drive_letter_pdf_member_fails_closed_before_reading():
+    zip_bytes = _build_zip([("C:\\evil\\evil.pdf", _build_minimal_pdf("should never be read"))])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "unsafe" in result.detail.lower()
+
+
+def test_zip_with_too_many_members_fails_closed_before_reading():
+    members = [(f"file_{i}.xml", b"<x/>") for i in range(MAX_ZIP_MEMBERS)]
+    members.append(("PublicDoc/0101.pdf", _build_minimal_pdf("should never be read")))
+    zip_bytes = _build_zip(members)
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "member" in result.detail.lower()
+
+
+def test_zip_with_oversized_total_uncompressed_size_fails_closed_before_reading():
+    # A real archive whose total uncompressed size exceeds the total cap
+    # (while every individual member stays at-or-under the per-member
+    # cap, and every member's ratio stays at/near 1:1) can't be built
+    # from real DEFLATE-compressed content without either tripping the
+    # outer 8MB raw-response gate first (if stored uncompressed) or the
+    # ratio check first (if compressed, since near-constant filler bytes
+    # compress far past the ratio limit long before reaching this size).
+    # _select_safe_pdf_member is therefore exercised directly against
+    # bare, in-memory ZipInfo metadata — still fully synthetic, isolating
+    # exactly the total-size check from the per-member and ratio checks.
+    from src.data_access.edinet.document_extractor import _select_safe_pdf_member
+
+    info1 = zipfile.ZipInfo(filename="PublicDoc/big1.xml")
+    info1.file_size = MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES
+    info1.compress_size = MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES
+    info2 = zipfile.ZipInfo(filename="PublicDoc/big2.xml")
+    info2.file_size = MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES
+    info2.compress_size = MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES
+    pdf_info = zipfile.ZipInfo(filename="PublicDoc/0101.pdf")
+    pdf_info.file_size = 10
+    pdf_info.compress_size = 10
+
+    assert info1.file_size + info2.file_size + pdf_info.file_size > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES  # sanity: fixture really exceeds the total cap
+
+    class _FakeArchive:
+        def infolist(self):
+            return [info1, info2, pdf_info]
+
+    selected, detail = _select_safe_pdf_member(_FakeArchive())
+    assert selected is None
+    assert "total uncompressed" in detail.lower()
+
+
+def test_zip_with_oversized_individual_member_fails_closed_before_reading():
+    big_pdf_shaped = b"0" * (MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES + 1)
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", big_pdf_shaped)])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "per-member" in result.detail.lower()
+
+
+def test_zip_with_excessive_compression_ratio_fails_closed_before_reading():
+    # A highly compressible payload (all zeros) deflates far beyond
+    # MAX_ZIP_COMPRESSION_RATIO:1 — a classic zip-bomb shape — while
+    # staying comfortably under the per-member/total-size caps above, so
+    # the ratio check (not the size checks) is what fires here.
+    ratio_bomb = b"0" * (1024 * 1024)  # 1MB of zeros
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", ratio_bomb)], compress_type=zipfile.ZIP_DEFLATED)
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as check:
+        info = check.infolist()[0]
+        assert info.file_size / max(info.compress_size, 1) > MAX_ZIP_COMPRESSION_RATIO  # sanity: fixture is actually a ratio bomb
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_pdf_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "compression ratio" in result.detail.lower()
+
+
+def test_zip_with_encrypted_member_fails_closed():
+    # zipfile provides no way to WRITE a real encrypted entry (and
+    # actively normalizes flag_bits on write), so the encryption-flag
+    # check is exercised directly against _select_safe_pdf_member with a
+    # bare, in-memory ZipInfo — still fully synthetic, no real archive or
+    # document involved.
+    from src.data_access.edinet.document_extractor import _select_safe_pdf_member
+
+    info = zipfile.ZipInfo(filename="PublicDoc/0101.pdf")
+    info.flag_bits = 0x1
+    info.file_size = 100
+    info.compress_size = 50
+
+    class _FakeArchive:
+        def infolist(self):
+            return [info]
+
+    selected, detail = _select_safe_pdf_member(_FakeArchive())
+    assert selected is None
+    assert "encrypted" in detail.lower()
+
+
+def test_zip_with_pdf_named_member_containing_zip_bytes_fails_closed_without_recursion():
+    inner_zip = _build_zip([("inner.txt", b"nested content, must never be read")])
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", inner_zip)])
+    real_zipfile_cls = zipfile.ZipFile
+    open_calls = []
+
+    def _tracking_zipfile(*args, **kwargs):
+        open_calls.append(1)
+        return real_zipfile_cls(*args, **kwargs)
+
+    with patch("src.data_access.edinet.document_extractor.zipfile.ZipFile", side_effect=_tracking_zipfile):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "archive" in result.detail.lower()
+    assert len(open_calls) == 1  # the inner ZIP bytes were never reopened as an archive
+
+
+def test_zip_with_invalid_pdf_named_content_fails_cleanly():
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", b"not a real pdf, just garbage bytes")])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "pdf" in result.detail.lower()
+
+
+def test_zip_with_duplicate_pdf_names_selects_first_entry_deterministically():
+    pdf_a = _build_minimal_pdf("FIRST ENTRY MUST BE SELECTED.")
+    pdf_b = _build_minimal_pdf("SECOND ENTRY MUST NEVER BE READ.")
+    with warnings.catch_warnings():
+        # zipfile itself warns on write about the duplicate name — the
+        # archive is still a valid ZIP with two distinct entries; this is
+        # exactly the adversarial/ambiguous shape this test verifies is
+        # handled deterministically.
+        warnings.simplefilter("ignore", UserWarning)
+        zip_bytes = _build_zip([("PublicDoc/0101.pdf", pdf_a), ("PublicDoc/0101.pdf", pdf_b)])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "FIRST ENTRY MUST BE SELECTED" in result.excerpt_original
+    assert "SECOND ENTRY MUST NEVER BE READ" not in result.excerpt_original
+
+
+def test_oversized_zip_shaped_payload_is_rejected_before_zip_parsing():
+    # The existing 8MB MAX_DOCUMENT_SIZE_BYTES gate must fire before any
+    # ZIP parsing is attempted, even when the payload starts with real
+    # ZIP magic bytes.
+    oversized_zip_shaped = b"PK\x03\x04" + b"x" * MAX_DOCUMENT_SIZE_BYTES
+    with patch(
+        "src.data_access.edinet.document_extractor.zipfile.ZipFile",
+        side_effect=AssertionError("ZIP must not be opened once the 8MB cap is exceeded"),
+    ):
+        result = extract_excerpt(oversized_zip_shaped)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "safety limit" in result.detail
+
+
+def test_zip_path_never_raises_for_adversarial_or_malformed_input():
+    payloads = [
+        b"PK\x03\x04",
+        b"PK\x03\x04" + bytes(range(255)),
+        b"PK\x05\x06" + b"\x00" * 18,  # a bare, empty end-of-central-directory record
+        _build_zip([]),  # a real, valid, empty archive
+        _build_zip([("PublicDoc/0101.pdf", b"")]),  # zero-byte pdf-named member
+    ]
+    for payload in payloads:
+        result = extract_excerpt(payload)
+        assert result.state in ExtractionState
+
+
+def test_zip_extraction_never_writes_to_disk():
+    pdf_bytes = _build_minimal_pdf("Disk-write check.")
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", pdf_bytes)])
+    with patch("builtins.open", side_effect=AssertionError("document_extractor must not open any file")):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+
+
+def test_zip_extraction_is_deterministic_on_repeat():
+    pdf_bytes = _build_minimal_pdf("Deterministic ZIP repeat check.")
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", pdf_bytes)])
+    first = extract_excerpt(zip_bytes)
+    second = extract_excerpt(zip_bytes)
+    assert first.state == second.state
+    assert first.excerpt_original == second.excerpt_original
+
+
+# --- Phase 2, Step 1 scope guard: no new dependency, network call, or
+# disk-write behavior was introduced; only the extractor and this test
+# file were touched ---
+
+
+def test_zip_path_introduces_no_new_network_or_process_modules():
+    import ast
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "src" / "data_access" / "edinet" / "document_extractor.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    forbidden_modules = ("requests", "httpx", "urllib", "socket", "subprocess", "shutil")
+    offenders = []
+    for node in ast.walk(tree):
+        modules = []
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules = [node.module]
+        for module in modules:
+            if any(module == forbidden or module.startswith(forbidden + ".") for forbidden in forbidden_modules):
+                offenders.append(module)
+    assert not offenders, offenders
+
+
+def test_no_new_dependency_added_to_requirements():
+    import subprocess
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent
+    result = subprocess.run(
+        ["git", "diff", "HEAD", "--", "requirements.txt"], cwd=repo_root, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return
+    assert result.stdout.strip() == "", f"requirements.txt was modified: {result.stdout}"
+
+
+def test_phase2_step1_touches_only_the_edinet_extractor_and_its_test():
+    """Runs against `git diff HEAD` — only meaningful in a real checkout
+    with this step's changes present, and only additive to (never a
+    substitute for) the fixed changed-files list Phase 1's own scope
+    guard already checks in tests/test_evidence_packet_phase1.py."""
+    import subprocess
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent
+    result = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=repo_root, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return
+    changed = set(result.stdout.splitlines())
+    allowed = {
+        "src/data_access/edinet/document_extractor.py",
+        "tests/test_edinet_document_extractor.py",
+        # One pre-existing document_service.py test asserted the old
+        # "ZIP is always UNSUPPORTED_FORMAT" behavior for a corrupt-ZIP
+        # fixture — updated to the new, more accurate PARSE_FAILED
+        # outcome; document_service.py itself is untouched.
+        "tests/test_edinet_document_service.py",
+    }
+    assert changed <= allowed, changed - allowed
 
 
 # --- No raw PDF bytes are ever persisted; DART/EDGAR extractors are

@@ -135,12 +135,18 @@ def test_default_type_requests_the_zip_format():
     client.fetch_document.assert_called_once_with("S100TYPE", DOCUMENT_TYPE_ZIP)
 
 
-def test_binary_zip_content_is_a_safe_unsupported_format_not_a_crash(tmp_path):
+def test_corrupt_zip_content_fails_closed_not_a_crash(tmp_path):
+    # ZIP magic bytes followed by garbage is not a valid archive (no real
+    # end-of-central-directory record) — Phase 2, Step 1's bounded ZIP
+    # extraction path (document_extractor.py) correctly identifies this
+    # as a corrupt/malformed archive (PARSE_FAILED), not merely "ZIP
+    # format is unsupported" (the pre-Phase-2 behavior this test used to
+    # assert). Either way, the service layer must never crash.
     client = _client(b"\x50\x4b\x03\x04" + bytes(range(200)))
 
     result = document_service.get_or_fetch_excerpt(client, "S100BINARY", tmp_path)
 
-    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert result.state == ExtractionState.PARSE_FAILED
     assert result.from_cache is False
 
 
