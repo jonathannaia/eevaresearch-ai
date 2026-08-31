@@ -12,7 +12,14 @@ postgres_state_db/comparison_repository.py's own established, verified
 behavior (not assumed to transfer for free from the SQLite version).
 
 No update/replace/upsert/delete function exists anywhere in this module
-for any of the three tables — insert and read only."""
+for any of the three tables — insert and read only.
+
+Phase 4, Step 3B (design/DECISIONS.md) additionally adds
+insert_research_case_bundle() — a single atomic, validation-first,
+all-or-nothing write of one ResearchCaseBundle inside one explicit
+commit/rollback boundary. A genuine transaction, like the SQLite
+counterpart — no crash-consistency caveat here, unlike the JSON
+backend's own append_research_case_bundle()."""
 from __future__ import annotations
 
 import json
@@ -20,6 +27,7 @@ from typing import Sequence
 
 import psycopg
 
+from src.logic.research_case_validation import ResearchCaseBundle, validate_research_case_bundle
 from src.models.research_case import (
     AssertionConfidence,
     AssertionStatus,
@@ -178,12 +186,21 @@ def _row_to_assertion(row) -> RelationshipAssertion | DependencyAssertion:
     raise ValueError(f"Unknown or missing research-assertion kind in stored row: {kind!r}")
 
 
-def insert_assertion(conn: psycopg.Connection, assertion: RelationshipAssertion | DependencyAssertion) -> bool:
-    """INSERT-only. Accepts either a RelationshipAssertion or a
-    DependencyAssertion; both persist into the one shared
-    research_assertions table, discriminated by the `kind` column."""
+_INSERT_ASSERTION_SQL = """
+    INSERT INTO research_assertions (
+        id, case_id, kind,
+        subject_entity, object_entity, role,
+        affected_entity, bottleneck_type, supply_chain_layer, transmission_path_json,
+        assertion_status, evidence_ids_json, confidence, created_at, reasoning, limitations_json
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+
+def _assertion_insert_params(assertion: RelationshipAssertion | DependencyAssertion) -> tuple:
+    """Shared by insert_assertion() and insert_research_case_bundle() so
+    the two never drift — the exact same column mapping either way."""
     if isinstance(assertion, RelationshipAssertion):
-        params = (
+        return (
             assertion.id, assertion.case_id, "relationship",
             assertion.subject_entity, assertion.object_entity, assertion.role.value,
             None, None, None, None,
@@ -191,9 +208,9 @@ def insert_assertion(conn: psycopg.Connection, assertion: RelationshipAssertion 
             assertion.confidence.value, assertion.created_at, assertion.reasoning,
             json.dumps(list(assertion.limitations)),
         )
-    elif isinstance(assertion, DependencyAssertion):
+    if isinstance(assertion, DependencyAssertion):
         transmission_path_json = json.dumps(list(assertion.transmission_path)) if assertion.transmission_path is not None else None
-        params = (
+        return (
             assertion.id, assertion.case_id, "dependency",
             None, None, None,
             assertion.affected_entity, assertion.bottleneck_type.value, assertion.supply_chain_layer, transmission_path_json,
@@ -201,21 +218,16 @@ def insert_assertion(conn: psycopg.Connection, assertion: RelationshipAssertion 
             assertion.confidence.value, assertion.created_at, assertion.reasoning,
             json.dumps(list(assertion.limitations)),
         )
-    else:
-        raise TypeError(f"Unsupported research-assertion type: {type(assertion)!r}")
+    raise TypeError(f"Unsupported research-assertion type: {type(assertion)!r}")
 
+
+def insert_assertion(conn: psycopg.Connection, assertion: RelationshipAssertion | DependencyAssertion) -> bool:
+    """INSERT-only. Accepts either a RelationshipAssertion or a
+    DependencyAssertion; both persist into the one shared
+    research_assertions table, discriminated by the `kind` column."""
+    params = _assertion_insert_params(assertion)
     try:
-        conn.execute(
-            """
-            INSERT INTO research_assertions (
-                id, case_id, kind,
-                subject_entity, object_entity, role,
-                affected_entity, bottleneck_type, supply_chain_layer, transmission_path_json,
-                assertion_status, evidence_ids_json, confidence, created_at, reasoning, limitations_json
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            params,
-        )
+        conn.execute(_INSERT_ASSERTION_SQL, params)
     except psycopg.errors.UniqueViolation:
         conn.rollback()
         return False
@@ -237,3 +249,75 @@ def get_assertions_for_case_ids(
     for row in rows:
         by_case.setdefault(row["case_id"], []).append(_row_to_assertion(row))
     return {case_id: tuple(assertions) for case_id, assertions in by_case.items()}
+
+
+# --- Atomic bundle persistence (Phase 4, Step 3B) --------------------------
+
+
+def insert_research_case_bundle(conn: psycopg.Connection, bundle: ResearchCaseBundle) -> bool:
+    """Atomic, validation-first, all-or-nothing persistence of one
+    ResearchCaseBundle — Phase 4, Step 3B. Never creates or modifies a
+    model object, id, timestamp, quote, URL, entity, assertion, or
+    validation result.
+
+    Contract:
+      1. validate_research_case_bundle(bundle) must return no errors, or
+         this function returns False immediately with no SQL executed
+         at all.
+      2. The case insert, every evidence-item insert, and every
+         assertion insert execute as one implicit Postgres transaction
+         (psycopg's default autocommit=False) — exactly one
+         conn.commit() call, only after every statement has succeeded.
+      3. A duplicate id (the case, any evidence item, or any assertion)
+         raises psycopg.errors.UniqueViolation from that one INSERT
+         statement — caught here, followed by an explicit conn.rollback()
+         (undoing every statement already executed earlier in this same
+         call) and returning False, never a partial commit.
+      4. Any other exception during the sequence is caught the same way
+         — rollback, then False — "on any unexpected persistence error,
+         roll back the complete bundle," not only the duplicate-id case.
+      5. The rollback leaves the connection immediately usable for the
+         caller's next statement, exactly like every other Postgres
+         insert function in this module (a caller must not need to
+         reconnect after a rejected bundle)."""
+    if validate_research_case_bundle(bundle):
+        return False
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO research_cases (
+                id, trigger_source_type, trigger_source_id, trigger_source_name, trigger_summary,
+                title, research_question, status, created_at, version
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                bundle.case.id, bundle.case.trigger_source_type, bundle.case.trigger_source_id,
+                bundle.case.trigger_source_name, bundle.case.trigger_summary, bundle.case.title,
+                bundle.case.research_question, bundle.case.status.value, bundle.case.created_at,
+                bundle.case.version,
+            ),
+        )
+        for item in bundle.evidence_items:
+            conn.execute(
+                """
+                INSERT INTO research_evidence_items (
+                    id, case_id, source_type, source_id, source_url, source_publisher_or_system,
+                    source_date, retrieved_at, excerpt_original, original_language, added_at,
+                    excerpt_translated, translation_provider
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    item.id, item.case_id, item.source_type, item.source_id, item.source_url,
+                    item.source_publisher_or_system, item.source_date, item.retrieved_at,
+                    item.excerpt_original, item.original_language, item.added_at,
+                    item.excerpt_translated, item.translation_provider,
+                ),
+            )
+        for assertion in bundle.assertions:
+            conn.execute(_INSERT_ASSERTION_SQL, _assertion_insert_params(assertion))
+    except Exception:
+        conn.rollback()
+        return False
+    conn.commit()
+    return True

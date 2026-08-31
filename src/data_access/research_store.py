@@ -19,15 +19,27 @@ comparison_store.append_comparison_record's own established convention.
 No wall-clock reads anywhere in this module — every timestamp used to
 derive an id is caller-supplied. No import of CandidateSignal,
 FilingEvent, NewsStory, any source client, or any UI type — only
-src.models.research_case and the standard library."""
+src.models.research_case, src.logic.research_case_validation, and the
+standard library.
+
+Phase 4, Step 3B (design/DECISIONS.md) additionally adds
+append_research_case_bundle() — a single atomic, validation-first,
+all-or-nothing write of one ResearchCaseBundle (its case, every evidence
+item, every assertion) across all three JSON files at once. See that
+function's own docstring for the exact crash-consistency limitation of
+this local-JSON v1 implementation, which independent os.replace() calls
+cannot fully eliminate across three separate files."""
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+from src.logic.research_case_validation import ResearchCaseBundle, validate_research_case_bundle
 from src.models.research_case import (
     AssertionConfidence,
     AssertionStatus,
@@ -355,3 +367,147 @@ def assertions_for_case_ids(
         case_id: tuple(sorted(assertions, key=lambda a: (a.created_at, a.id)))
         for case_id, assertions in by_case.items()
     }
+
+
+# --- Atomic bundle persistence (Phase 4, Step 3B) --------------------------
+
+
+def _best_effort_remove(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_temp_json(directory: Path, target_filename: str, payload: str) -> Path:
+    """Writes `payload` to a new temp file in `directory` (the same
+    directory as the eventual live file, so the later os.replace() is a
+    same-filesystem atomic rename, never a cross-filesystem copy),
+    flushed and fsynced before the file handle closes. Raises OSError on
+    any failure, having already removed the temp file itself — the
+    caller is responsible for cleaning up any *other*, earlier temp
+    files from the same bundle attempt."""
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, raw_temp_path = tempfile.mkstemp(prefix=f".{target_filename}.", suffix=".tmp", dir=directory)
+    temp_path = Path(raw_temp_path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        _best_effort_remove(temp_path)
+        raise
+    return temp_path
+
+
+def append_research_case_bundle(cache_dir: Path, bundle: ResearchCaseBundle) -> bool:
+    """Atomic, validation-first, all-or-nothing persistence of one
+    ResearchCaseBundle across all three JSON stores at once — Phase 4,
+    Step 3B. Never creates or modifies a model object, id, timestamp,
+    quote, URL, entity, assertion, or validation result; it only decides
+    whether, and how, to write exactly the records already present on
+    `bundle`.
+
+    Contract:
+      1. validate_research_case_bundle(bundle) must return no errors, or
+         this function returns False immediately with no filesystem
+         access at all (not even a read).
+      2. Every id already present in the currently-persisted stores
+         (case id, any evidence id, any assertion id — checked against
+         *both* the evidence and assertion stores, extending Step 2's
+         own bundle-internal cross-kind-collision concern to already-
+         persisted state) causes this function to return False with no
+         write of any kind.
+      3. Only once every check above passes does this function build
+         complete proposed in-memory copies of all three stores, then
+         serialize all three to JSON text — any serialization failure
+         (a record that somehow isn't JSON-encodable) aborts with no
+         filesystem write at all.
+      4. Only once every proposed payload has serialized successfully
+         does this function write each to a temporary sibling file
+         (flushed and fsynced) in the same directory as its live
+         counterpart. Any failure at this stage removes every temp file
+         already created this call (best-effort) and leaves every live
+         file completely untouched.
+      5. Only once all three temp files exist does this function replace
+         the three live files, one os.replace() call each — each
+         individual replace is atomic on the same filesystem (POSIX
+         rename semantics), so no live file is ever observed half-
+         written.
+
+    Explicit crash-consistency limitation (this local JSON v1 backend
+    only): three independent os.replace() calls cannot be made a single
+    atomic multi-file transaction — this function guarantees no partial
+    state can result from an ordinary validation, duplicate-id,
+    serialization, or temp-file-write failure (every one of those is
+    caught before any live file is touched), but it does NOT and cannot
+    guarantee durability across a process crash or power loss occurring
+    *between* the first and a later os.replace() call — in that specific
+    narrow window, a case row could become visible before its evidence
+    and/or assertions do. This is a real, stated limitation of a local,
+    dependency-free JSON backend, not a claim of ACID multi-file
+    durability; SQLite/Postgres (see research_repository.py) close this
+    exact gap via a real database transaction."""
+    validation_errors = validate_research_case_bundle(bundle)
+    if validation_errors:
+        return False
+
+    existing_cases = load_research_cases(cache_dir)
+    existing_evidence = load_evidence_items(cache_dir)
+    existing_assertions = load_assertions(cache_dir)
+
+    if bundle.case.id in existing_cases:
+        return False
+    for item in bundle.evidence_items:
+        if item.id in existing_evidence or item.id in existing_assertions:
+            return False
+    for assertion in bundle.assertions:
+        if assertion.id in existing_assertions or assertion.id in existing_evidence:
+            return False
+
+    new_cases = dict(existing_cases)
+    new_cases[bundle.case.id] = bundle.case
+    new_evidence = dict(existing_evidence)
+    for item in bundle.evidence_items:
+        new_evidence[item.id] = item
+    new_assertions = dict(existing_assertions)
+    for assertion in bundle.assertions:
+        new_assertions[assertion.id] = assertion
+
+    try:
+        cases_payload = json.dumps({cid: asdict(c) for cid, c in new_cases.items()}, ensure_ascii=False, indent=2)
+        evidence_payload = json.dumps({iid: asdict(i) for iid, i in new_evidence.items()}, ensure_ascii=False, indent=2)
+        assertions_payload = json.dumps(
+            {aid: _assertion_to_dict(a) for aid, a in new_assertions.items()}, ensure_ascii=False, indent=2,
+        )
+    except (TypeError, ValueError):
+        return False
+
+    temp_paths: list[Path] = []
+    try:
+        temp_paths.append(_write_temp_json(cache_dir, _CASES_FILENAME, cases_payload))
+        temp_paths.append(_write_temp_json(cache_dir, _EVIDENCE_FILENAME, evidence_payload))
+        temp_paths.append(_write_temp_json(cache_dir, _ASSERTIONS_FILENAME, assertions_payload))
+    except OSError:
+        for temp_path in temp_paths:
+            _best_effort_remove(temp_path)
+        return False
+
+    cases_temp, evidence_temp, assertions_temp = temp_paths
+    try:
+        os.replace(cases_temp, cache_dir / _CASES_FILENAME)
+        os.replace(evidence_temp, cache_dir / _EVIDENCE_FILENAME)
+        os.replace(assertions_temp, cache_dir / _ASSERTIONS_FILENAME)
+    except OSError:
+        # See this function's own docstring: a failure here is exactly
+        # the narrow, stated, unavoidable crash-consistency window for
+        # this local JSON backend — any temp file not yet replaced is
+        # removed best-effort; any live file already replaced before the
+        # failure remains replaced (this is the documented limitation,
+        # not a bug to silently paper over).
+        for temp_path in temp_paths:
+            _best_effort_remove(temp_path)
+        return False
+
+    return True
