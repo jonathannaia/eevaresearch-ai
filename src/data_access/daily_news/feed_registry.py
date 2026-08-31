@@ -77,6 +77,12 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         # wildcard/suffix match across q4web.com generally.
         canonical_domains=("rockwell2023tf.q4web.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="SK Hynix",
+        feed_url="https://news.skhynix.com/en/feed",
+        feed_format="rss",
+        canonical_domains=("news.skhynix.com",),
+    ),
 )
 
 

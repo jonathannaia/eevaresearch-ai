@@ -155,9 +155,55 @@ def test_rockwell_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investor.marvell.com/news-events/press-releases/detail/1031/some-release", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_seven_sources():
-    assert len(PILOT_FEEDS) == 7
+def _sk_hynix_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "SK Hynix"]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_sk_hynix_is_registered_with_the_exact_approved_fields():
+    source = _sk_hynix_source()
+    assert source.feed_url == "https://news.skhynix.com/en/feed"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("news.skhynix.com",)
+
+
+def test_sk_hynix_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("SK Hynix")
+    assert company is not None
+    assert company.krx_code == "000660"
+    assert "memory" in company.themes
+
+
+def test_sk_hynix_item_url_validates_against_its_exact_canonical_domain():
+    source = _sk_hynix_source()
+    url = "https://news.skhynix.com/en/indiana-groundbreaking-ceremony-sketch/"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_sk_hynix_rejects_other_hostnames_including_skhynix_like_ones():
+    # The approved allowlist is the exact hostname only — never a
+    # wildcard/suffix/parent-domain match across skhynix.com. A
+    # different real subdomain, the bare parent domain, and a
+    # hypothetical unrelated/third-party skhynix-like hostname must all
+    # still be rejected.
+    source = _sk_hynix_source()
+    for other_url in (
+        "https://www.skhynix.com/en/some-page/",
+        "https://skhynix.com/en/some-page/",
+        "https://news.skhynix.com.evil-example.com/en/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_sk_hynix_off_domain_url_is_rejected():
+    source = _sk_hynix_source()
+    assert not validate_canonical_url("https://investor.marvell.com/news-events/press-releases/detail/1031/some-release", source.canonical_domains, source.feed_url)
+
+
+def test_pilot_feeds_now_has_exactly_eight_sources():
+    assert len(PILOT_FEEDS) == 8
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
-        "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation",
+        "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
     }
