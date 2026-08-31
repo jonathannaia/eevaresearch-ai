@@ -54,6 +54,18 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("investor.bloomenergy.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="Marvell Technology, Inc.",
+        feed_url="https://investor.marvell.com/rss-news-feed",
+        feed_format="rss",
+        canonical_domains=("investor.marvell.com",),
+    ),
+    DailyNewsFeedSource(
+        company_name="MaxLinear, Inc.",
+        feed_url="https://investors.maxlinear.com/news/rss",
+        feed_format="rss",
+        canonical_domains=("investors.maxlinear.com",),
+    ),
 )
 
 
