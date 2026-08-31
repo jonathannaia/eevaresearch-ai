@@ -284,7 +284,13 @@ def _image_bearing_story() -> "NewsStory":
     ))
 
 
-def test_image_bearing_card_renders_a_dedicated_header_row_with_metadata_and_thumbnail(tmp_path):
+def _image_bearing_markdown_block(at) -> str:
+    blocks = [m.value for m in at.markdown if "er-news-card-content" in m.value and not m.value.strip().startswith("<style")]
+    assert len(blocks) == 1
+    return blocks[0]
+
+
+def test_image_bearing_card_renders_one_two_column_content_wrapper(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -292,41 +298,56 @@ def test_image_bearing_card_renders_a_dedicated_header_row_with_metadata_and_thu
         at.run()
 
     assert not at.exception
-    # The metadata line and the thumbnail must be rendered together
-    # inside one "er-card-header" block, not as separate top-level
-    # blocks (which is what the earlier float layout did).
-    header_blocks = [m.value for m in at.markdown if "er-card-header" in m.value and not m.value.strip().startswith("<style")]
-    assert len(header_blocks) == 1
-    header = header_blocks[0]
-    assert "NVIDIA · NVIDIA ·" in header
-    assert '<img class="er-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in header
-    assert 'alt="A photo of the announcement"' in header
-    assert "onerror=" in header
-    # Never the old inline full-width hero style or a float.
-    assert "width:100%" not in header
-    assert "aspect-ratio" not in header
-    assert "float" not in header
+    block = _image_bearing_markdown_block(at)
+    # Metadata, headline, summary, and link all live inside the left
+    # "er-news-card-text" column, which is itself a sibling of the
+    # image — one wrapper, two real columns, never a float and never a
+    # separate image-only header row.
+    assert '<div class="er-news-card-text">' in block
+    assert "NVIDIA · NVIDIA ·" in block
+    assert '<img class="er-news-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in block
+    assert 'alt="A photo of the announcement"' in block
+    assert "onerror=" in block
+    assert "float" not in block
+    assert "er-card-header" not in block  # old header-row wrapper fully removed
 
 
-def test_title_summary_and_link_render_as_separate_full_width_blocks_after_the_header(tmp_path):
+def test_headline_starts_immediately_after_metadata_within_the_text_column(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
-    assert not at.exception
-    # Title, summary, and the source link must each be their own block,
-    # entirely outside the header wrapper/thumbnail markup — never
-    # wrapped around the image the way the old float layout did.
-    non_header_blocks = [m.value for m in at.markdown if "er-card-header" not in m.value]
-    for text in ("NVIDIA Announces Financial Results", "NVIDIA reported strong quarterly results.", "Read original source"):
-        matches = [b for b in non_header_blocks if text in b]
-        assert matches, f"{text!r} not found outside the header block"
-        assert not any("er-card-thumb" in b for b in matches)
+    block = _image_bearing_markdown_block(at)
+    text_column = block.split('<div class="er-news-card-text">')[1].split('<img')[0]
+    meta_index = text_column.index("NVIDIA · NVIDIA ·")
+    headline_index = text_column.index("NVIDIA Announces Financial Results")
+    summary_index = text_column.index("NVIDIA reported strong quarterly results.")
+    link_index = text_column.index("Read original source")
+    # Order within the text column: metadata, headline, summary, link —
+    # the headline immediately follows metadata rather than waiting
+    # below the image, and everything stays inside this one column.
+    assert meta_index < headline_index < summary_index < link_index
 
 
-def test_card_without_an_image_renders_no_img_tag_or_header_wrapper(tmp_path):
+def test_image_rail_is_a_sibling_column_not_a_float_or_a_header_row(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_image_bearing_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    block = _image_bearing_markdown_block(at)
+    # The <img> is a sibling of the text column, closed within the same
+    # outer "er-news-card-content" wrapper — not nested inside the text
+    # column, and not part of any separate full-width header block.
+    assert block.index('<div class="er-news-card-text">') < block.index("<img")
+    text_column = block.split('<div class="er-news-card-text">')[1].split('<img')[0]
+    assert "<img" not in text_column
+
+
+def test_card_without_an_image_renders_no_image_rail_or_content_wrapper(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_story()])  # default _story() has no image_url
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -336,11 +357,12 @@ def test_card_without_an_image_renders_no_img_tag_or_header_wrapper(tmp_path):
     assert not at.exception
     # Excludes the app chrome's own logo markdown block (unrelated to
     # Daily News cards) — this proves the card itself renders no <img>
-    # and no dedicated header wrapper (reserved only for image-bearing
-    # cards) — the plain text-only layout is preserved exactly.
+    # and no two-column wrapper (reserved only for image-bearing cards)
+    # — the plain text-only layout is preserved exactly.
     card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
     card_text = " ".join(card_markdown)
     assert "<img" not in card_text
+    assert "er-news-card-content" not in card_text
     assert "er-card-header" not in card_text
     assert "NVIDIA Announces Financial Results" in card_text
     assert "Read original source" in card_text
@@ -369,6 +391,37 @@ def test_image_alt_and_url_are_html_escaped_before_rendering(tmp_path):
     assert "<script>alert(1)</script>" not in markdown_text
 
 
+def test_headline_and_summary_are_html_escaped_in_the_image_bearing_text_column(tmp_path):
+    # The two-column layout embeds headline/summary directly into the
+    # same unsafe_allow_html block as the image (unlike the plain-
+    # markdown rendering the text-only card still uses), so this is a
+    # new escaping surface that must be covered explicitly.
+    story = _story(
+        headline='"><script>alert("headline")</script>',
+        eeva_summary='"><script>alert("summary")</script>',
+        sources=(
+            NewsSourceReference(
+                publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://nvidianews.nvidia.com/news/results", title='"><script>alert("headline")</script>',
+                published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                original_language="English",
+                image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo",
+            ),
+        ),
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert '<script>alert("headline")</script>' not in markdown_text
+    assert '<script>alert("summary")</script>' not in markdown_text
+
+
 def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
     stale = _story(id="stale-story", published_at_offset=timedelta(days=30))
     daily_news_store.upsert_new_stories(tmp_path, [stale])
@@ -382,9 +435,9 @@ def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
     assert "stale-story" in daily_news_store.load_stories(tmp_path)  # still persisted, never deleted
 
 
-# --- Compact thumbnail styling (assets/styles.css) — static CSS-content
-# checks, since AppTest has no real browser layout engine to measure
-# rendered pixel sizes or line-wrapping/overflow against. ------------------
+# --- Two-column card content styling (assets/styles.css) — static
+# CSS-content checks, since AppTest has no real browser layout engine
+# to measure rendered pixel sizes or line-wrapping/overflow against. ------
 
 _CSS_PATH = Path(__file__).parent.parent / "assets" / "styles.css"
 
@@ -393,63 +446,60 @@ def _css_text() -> str:
     return _CSS_PATH.read_text(encoding="utf-8")
 
 
-def test_desktop_thumbnail_is_a_small_fixed_size_not_a_hero():
+def test_old_header_row_and_thumbnail_classes_are_fully_removed():
     css = _css_text()
-    assert ".er-card-thumb" in css
-    assert "width: 160px" in css
-    assert "height: 100px" in css
-    # Never the old full-width, tall hero-image rule.
-    assert "width:100%;aspect-ratio:16/9" not in css
+    assert ".er-card-header" not in css
+    assert ".er-card-thumb {" not in css
 
 
-def test_thumbnail_dimensions_are_capped_at_the_approved_maximum():
+def test_content_wrapper_is_a_real_grid_with_text_and_image_columns():
     css = _css_text()
-    assert "max-width: 176px" in css
-    assert "max-height: 112px" in css
+    assert ".er-news-card-content" in css
+    rule = css.split(".er-news-card-content {")[1].split("}")[0]
+    assert "display: grid" in rule
+    assert "grid-template-columns" in rule
+    assert "align-items: start" in rule  # image top-aligned against the text
+    assert "1.125rem" in rule  # ~18px, within the approved 16-20px range
 
 
-def test_thumbnail_uses_a_landscape_cover_crop_and_a_small_radius():
+def test_text_column_has_min_width_zero_to_prevent_grid_overflow():
     css = _css_text()
-    assert "object-fit: cover" in css
-    assert "border-radius: var(--r-sm)" in css
+    assert ".er-news-card-text" in css
+    rule = css.split(".er-news-card-text {")[1].split("}")[0]
+    assert "min-width: 0" in rule
 
 
-def test_thumbnail_has_no_float_styling():
-    # The float layout left an empty band above the metadata line and
-    # put the image ahead of the text in normal flow — replaced by a
-    # dedicated header row (er-card-header), never a float.
+def test_desktop_image_target_and_cap_and_landscape_crop():
     css = _css_text()
-    thumb_rule = css.split(".er-card-thumb {")[1].split("}")[0]
-    assert "float" not in thumb_rule
+    assert ".er-news-card-thumb" in css
+    rule = css.split(".er-news-card-thumb {")[1].split("}")[0]
+    assert "height: 132px" in rule
+    assert "max-width: 220px" in rule
+    assert "max-height: 146px" in rule
+    assert "object-fit: cover" in rule
+    assert "border-radius: var(--r-sm)" in rule
+    assert "float" not in rule
+    assert "aspect-ratio" not in rule  # never the old full-width/tall hero rule
 
 
-def test_card_header_is_a_real_two_column_row_with_a_sixteen_pixel_gap():
+def test_image_column_track_never_exceeds_a_quarter_of_the_card_width():
     css = _css_text()
-    assert ".er-card-header" in css
-    header_rule = css.split(".er-card-header {")[1].split("}")[0]
-    assert "display: flex" in header_rule or "display: grid" in header_rule
-    assert "justify-content: space-between" in header_rule
-    assert "align-items: flex-start" in header_rule  # metadata top-aligned with the thumbnail
-    assert "gap: 1rem" in header_rule  # ~16px
+    content_rule = css.split(".er-news-card-content {")[1].split("}")[0]
+    assert "25%" in content_rule
 
 
-def test_narrow_breakpoint_shrinks_the_thumbnail_rather_than_going_full_width():
+def test_narrow_breakpoint_shrinks_the_image_rail_rather_than_going_full_width():
     css = _css_text()
     assert "@media (max-width: 640px)" in css
-    narrow_block = css.split("@media (max-width: 640px)")[1].split("}")[0]
-    assert "96px" in narrow_block
-    assert "72px" in narrow_block
+    narrow_block = css.split("@media (max-width: 640px)")[1].split("@media (max-width: 480px)")[0]
+    assert "112px" in narrow_block
+    assert "height: 84px" in narrow_block
+    assert "width: 100%" not in narrow_block
 
 
-def test_very_narrow_breakpoint_hides_the_thumbnail_rather_than_stacking_full_width():
+def test_very_narrow_breakpoint_falls_back_to_text_only_layout():
     css = _css_text()
-    assert "@media (max-width: 380px)" in css
-    very_narrow_block = css.split("@media (max-width: 380px)")[1]
-    assert "display: none" in very_narrow_block.split("}")[0] + very_narrow_block.split("}")[1]
-
-
-def test_header_row_never_reappears_as_a_full_width_hero_at_any_breakpoint():
-    css = _css_text()
-    thumb_block = css.split(".er-card-thumb {")[1]
-    assert "width: 100%" not in thumb_block
-    assert "aspect-ratio" not in thumb_block
+    assert "@media (max-width: 480px)" in css
+    very_narrow_block = css.split("@media (max-width: 480px)")[1]
+    assert "grid-template-columns: 1fr" in very_narrow_block.split("}")[0]
+    assert "display: none" in very_narrow_block.split("}")[1]
