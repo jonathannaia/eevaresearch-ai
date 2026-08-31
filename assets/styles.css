@@ -779,3 +779,34 @@ a:hover { color: var(--accent-hover); }
 }
 .er-hero-watermark svg, .er-hero-watermark img { width: 100%; height: 100%; object-fit: contain; }
 .er-hero-content { position: relative; z-index: 1; }
+
+/* ---------- Daily News: compact optional item thumbnail ----------
+   A small supporting image only, never a full-width hero. Floated
+   right so the card's existing, separately-rendered text elements
+   (each its own Streamlit block) wrap around it in normal flow — no
+   grid/flex wrapper is needed across those blocks, and the card's
+   height stays governed by the text content rather than the image,
+   since a float doesn't force the container taller than its normal-
+   flow content. */
+.er-card-thumb {
+    float: right;
+    width: 160px; height: 100px;
+    max-width: 176px; max-height: 112px;
+    object-fit: cover;
+    border-radius: var(--r-sm);
+    margin: 0 0 0.75rem 1rem;
+}
+@media (max-width: 640px) {
+    .er-card-thumb { width: 96px; height: 72px; margin-left: 0.75rem; }
+}
+@media (max-width: 380px) {
+    /* Too narrow for a side thumbnail to stay readable next to text —
+       hide it rather than ever falling back to a full-width image. */
+    .er-card-thumb { display: none; }
+}
+[class*="st-key-daily-news-card-"] {
+    /* Contains the floated .er-card-thumb within the card's own border
+       box, rather than letting it visually overflow past the card's
+       bottom edge on a story with little text beside it. */
+    overflow: hidden;
+}

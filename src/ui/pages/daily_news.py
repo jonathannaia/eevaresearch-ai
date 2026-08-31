@@ -79,13 +79,16 @@ def _render_card(story: NewsStory) -> None:
     source = story.sources[0]
     local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
 
-    with st.container(border=True):
+    with st.container(border=True, key=f"daily-news-card-{story.id}"):
         if source.image_url:
+            # Compact supporting thumbnail (er-card-thumb, assets/styles.css)
+            # — floated right so it sits beside this card's own separately-
+            # rendered text blocks below without a grid/flex wrapper across
+            # them; never the old full-width hero image.
             alt_text = html.escape(source.image_alt or story.headline)
             image_url = html.escape(source.image_url)
             st.markdown(
-                f'<img src="{image_url}" alt="{alt_text}" '
-                'style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;" '
+                f'<img class="er-card-thumb" src="{image_url}" alt="{alt_text}" '
                 'onerror="this.style.display=\'none\'" />',
                 unsafe_allow_html=True,
             )

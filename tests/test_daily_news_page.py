@@ -271,7 +271,7 @@ def test_only_stale_stories_shows_the_all_companies_empty_state(tmp_path):
     assert "No recent company updates in the last 7 days." in markdown_text
 
 
-def test_card_with_a_validated_image_renders_an_img_tag(tmp_path):
+def test_card_with_a_validated_image_uses_the_compact_thumbnail_class(tmp_path):
     story = _story(sources=(
         NewsSourceReference(
             publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
@@ -290,9 +290,42 @@ def test_card_with_a_validated_image_renders_an_img_tag(tmp_path):
 
     assert not at.exception
     markdown_text = " ".join(m.value for m in at.markdown)
-    assert '<img src="https://iprsoftwaremedia.com/photo.jpg"' in markdown_text
+    # Compact thumbnail class (sized/positioned entirely in
+    # assets/styles.css), never the old inline full-width hero style.
+    assert '<img class="er-card-thumb" src="https://iprsoftwaremedia.com/photo.jpg"' in markdown_text
     assert 'alt="A photo of the announcement"' in markdown_text
     assert "onerror=" in markdown_text
+    assert "width:100%" not in markdown_text
+    assert "aspect-ratio" not in markdown_text
+
+
+def test_image_bearing_card_still_shows_title_date_and_source_link(tmp_path):
+    # The thumbnail is supplementary — every other text field the
+    # existing "five approved fields" test checks for a text-only card
+    # must still be present when an image is also rendered.
+    story = _story(sources=(
+        NewsSourceReference(
+            publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
+            url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
+            published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            original_language="English", excerpt_original="NVIDIA reported strong quarterly results.",
+            image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo of the announcement",
+        ),
+    ))
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA" in markdown_text
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "NVIDIA reported strong quarterly results." in markdown_text
+    assert "Read original source" in markdown_text
+    assert "https://nvidianews.nvidia.com/news/results" in markdown_text
 
 
 def test_card_without_an_image_renders_no_img_tag_and_full_text_card(tmp_path):
@@ -346,3 +379,63 @@ def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" not in markdown_text  # hidden from the page
     assert "stale-story" in daily_news_store.load_stories(tmp_path)  # still persisted, never deleted
+
+
+# --- Compact thumbnail styling (assets/styles.css) — static CSS-content
+# checks, since AppTest has no real browser layout engine to measure
+# rendered pixel sizes or line-wrapping/overflow against. ------------------
+
+_CSS_PATH = Path(__file__).parent.parent / "assets" / "styles.css"
+
+
+def _css_text() -> str:
+    return _CSS_PATH.read_text(encoding="utf-8")
+
+
+def test_desktop_thumbnail_is_a_small_fixed_size_not_a_hero():
+    css = _css_text()
+    assert ".er-card-thumb" in css
+    assert "width: 160px" in css
+    assert "height: 100px" in css
+    # Never the old full-width, tall hero-image rule.
+    assert "width:100%;aspect-ratio:16/9" not in css
+
+
+def test_thumbnail_dimensions_are_capped_at_the_approved_maximum():
+    css = _css_text()
+    assert "max-width: 176px" in css
+    assert "max-height: 112px" in css
+
+
+def test_thumbnail_uses_a_landscape_cover_crop_and_a_small_radius():
+    css = _css_text()
+    assert "object-fit: cover" in css
+    assert "border-radius: var(--r-sm)" in css
+
+
+def test_thumbnail_is_floated_beside_text_not_a_full_width_block():
+    css = _css_text()
+    assert "float: right" in css
+
+
+def test_narrow_breakpoint_shrinks_the_thumbnail_rather_than_going_full_width():
+    css = _css_text()
+    assert "@media (max-width: 640px)" in css
+    narrow_block = css.split("@media (max-width: 640px)")[1].split("}")[0]
+    assert "96px" in narrow_block
+    assert "72px" in narrow_block
+
+
+def test_very_narrow_breakpoint_hides_the_thumbnail_rather_than_stacking_full_width():
+    css = _css_text()
+    assert "@media (max-width: 380px)" in css
+    very_narrow_block = css.split("@media (max-width: 380px)")[1]
+    assert "display: none" in very_narrow_block.split("}")[0] + very_narrow_block.split("}")[1]
+
+
+def test_daily_news_card_container_contains_the_floated_thumbnail():
+    # Prevents the thumbnail from visually overflowing past the card's
+    # own bottom border when there isn't much text beside it.
+    css = _css_text()
+    assert "st-key-daily-news-card-" in css
+    assert "overflow: hidden" in css.split("st-key-daily-news-card-")[1].split("}")[0]
