@@ -1,6 +1,104 @@
 [
   {
     "niche": "Space",
+    "headline": "'No guts, no glory': How I captured NASA's Roman Space Telescope cross the sun on a picture-perfect SpaceX Falcon Heavy launch",
+    "summary": "A SpaceX Falcon Heavy rocket launched NASA's Roman Space Telescope, with a photographer capturing an image of the telescope crossing the sun during the launch.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/no-guts-no-glory-how-i-captured-nasas-roman-space-telescope-cross-the-sun-on-a-picture-perfect-spacex-falcon-heavy-launch",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 19:48:16 +0000",
+    "retrieved_at": "2026-08-31T23:30:51+00:00",
+    "tickers": [
+      {
+        "ticker": "SPCE",
+        "company_name": "Virgin Galactic Holdings",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article describes SpaceX Falcon Heavy launch carrying NASA's Roman Space Telescope, directly relevant to space launch infrastructure.",
+    "url_hash": "a6e4a4205b4e0661",
+    "id": "a6e4a4205b4e0661"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA's doomed Swift space telescope restarts science work after rescue mission fails",
+    "summary": "NASA's Swift space telescope has resumed science observations after a private mission failed to increase its orbital altitude, allowing it to continue work despite its decaying orbit.",
+    "source_url": "https://www.space.com/space-exploration/missions/nasas-doomed-swift-space-telescope-restarts-science-work-after-rescue-mission-fails",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 21:00:00 +0000",
+    "retrieved_at": "2026-08-31T23:30:49+00:00",
+    "tickers": [],
+    "relevance_reason": "Article concerns NASA's Swift space telescope operations, directly within the Space scope",
+    "url_hash": "3bd82ff049c292c2",
+    "id": "3bd82ff049c292c2"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA Welcomes Türkiye as Newest Artemis Accords Signatory",
+    "summary": "Türkiye became the 71st signatory to the Artemis Accords during a NASA ceremony, joining an international coalition committed to peaceful and transparent space exploration.",
+    "source_url": "https://www.nasa.gov/organizations/oiir/artemis-accords/nasa-welcomes-turkiye-as-newest-artemis-accords-signatory/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Mon, 31 Aug 2026 21:14:12 +0000",
+    "retrieved_at": "2026-08-31T23:30:42+00:00",
+    "tickers": [],
+    "relevance_reason": "Türkiye's signing of the Artemis Accords is a substantive development in international space exploration governance and policy.",
+    "url_hash": "7bea5af230372398",
+    "id": "7bea5af230372398"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "How better grippers can unlock physical AI",
+    "summary": "The article discusses how improved gripper technology is essential for enabling physical AI by providing robots with the dexterity, sensing, and adaptability required to perform real-world tasks.",
+    "source_url": "https://www.therobotreport.com/how-better-grippers-can-unlock-physical-ai/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 20:20:25 +0000",
+    "retrieved_at": "2026-08-31T23:30:38+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses grippers as enabling technology for physical AI and robot dexterity, directly relevant to robotics automation.",
+    "url_hash": "7f85940174ae54a1",
+    "id": "7f85940174ae54a1"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Skild AI unveils S1 flagship robot foundation model",
+    "summary": "Skild AI has unveiled its S1 robot foundation model, which enables robots to learn new tasks by observing video demonstrations.",
+    "source_url": "https://www.therobotreport.com/skild-ai-unveils-s1-flagship-robot-foundation-model/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 21:14:08 +0000",
+    "retrieved_at": "2026-08-31T23:30:36+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly describes a robot foundation model enabling task learning, core to robotics automation development.",
+    "url_hash": "99e86505f75ad443",
+    "id": "99e86505f75ad443"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "SLB’s $4.1B Kelvion Deal Expands AI Data Center Push",
+    "summary": "SLB (Schlumberger) is acquiring Kelvion for $4.1 billion to expand its data center thermal management business in response to increased cooling demands from AI infrastructure.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/slb-s-4-1b-kelvion-deal-expands-ai-data-center-push",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 22:34:19 GMT",
+    "retrieved_at": "2026-08-31T23:30:30+00:00",
+    "tickers": [
+      {
+        "ticker": "SLB",
+        "company_name": "Schlumberger Limited",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SLB's acquisition directly expands thermal management capabilities for AI data centers, a core AI Buildout infrastructure component.",
+    "url_hash": "5847fd42e4b5aa9f",
+    "id": "5847fd42e4b5aa9f"
+  },
+  {
+    "niche": "Space",
     "headline": "Roman telescope leaves its rocket behind | Space photo of the day for Aug. 31, 2026",
     "summary": "NASA's Nancy Grace Roman Space Telescope deployed into space shortly after launch, as captured in a recent photograph.",
     "source_url": "https://www.space.com/space-exploration/launches-spacecraft/roman-telescope-leaves-its-rocket-behind-space-photo-of-the-day-for-aug-31-2026",
