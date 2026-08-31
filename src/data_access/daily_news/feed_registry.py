@@ -92,6 +92,12 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("investors.quantaservices.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="nVent Electric plc",
+        feed_url="https://investors.nvent.com/rss/pressrelease.aspx",
+        feed_format="rss",
+        canonical_domains=("investors.nvent.com",),
+    ),
 )
 
 

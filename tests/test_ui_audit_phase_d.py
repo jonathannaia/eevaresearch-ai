@@ -222,7 +222,7 @@ def test_coverage_page_hides_empty_layer_column_with_a_quiet_note():
     assert "Layer assignments aren't available for the current issuer set yet." in captions
     # Live-count expander labels are untouched by this phase.
     expander_titles = {e.label for e in at.expander}
-    assert "22 discovery proposals — not active coverage" in expander_titles
+    assert "23 discovery proposals — not active coverage" in expander_titles
     assert "4 known category conflicts" in expander_titles
 
 

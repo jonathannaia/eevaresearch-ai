@@ -247,10 +247,58 @@ def test_quanta_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://news.skhynix.com/en/some-release/", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_nine_sources():
-    assert len(PILOT_FEEDS) == 9
+def _nvent_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "nVent Electric plc"]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_nvent_is_registered_with_the_exact_approved_fields():
+    source = _nvent_source()
+    assert source.feed_url == "https://investors.nvent.com/rss/pressrelease.aspx"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("investors.nvent.com",)
+
+
+def test_nvent_resolves_to_the_discovered_issuer_with_ticker_nvt():
+    # nVent is not in tracked_companies.py at all — proves
+    # tracked_company_for()'s DISCOVERY_STUBS fallback resolves it, same
+    # path already introduced for Quanta.
+    company = tracked_company_for("nVent Electric plc")
+    assert company is not None
+    assert company.krx_code == "NVT"
+    assert company.source == ""  # never a real Radar source value
+    assert company.active is False
+    assert "ai-buildout" in company.themes
+    assert "power-cooling" in company.subthemes
+
+
+def test_nvent_item_url_validates_against_its_exact_canonical_domain():
+    source = _nvent_source()
+    url = "https://investors.nvent.com/press-releases/press-release-details/2026/nVent-to-Acquire-Maverick-Power/default.aspx"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_nvent_rejects_bare_domain_www_other_subdomain_and_lookalike_hostnames():
+    source = _nvent_source()
+    for other_url in (
+        "https://nvent.com/press-releases/press-release-details/2026/some-release/",
+        "https://www.nvent.com/press-releases/press-release-details/2026/some-release/",
+        "https://blog.nvent.com/press-releases/press-release-details/2026/some-release/",
+        "https://investors.nvent.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_nvent_off_domain_url_is_rejected():
+    source = _nvent_source()
+    assert not validate_canonical_url("https://investors.quantaservices.com/news-events/press-releases/detail/402/some-release", source.canonical_domains, source.feed_url)
+
+
+def test_pilot_feeds_now_has_exactly_ten_sources():
+    assert len(PILOT_FEEDS) == 10
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
-        "Quanta Services, Inc.",
+        "Quanta Services, Inc.", "nVent Electric plc",
     }

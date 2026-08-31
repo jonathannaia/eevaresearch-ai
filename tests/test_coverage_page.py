@@ -35,9 +35,9 @@ def test_coverage_page_summary_metrics_match_registry_counts():
     at = _run()
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["Active seed issuers"] == "32"
-    assert metrics["Discovery proposals"] == "22"
+    assert metrics["Discovery proposals"] == "23"
     assert metrics["Scan-eligible"] == "32"
-    assert metrics["Unverified / excluded"] == "22"
+    assert metrics["Unverified / excluded"] == "23"
 
 
 def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_counts():
@@ -45,7 +45,7 @@ def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_co
     assert len(at.dataframe) == 2
     seed_table, discovery_table = at.dataframe[0].value, at.dataframe[1].value
     assert len(seed_table) == 32
-    assert len(discovery_table) == 22
+    assert len(discovery_table) == 23
 
 
 def test_coverage_page_seed_table_never_contains_a_discovery_stub_name():

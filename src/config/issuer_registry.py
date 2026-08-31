@@ -377,6 +377,34 @@ DISCOVERY_STUBS: tuple[Issuer, ...] = (
         ),
         notes="Daily News official-company source only; not eligible for Radar filing scanning.",
     ),
+    # nVent Electric plc — a Daily News-only discovery, same shape and
+    # reasoning as the Quanta Services entry above: constructed directly
+    # (not via _stub()) since its provenance is a live Daily News feed
+    # verification, not the 2026-08-20 portfolio-map seed list. Verified
+    # official RSS feed at investors.nvent.com — see design/DECISIONS.md.
+    # NYSE-listed but Irish-incorporated (the "plc" suffix); no CIK
+    # resolved, not part of any EDGAR/DART/EDINET scan universe.
+    Issuer(
+        issuer_id="stub:NVT",
+        legal_name="nVent Electric plc",
+        country_or_jurisdiction="Ireland",
+        coverage_state=CoverageState.DISCOVERED,
+        lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="NVT",
+        primary_exchange="NYSE",
+        identifiers={},  # no CIK resolved or cached — Daily News-only, never a Radar identifier
+        themes=("ai-buildout",),
+        subthemes=("power-cooling",),
+        supply_chain_layers=("power-infrastructure",),
+        evidence_confidence="Official RSS feed verified live; company identity, NYSE ticker, and Irish incorporation verified through official investor-relations and SEC materials.",
+        discovered_via="Daily News official-feed verification (design/DECISIONS.md)",
+        normalization_status=(
+            "Daily News-only candidate. Not eligible for Radar filing scanning "
+            "— no CIK resolved, not part of tracked_companies.py, structurally "
+            "excluded via DISCOVERED coverage_state."
+        ),
+        notes="Daily News official-company source only; not eligible for Radar filing scanning.",
+    ),
 )
 
 

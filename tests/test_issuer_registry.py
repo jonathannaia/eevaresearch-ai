@@ -220,7 +220,10 @@ def test_discovery_stubs_are_unaffected_by_the_indi_aip_ceva_batch():
 # entry, never added to tracked_companies.py/TRACKED_COMPANIES ---
 
 def test_discovery_stubs_grew_by_exactly_one_for_quanta_services():
-    assert len(DISCOVERY_STUBS) == 22
+    # DISCOVERY_STUBS grew again later (to 23) for the unrelated nVent
+    # Electric addition below, so this asserts "at least Quanta is
+    # present" rather than an exact total tied to this batch alone.
+    assert len(DISCOVERY_STUBS) >= 22
     quanta_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "PWR"]
     assert len(quanta_matches) == 1
     quanta = quanta_matches[0]
@@ -253,3 +256,40 @@ def test_quanta_is_excluded_from_every_source_selection_path():
         assert "PWR" not in tickers
         names = {c.name for c in get_tracked_companies_for_source(source, active_only=False)}
         assert "Quanta Services, Inc." not in names
+
+
+# --- nVent Electric plc (2026-08-31) — a second Daily News-only
+# DISCOVERY_STUBS entry, never added to tracked_companies.py/TRACKED_COMPANIES ---
+
+def test_discovery_stubs_grew_by_exactly_one_for_nvent_electric():
+    assert len(DISCOVERY_STUBS) == 23
+    nvent_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "NVT"]
+    assert len(nvent_matches) == 1
+    nvent = nvent_matches[0]
+    assert nvent.legal_name == "nVent Electric plc"
+    assert nvent.coverage_state == CoverageState.DISCOVERED
+    assert nvent.identifiers == {}
+    assert nvent.themes == ("ai-buildout",)
+    assert nvent.subthemes == ("power-cooling",)
+
+
+def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_nvent():
+    # nVent was added only to DISCOVERY_STUBS — TRACKED_COMPANIES and
+    # SEED_ISSUERS (generated from it) must stay at exactly 32.
+    assert len(get_tracked_companies(active_only=False)) == 32
+    assert len(SEED_ISSUERS) == 32
+
+
+def test_nvent_is_excluded_from_the_compatibility_adapter():
+    compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
+    assert "NVT" not in compat_tickers
+
+
+def test_nvent_is_excluded_from_every_source_selection_path():
+    from src.config.tracked_companies import get_tracked_companies_for_source
+
+    for source in ("SEC EDGAR", "OpenDART / DART", "EDINET"):
+        tickers = {c.krx_code for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "NVT" not in tickers
+        names = {c.name for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "nVent Electric plc" not in names

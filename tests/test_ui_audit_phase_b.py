@@ -88,7 +88,7 @@ def test_coverage_expander_labels_show_dynamic_counts():
     at.run()
     assert not at.exception
     labels = [e.label for e in at.expander]
-    assert "22 discovery proposals — not active coverage" in labels
+    assert "23 discovery proposals — not active coverage" in labels
     assert "4 known category conflicts" in labels
 
 
