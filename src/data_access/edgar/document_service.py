@@ -34,6 +34,8 @@ class DocumentFetchResult:
     detail: str
     retrieved_at: str
     from_cache: bool
+    # Evidence-packet foundation, Phase 1 — see ExtractionResult.location_section.
+    location_section: str | None = None
 
 
 def _cache_path(cache_dir: Path) -> Path:
@@ -90,6 +92,7 @@ def get_or_fetch_excerpt(
         return DocumentFetchResult(
             accession_no=accession_no, state=ExtractionState(cached["state"]), excerpt_original=cached.get("excerpt_original"),
             detail=cached.get("detail", ""), retrieved_at=cached["retrieved_at"], from_cache=True,
+            location_section=cached.get("location_section"),
         )
 
     retrieved_at = datetime.now(timezone.utc).isoformat()
@@ -107,6 +110,7 @@ def get_or_fetch_excerpt(
     result = DocumentFetchResult(
         accession_no=accession_no, state=extraction.state, excerpt_original=extraction.excerpt_original,
         detail=extraction.detail, retrieved_at=retrieved_at, from_cache=False,
+        location_section=extraction.location_section,
     )
     _cache_result(cache, cache_dir, result)
     return result
@@ -116,5 +120,6 @@ def _cache_result(cache: dict, cache_dir: Path, result: DocumentFetchResult) -> 
     cache[result.accession_no] = {
         "state": result.state.value, "excerpt_original": result.excerpt_original,
         "detail": result.detail, "retrieved_at": result.retrieved_at,
+        "location_section": result.location_section,
     }
     _save_cache(cache_dir, cache)

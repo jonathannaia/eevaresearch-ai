@@ -31,6 +31,7 @@ def _row_to_filing_event(row: sqlite3.Row) -> FilingEvent:
         is_demo=bool(row["is_demo"]),
         primary_document=row["primary_document"],
         ordinance_code=row["ordinance_code"],
+        filed_at=row["filed_at"],
     )
 
 
@@ -77,15 +78,15 @@ def _upsert_filing_event_no_transaction(conn: sqlite3.Connection, filing: Filing
         INSERT INTO filing_events (
             source_name, corp_code, rcept_no, corp_name, stock_code, report_nm, rcept_dt, flr_nm,
             pblntf_ty, pblntf_detail_ty, theme_slug, subtheme_slug, source_url, retrieved_at,
-            original_language, is_demo, primary_document, ordinance_code
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            original_language, is_demo, primary_document, ordinance_code, filed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             filing.source_name, filing.corp_code, filing.rcept_no, filing.corp_name, filing.stock_code,
             filing.report_nm, filing.rcept_dt, filing.flr_nm, filing.pblntf_ty, filing.pblntf_detail_ty,
             filing.theme_slug, filing.subtheme_slug, filing.source_url, filing.retrieved_at,
             filing.original_language, int(filing.is_demo), filing.primary_document,
-            filing.ordinance_code,
+            filing.ordinance_code, filing.filed_at,
         ),
     )
     return True

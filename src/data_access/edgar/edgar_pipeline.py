@@ -32,7 +32,17 @@ from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edgar import document_service, edgar_rules, scan_service
 from src.logic.signal_decision_policy import SignalRoute, decide_signal_route
 from src.data_access.edgar.client import EdgarClient
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    EvidenceLocation,
+    ExtractionState,
+    LocationKind,
+    StateTransition,
+    TranslationState,
+    build_flag_reason,
+    record_excerpt,
+)
 
 _PROCESSABLE_CONFIDENCE_LEVELS = frozenset({"Moderate", "High"})
 
@@ -121,7 +131,22 @@ def process_candidate(
         if not doc_result.from_cache:
             counters["documents_retrieved"] += 1
             counters["documents_extracted"] += 1
-        candidate.excerpt_original = doc_result.excerpt_original
+        # Evidence-packet foundation, Phase 1 (design/DECISIONS.md):
+        # excerpt_original is set once and never silently overwritten —
+        # see record_excerpt's own docstring. A retry that re-extracts
+        # different text is preserved in excerpt_supplemental instead of
+        # replacing the original.
+        record_excerpt(candidate, doc_result.excerpt_original, doc_result.retrieved_at)
+        # Evidence-packet foundation, Phase 1 — source-aware location
+        # contract: the Item header the excerpt was actually anchored on
+        # (already computed while building the excerpt above; never a new
+        # parse). UNAVAILABLE for every non-8-K candidate and for an 8-K
+        # excerpt that had no Item header to anchor on at all — never a
+        # fabricated page/section.
+        candidate.evidence_location = (
+            EvidenceLocation(kind=LocationKind.SECTION, section=doc_result.location_section)
+            if doc_result.location_section else EvidenceLocation(kind=LocationKind.UNAVAILABLE)
+        )
         # Post-extraction 8-K item refinement (see module docstring and
         # edgar_rules.py) — only 8-K candidates need this; every other
         # form type already got its full category+confidence at scan
@@ -152,6 +177,16 @@ def process_candidate(
                     final_status_detail = f"Classified from document-excerpt item header(s) {', '.join(excerpt_items)} (no scan-time SEC item metadata was available)."
         candidate = _transition(candidate, CandidateStatus.EXTRACTED)
         shadow_decision = decide_signal_route(candidate)
+        # Evidence-packet foundation, Phase 1: refresh the normalized
+        # why-flagged record with the (possibly-refined) matched_rules/
+        # confidence and EDGAR's own typed shadow-policy reason — this
+        # ADDS the existing typed rationale into source_detail, it never
+        # weakens or replaces it (the shadow-policy StateTransition note
+        # below is unchanged and still the full audit-trail record).
+        candidate.flag_reason = build_flag_reason(
+            candidate.matched_rules, candidate.confidence,
+            source_detail=f"{shadow_decision.route.value}: {shadow_decision.reason} [rules: {', '.join(shadow_decision.rule_ids)}]",
+        )
         candidate.state_history.append(
             StateTransition(
                 status=CandidateStatus.EXTRACTED,

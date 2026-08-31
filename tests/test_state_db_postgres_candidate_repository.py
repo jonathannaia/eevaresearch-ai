@@ -17,7 +17,15 @@ import pytest
 
 from src.data_access.postgres_state_db import candidate_repository
 from src.data_access.postgres_state_db import connection as postgres_connection
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    EvidenceLocation,
+    FilingEvent,
+    FlagReason,
+    LocationKind,
+    StateTransition,
+)
 
 from tests._postgres_test_support import pg_conn, pg_isolated_connection  # noqa: F401
 
@@ -92,6 +100,65 @@ def test_update_candidate_appends_new_state_transitions_not_overwrite(pg_conn):
     assert [t.status for t in outcome.current.state_history] == [
         CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.NEEDS_REVIEW,
     ]
+
+
+# --- Evidence-packet foundation, Phase 1: new optional field round-trip ---
+
+
+def test_round_trips_evidence_packet_phase1_fields(pg_conn):
+    filing = _filing(rcept_no="acc-phase1", corp_code="E02778", corp_name="SoftBank Group", source_name="EDINET", original_language="Japanese", filed_at="2026-08-17T09:00:00")
+    candidate = _candidate(
+        "cand-phase1", filing, status=CandidateStatus.NEEDS_REVIEW,
+        excerpt_original="First extraction.", excerpt_supplemental="Second, different extraction.",
+        excerpt_retrieved_at="2026-08-17T09:05:00+00:00",
+        flag_reason=FlagReason(
+            category="annual_securities_report", matched_terms=("annual_securities_report:010:030000:120",),
+            score_inputs=("confidence=Moderate", "category_matches=1"), human_readable_reason="Matched 1 rule.",
+            source_detail="ordinanceCode=010 · formCode=030000 · docTypeCode=120",
+        ),
+        evidence_location=EvidenceLocation(kind=LocationKind.UNAVAILABLE),
+    )
+    candidate_repository.upsert_new_candidates(pg_conn, "EDINET", [candidate])
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-phase1")
+
+    assert reloaded.filing.filed_at == "2026-08-17T09:00:00"
+    assert reloaded.excerpt_original == "First extraction."
+    assert reloaded.excerpt_supplemental == "Second, different extraction."
+    assert reloaded.excerpt_retrieved_at == "2026-08-17T09:05:00+00:00"
+    assert reloaded.flag_reason == candidate.flag_reason
+    assert reloaded.evidence_location == candidate.evidence_location
+
+
+def test_pre_phase1_row_missing_new_columns_still_loads_with_none_defaults(pg_conn):
+    from src.data_access.postgres_state_db import filing_event_repository
+    from datetime import datetime, timezone
+
+    filing = _filing(rcept_no="acc-pre-phase1")
+    filing_event_repository.upsert_filing_event(pg_conn, filing)
+    now = datetime.now(timezone.utc).isoformat()
+    pg_conn.execute(
+        """
+        INSERT INTO candidates (
+            id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
+            extraction_state, translation_state, excerpt_quality, excerpt_original,
+            title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
+            materiality_assessment, version, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+        """,
+        (
+            "cand-pre-phase1", filing.source_name, filing.corp_code, filing.rcept_no,
+            "[]", "Moderate", "Needs review", "Extracted", "Not requested", "Unknown",
+            "Pre-existing excerpt.", None, None, None, "", "Not assessed", now, now,
+        ),
+    )
+    pg_conn.commit()
+
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-pre-phase1")
+    assert reloaded is not None
+    assert reloaded.excerpt_original == "Pre-existing excerpt."
+    assert reloaded.excerpt_supplemental is None
+    assert reloaded.flag_reason is None
+    assert reloaded.evidence_location is None
 
 
 # --- Optimistic version conflict ---

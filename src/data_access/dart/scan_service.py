@@ -21,7 +21,7 @@ from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import dart_rules
 from src.data_access.dart.client import DartClient, DisclosureRecord
 from src.data_access.dart.errors import DartError, DartRateLimitError, DartTimeoutError
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition, build_flag_reason
 
 DEFAULT_LOOKBACK_DAYS = 30
 # A hard ceiling so a UI lookback input can never accidentally trigger an
@@ -167,13 +167,15 @@ def _candidate_signal_from_evaluation(filing: FilingEvent, evaluation: dart_rule
     # (radar_pipeline.py). Document retrieval/extraction/translation are
     # separate later steps this function knows nothing about.
     now = datetime.now(timezone.utc).isoformat()
+    confidence = evaluation.confidence or "Low"
     return CandidateSignal(
         id=f"cand-{filing.rcept_no}",
         filing=filing,
         matched_rules=list(evaluation.matched_rules),
-        confidence=evaluation.confidence or "Low",
+        confidence=confidence,
         status=CandidateStatus.CANDIDATE_DETECTED,
         state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=now)],
+        flag_reason=build_flag_reason(evaluation.matched_rules, confidence),
     )
 
 

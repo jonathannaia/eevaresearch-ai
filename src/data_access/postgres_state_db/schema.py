@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -117,12 +117,26 @@ _V2_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Evidence-packet foundation, Phase 1 (design/DECISIONS.md) — isolated
+# Postgres counterpart to state_db/schema.py's own _V3_STATEMENTS,
+# identical column set (see that module's comment for the full
+# rationale). Additive, nullable columns only — never touches existing
+# rows.
+_V3_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE filing_events ADD COLUMN filed_at TEXT",
+    "ALTER TABLE candidates ADD COLUMN excerpt_supplemental TEXT",
+    "ALTER TABLE candidates ADD COLUMN excerpt_retrieved_at TEXT",
+    "ALTER TABLE candidates ADD COLUMN flag_reason_json TEXT",
+    "ALTER TABLE candidates ADD COLUMN evidence_location_json TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 3 later means appending a new (3, (...statements...))
+# Adding schema version 4 later means appending a new (4, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
+    (3, _V3_STATEMENTS),
 )
 
 

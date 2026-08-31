@@ -26,7 +26,7 @@ from typing import Callable
 import streamlit as st
 
 from src.data_access.dart import dart_rules, retry_policy
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
+from src.models.models import CandidateSignal, CandidateStatus, EvidenceLocation, FilingEvent, LocationKind
 from src.ui.components.analyst_view import render_analyst_view
 from src.ui.components.radar_status import (
     RadarItem,
@@ -104,6 +104,22 @@ def _detail_row(label: str, value: str) -> None:
     )
 
 
+def _location_display(location: EvidenceLocation) -> str:
+    """Source-aware display string for an EvidenceLocation — never
+    fabricates a page for an HTML/XML/XBRL source (see the field's own
+    docstring, src/models/models.py); only ever shows a kind Phase 1
+    actually populated from data the pipeline already produced."""
+    if location.kind == LocationKind.PAGE and location.page is not None:
+        return f"Page {location.page}"
+    if location.kind == LocationKind.SECTION and location.section:
+        return location.section
+    if location.kind == LocationKind.TABLE and location.table:
+        return f"Table {location.table}"
+    if location.kind == LocationKind.PARAGRAPH and location.paragraph_index is not None:
+        return f"Paragraph {location.paragraph_index}"
+    return location.kind.value
+
+
 def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | None) -> None:
     """Compact, honest, source-neutral evidence summary — plain-language
     labels only (see radar_status.py's evidence_* helpers), never a raw
@@ -112,10 +128,23 @@ def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | Non
     still show `.value` strings for anyone who wants them."""
     st.markdown('<div class="er-muted" style="margin-top:0.2rem;"><strong>Evidence status</strong></div>', unsafe_allow_html=True)
     _detail_row("Original document", evidence_source_link_label(filing))
+    if filing.filed_at:
+        # Evidence-packet foundation, Phase 1 — the full filed/published
+        # timestamp, shown only when the source actually supplied one
+        # (EDINET today); never fabricated for EDGAR/DART.
+        _detail_row("Filed (full timestamp)", filing.filed_at)
     if candidate is not None:
         _detail_row("Native text", evidence_native_text_label(candidate.extraction_state))
         _detail_row("Translation", evidence_translation_label(candidate.translation_state))
         _detail_row("Review", evidence_review_label(candidate))
+        if candidate.flag_reason is not None:
+            # Evidence-packet foundation, Phase 1 — the normalized,
+            # source-neutral "why flagged" reason. Additive alongside the
+            # existing "Why this matters:" bullets on the card itself;
+            # never a substitute for them.
+            _detail_row("Why flagged", candidate.flag_reason.human_readable_reason)
+        if candidate.evidence_location is not None and candidate.evidence_location.kind != LocationKind.UNAVAILABLE:
+            _detail_row("Evidence location", _location_display(candidate.evidence_location))
     else:
         # A bare FilingEvent has no extraction/translation/candidate-status
         # data to show — never fabricate one. The exact copy below is the
@@ -257,11 +286,14 @@ def _render_investigate_body(
         st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Original-language excerpt</strong></div>', unsafe_allow_html=True)
         st.markdown(f'<div>{candidate.excerpt_original}</div>', unsafe_allow_html=True)
     if candidate.excerpt_translation is not None:
-        st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
+        # Evidence-packet foundation, Phase 1: labeled "working translation"
+        # — a machine-translated convenience string, never a substitute
+        # for the original-language excerpt above it.
+        st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English working translation</strong></div>', unsafe_allow_html=True)
         st.markdown(f'<div>{candidate.excerpt_translation.translated_text}</div>', unsafe_allow_html=True)
         st.markdown(
             f'<div class="er-muted" style="margin-top:0.2rem;">'
-            f'{candidate.excerpt_translation.provider} · English translation · translated at {candidate.excerpt_translation.translated_at}</div>',
+            f'{candidate.excerpt_translation.provider} · English working translation · translated at {candidate.excerpt_translation.translated_at}</div>',
             unsafe_allow_html=True,
         )
     unavailable_tag = translation_unavailable_tag_html(RadarItem(filing=filing, candidate=candidate))

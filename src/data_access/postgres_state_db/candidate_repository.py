@@ -24,9 +24,12 @@ from src.data_access.postgres_state_db.connection import transaction
 from src.models.models import (
     CandidateSignal,
     CandidateStatus,
+    EvidenceLocation,
     ExcerptQuality,
     ExtractionState,
     FilingEvent,
+    FlagReason,
+    LocationKind,
     StateTransition,
     Translation,
     TranslationState,
@@ -57,6 +60,35 @@ def _translation_to_json(translation: Translation | None) -> str | None:
 
 def _translation_from_json(raw: str | None) -> Translation | None:
     return Translation(**json.loads(raw)) if raw else None
+
+
+def _flag_reason_to_json(reason: FlagReason | None) -> str | None:
+    return json.dumps(asdict(reason)) if reason is not None else None
+
+
+def _flag_reason_from_json(raw: str | None) -> FlagReason | None:
+    if not raw:
+        return None
+    d = json.loads(raw)
+    return FlagReason(
+        category=d.get("category", ""), matched_terms=tuple(d.get("matched_terms", ())),
+        score_inputs=tuple(d.get("score_inputs", ())), human_readable_reason=d.get("human_readable_reason", ""),
+        source_detail=d.get("source_detail", ""),
+    )
+
+
+def _evidence_location_to_json(location: EvidenceLocation | None) -> str | None:
+    return json.dumps(asdict(location)) if location is not None else None
+
+
+def _evidence_location_from_json(raw: str | None) -> EvidenceLocation | None:
+    if not raw:
+        return None
+    d = json.loads(raw)
+    return EvidenceLocation(
+        kind=LocationKind(d.get("kind", LocationKind.UNAVAILABLE.value)),
+        page=d.get("page"), section=d.get("section"), table=d.get("table"), paragraph_index=d.get("paragraph_index"),
+    )
 
 
 def _row_to_candidate(conn: psycopg.Connection, row) -> CandidateSignal:
@@ -93,6 +125,10 @@ def _row_to_candidate(conn: psycopg.Connection, row) -> CandidateSignal:
         reviewed_note=row["reviewed_note"],
         state_history=state_history,
         materiality_assessment=row["materiality_assessment"],
+        excerpt_supplemental=row["excerpt_supplemental"],
+        excerpt_retrieved_at=row["excerpt_retrieved_at"],
+        flag_reason=_flag_reason_from_json(row["flag_reason_json"]),
+        evidence_location=_evidence_location_from_json(row["evidence_location_json"]),
     )
 
 
@@ -131,6 +167,10 @@ def _row_to_candidate_from_lookups(
         reviewed_note=row["reviewed_note"],
         state_history=state_history,
         materiality_assessment=row["materiality_assessment"],
+        excerpt_supplemental=row["excerpt_supplemental"],
+        excerpt_retrieved_at=row["excerpt_retrieved_at"],
+        flag_reason=_flag_reason_from_json(row["flag_reason_json"]),
+        evidence_location=_evidence_location_from_json(row["evidence_location_json"]),
     )
 
 
@@ -192,8 +232,9 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
             extraction_state, translation_state, excerpt_quality, excerpt_original,
             title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
-            materiality_assessment, version, created_at, updated_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+            materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
+            evidence_location_json, version, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
         """,
         (
             candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
@@ -201,7 +242,9 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             candidate.extraction_state.value, candidate.translation_state.value, candidate.excerpt_quality.value,
             candidate.excerpt_original, _translation_to_json(candidate.title_translation),
             _translation_to_json(candidate.excerpt_translation), candidate.reviewed_at, candidate.reviewed_note,
-            candidate.materiality_assessment, now, now,
+            candidate.materiality_assessment, candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
+            _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
+            now, now,
         ),
     )
     for transition in candidate.state_history:
@@ -263,7 +306,9 @@ def update_candidate(
                 matched_rules_json = %s, confidence = %s, status = %s, extraction_state = %s,
                 translation_state = %s, excerpt_quality = %s, excerpt_original = %s,
                 title_translation_json = %s, excerpt_translation_json = %s, reviewed_at = %s,
-                reviewed_note = %s, materiality_assessment = %s, version = version + 1, updated_at = %s
+                reviewed_note = %s, materiality_assessment = %s, excerpt_supplemental = %s,
+                excerpt_retrieved_at = %s, flag_reason_json = %s, evidence_location_json = %s,
+                version = version + 1, updated_at = %s
             WHERE id = %s AND version = %s
             """,
             (
@@ -272,8 +317,10 @@ def update_candidate(
                 candidate.excerpt_quality.value, candidate.excerpt_original,
                 _translation_to_json(candidate.title_translation),
                 _translation_to_json(candidate.excerpt_translation), candidate.reviewed_at,
-                candidate.reviewed_note, candidate.materiality_assessment, now,
-                candidate.id, expected_version,
+                candidate.reviewed_note, candidate.materiality_assessment,
+                candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
+                _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
+                now, candidate.id, expected_version,
             ),
         )
         if cursor.rowcount == 0:

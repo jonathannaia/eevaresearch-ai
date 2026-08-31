@@ -411,6 +411,18 @@ class FilingEvent:
     # slot: EDINET's ordinanceCode has no DART/EDGAR analog. Stays empty
     # for DART/EDGAR.
     ordinance_code: str = ""
+    # Evidence-packet foundation, Phase 1 (design/DECISIONS.md) — the
+    # best-available FULL filed/published timestamp (date + time, and a
+    # UTC offset only when the source itself supplied one), distinct from
+    # `rcept_dt` above (which stays date-only — an existing UI date-parsing
+    # helper already depends on that exact shape, so it is never changed).
+    # None whenever the source's own currently-used endpoint doesn't
+    # expose a time component, or the value it returned wasn't parseable —
+    # never fabricated, never backfilled from rcept_dt. Populated today
+    # only for EDINET (from its real submitDateTime field); EDGAR's and
+    # DART's currently-used endpoints carry no time component at all, so
+    # this stays None for both without a demonstrated serialization defect.
+    filed_at: str | None = None
 
 
 @dataclass
@@ -440,6 +452,112 @@ class ExtractionState(str, Enum):
     UNSUPPORTED_FORMAT = "Unsupported format"
     PARSE_FAILED = "Parse failed"
     RETRIEVAL_FAILED = "Retrieval failed"
+
+
+@dataclass(frozen=True)
+class FlagReason:
+    """A normalized, source-neutral explanation of why Radar flagged a
+    candidate — additive alongside `CandidateSignal.matched_rules`, never
+    replacing it or losing any per-source rationale detail (EDGAR's own
+    typed `SignalDecision` reason/rule_ids, DART's `materiality_assessment`,
+    EDINET's code-triplet detail all still exist unchanged; this is a
+    normalized *view* built from them, not a competing source of truth).
+
+    This explains why the pipeline selected an item for review — never a
+    market/investment thesis, and never a speculative causal claim about
+    what the flagged item means. `category`/`matched_terms`/`score_inputs`
+    are drawn only from data the pipeline already produces (matched_rules,
+    confidence); nothing here is inferred or generated."""
+
+    category: str  # the matched rule/category, e.g. "financing_or_debt", "ownership_change"
+    matched_terms: tuple[str, ...] = ()  # the raw matched_rules entries this reason summarizes, verbatim
+    score_inputs: tuple[str, ...] = ()  # descriptive detection inputs available today, e.g. "confidence=High" — never a new score
+    human_readable_reason: str = ""  # a plain-language sentence describing what matched
+    source_detail: str = ""  # source-specific raw detail (EDGAR's shadow-policy reason, EDINET's code triplet, etc.) — preserved verbatim
+
+
+def build_flag_reason(matched_rules: list[str] | tuple[str, ...], confidence: str, source_detail: str = "") -> FlagReason:
+    """The one shared, source-neutral way to build a FlagReason from the
+    matched_rules/confidence every source already produces — used by all
+    three sources' scan_service.py so the resulting shape is identical
+    regardless of which pipeline built it. Never parses source-specific
+    meaning out of a matched_rules string beyond the category prefix
+    every source already writes before its first ':' — DART's keyword
+    lexicon, EDGAR's form/item categories, and EDINET's code-triplet
+    categories all share that one convention already."""
+    rules = tuple(matched_rules)
+    category = rules[0].split(":", 1)[0] if rules else ""
+    distinct_categories = len({r.split(":", 1)[0] for r in rules})
+    human_readable_reason = (
+        f"Matched {len(rules)} detection rule(s) in category '{category}'." if rules
+        else "No detection rule matched."
+    )
+    return FlagReason(
+        category=category,
+        matched_terms=rules,
+        score_inputs=(f"confidence={confidence}", f"category_matches={distinct_categories}"),
+        human_readable_reason=human_readable_reason,
+        source_detail=source_detail,
+    )
+
+
+class LocationKind(str, Enum):
+    """Where, if anywhere, an evidence excerpt's source-aware location
+    contract points. UNAVAILABLE is a fully valid, honest value — never
+    fabricated — and is the only kind ever produced for metadata-only
+    events (no document ever fetched/parsed) or for a source/format that
+    doesn't expose finer-grained location today."""
+
+    UNAVAILABLE = "Unavailable"
+    PAGE = "Page"  # a real page number — meaningful for PDF-sourced documents only
+    SECTION = "Section"  # a section heading or element/item identifier (e.g. "Item 2.03")
+    TABLE = "Table"  # a table label
+    PARAGRAPH = "Paragraph"  # a paragraph index
+
+
+@dataclass(frozen=True)
+class EvidenceLocation:
+    """Source-aware pointer to where within a document an excerpt was
+    found. Never claims a page number for an HTML/XML/XBRL or
+    metadata-only event — HTML has no true pages, so PAGE is only ever
+    set from a real PDF page-extraction loop. Every field beyond `kind`
+    is optional and only set when the pipeline already produced that
+    exact value while building the excerpt — this contract never triggers
+    a new document fetch, parser, or heuristic to populate itself."""
+
+    kind: LocationKind = LocationKind.UNAVAILABLE
+    page: int | None = None
+    section: str | None = None
+    table: str | None = None
+    paragraph_index: int | None = None
+
+
+def record_excerpt(candidate: "CandidateSignal", excerpt_text: str | None, retrieved_at: str) -> bool:
+    """The one safe way any pipeline attaches newly extracted excerpt
+    text to a CandidateSignal — evidence-packet-foundation Phase 1's
+    integrity fix (design/DECISIONS.md). `excerpt_original` is set once,
+    on the first successful extraction, and is never overwritten
+    afterward. A later extraction/reprocessing attempt that produces
+    *different* text is preserved in `excerpt_supplemental` instead of
+    silently replacing the original — the first/source excerpt and its
+    provenance (`excerpt_retrieved_at`) are never lost. A repeat
+    extraction that reproduces the exact same text is a no-op either way.
+
+    Returns True only when this call performed the first-ever assignment
+    of `excerpt_original` (useful for a caller that wants to know whether
+    this was the candidate's first successful extraction); False for a
+    no-op, an unchanged-text repeat, or a supplemental recording.
+    Does nothing at all if `excerpt_text` is None (a failed/unsupported
+    extraction has no text to record)."""
+    if excerpt_text is None:
+        return False
+    if candidate.excerpt_original is None:
+        candidate.excerpt_original = excerpt_text
+        candidate.excerpt_retrieved_at = retrieved_at
+        return True
+    if excerpt_text != candidate.excerpt_original:
+        candidate.excerpt_supplemental = excerpt_text
+    return False
 
 
 @dataclass
@@ -493,3 +611,23 @@ class CandidateSignal:
     # rumor-response/etc). Distinct from `confidence`, which measures
     # keyword-detection confidence, not materiality.
     materiality_assessment: str = "Not assessed"
+    # Evidence-packet foundation, Phase 1 (design/DECISIONS.md). Set only
+    # via record_excerpt() above — never assigned directly by a pipeline —
+    # so the "set once, never overwritten" guarantee actually holds.
+    # excerpt_supplemental holds a later extraction's text only when it
+    # differs from excerpt_original; excerpt_retrieved_at is the timestamp
+    # of that first, immutable extraction (distinct from
+    # FilingEvent.retrieved_at, which is scan-time filing discovery, not
+    # document-extraction time).
+    excerpt_supplemental: str | None = None
+    excerpt_retrieved_at: str | None = None
+    # Normalized, source-neutral "why flagged" record — additive alongside
+    # matched_rules above (never replacing it, never losing any per-source
+    # rationale). See FlagReason's own docstring.
+    flag_reason: FlagReason | None = None
+    # Source-aware evidence-location contract — see EvidenceLocation's own
+    # docstring. None/UNAVAILABLE is a valid, honest default; Phase 1 only
+    # ever sets a more specific kind from data a pipeline already produced
+    # while building the excerpt, never from a new fetch/parser/heuristic
+    # added solely to populate this field.
+    evidence_location: EvidenceLocation | None = None

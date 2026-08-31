@@ -83,7 +83,7 @@ def test_readiness_never_raises_without_a_configured_key(tmp_path):
 def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     captured = {}
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None, translation_provider=None):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"
 
@@ -99,7 +99,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
     captured = {}
     sentinel_repo = object()  # identity check only — no method on it is ever called this test
 
-    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None):
+    def _fake_run_pipeline(client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None, candidate_repository=None, translation_provider=None):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"
 
@@ -113,7 +113,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
 def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     captured = {}
 
-    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None, translation_provider=None):
         captured["candidate_repository"] = candidate_repository
         return None
 
@@ -129,7 +129,7 @@ def test_process_candidate_now_passes_through_an_explicitly_supplied_repository(
     captured = {}
     sentinel_repo = object()
 
-    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None):
+    def _fake_process_single_candidate(client, candidate_id, cache_dir, candidate_repository=None, translation_provider=None):
         captured["candidate_repository"] = candidate_repository
         return None
 

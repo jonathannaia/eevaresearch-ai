@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -154,12 +154,31 @@ _V2_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Evidence-packet foundation, Phase 1 (design/DECISIONS.md) — additive
+# columns only, every one nullable with no default required (a nullable
+# TEXT column with no DEFAULT clause is NULL for every pre-existing row
+# automatically), so this migration never touches existing data. See
+# src/models/models.py for what each new field represents:
+# FilingEvent.filed_at (full timestamp, only ever set for EDINET), and
+# CandidateSignal.excerpt_supplemental/excerpt_retrieved_at/
+# flag_reason (JSON-encoded FlagReason)/evidence_location (JSON-encoded
+# EvidenceLocation) — the same JSON-text-column convention already used
+# for title_translation_json/excerpt_translation_json above.
+_V3_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE filing_events ADD COLUMN filed_at TEXT",
+    "ALTER TABLE candidates ADD COLUMN excerpt_supplemental TEXT",
+    "ALTER TABLE candidates ADD COLUMN excerpt_retrieved_at TEXT",
+    "ALTER TABLE candidates ADD COLUMN flag_reason_json TEXT",
+    "ALTER TABLE candidates ADD COLUMN evidence_location_json TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 3 later means appending a new (3, (...statements...))
+# Adding schema version 4 later means appending a new (4, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
+    (3, _V3_STATEMENTS),
 )
 
 

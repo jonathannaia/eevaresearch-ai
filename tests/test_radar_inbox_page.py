@@ -18,8 +18,11 @@ from src.data_access.dart import candidate_store, retry_policy
 from src.models.models import (
     CandidateSignal,
     CandidateStatus,
+    EvidenceLocation,
     ExtractionState,
     FilingEvent,
+    FlagReason,
+    LocationKind,
     StateTransition,
     Translation,
     TranslationState,
@@ -1398,3 +1401,62 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     assert "Needs review" in all_text
     # No JSON candidate file was ever created for this sqlite-backed render.
     assert not (tmp_path / "dart_candidates.json").exists()
+
+
+# --- Evidence-packet foundation, Phase 1: new optional field exposure ---
+
+
+def test_radar_inbox_renders_new_evidence_packet_fields_when_present(tmp_path):
+    _seed_corp_codes(tmp_path)
+    filing = _filing("20260817000001", "유상증자 결정")
+    _seed_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="cand-phase1-present", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="본문 발췌.",
+        excerpt_translation=Translation(translated_text="Body excerpt.", provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso()),
+        flag_reason=FlagReason(
+            category="financing", matched_terms=("financing:capital_increase:유상증자",), score_inputs=("confidence=Moderate",),
+            human_readable_reason="Matched a capital-increase financing keyword.", source_detail="detail",
+        ),
+        evidence_location=EvidenceLocation(kind=LocationKind.SECTION, section="Item 2.03"),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Matched a capital-increase financing keyword." in all_text
+    assert "Item 2.03" in all_text
+    assert "English working translation" in all_text
+
+
+def test_radar_inbox_renders_stably_when_new_evidence_packet_fields_are_absent(tmp_path):
+    # Every new field is optional and defaults to None — a candidate that
+    # predates Phase 1 (or simply never populated them) must still render
+    # without exception and without a broken/placeholder row appearing.
+    _seed_corp_codes(tmp_path)
+    filing = _filing("20260817000002", "일반 공고")
+    _seed_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="cand-phase1-absent", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="본문 발췌.",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Why flagged" not in all_text  # no flag_reason row for a candidate without one
+    assert "Evidence location" not in all_text  # no location row for a candidate without one

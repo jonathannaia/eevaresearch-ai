@@ -37,7 +37,7 @@ from src.config.tracked_companies import TrackedCompany
 from src.data_access.edinet import edinet_rules
 from src.data_access.edinet.client import EdinetClient
 from src.data_access.edinet.errors import EdinetError
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition, build_flag_reason
 
 # Deliberately small relative to EDGAR's DEFAULT_LOOKBACK_DAYS=30 — see
 # module docstring: each day of lookback here is a separate bounded live
@@ -311,7 +311,31 @@ def _derive_filing_date(row: dict, query_date: str) -> tuple[str, str]:
     return query_date, "query_date_fallback: submitDateTime was missing"
 
 
-def _filing_event_from_row(row: dict, company: TrackedCompany, retrieved_at: str, filing_date: str) -> FilingEvent:
+def _derive_filed_at(row: dict) -> str | None:
+    """Evidence-packet foundation, Phase 1 (design/DECISIONS.md): the
+    full `submitDateTime` (e.g. "2026-08-17 09:00" — confirmed live, Gate
+    4), preserved as a complete ISO 8601 timestamp for FilingEvent.filed_at
+    — never truncated to a date the way _derive_filing_date's own
+    `rcept_dt` output deliberately still is (that field's existing
+    date-only contract is depended on elsewhere — see this module's own
+    docstring on _derive_filing_date — and is never changed here).
+
+    Returns None whenever submitDateTime is missing or not parseable as a
+    "YYYY-MM-DD HH:MM[:SS]"-shaped value — never a fabricated time, and
+    never a fallback to the query date (a calendar day is not a
+    timestamp). No timezone/offset is added: the observed live value
+    carries none, so none is invented; if EDINET ever supplies an
+    explicit offset, `datetime.fromisoformat` preserves it unchanged."""
+    raw = (row.get("submitDateTime") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace(" ", "T", 1)).isoformat()
+    except ValueError:
+        return None
+
+
+def _filing_event_from_row(row: dict, company: TrackedCompany, retrieved_at: str, filing_date: str, filed_at: str | None = None) -> FilingEvent:
     """Gate 8.1 fix: the real EDINET form-code triplet
     (ordinanceCode/formCode/docTypeCode — all three are _REQUIRED_FIELDS,
     guaranteed present on any row reaching this function) was previously
@@ -340,6 +364,7 @@ def _filing_event_from_row(row: dict, company: TrackedCompany, retrieved_at: str
         source_name=_SOURCE_LABEL,
         original_language="Japanese",
         primary_document="",
+        filed_at=filed_at,
     )
 
 
@@ -349,13 +374,16 @@ def _evaluate_row(row: dict, code_category_map: dict[str, str]) -> edinet_rules.
 
 def _candidate_signal_from_evaluation(filing: FilingEvent, evaluation: edinet_rules.RuleEvaluation) -> CandidateSignal:
     now = datetime.now(timezone.utc).isoformat()
+    confidence = evaluation.confidence or "Low"
+    source_detail = f"ordinanceCode={filing.ordinance_code} · formCode={filing.pblntf_ty} · docTypeCode={filing.pblntf_detail_ty}"
     return CandidateSignal(
         id=f"edinet-cand-{filing.rcept_no}",
         filing=filing,
         matched_rules=list(evaluation.matched_rules),
-        confidence=evaluation.confidence or "Low",
+        confidence=confidence,
         status=CandidateStatus.CANDIDATE_DETECTED,
         state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=now)],
+        flag_reason=build_flag_reason(evaluation.matched_rules, confidence, source_detail=source_detail),
     )
 
 
@@ -465,7 +493,8 @@ def scan(
             filing_date, date_reason = _derive_filing_date(row, day.isoformat())
             if date_reason != "submitDateTime":
                 errors.append(f"{day.isoformat()}: {row['docID']}: {date_reason}")
-            filing = _filing_event_from_row(row, company, scanned_at, filing_date)
+            filed_at = _derive_filed_at(row)
+            filing = _filing_event_from_row(row, company, scanned_at, filing_date, filed_at)
             new_filing_events.append(filing)
             evaluation = _evaluate_row(row, code_category_map)
             if evaluation.confidence is not None:

@@ -16,7 +16,16 @@ import pytest
 
 from src.data_access.state_db import candidate_repository, connection, filing_event_repository, schema
 from src.data_access.state_db.signal_repository import SqliteSignalRepository
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition, Translation
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    EvidenceLocation,
+    FilingEvent,
+    FlagReason,
+    LocationKind,
+    StateTransition,
+    Translation,
+)
 
 
 def _now() -> str:
@@ -153,6 +162,83 @@ def test_round_trips_full_processing_state_including_translations_and_history():
     assert [t.status for t in reloaded.state_history] == [
         CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.EXTRACTED, CandidateStatus.PUBLISHED,
     ]
+
+
+# --- Evidence-packet foundation, Phase 1: new optional field round-trip ---
+
+
+def test_round_trips_evidence_packet_phase1_fields():
+    conn = _conn()
+    filing = _edgar_filing(filed_at=None)  # EDGAR: no time component available, stays None
+    candidate = _candidate(
+        "edgar-cand-phase1", filing, status=CandidateStatus.NEEDS_REVIEW,
+        excerpt_original="First extraction.", excerpt_supplemental="Second, different extraction.",
+        excerpt_retrieved_at="2026-08-20T00:00:00+00:00",
+        flag_reason=FlagReason(
+            category="financing_or_debt", matched_terms=("financing_or_debt:8-K item 2.03",),
+            score_inputs=("confidence=Moderate", "category_matches=1"),
+            human_readable_reason="Matched 1 detection rule(s) in category 'financing_or_debt'.",
+            source_detail="REVIEW: fallback [rules: edgar.fallback.review]",
+        ),
+        evidence_location=EvidenceLocation(kind=LocationKind.SECTION, section="Item 2.03"),
+    )
+    candidate_repository.upsert_new_candidates(conn, "SEC EDGAR", [candidate])
+    reloaded = candidate_repository.get_candidate(conn, candidate.id)
+
+    assert reloaded.excerpt_original == "First extraction."
+    assert reloaded.excerpt_supplemental == "Second, different extraction."
+    assert reloaded.excerpt_retrieved_at == "2026-08-20T00:00:00+00:00"
+    assert reloaded.flag_reason == candidate.flag_reason
+    assert reloaded.evidence_location == candidate.evidence_location
+    assert reloaded.filing.filed_at is None
+
+
+def test_round_trips_filing_event_filed_at_for_edinet():
+    conn = _conn()
+    filing = _edgar_filing(
+        rcept_no="S100AAAA", corp_code="E02778", corp_name="SoftBank Group", source_name="EDINET",
+        original_language="Japanese", filed_at="2026-08-17T09:00:00",
+    )
+    candidate = _candidate("edinet-cand-phase1", filing)
+    candidate_repository.upsert_new_candidates(conn, "EDINET", [candidate])
+    reloaded = candidate_repository.get_candidate(conn, candidate.id)
+    assert reloaded.filing.filed_at == "2026-08-17T09:00:00"
+
+
+def test_pre_phase1_row_missing_new_columns_still_loads_with_none_defaults():
+    """Simulates a candidate row written before this migration existed —
+    inserted with the exact pre-Phase-1 column list — then confirms the
+    v3 ALTER TABLE migration (already applied by _conn()) makes the new
+    columns readable as NULL/None rather than raising, matching the
+    additive/backward-compatible migration contract."""
+    conn = _conn()
+    filing = _edgar_filing(rcept_no="pre-phase1-1")
+    filing_event_repository.upsert_filing_event(conn, filing)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO candidates (
+            id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
+            extraction_state, translation_state, excerpt_quality, excerpt_original,
+            title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
+            materiality_assessment, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            "cand-pre-phase1", filing.source_name, filing.corp_code, filing.rcept_no,
+            "[]", "Moderate", "Needs review", "Extracted", "Not requested", "Unknown",
+            "Pre-existing excerpt.", None, None, None, "", "Not assessed", now, now,
+        ),
+    )
+    conn.commit()
+
+    reloaded = candidate_repository.get_candidate(conn, "cand-pre-phase1")
+    assert reloaded is not None
+    assert reloaded.excerpt_original == "Pre-existing excerpt."
+    assert reloaded.excerpt_supplemental is None
+    assert reloaded.excerpt_retrieved_at is None
+    assert reloaded.flag_reason is None
+    assert reloaded.evidence_location is None
 
 
 # --- 8. State transitions append and load in expected order ---

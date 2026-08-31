@@ -21,9 +21,12 @@ from typing import Protocol
 from src.models.models import (
     CandidateSignal,
     CandidateStatus,
+    EvidenceLocation,
     ExcerptQuality,
     ExtractionState,
     FilingEvent,
+    FlagReason,
+    LocationKind,
     StateTransition,
     Translation,
     TranslationState,
@@ -76,6 +79,26 @@ def _cache_path(cache_dir: Path, filename: str = _CACHE_FILENAME) -> Path:
     return cache_dir / filename
 
 
+def _flag_reason_from_dict(data: dict | None) -> FlagReason | None:
+    if not data:
+        return None
+    return FlagReason(
+        category=data.get("category", ""), matched_terms=tuple(data.get("matched_terms", ())),
+        score_inputs=tuple(data.get("score_inputs", ())), human_readable_reason=data.get("human_readable_reason", ""),
+        source_detail=data.get("source_detail", ""),
+    )
+
+
+def _evidence_location_from_dict(data: dict | None) -> EvidenceLocation | None:
+    if not data:
+        return None
+    return EvidenceLocation(
+        kind=LocationKind(data.get("kind", LocationKind.UNAVAILABLE.value)),
+        page=data.get("page"), section=data.get("section"), table=data.get("table"),
+        paragraph_index=data.get("paragraph_index"),
+    )
+
+
 def _candidate_from_dict(data: dict) -> CandidateSignal:
     filing = FilingEvent(**data["filing"])
     title_translation = Translation(**data["title_translation"]) if data.get("title_translation") else None
@@ -100,6 +123,10 @@ def _candidate_from_dict(data: dict) -> CandidateSignal:
         reviewed_note=data.get("reviewed_note", ""),
         state_history=history,
         materiality_assessment=data.get("materiality_assessment", "Not assessed"),
+        excerpt_supplemental=data.get("excerpt_supplemental"),
+        excerpt_retrieved_at=data.get("excerpt_retrieved_at"),
+        flag_reason=_flag_reason_from_dict(data.get("flag_reason")),
+        evidence_location=_evidence_location_from_dict(data.get("evidence_location")),
     )
 
 

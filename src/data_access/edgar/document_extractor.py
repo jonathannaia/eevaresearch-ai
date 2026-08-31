@@ -52,6 +52,14 @@ class ExtractionResult:
     state: ExtractionState
     excerpt_original: str | None = None
     detail: str = ""
+    # Evidence-packet foundation, Phase 1 (design/DECISIONS.md) — the
+    # Item number the excerpt was anchored on, when the item-anchored path
+    # (see _item_anchored_excerpt below) actually found and used one.
+    # None for every non-8-K excerpt and for an 8-K excerpt that fell all
+    # the way back to the plain document-start prefix (no Item header
+    # found at all) — this is surfaced data already computed while
+    # building the excerpt, never a new parse added to populate it.
+    location_section: str | None = None
 
 
 def _decode(raw: bytes) -> str | None:
@@ -66,7 +74,7 @@ def _decode(raw: bytes) -> str | None:
     return None
 
 
-def _item_anchored_excerpt(full_text: str, expected_items: tuple[str, ...]) -> tuple[str, str]:
+def _item_anchored_excerpt(full_text: str, expected_items: tuple[str, ...]) -> tuple[str, str, str | None]:
     """Anchors the excerpt at the first (in document order) occurrence of
     one of `expected_items`, capped at EIGHT_K_ITEM_EXCERPT_CHARS. Ends
     before the next Item header that is NOT itself one of the expected
@@ -77,18 +85,21 @@ def _item_anchored_excerpt(full_text: str, expected_items: tuple[str, ...]) -> t
     first Item header of any kind (past the cover page) if none of the
     expected items are found; falls back further to the plain
     document-start prefix (existing behavior, MAX_EXCERPT_CHARS) if no
-    Item header exists anywhere. Returns (excerpt, detail) — detail is ""
-    on a clean expected-item match, or a safe, non-guessing note
-    otherwise. Original English text only — never summarized,
-    translated, or interpreted."""
+    Item header exists anywhere. Returns (excerpt, detail, anchor_item) —
+    detail is "" on a clean expected-item match, or a safe, non-guessing
+    note otherwise; anchor_item is the Item number actually used as the
+    anchor (e.g. "2.03"), or None when there was no header to anchor on
+    at all (the plain-prefix fallback). Original English text only —
+    never summarized, translated, or interpreted."""
     positions = edgar_rules.iter_item_header_positions(full_text)
     if not positions:
-        return full_text[:MAX_EXCERPT_CHARS], _NO_ITEM_HEADER_DETAIL
+        return full_text[:MAX_EXCERPT_CHARS], _NO_ITEM_HEADER_DETAIL, None
 
     start_idx = next((idx for item, idx in positions if item in expected_items), None)
+    anchor_item = next((item for item, idx in positions if item in expected_items), None)
     detail = ""
     if start_idx is None:
-        start_idx = positions[0][1]
+        anchor_item, start_idx = positions[0]
         detail = _EXPECTED_ITEM_NOT_FOUND_DETAIL
 
     hard_cap_end = start_idx + EIGHT_K_ITEM_EXCERPT_CHARS
@@ -98,7 +109,7 @@ def _item_anchored_excerpt(full_text: str, expected_items: tuple[str, ...]) -> t
     end_idx = min(hard_cap_end, next_unexpected_header) if next_unexpected_header is not None else hard_cap_end
 
     excerpt = full_text[start_idx:end_idx].strip()
-    return excerpt, detail
+    return excerpt, detail, anchor_item
 
 
 def extract_excerpt(document_bytes: bytes, expected_items: tuple[str, ...] = ()) -> ExtractionResult:
@@ -141,7 +152,11 @@ def extract_excerpt(document_bytes: bytes, expected_items: tuple[str, ...] = ())
         return ExtractionResult(state=ExtractionState.PARSE_FAILED, detail="Document parsed but contained no extractable text.")
 
     if expected_items:
-        anchored_excerpt, detail = _item_anchored_excerpt(excerpt, expected_items)
-        return ExtractionResult(state=ExtractionState.EXTRACTED, excerpt_original=anchored_excerpt[:EIGHT_K_ITEM_EXCERPT_CHARS], detail=detail)
+        anchored_excerpt, detail, anchor_item = _item_anchored_excerpt(excerpt, expected_items)
+        location_section = f"Item {anchor_item}" if anchor_item else None
+        return ExtractionResult(
+            state=ExtractionState.EXTRACTED, excerpt_original=anchored_excerpt[:EIGHT_K_ITEM_EXCERPT_CHARS],
+            detail=detail, location_section=location_section,
+        )
 
     return ExtractionResult(state=ExtractionState.EXTRACTED, excerpt_original=excerpt[:MAX_EXCERPT_CHARS])

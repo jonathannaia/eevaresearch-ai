@@ -35,6 +35,8 @@ from src.models.models import (
     ExtractionState,
     StateTransition,
     TranslationState,
+    build_flag_reason,
+    record_excerpt,
 )
 
 # Only candidates at these detection-confidence levels enter the
@@ -121,7 +123,12 @@ def process_candidate(
         if not doc_result.from_cache:
             counters["documents_retrieved"] += 1
             counters["documents_extracted"] += 1
-        candidate.excerpt_original = doc_result.excerpt_original
+        # Evidence-packet foundation, Phase 1 (design/DECISIONS.md):
+        # excerpt_original is set once and never silently overwritten —
+        # see record_excerpt's own docstring. A retry that re-extracts
+        # different text is preserved in excerpt_supplemental instead of
+        # replacing the original.
+        record_excerpt(candidate, doc_result.excerpt_original, doc_result.retrieved_at)
         candidate.excerpt_quality = assess_excerpt_quality(doc_result.excerpt_original)
         candidate = _transition(candidate, CandidateStatus.EXTRACTED)
     elif doc_result.state == ExtractionState.RETRIEVAL_FAILED:
@@ -164,6 +171,11 @@ def process_candidate(
             gate_result = ownership_materiality.assess_ownership_materiality(candidate.filing.report_nm, candidate.excerpt_original)
             candidate.materiality_assessment = gate_result.detail
             transition_detail = gate_result.detail
+            # Evidence-packet foundation, Phase 1: refresh the normalized
+            # why-flagged record with the ownership-materiality gate's own
+            # detail once it's known — matched_rules/confidence are
+            # unchanged by this gate, only source_detail is enriched.
+            candidate.flag_reason = build_flag_reason(candidate.matched_rules, candidate.confidence, source_detail=gate_result.detail)
             final_status = CandidateStatus.NOT_MATERIAL if gate_result.outcome == "not_material" else CandidateStatus.NEEDS_REVIEW
         else:
             final_status = CandidateStatus.NEEDS_REVIEW

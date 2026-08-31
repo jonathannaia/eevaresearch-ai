@@ -30,6 +30,7 @@ from src.config.tracked_companies import TrackedCompany, get_tracked_companies_f
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edinet import edinet_pipeline, scan_service
 from src.data_access.edinet.client import EdinetClient
+from src.data_access.translation.deepl_provider import DeepLProvider
 from src.models.models import CandidateSignal
 
 _EDINET_SOURCE = "EDINET"
@@ -72,6 +73,14 @@ def _client(settings: Settings) -> EdinetClient:
     return EdinetClient(settings.edinet_subscription_key)
 
 
+def _translation_provider(settings: Settings) -> DeepLProvider:
+    """Evidence-packet foundation, Phase 1 (design/DECISIONS.md) — the
+    exact same DeepL account/key DART already uses (translation is not
+    source-specific; there is one shared EDGE_TRANSLATION_API_KEY). No
+    new provider, credential, or dependency is introduced here."""
+    return DeepLProvider(settings.translation_api_key)
+
+
 def run_scan(
     settings: Settings,
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
@@ -85,12 +94,19 @@ def run_scan(
     is byte-for-byte identical to before: today's JSON candidate_store.py
     path. Supplied — synthetic/local tests only, never a real service
     entry point in production this phase — every candidate-store touch
-    inside this one call routes through the given collaborator instead."""
+    inside this one call routes through the given collaborator instead.
+
+    Evidence-packet foundation, Phase 1: now also passes a real
+    DeepLProvider through to edinet_pipeline.run_pipeline, so a
+    successfully extracted excerpt is translated exactly the way DART's
+    own radar_service.run_scan already does — see
+    edinet_pipeline.process_candidate's own docstring for the non-fatal
+    failure handling this relies on."""
     companies = get_edinet_companies(settings.cache_dir)
     return edinet_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
-        candidate_repository=candidate_repository,
+        candidate_repository=candidate_repository, translation_provider=_translation_provider(settings),
     )
 
 
@@ -101,4 +117,5 @@ def process_candidate_now(
     optional, synthetic/local-test-only seam as run_scan above."""
     return edinet_pipeline.process_single_candidate(
         _client(settings), candidate_id, settings.cache_dir, candidate_repository=candidate_repository,
+        translation_provider=_translation_provider(settings),
     )

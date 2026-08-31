@@ -36,7 +36,9 @@ from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edinet import document_service, edinet_rules, scan_service
 from src.data_access.edinet.client import EdinetClient
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState
+from src.data_access.translation.interfaces import TranslationProvider
+from src.data_access.translation.translation_service import translate_cached
+from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState, record_excerpt
 
 _PROCESSABLE_CONFIDENCE_LEVELS = frozenset({"Moderate", "High"})
 
@@ -80,6 +82,12 @@ class ScanReport:
     errors_by_category: dict[str, int]
     cache_hits: int
     warnings: tuple[str, ...]
+    # Evidence-packet foundation, Phase 1 — additive, defaults to 0 so
+    # every existing construction of this dataclass (positional or
+    # keyword) is unaffected. Successful translations confirmed this run,
+    # same "counts cache hits too" convention as DART's own ScanReport
+    # field of the same name.
+    translations_completed: int = 0
 
 
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
@@ -94,11 +102,28 @@ def process_candidate(
     cache_dir: Path,
     counters: dict[str, int],
     error_counts: dict[str, int],
+    translation_provider: TranslationProvider | None = None,
 ) -> CandidateSignal:
     """The per-candidate retrieval/extraction state machine — a single
     explicit candidate, never a loop. Called both from run_pipeline's
     budgeted loop and from process_single_candidate's on-demand manual
-    entry point."""
+    entry point.
+
+    `translation_provider` (evidence-packet foundation, Phase 1) is
+    additive and optional. Omitted (every real call site before this
+    phase, and any existing test that doesn't pass one), behavior is
+    unchanged: a successfully extracted excerpt stays TranslationState.
+    PENDING, exactly as before — no provider call is ever attempted.
+    Supplied, the already-extracted `excerpt_original` (never a new
+    document fetch — see module docstring) is translated via the same
+    translate_cached() DART already uses, with `source_lang="JA"`. Any
+    translation failure of any kind (missing key, network, rate limit,
+    timeout, malformed response, unsupported/empty text) collapses to
+    TranslationState.UNAVAILABLE and never fails the candidate — the
+    Japanese original is always retained unchanged, matching DART's own
+    "collapse every failure mode uniformly, never raise into the
+    pipeline" behavior exactly (translate_cached itself already
+    guarantees this; nothing new is added here)."""
     candidate = _transition(candidate, CandidateStatus.QUEUED_FOR_PROCESSING)
     candidate = _transition(candidate, CandidateStatus.RETRIEVAL_IN_PROGRESS)
 
@@ -113,13 +138,26 @@ def process_candidate(
         if not doc_result.from_cache:
             counters["documents_retrieved"] += 1
             counters["documents_extracted"] += 1
-        candidate.excerpt_original = doc_result.excerpt_original
-        # Translation lifecycle seam only — no provider call this gate
-        # (see module docstring). A successfully extracted Japanese
-        # excerpt is marked PENDING, the same state DART uses before its
-        # own translate_cached() call; a later gate wires that call in
-        # for EDINET exactly as DART already does for itself.
-        candidate.translation_state = TranslationState.PENDING
+        # Evidence-packet foundation, Phase 1: excerpt_original is set
+        # once and never silently overwritten — see record_excerpt's own
+        # docstring. A repeat extraction with different text is preserved
+        # in excerpt_supplemental instead of replacing the original.
+        record_excerpt(candidate, doc_result.excerpt_original, doc_result.retrieved_at)
+        if translation_provider is not None and candidate.excerpt_original:
+            excerpt_translation = translate_cached(
+                translation_provider, doc_id, candidate.excerpt_original, cache_dir, source_lang="JA",
+            )
+            candidate.excerpt_translation = excerpt_translation
+            if excerpt_translation is not None:
+                candidate.translation_state = TranslationState.TRANSLATED
+                counters["translations_completed"] = counters.get("translations_completed", 0) + 1
+            else:
+                candidate.translation_state = TranslationState.UNAVAILABLE
+                error_counts["translation_unavailable"] = error_counts.get("translation_unavailable", 0) + 1
+        else:
+            # No provider configured — the pre-Phase-1 lifecycle seam
+            # only, unchanged: stays PENDING, no call attempted.
+            candidate.translation_state = TranslationState.PENDING
         candidate = _transition(candidate, CandidateStatus.EXTRACTED)
     elif doc_result.state == ExtractionState.RETRIEVAL_FAILED:
         error_counts["retrieval_failed"] = error_counts.get("retrieval_failed", 0) + 1
@@ -228,6 +266,7 @@ def process_single_candidate(
     candidate_id: str,
     cache_dir: Path,
     candidate_repository: CandidatePersistence | None = None,
+    translation_provider: TranslationProvider | None = None,
 ) -> CandidateSignal | None:
     """On-demand processing of exactly one named candidate — the seam
     Radar Inbox's manual "Process now"/"Retry processing" actions would
@@ -236,7 +275,9 @@ def process_single_candidate(
     `candidate_repository` (Durable-State Phase 3A) is additive and
     optional — see run_pipeline's own docstring below for the shared
     reasoning. process_candidate's own network/extraction call is never
-    affected either way."""
+    affected either way. `translation_provider` (evidence-packet
+    foundation, Phase 1) is likewise additive and optional — see
+    process_candidate's own docstring."""
     if candidate_repository is None:
         store = candidate_store.load_candidates(cache_dir, CANDIDATE_STORE_FILENAME)
     else:
@@ -246,7 +287,7 @@ def process_single_candidate(
         return None
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0}
     error_counts: dict[str, int] = {}
-    processed = process_candidate(client, candidate, cache_dir, counters, error_counts)
+    processed = process_candidate(client, candidate, cache_dir, counters, error_counts, translation_provider=translation_provider)
     if candidate_repository is None:
         candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)
     else:
@@ -261,6 +302,7 @@ def run_pipeline(
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
+    translation_provider: TranslationProvider | None = None,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -304,11 +346,11 @@ def run_pipeline(
     to_process = eligible[:max_candidates_to_process]
     to_defer = eligible[max_candidates_to_process:]
 
-    counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0}
+    counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0, "translations_completed": 0}
     error_counts: dict[str, int] = {}
 
     for candidate in to_process:
-        processed = process_candidate(client, candidate, cache_dir, counters, error_counts)
+        processed = process_candidate(client, candidate, cache_dir, counters, error_counts, translation_provider=translation_provider)
         if candidate_repository is None:
             candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)
         else:
@@ -343,4 +385,5 @@ def run_pipeline(
         errors_by_category=error_counts,
         cache_hits=counters["cache_hits"],
         warnings=tuple(warnings),
+        translations_completed=counters["translations_completed"],
     )

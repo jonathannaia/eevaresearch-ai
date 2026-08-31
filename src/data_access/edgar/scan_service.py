@@ -27,7 +27,7 @@ from src.config.tracked_companies import TrackedCompany
 from src.data_access.edgar import edgar_rules
 from src.data_access.edgar.client import EdgarClient
 from src.data_access.edgar.errors import EdgarError, EdgarRateLimitError, EdgarTimeoutError
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition, build_flag_reason
 
 DEFAULT_LOOKBACK_DAYS = 30
 MAX_LOOKBACK_DAYS = 90
@@ -220,13 +220,15 @@ def _evaluate_row(row: dict) -> edgar_rules.RuleEvaluation:
 
 def _candidate_signal_from_evaluation(filing: FilingEvent, evaluation: edgar_rules.RuleEvaluation) -> CandidateSignal:
     now = datetime.now(timezone.utc).isoformat()
+    confidence = evaluation.confidence or "Low"
     return CandidateSignal(
         id=f"edgar-cand-{filing.rcept_no}",
         filing=filing,
         matched_rules=list(evaluation.matched_rules),
-        confidence=evaluation.confidence or "Low",
+        confidence=confidence,
         status=CandidateStatus.CANDIDATE_DETECTED,
         state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=now)],
+        flag_reason=build_flag_reason(evaluation.matched_rules, confidence),
     )
 
 
