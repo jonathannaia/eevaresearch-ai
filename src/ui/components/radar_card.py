@@ -26,11 +26,13 @@ from typing import Callable
 
 import streamlit as st
 
+from src.data_access.comparison_store import ComparisonRecord
 from src.data_access.dart import dart_rules, retry_policy
 from src.models.models import CandidateSignal, CandidateStatus, EvidenceLocation, FilingEvent, LocationKind
 from src.ui.components.analyst_view import render_analyst_view
 from src.ui.components.radar_status import (
     RadarItem,
+    comparison_status_label,
     default_card_status_html,
     evidence_document_id_label,
     evidence_native_text_label,
@@ -44,6 +46,7 @@ from src.ui.ui import get_page
 
 _TRANSLATION_LABEL = "Machine translation · For convenience · Verify against the original-language source"
 _INVESTIGATE_LABEL = "Investigate →"
+_COMPARISON_CAVEAT = "Deterministic rule-category comparison — not a filing-text, financial, or materiality determination."
 
 _PREPARE_ANALYST_VIEW_LABEL = "Prepare analyst view"
 _RETRY_ANALYST_VIEW_LABEL = "Retry analyst view preparation"
@@ -121,12 +124,21 @@ def _location_display(location: EvidenceLocation) -> str:
     return location.kind.value
 
 
-def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | None) -> None:
+def _evidence_status_panel(
+    filing: FilingEvent, candidate: CandidateSignal | None, comparison_record: ComparisonRecord | None = None,
+) -> None:
     """Compact, honest, source-neutral evidence summary — plain-language
     labels only (see radar_status.py's evidence_* helpers), never a raw
     enum `.value`. Shown for every item, with or without a CandidateSignal
     yet; the existing raw technical rows further below are untouched and
-    still show `.value` strings for anyone who wants them."""
+    still show `.value` strings for anyone who wants them.
+
+    `comparison_record` (Radar evidence-packet foundation, Phase 3, Step
+    3B) is additive and optional — every existing caller that omits it is
+    unaffected. Never computed here, never fetched here: the caller
+    (radar_inbox.py) already performed the one bulk repository read for
+    the whole page and is only handing this function an already-resolved
+    record (or None)."""
     st.markdown('<div class="er-muted" style="margin-top:0.2rem;"><strong>Evidence status</strong></div>', unsafe_allow_html=True)
     _detail_row("Original document", evidence_source_link_label(filing))
     if filing.filed_at:
@@ -175,6 +187,23 @@ def _evidence_status_panel(filing: FilingEvent, candidate: CandidateSignal | Non
         # EDINET's own bare-PDF/HTML/text path, so this row is simply
         # absent for every card but a ZIP-backed EDINET one.
         _detail_row("Evidence file", html.escape(candidate.evidence_source_member))
+    if (
+        candidate is not None and candidate.id
+        and comparison_record is not None
+        and comparison_record.current_candidate_id == candidate.id
+    ):
+        # Radar evidence-packet foundation, Phase 3, Step 3B — a
+        # deterministic detection-category comparison only, never a raw
+        # stored category/limitation/excerpt/document-id/date (those
+        # never render here at all, in this step or any future one this
+        # step defines) and never shown unless the supplied record's own
+        # identity provably matches the candidate on this card — a
+        # mismatch (or no record, or no candidate) renders nothing.
+        _detail_row("Comparison", comparison_status_label(comparison_record.comparison_status))
+        st.markdown(
+            f'<div class="er-muted" style="margin-top:0.1rem; font-size:0.78rem;">{_COMPARISON_CAVEAT}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _render_process_action(candidate_id: str, label: str, key: str, ready: bool, on_process: Callable[[str], None]) -> None:
@@ -283,6 +312,7 @@ def _render_investigate_body(
     on_process: Callable[[str], None] | None,
     process_ready: bool,
     on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None,
+    comparison_record: ComparisonRecord | None = None,
 ) -> None:
     """Everything that used to sit directly in the card body or in a
     separate "Details" expander, now gathered behind the one Investigate
@@ -291,8 +321,11 @@ def _render_investigate_body(
     preparation action, the human review decision, and the technical/
     audit-trail detail. Nothing here changed except position: no
     wording, status transition, storage call, or eligibility effect was
-    touched."""
-    _evidence_status_panel(filing, candidate)
+    touched.
+
+    `comparison_record` (Phase 3, Step 3B) is additive and optional — see
+    _evidence_status_panel's own docstring."""
+    _evidence_status_panel(filing, candidate, comparison_record)
     render_analyst_view(filing, candidate)
     if candidate.excerpt_original:
         st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Original-language excerpt</strong></div>', unsafe_allow_html=True)
@@ -390,6 +423,7 @@ def candidate_row(
     item: RadarItem, on_process: Callable[[str], None] | None = None, process_ready: bool = True,
     on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None = None,
     show_full_status: bool = False,
+    comparison_record: ComparisonRecord | None = None,
 ) -> None:
     """`show_full_status` (Phase T1, design/DECISIONS.md) — False (the
     default, used by the "Latest" view) suppresses internal/non-
@@ -399,7 +433,18 @@ def candidate_row(
     the complete, real status_pill_html() unchanged, since that view's
     whole purpose is truthful completeness. Neither path changes
     `status_bucket()`/`status_label()`/the stored status itself — only
-    which HTML this one component renders."""
+    which HTML this one component renders.
+
+    `comparison_record` (Phase 3, Step 3B, design/DECISIONS.md) is
+    additive and optional, defaulting to None — every existing caller
+    that omits it renders exactly as before. The caller (radar_inbox.py)
+    is expected to have already resolved this via one bulk repository
+    read for the whole page; this component never fetches, computes, or
+    caches a comparison result itself. Passed straight through to
+    _render_investigate_body/_evidence_status_panel, which are the only
+    places that decide whether it's actually displayable (candidate
+    present with a non-empty id, and the record's own
+    current_candidate_id matching that id)."""
     filing = item.filing
     candidate = item.candidate
 
@@ -457,7 +502,7 @@ def candidate_row(
 
         if candidate is not None:
             with st.expander(_INVESTIGATE_LABEL):
-                _render_investigate_body(filing, candidate, on_process, process_ready, on_review_decision)
+                _render_investigate_body(filing, candidate, on_process, process_ready, on_review_decision, comparison_record)
         else:
             with st.expander(_INVESTIGATE_LABEL):
                 _evidence_status_panel(filing, None)

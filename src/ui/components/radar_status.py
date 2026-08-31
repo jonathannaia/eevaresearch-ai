@@ -195,5 +195,39 @@ def evidence_review_label(candidate: CandidateSignal) -> str:
     return "Not yet reviewed"
 
 
+# Radar evidence-packet foundation, Phase 3, Step 3B (design/DECISIONS.md).
+# Keyed on the plain string values ComparisonRecord.comparison_status
+# actually stores (see src/data_access/comparison_store.py and
+# src/logic/prior_disclosure_comparison.ComparisonStatus) — not an enum
+# instance, since that field's type is `str`. Deliberately does not
+# import ComparisonStatus/ComparisonRecord here: this module only needs
+# to recognize the four known literal strings, never reconstruct or
+# reinterpret the record itself.
+_COMPARISON_STATUS_LABELS: dict[str, str] = {
+    "NOT_AVAILABLE": "Comparison unavailable",
+    "NOT_COMPARABLE": "Not comparable",
+    "NO_MATERIAL_CHANGE": "Detection categories unchanged",
+    "CHANGE_DETECTED": "Detection categories changed",
+}
+_COMPARISON_STATUS_FALLBACK_LABEL = "Comparison unavailable"
+
+
+def comparison_status_label(comparison_status: object) -> str:
+    """Maps a stored ComparisonRecord.comparison_status value to a
+    factual, plain-language label — never a raw stored string shown
+    verbatim. Any unknown, malformed, missing (None), or otherwise
+    unrecognized value safely falls back to "Comparison unavailable"
+    rather than raising — corrupted/unexpected persisted data must never
+    crash a Radar card. `object` (not `str`) is the accepted type
+    deliberately: this function must survive whatever a repository read
+    actually returns, not assume the stored shape is already valid."""
+    try:
+        return _COMPARISON_STATUS_LABELS.get(comparison_status, _COMPARISON_STATUS_FALLBACK_LABEL)
+    except TypeError:
+        # comparison_status was unhashable (e.g. a list/dict) — genuinely
+        # malformed data, not a case dict.get's own default handles.
+        return _COMPARISON_STATUS_FALLBACK_LABEL
+
+
 def evidence_document_id_label(source_name: str) -> str:
     return _SOURCE_DOCUMENT_ID_LABELS.get(source_name, "Document ID")

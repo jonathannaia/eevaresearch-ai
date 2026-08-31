@@ -916,6 +916,27 @@ def render() -> None:
     range_start = start_idx + 1 if total_items else 0
     range_end = min(end_idx, total_items)
 
+    # Radar evidence-packet foundation, Phase 3, Step 3B (design/
+    # DECISIONS.md) — at most one bulk comparison-record read for this
+    # whole render, bounded to exactly the candidate ids on THIS page
+    # (never the full filtered/loaded set, never another page) — the
+    # same "one bulk call, never per-card" discipline _build_items above
+    # already uses for filings/candidates. A repository construction/read
+    # failure is caught here and degrades to no comparison data for this
+    # render (every card still renders; only the optional Comparison row
+    # is absent) — mirroring _load_source_items' own per-source fail-
+    # closed pattern, never raising into render() and never logging/
+    # surfacing raw exception text. Read-only: only
+    # ComparisonRepositoryProtocol.latest_for_candidate_ids() is called —
+    # never a comparison computation, never a write.
+    page_candidate_ids = [item.candidate.id for item in page_items if item.candidate is not None and item.candidate.id]
+    latest_comparisons_by_candidate_id = {}
+    if page_candidate_ids:
+        try:
+            latest_comparisons_by_candidate_id = backend_factory.get_comparison_repository(settings).latest_for_candidate_ids(page_candidate_ids)
+        except Exception:  # noqa: BLE001 — fail closed; never block card rendering on a comparison-repository problem
+            latest_comparisons_by_candidate_id = {}
+
     for item in page_items:
         candidate_row(
             item, on_process=_on_process,
@@ -927,6 +948,7 @@ def render() -> None:
             # shows the complete, real status — that view's whole purpose
             # is truthful completeness.
             show_full_status=(view_mode != _SIGNALS_VIEW),
+            comparison_record=(latest_comparisons_by_candidate_id.get(item.candidate.id) if item.candidate is not None else None),
         )
 
     # Pagination controls render after the results, not above them (Phase
