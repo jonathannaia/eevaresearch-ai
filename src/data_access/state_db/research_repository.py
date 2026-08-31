@@ -76,6 +76,25 @@ def list_recent_cases(conn: sqlite3.Connection, limit: int) -> tuple[ResearchCas
     return tuple(_row_to_case(row) for row in rows)
 
 
+def get_existing_case_ids(conn: sqlite3.Connection, case_ids: Sequence[str]) -> frozenset[str]:
+    """EevaResearch Phase 4, Step 4B-1 (design/DECISIONS.md) — bounded,
+    read-only bulk membership check: which of the supplied ids already
+    exist in `research_cases`. Exactly one parameterized query for a
+    non-empty request (never one query per id, never a full-table scan);
+    empty input returns `frozenset()` immediately, executing no SQL at
+    all. Duplicate ids in the input are harmless — the result is a set,
+    so repeats collapse naturally. Placeholders are built only from the
+    number of supplied ids; no id value is ever interpolated into the
+    SQL text itself."""
+    if not case_ids:
+        return frozenset()
+    placeholders = ", ".join("?" for _ in case_ids)
+    rows = conn.execute(
+        f"SELECT id FROM research_cases WHERE id IN ({placeholders})", tuple(case_ids),
+    ).fetchall()
+    return frozenset(row["id"] for row in rows)
+
+
 def insert_research_case(conn: sqlite3.Connection, case: ResearchCase) -> bool:
     """INSERT-only: no update/replace/upsert path exists for this table
     anywhere in this codebase. Returns True when newly inserted; False

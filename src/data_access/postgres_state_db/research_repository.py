@@ -75,6 +75,23 @@ def list_recent_cases(conn: psycopg.Connection, limit: int) -> tuple[ResearchCas
     return tuple(_row_to_case(row) for row in rows)
 
 
+def get_existing_case_ids(conn: psycopg.Connection, case_ids: Sequence[str]) -> frozenset[str]:
+    """EevaResearch Phase 4, Step 4B-1 (design/DECISIONS.md) — bounded,
+    read-only bulk membership check, same contract as the SQLite
+    counterpart: exactly one parameterized query for a non-empty
+    request (never one query per id); empty input returns
+    `frozenset()` immediately, executing no query at all. Uses
+    `= ANY(%s)` with a single list parameter — this package's existing
+    convention for a variable-length id match (see
+    get_evidence_items_for_case_ids above)."""
+    if not case_ids:
+        return frozenset()
+    rows = conn.execute(
+        "SELECT id FROM research_cases WHERE id = ANY(%s)", (list(case_ids),),
+    ).fetchall()
+    return frozenset(row["id"] for row in rows)
+
+
 def insert_research_case(conn: psycopg.Connection, case: ResearchCase) -> bool:
     """INSERT-only. Returns True when newly inserted; False when a row
     with this exact stable id already existed — the failed INSERT is

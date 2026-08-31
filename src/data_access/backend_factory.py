@@ -109,6 +109,7 @@ from src.data_access.state_db.identifier_repository import ResolvedIdentifierRec
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
 from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
+from src.logic.research_case_validation import ResearchCaseBundle
 from src.models.research_case import DependencyAssertion, RelationshipAssertion, ResearchCase, ResearchEvidenceItem
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
@@ -606,6 +607,7 @@ class ResearchCaseRepositoryProtocol(Protocol):
     def assertions_for_case_ids(
         self, case_ids: Sequence[str],
     ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]: ...
+    def existing_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]: ...
 
 
 @dataclass(frozen=True)
@@ -626,6 +628,12 @@ class JsonResearchCaseRepository:
     ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
         return research_store.assertions_for_case_ids(self.cache_dir, case_ids)
 
+    def existing_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        if not case_ids:
+            return frozenset()
+        existing = research_store.load_research_cases(self.cache_dir)
+        return frozenset(case_id for case_id in case_ids if case_id in existing)
+
 
 @dataclass(frozen=True)
 class SqliteResearchCaseRepository:
@@ -644,6 +652,9 @@ class SqliteResearchCaseRepository:
         self, case_ids: Sequence[str],
     ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
         return sqlite_research.get_assertions_for_case_ids(self.conn, case_ids)
+
+    def existing_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        return sqlite_research.get_existing_case_ids(self.conn, case_ids)
 
 
 @dataclass(frozen=True)
@@ -664,6 +675,9 @@ class PostgresResearchCaseRepository:
     ) -> dict[str, tuple[RelationshipAssertion | DependencyAssertion, ...]]:
         return postgres_research.get_assertions_for_case_ids(self.conn, case_ids)
 
+    def existing_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        return postgres_research.get_existing_case_ids(self.conn, case_ids)
+
 
 def get_research_case_repository(settings: Settings) -> ResearchCaseRepositoryProtocol:
     """Same `settings.db_backend` selection convention as every other
@@ -680,3 +694,77 @@ def get_research_case_repository(settings: Settings) -> ResearchCaseRepositoryPr
     if backend == "postgres":
         return PostgresResearchCaseRepository(conn=_require_postgres_connection(settings))
     return JsonResearchCaseRepository(cache_dir=settings.cache_dir)
+
+
+# --- Research Case bundle writer — EevaResearch Phase 4, Step 4B-1
+# (design/DECISIONS.md). A separate, narrow, write-only seam from
+# ResearchCaseRepositoryProtocol above (which stays read-only by
+# construction, per Step 3C) — this Protocol exposes exactly one
+# method, wrapping only the existing atomic, validation-first,
+# all-or-nothing bundle-persistence functions (Step 3B). No update/
+# upsert/delete/merge/query/single-record write method is exposed here,
+# and no new persistence algorithm or SQL is implemented in this
+# module — every adapter below delegates entirely to an already-
+# existing function.
+#
+# Unlike every other Research Case factory function above, this one has
+# no JSON branch in its dispatch function — same deliberate omission as
+# get_scan_status_repository() above, and for the same reason: the only
+# intended real caller is a future worker-only entry point
+# (scripts/radar_worker.py), which is already hard-required (by that
+# script's own _build_worker_settings()) to run on "sqlite" or
+# "postgres" only, never "json". JsonResearchCaseBundleWriter exists
+# only for direct, isolated unit testing of the adapter class itself —
+# it is never reachable through get_research_case_bundle_writer().
+#
+# Not called by any runtime entry point yet — no worker code references
+# this factory or its Protocol as of this step.
+
+class ResearchCaseBundleWriterProtocol(Protocol):
+    def insert_bundle(self, bundle: ResearchCaseBundle) -> bool: ...
+
+
+@dataclass(frozen=True)
+class JsonResearchCaseBundleWriter:
+    """Test-parity only — see this section's own module-level comment.
+    Never returned by get_research_case_bundle_writer()."""
+
+    cache_dir: Path
+
+    def insert_bundle(self, bundle: ResearchCaseBundle) -> bool:
+        return research_store.append_research_case_bundle(self.cache_dir, bundle)
+
+
+@dataclass(frozen=True)
+class SqliteResearchCaseBundleWriter:
+    conn: sqlite3.Connection
+
+    def insert_bundle(self, bundle: ResearchCaseBundle) -> bool:
+        return sqlite_research.insert_research_case_bundle(self.conn, bundle)
+
+
+@dataclass(frozen=True)
+class PostgresResearchCaseBundleWriter:
+    conn: psycopg.Connection
+
+    def insert_bundle(self, bundle: ResearchCaseBundle) -> bool:
+        return postgres_research.insert_research_case_bundle(self.conn, bundle)
+
+
+def get_research_case_bundle_writer(settings: Settings) -> ResearchCaseBundleWriterProtocol:
+    """No JSON branch — see this section's own module-level comment for
+    why. `db_backend` of "json" (the default) or any other
+    unrecognized/blank value raises BackendConfigurationError rather
+    than silently returning something a future worker must never use."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteResearchCaseBundleWriter(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresResearchCaseBundleWriter(conn=_require_postgres_connection(settings))
+    raise BackendConfigurationError(
+        "Autonomous Research Case bundle persistence requires an explicit "
+        'db_backend of "sqlite" or "postgres" for worker mode '
+        f"(got {backend!r}). JSON is not supported here — this seam exists "
+        "only for a future standalone worker entry point, never the ordinary "
+        "dashboard's own JSON-backed default."
+    )
