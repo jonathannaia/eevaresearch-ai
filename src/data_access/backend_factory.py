@@ -66,11 +66,13 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, Sequence
 
 import psycopg
 
 from src.config.settings import Settings
+from src.data_access import comparison_store
+from src.data_access.comparison_store import ComparisonRecord
 from src.data_access.dart import candidate_store
 from src.data_access.dart import corp_code_resolver
 from src.data_access.dart import scan_service as dart_scan_service
@@ -82,6 +84,7 @@ from src.data_access.edinet import scan_service as edinet_scan_service
 from src.data_access.interfaces import SignalRepository
 from src.data_access.live.radar_signal_repository import RadarSignalRepository
 from src.data_access.postgres_state_db import candidate_repository as postgres_candidates
+from src.data_access.postgres_state_db import comparison_repository as postgres_comparisons
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
 from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
@@ -93,6 +96,7 @@ from src.data_access.postgres_state_db.identifier_repository import (
 from src.data_access.postgres_state_db.scan_status_repository import ProviderScanStatus as PostgresProviderScanStatus
 from src.data_access.postgres_state_db.signal_repository import PostgresSignalRepository
 from src.data_access.state_db import candidate_repository as sqlite_candidates
+from src.data_access.state_db import comparison_repository as sqlite_comparisons
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
 from src.data_access.state_db import identifier_repository as sqlite_identifiers
@@ -523,3 +527,58 @@ def get_scan_status_repository(settings: Settings) -> ScanStatusRepositoryProtoc
         f"(got {backend!r}). JSON is not supported here — "
         "scripts/run_scan.py's existing one-shot path needs no cursor at all."
     )
+
+
+# --- Comparison repository — Radar evidence-packet foundation, Phase 3,
+# Step 3A (design/DECISIONS.md). Factory exists and is tested; not yet
+# wired into radar_inbox.py or any other caller. Deliberately not
+# source-scoped (no `source` parameter) — comparison_results, like
+# Signals, is not partitioned per source the way candidates/filing_events
+# are (see comparison_store.py's own single shared JSON file). The one
+# method this Protocol exposes is a pure, read-only bulk lookup — no
+# insert/update method is exposed here, matching the underlying
+# repositories' own insert-only-elsewhere, read-only-here shape. ---
+
+class ComparisonRepositoryProtocol(Protocol):
+    def latest_for_candidate_ids(self, candidate_ids: Sequence[str]) -> dict[str, ComparisonRecord]: ...
+
+
+@dataclass(frozen=True)
+class JsonComparisonRepository:
+    cache_dir: Path
+
+    def latest_for_candidate_ids(self, candidate_ids: Sequence[str]) -> dict[str, ComparisonRecord]:
+        return comparison_store.latest_comparison_records_for_candidate_ids(self.cache_dir, candidate_ids)
+
+
+@dataclass(frozen=True)
+class SqliteComparisonRepository:
+    conn: sqlite3.Connection
+
+    def latest_for_candidate_ids(self, candidate_ids: Sequence[str]) -> dict[str, ComparisonRecord]:
+        return sqlite_comparisons.get_latest_comparison_records_for_candidate_ids(self.conn, candidate_ids)
+
+
+@dataclass(frozen=True)
+class PostgresComparisonRepository:
+    conn: psycopg.Connection
+
+    def latest_for_candidate_ids(self, candidate_ids: Sequence[str]) -> dict[str, ComparisonRecord]:
+        return postgres_comparisons.get_latest_comparison_records_for_candidate_ids(self.conn, candidate_ids)
+
+
+def get_comparison_repository(settings: Settings) -> ComparisonRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as every other
+    factory function above — "json" (default/unrecognized) returns the
+    JSON adapter, "sqlite"/"postgres" open (and migrate) a real
+    connection via the same `_require_sqlite_connection`/
+    `_require_postgres_connection` helpers every other backend-selecting
+    factory already uses. Not called from any real service entry point
+    yet — a future Radar-page caller (Phase 3, Step 3B) is expected to
+    use this exactly once per page render, not once per card."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteComparisonRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresComparisonRepository(conn=_require_postgres_connection(settings))
+    return JsonComparisonRepository(cache_dir=settings.cache_dir)

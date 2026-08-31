@@ -179,6 +179,30 @@ def test_json_store_latest_record_returns_newest_computed_at(tmp_path):
     assert latest.computed_at == "2026-08-25T00:00:00+00:00"
 
 
+def test_json_store_latest_record_breaks_exact_computed_at_tie_by_greatest_id(tmp_path):
+    # Phase 3, Step 3A: two records sharing the exact same computed_at
+    # (a different comparison_basis gives them different stable ids) —
+    # the tie must resolve to the greatest id, deterministically, never
+    # file/dict iteration order.
+    tied_at = "2026-08-20T00:00:00+00:00"
+    record_a = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v1"), current_candidate_id="cur-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    record_b = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v2"), current_candidate_id="cur-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    assert record_a.id != record_b.id
+
+    append_comparison_record(tmp_path, record_a)
+    append_comparison_record(tmp_path, record_b)
+    latest = latest_comparison_record_for_candidate(tmp_path, "cur-tie")
+    assert latest.id == max(record_a.id, record_b.id)
+
+    # Order of insertion must not affect the outcome.
+    tmp_path_2 = tmp_path / "reversed"
+    tmp_path_2.mkdir()
+    append_comparison_record(tmp_path_2, record_b)
+    append_comparison_record(tmp_path_2, record_a)
+    latest_reversed = latest_comparison_record_for_candidate(tmp_path_2, "cur-tie")
+    assert latest_reversed.id == max(record_a.id, record_b.id)
+
+
 def test_json_store_duplicate_stable_id_never_overwrites(tmp_path):
     record = _record()
     tampered = dataclasses.replace(record, comparison_status=ComparisonStatus.NO_MATERIAL_CHANGE.value, added_categories=())
@@ -302,6 +326,18 @@ def test_sqlite_latest_record_returns_newest_computed_at():
     assert latest.id == newer.id
 
 
+def test_sqlite_latest_record_breaks_exact_computed_at_tie_by_greatest_id():
+    conn = _sqlite_conn()
+    tied_at = "2026-08-20T00:00:00+00:00"
+    record_a = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v1"), current_candidate_id="cur-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    record_b = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v2"), current_candidate_id="cur-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    assert record_a.id != record_b.id
+    sqlite_comparison_repository.insert_comparison_record(conn, record_a)
+    sqlite_comparison_repository.insert_comparison_record(conn, record_b)
+    latest = sqlite_comparison_repository.get_latest_comparison_record(conn, "cur-tie")
+    assert latest.id == max(record_a.id, record_b.id)
+
+
 def test_sqlite_duplicate_stable_id_fails_safely_never_overwrites():
     conn = _sqlite_conn()
     record = _record()
@@ -402,6 +438,17 @@ def test_postgres_latest_record_returns_newest_computed_at(pg_conn):
     postgres_comparison_repository.insert_comparison_record(pg_conn, newer)
     latest = postgres_comparison_repository.get_latest_comparison_record(pg_conn, "cur-pg-4")
     assert latest.id == newer.id
+
+
+def test_postgres_latest_record_breaks_exact_computed_at_tie_by_greatest_id(pg_conn):
+    tied_at = "2026-08-20T00:00:00+00:00"
+    record_a = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v1"), current_candidate_id="cur-pg-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    record_b = build_comparison_record(_result(computed_at=tied_at, comparison_basis="matched_rules_set_diff:v2"), current_candidate_id="cur-pg-tie", current_source_name="SEC EDGAR", current_corp_code="0000320193", current_document_id="acc-2")
+    assert record_a.id != record_b.id
+    postgres_comparison_repository.insert_comparison_record(pg_conn, record_a)
+    postgres_comparison_repository.insert_comparison_record(pg_conn, record_b)
+    latest = postgres_comparison_repository.get_latest_comparison_record(pg_conn, "cur-pg-tie")
+    assert latest.id == max(record_a.id, record_b.id)
 
 
 def test_postgres_duplicate_stable_id_fails_safely_never_overwrites_and_connection_stays_usable(pg_conn):

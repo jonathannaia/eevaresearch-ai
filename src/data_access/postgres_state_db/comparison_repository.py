@@ -20,6 +20,7 @@ for a comparison record — insert and read only."""
 from __future__ import annotations
 
 import json
+from typing import Sequence
 
 import psycopg
 
@@ -66,13 +67,52 @@ def load_comparison_records_for_candidate(
 
 def get_latest_comparison_record(conn: psycopg.Connection, current_candidate_id: str) -> ComparisonRecord | None:
     """Read-only query: the most recently computed_at record for one
-    current-candidate id, or None when none exists. Never triggers a
-    comparison computation itself — a pure repository read only."""
+    current-candidate id, or None when none exists — `id` descending is
+    an explicit secondary sort key for an exact `computed_at` tie (Phase
+    3, Step 3A: aligned with get_latest_comparison_records_for_candidate_ids'
+    own tie rule below), never Postgres's own unspecified tie order.
+    Never triggers a comparison computation itself — a pure repository
+    read only."""
     row = conn.execute(
-        "SELECT * FROM comparison_results WHERE current_candidate_id = %s ORDER BY computed_at DESC LIMIT 1",
+        "SELECT * FROM comparison_results WHERE current_candidate_id = %s ORDER BY computed_at DESC, id DESC LIMIT 1",
         (current_candidate_id,),
     ).fetchone()
     return _row_to_record(row) if row is not None else None
+
+
+def get_latest_comparison_records_for_candidate_ids(
+    conn: psycopg.Connection, candidate_ids: Sequence[str],
+) -> dict[str, ComparisonRecord]:
+    """Bulk counterpart to get_latest_comparison_record() — Phase 3, Step
+    3A. Exactly one parameterized SQL query for a non-empty request
+    (never one query per id); empty input returns `{}` immediately
+    without executing any SQL at all. Deterministic latest-per-candidate
+    selection via a window function partitioned by `current_candidate_id`
+    and ordered `computed_at DESC, id DESC` — never Postgres's own
+    physical row order. Uses `= ANY(%s)` with a single list parameter —
+    this package's existing convention for a variable-length id match
+    (see postgres_state_db/candidate_repository.py's own
+    `state_transitions` bulk read) — rather than building one placeholder
+    per id; no id value is ever interpolated into the SQL text itself.
+    Unrequested/unknown candidate ids are simply absent from the result.
+    A pure read — never computes, inserts, or updates anything."""
+    if not candidate_ids:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT * FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY current_candidate_id
+                ORDER BY computed_at DESC, id DESC
+            ) AS rn
+            FROM comparison_results
+            WHERE current_candidate_id = ANY(%s)
+        ) sub
+        WHERE rn = 1
+        """,
+        (list(candidate_ids),),
+    ).fetchall()
+    return {row["current_candidate_id"]: _row_to_record(row) for row in rows}
 
 
 def insert_comparison_record(conn: psycopg.Connection, record: ComparisonRecord) -> bool:

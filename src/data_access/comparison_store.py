@@ -27,6 +27,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Sequence
 
 from src.logic.prior_disclosure_comparison import ComparisonResult
 
@@ -200,10 +201,42 @@ def latest_comparison_record_for_candidate(
     current-candidate id, ranked by `computed_at` (a caller-supplied ISO
     8601 string — lexicographic comparison is chronological order for a
     consistently-formatted ISO 8601 string, the same assumption this
-    codebase's other stored-timestamp fields already rely on). Returns
-    None when no record exists for that candidate. Never triggers a
-    comparison computation itself — a pure repository read only."""
+    codebase's other stored-timestamp fields already rely on), with a
+    deterministic `id` (stable record id) descending tiebreak for an
+    exact `computed_at` tie — Phase 3, Step 3A: aligned with
+    latest_comparison_records_for_candidate_ids' own tie rule below, so
+    both functions agree on "latest" whenever both apply to the same
+    data (see design/DECISIONS.md for the regression tests covering this
+    alignment). Returns None when no record exists for that candidate.
+    Never triggers a comparison computation itself — a pure repository
+    read only."""
     matching = [r for r in load_comparison_records(cache_dir, filename).values() if r.current_candidate_id == current_candidate_id]
     if not matching:
         return None
-    return max(matching, key=lambda r: r.computed_at)
+    return max(matching, key=lambda r: (r.computed_at, r.id))
+
+
+def latest_comparison_records_for_candidate_ids(
+    cache_dir: Path, candidate_ids: Sequence[str], filename: str = _CACHE_FILENAME,
+) -> dict[str, ComparisonRecord]:
+    """Bulk counterpart to latest_comparison_record_for_candidate() —
+    Phase 3, Step 3A. Exactly one load_comparison_records() call for a
+    non-empty request (never one load per requested id); empty input
+    returns `{}` immediately without touching the filesystem at all.
+    Deterministic latest-per-candidate selection: `computed_at`
+    descending, then stable record `id` descending on an exact tie — the
+    same rule latest_comparison_record_for_candidate uses, never file/
+    dict iteration order. Unrequested or unknown candidate ids are
+    simply absent from the result, never fabricated. A pure read — never
+    mutates any loaded record, never computes/inserts/updates anything."""
+    if not candidate_ids:
+        return {}
+    requested = set(candidate_ids)
+    latest_by_candidate: dict[str, ComparisonRecord] = {}
+    for record in load_comparison_records(cache_dir, filename).values():
+        if record.current_candidate_id not in requested:
+            continue
+        current_best = latest_by_candidate.get(record.current_candidate_id)
+        if current_best is None or (record.computed_at, record.id) > (current_best.computed_at, current_best.id):
+            latest_by_candidate[record.current_candidate_id] = record
+    return latest_by_candidate
