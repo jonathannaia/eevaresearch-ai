@@ -125,3 +125,207 @@ def test_feed_url_ending_in_json_still_parses_as_rss_when_content_is_rss(monkeyp
     assert result.failure_code is None
     assert len(result.entries) == 1
     assert result.entries[0].title == "Example Announces Something"
+
+
+def test_fetch_entries_only_ever_requests_the_feed_url_itself(monkeypatch):
+    # Proves no per-item/linked-article fetch ever happens: exactly one
+    # HTTP call, for the feed document itself, regardless of item count.
+    calls = []
+
+    def _record_and_respond(url, *a, **k):
+        calls.append(url)
+        return _mock_response(_RSS_FIXTURE)
+
+    monkeypatch.setattr(rss_atom_client.requests, "get", _record_and_respond)
+
+    rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert calls == ["https://example.com/rss"]
+
+
+# --- Richer-content selection (description vs content:encoded) -----------
+
+_RSS_WITH_RICHER_CONTENT_ENCODED = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Short blurb.</description>
+  <content:encoded><![CDATA[<p>A much longer and richer description of the announcement, with real substance.</p>]]></content:encoded>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_RICHER_DESCRIPTION = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>A much longer and richer description of the announcement, with real substance.</description>
+  <content:encoded><![CDATA[Short.]]></content:encoded>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+
+def test_richer_content_encoded_is_preferred_over_a_shorter_description(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_RICHER_CONTENT_ENCODED))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert "much longer and richer description" in result.entries[0].summary
+
+
+def test_richer_description_is_preferred_over_a_shorter_content_encoded(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_RICHER_DESCRIPTION))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert "much longer and richer description" in result.entries[0].summary
+
+
+# --- Image extraction: four formats, in priority order --------------------
+
+_RSS_WITH_MEDIA_CONTENT_IMAGE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Example did a thing today.</description>
+  <media:content url="https://cdn.example.com/photo.jpg" medium="image" type="image/jpeg"/>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_MEDIA_THUMBNAIL_IMAGE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Example did a thing today.</description>
+  <media:thumbnail url="https://cdn.example.com/thumb.jpg"/>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_IMAGE_ENCLOSURE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Example did a thing today.</description>
+  <enclosure url="https://cdn.example.com/enclosure.jpg" type="image/jpeg" length="1000"/>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_NON_IMAGE_ENCLOSURE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Example did a thing today.</description>
+  <enclosure url="https://cdn.example.com/podcast.mp3" type="audio/mpeg" length="1000"/>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_EMBEDDED_IMG_IN_DESCRIPTION = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Example Newsroom</title>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description><![CDATA[<p>Some text.</p><img src="https://cdn.example.com/embedded.jpg" alt="An embedded photo"/>]]></description>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+_RSS_WITH_NO_IMAGE_AT_ALL = _RSS_FIXTURE
+
+_RSS_WITH_CHANNEL_LEVEL_IMAGE_ONLY = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Example Newsroom</title>
+<image><url>https://cdn.example.com/channel-logo.png</url><title>Example Newsroom</title><link>https://example.com</link></image>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example-announces-something</link>
+  <description>Example did a thing today.</description>
+  <pubDate>Mon, 24 Aug 2026 12:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+
+def test_media_content_image_is_extracted(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_MEDIA_CONTENT_IMAGE))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url == "https://cdn.example.com/photo.jpg"
+
+
+def test_media_thumbnail_image_is_extracted_when_no_media_content(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_MEDIA_THUMBNAIL_IMAGE))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url == "https://cdn.example.com/thumb.jpg"
+
+
+def test_image_typed_enclosure_is_extracted_when_no_media_fields(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_IMAGE_ENCLOSURE))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url == "https://cdn.example.com/enclosure.jpg"
+
+
+def test_non_image_enclosure_is_not_extracted_as_an_image(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_NON_IMAGE_ENCLOSURE))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url is None
+
+
+def test_embedded_img_tag_in_description_is_extracted_as_last_resort(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_EMBEDDED_IMG_IN_DESCRIPTION))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url == "https://cdn.example.com/embedded.jpg"
+    assert result.entries[0].image_alt == "An embedded photo"
+
+
+def test_no_image_candidate_anywhere_yields_none(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_NO_IMAGE_AT_ALL))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url is None
+    assert result.entries[0].image_alt is None
+
+
+def test_channel_level_image_logo_is_never_used_as_an_item_image(monkeypatch):
+    # A feed's own channel-level <image> (its logo) is structurally
+    # separate from any item — must never leak into an item's image_url
+    # just because the item itself has no image of its own.
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_WITH_CHANNEL_LEVEL_IMAGE_ONLY))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries[0].image_url is None

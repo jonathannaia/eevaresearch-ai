@@ -54,3 +54,34 @@ def validate_canonical_url(url: str, canonical_domains: tuple[str, ...], feed_ur
         return False
 
     return True
+
+
+def validate_image_url(url: str | None, image_host: str | None) -> bool:
+    """A separate, stricter allowlist from validate_canonical_url()'s
+    article-link canonical_domains — an image is very commonly hosted on
+    a different domain than the source's own IR page (a CDN, an asset
+    host), confirmed live for NVIDIA and SK Hynix (see
+    design/DECISIONS.md), so this is never derived from
+    canonical_domains and never falls back to it. `image_host=None`
+    means no image host has been explicitly approved for this source —
+    every candidate image fails closed, exactly like an unset allowlist
+    rather than an implicitly-trusted one. Exact hostname match only —
+    no wildcard, suffix, or parent-domain matching, and no shared-CDN
+    trust (a different company's own CloudFront/Q4/etc. host is never
+    implicitly accepted just because the pattern looks similar)."""
+    if image_host is None:
+        return False
+    if not url or not url.strip():
+        return False
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return False
+
+    if parsed.scheme != "https":
+        return False  # rejects http, data:, blob:, file:, and scheme-less/relative URLs alike
+    if parsed.username is not None or parsed.password is not None:
+        return False  # rejects credentials embedded in the URL
+
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    return hostname == image_host.lower().rstrip(".")

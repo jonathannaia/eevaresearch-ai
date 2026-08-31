@@ -69,6 +69,19 @@ def test_ungrounded_summary_error_when_no_valid_source_url():
         generate_summary("Title", "Some description", has_valid_source_url=False)
 
 
+def test_cisco_more_rss_feeds_boilerplate_footer_is_stripped():
+    description = "Cisco today announced a new AI networking product. More RSS Feeds: https://newsroom.cisco.com/rss-feeds"
+    result = generate_summary("Title", description, has_valid_source_url=True)
+    assert "More RSS Feeds" not in result.eeva_summary
+    assert result.eeva_summary == "Cisco today announced a new AI networking product."
+
+
+def test_boilerplate_stripped_description_that_becomes_empty_uses_the_fallback_sentence():
+    result = generate_summary("Title", "More RSS Feeds: https://newsroom.cisco.com/rss-feeds", has_valid_source_url=True)
+    assert result.is_fallback
+    assert result.eeva_summary == FALLBACK_SENTENCE
+
+
 def test_no_investment_language_is_ever_added_only_source_text_is_used():
     # Structural proof, not a keyword blocklist: the function only ever
     # selects/trims substrings of the input — it cannot introduce a

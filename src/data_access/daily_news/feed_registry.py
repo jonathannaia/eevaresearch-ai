@@ -27,6 +27,13 @@ class DailyNewsFeedSource:
     feed_url: str
     feed_format: str  # "rss" | "atom" — informational only; rss_atom_client.py handles both regardless
     canonical_domains: tuple[str, ...]  # every domain an approved item link may resolve to
+    # Separate, stricter allowlist for a source-provided item IMAGE —
+    # deliberately never derived from canonical_domains above (an image
+    # CDN is commonly a different host than the IR page itself — verified
+    # live for NVIDIA/SK Hynix, see design/DECISIONS.md). None means no
+    # image host has been explicitly approved for this source; every
+    # candidate image then fails closed via canonical_url.validate_image_url().
+    image_host: str | None = None
 
 
 PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
@@ -38,6 +45,11 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         # links alongside nvidianews.nvidia.com itself (design/DECISIONS.md)
         # — both are NVIDIA-owned, not a third-party domain.
         canonical_domains=("nvidianews.nvidia.com", "blogs.nvidia.com"),
+        # Per-item media:content images confirmed live, hosted on a
+        # separate third-party asset CDN (not nvidianews.nvidia.com/
+        # blogs.nvidia.com) — approved as its own exact-hostname image
+        # allowlist entry, never merged into canonical_domains above.
+        image_host="iprsoftwaremedia.com",
     ),
     DailyNewsFeedSource(
         company_name="Intel Corp.",
@@ -85,6 +97,10 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_url="https://news.skhynix.com/en/feed",
         feed_format="rss",
         canonical_domains=("news.skhynix.com",),
+        # Embedded item-level <img> tags confirmed live, hosted on a
+        # separate CloudFront CDN domain (not news.skhynix.com) —
+        # approved as its own exact-hostname image allowlist entry.
+        image_host="d18r0a86za96sg.cloudfront.net",
     ),
     DailyNewsFeedSource(
         company_name="Quanta Services, Inc.",
@@ -113,6 +129,9 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_url="https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json?feed=press-releases",
         feed_format="rss",
         canonical_domains=("newsroom.cisco.com",),
+        # Embedded item-level <img> tags confirmed live, hosted on the
+        # same approved domain as the article links themselves.
+        image_host="newsroom.cisco.com",
     ),
 )
 

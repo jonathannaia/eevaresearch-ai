@@ -390,3 +390,26 @@ def test_pilot_feeds_now_has_exactly_twelve_sources():
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
         "Quanta Services, Inc.", "nVent Electric plc", "Arista Networks, Inc.", "Cisco Systems, Inc.",
     }
+
+
+# --- image_host: exactly three approved mappings, all others None --------
+
+
+def test_exactly_three_sources_have_an_approved_image_host():
+    with_image_host = {s.company_name: s.image_host for s in PILOT_FEEDS if s.image_host is not None}
+    assert with_image_host == {
+        "NVIDIA": "iprsoftwaremedia.com",
+        "SK Hynix": "d18r0a86za96sg.cloudfront.net",
+        "Cisco Systems, Inc.": "newsroom.cisco.com",
+    }
+
+
+def test_all_other_sources_have_no_approved_image_host():
+    other_companies = {
+        "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp", "Marvell Technology, Inc.",
+        "MaxLinear, Inc.", "Rockwell Automation", "Quanta Services, Inc.", "nVent Electric plc",
+        "Arista Networks, Inc.",
+    }
+    for source in PILOT_FEEDS:
+        if source.company_name in other_companies:
+            assert source.image_host is None

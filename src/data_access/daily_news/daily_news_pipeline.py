@@ -115,11 +115,18 @@ def run_discovery(cache_dir: Path, feed_sources: tuple[DailyNewsFeedSource, ...]
             summary_result = generate_summary(entry.title, entry.summary, has_valid_source_url=True)
             retrieved_at = datetime.now(timezone.utc).isoformat()
 
+            image_url = None
+            image_alt = None
+            if canonical_url.validate_image_url(entry.image_url, source.image_host):
+                image_url = entry.image_url
+                image_alt = entry.image_alt or entry.title
+
             source_reference = NewsSourceReference(
                 publisher=source.company_name, source_class=SourceClass.OFFICIAL_COMPANY, url=entry.link,
                 title=entry.title, published_at=entry.published_at or retrieved_at, retrieved_at=retrieved_at,
                 original_language="Non-Latin script" if summary_result.translation_unavailable else "English",
                 excerpt_original=entry.summary,
+                image_url=image_url, image_alt=image_alt,
             )
 
             story = NewsStory(

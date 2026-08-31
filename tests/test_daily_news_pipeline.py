@@ -11,6 +11,7 @@ from src.models.daily_news_models import NewsStoryStatus
 _NVDA_SOURCE = DailyNewsFeedSource(
     company_name="NVIDIA", feed_url="https://nvidianews.nvidia.com/releases.xml",
     feed_format="rss", canonical_domains=("nvidianews.nvidia.com",),
+    image_host="iprsoftwaremedia.com",
 )
 _INTEL_SOURCE = DailyNewsFeedSource(
     company_name="Intel Corp.", feed_url="https://newsroom.intel.com/feed",
@@ -18,8 +19,11 @@ _INTEL_SOURCE = DailyNewsFeedSource(
 )
 
 
-def _entry(title: str, link: str, summary: str | None = "A short description.", published_at: str = "2026-08-24T12:00:00+00:00") -> RawFeedEntry:
-    return RawFeedEntry(title=title, link=link, published_at=published_at, summary=summary)
+def _entry(
+    title: str, link: str, summary: str | None = "A short description.", published_at: str = "2026-08-24T12:00:00+00:00",
+    image_url: str | None = None, image_alt: str | None = None,
+) -> RawFeedEntry:
+    return RawFeedEntry(title=title, link=link, published_at=published_at, summary=summary, image_url=image_url, image_alt=image_alt)
 
 
 def _mock_fetch(entries_by_url: dict[str, FeedFetchResult], monkeypatch) -> None:
@@ -178,6 +182,77 @@ def test_korean_entry_is_preserved_not_translated(tmp_path, monkeypatch):
     assert story.translation_unavailable
     assert story.eeva_summary is None
     assert story.original_title == "삼성전자 신규시설투자 결정"
+
+
+def test_valid_image_from_an_approved_host_is_persisted(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something",
+                image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].image_url == "https://iprsoftwaremedia.com/photo.jpg"
+    assert story.sources[0].image_alt == "A photo"
+
+
+def test_image_from_an_unapproved_host_is_dropped_but_story_still_publishes(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something",
+                image_url="https://some-untrusted-host.com/photo.jpg", image_alt="A photo",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].image_url is None
+    assert story.sources[0].image_alt is None
+
+
+def test_missing_image_alt_falls_back_to_the_item_title(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something",
+                image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt=None,
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].image_alt == "NVIDIA Announces Something"
+
+
+def test_source_with_no_approved_image_host_never_persists_an_image(tmp_path, monkeypatch):
+    _mock_fetch({
+        _INTEL_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "Intel News", "https://newsroom.intel.com/some-news",
+                image_url="https://some-cdn.example.com/photo.jpg",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_INTEL_SOURCE,))
+
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].image_url is None
 
 
 def test_unknown_tracked_company_source_is_skipped_with_a_warning(tmp_path, monkeypatch):

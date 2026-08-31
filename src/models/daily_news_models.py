@@ -50,6 +50,13 @@ class NewsSourceReference:
     retrieved_at: str  # ISO 8601, when EevaResearch fetched it
     original_language: str
     excerpt_original: str | None = None  # bounded, from the feed's own description/summary field only
+    # Both optional, source-provided-only (never fetched from a linked
+    # article page, never generated) — see
+    # src/data_access/daily_news/rss_atom_client.py's extraction and
+    # canonical_url.validate_image_url()'s separate, per-source
+    # exact-hostname gate applied before either is ever populated here.
+    image_url: str | None = None
+    image_alt: str | None = None  # source alt text if present, else the item's own title — accessibility text, never a factual caption
 
 
 @dataclass

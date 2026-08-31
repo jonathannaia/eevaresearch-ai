@@ -271,6 +271,70 @@ def test_only_stale_stories_shows_the_all_companies_empty_state(tmp_path):
     assert "No recent company updates in the last 7 days." in markdown_text
 
 
+def test_card_with_a_validated_image_renders_an_img_tag(tmp_path):
+    story = _story(sources=(
+        NewsSourceReference(
+            publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
+            url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
+            published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            original_language="English", excerpt_original="NVIDIA reported strong quarterly results.",
+            image_url="https://iprsoftwaremedia.com/photo.jpg", image_alt="A photo of the announcement",
+        ),
+    ))
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert '<img src="https://iprsoftwaremedia.com/photo.jpg"' in markdown_text
+    assert 'alt="A photo of the announcement"' in markdown_text
+    assert "onerror=" in markdown_text
+
+
+def test_card_without_an_image_renders_no_img_tag_and_full_text_card(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])  # default _story() has no image_url
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    # Excludes the app chrome's own logo markdown block (unrelated to
+    # Daily News cards) — this proves the card itself renders no <img>.
+    card_markdown = [m.value for m in at.markdown if "rail-logo" not in m.value and not m.value.strip().startswith("<style")]
+    card_text = " ".join(card_markdown)
+    assert "<img" not in card_text
+    assert "NVIDIA Announces Financial Results" in card_text
+    assert "Read original source" in card_text
+
+
+def test_image_alt_and_url_are_html_escaped_before_rendering(tmp_path):
+    story = _story(sources=(
+        NewsSourceReference(
+            publisher="NVIDIA", source_class=SourceClass.OFFICIAL_COMPANY,
+            url="https://nvidianews.nvidia.com/news/results", title="NVIDIA Announces Financial Results",
+            published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            original_language="English", excerpt_original="NVIDIA reported strong quarterly results.",
+            image_url="https://iprsoftwaremedia.com/photo.jpg",
+            image_alt='"><script>alert(1)</script>',
+        ),
+    ))
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "<script>alert(1)</script>" not in markdown_text
+
+
 def test_old_story_remains_persisted_but_hidden_from_the_page(tmp_path):
     stale = _story(id="stale-story", published_at_offset=timedelta(days=30))
     daily_news_store.upsert_new_stories(tmp_path, [stale])

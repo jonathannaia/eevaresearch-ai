@@ -28,6 +28,13 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
+# Known feed-boilerplate phrases, stripped (along with everything after
+# them) once HTML tags are already gone — e.g. Cisco's own RSS items end
+# with a plain-text "More RSS Feeds: <url>" footer that isn't wrapped in
+# any tag the HTML stripper alone would remove. Add a new marker here
+# only when a real feed is confirmed to emit it — never a guess.
+_BOILERPLATE_MARKERS = ("More RSS Feeds:",)
+
 # Unicode block ranges for a simple, dependency-free non-Latin-script
 # heuristic — Hangul (Korean), Hiragana/Katakana (Japanese kana), and
 # the shared CJK Unified Ideographs block (Han/Kanji). Good enough to
@@ -68,8 +75,20 @@ def _strip_html(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", no_tags).strip()
 
 
+def _strip_known_boilerplate(text: str) -> str:
+    """Cuts a known feed-boilerplate marker and everything after it —
+    applied post-HTML-stripping, since these markers are plain text, not
+    markup the tag stripper would already remove."""
+    for marker in _BOILERPLATE_MARKERS:
+        index = text.find(marker)
+        if index != -1:
+            text = text[:index].strip()
+    return text
+
+
 def _extractive_excerpt(raw_description: str) -> str:
     cleaned = _strip_html(raw_description)
+    cleaned = _strip_known_boilerplate(cleaned)
     if not cleaned:
         return ""
     if len(cleaned) <= MAX_SUMMARY_CHARS:

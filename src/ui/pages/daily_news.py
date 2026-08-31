@@ -22,6 +22,7 @@ them, never deletes anything.
 """
 from __future__ import annotations
 
+import html
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -79,6 +80,16 @@ def _render_card(story: NewsStory) -> None:
     local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
 
     with st.container(border=True):
+        if source.image_url:
+            alt_text = html.escape(source.image_alt or story.headline)
+            image_url = html.escape(source.image_url)
+            st.markdown(
+                f'<img src="{image_url}" alt="{alt_text}" '
+                'style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;" '
+                'onerror="this.style.display=\'none\'" />',
+                unsafe_allow_html=True,
+            )
+
         st.markdown(
             f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>',
             unsafe_allow_html=True,
