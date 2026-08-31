@@ -405,6 +405,61 @@ DISCOVERY_STUBS: tuple[Issuer, ...] = (
         ),
         notes="Daily News official-company source only; not eligible for Radar filing scanning.",
     ),
+    # Arista Networks, Inc. — a Daily News-only discovery, same shape and
+    # reasoning as Quanta Services/nVent Electric above: constructed
+    # directly (not via _stub()) since its provenance is a live Daily
+    # News feed verification, not the 2026-08-20 portfolio-map seed
+    # list. Verified official RSS feed at investors.arista.com — see
+    # design/DECISIONS.md. No CIK resolved, not part of any
+    # EDGAR/DART/EDINET scan universe.
+    Issuer(
+        issuer_id="stub:ANET",
+        legal_name="Arista Networks, Inc.",
+        country_or_jurisdiction="United States",
+        coverage_state=CoverageState.DISCOVERED,
+        lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="ANET",
+        primary_exchange="NYSE",
+        identifiers={},  # no CIK resolved or cached — Daily News-only, never a Radar identifier
+        themes=("ai-buildout",),
+        supply_chain_layers=("interconnect",),
+        evidence_confidence="Official RSS feed verified live; company identity, NYSE ticker, and Delaware incorporation verified through official investor-relations and SEC materials.",
+        discovered_via="Daily News official-feed verification (design/DECISIONS.md)",
+        normalization_status=(
+            "Daily News-only candidate. Not eligible for Radar filing scanning "
+            "— no CIK resolved, not part of tracked_companies.py, structurally "
+            "excluded via DISCOVERED coverage_state."
+        ),
+        notes="Daily News official-company source only; not eligible for Radar filing scanning.",
+    ),
+    # Cisco Systems, Inc. — a Daily News-only discovery, same shape and
+    # reasoning as the entries above. Verified official RSS feed at
+    # newsroom.cisco.com — see design/DECISIONS.md. The feed endpoint's
+    # own path ends in ".json", but its raw response content was
+    # confirmed live to be genuine RSS 2.0 XML
+    # (`<?xml version="1.0"?><rss version="2.0">`), not JSON — never
+    # classified by filename extension alone. No CIK resolved, not part
+    # of any EDGAR/DART/EDINET scan universe.
+    Issuer(
+        issuer_id="stub:CSCO",
+        legal_name="Cisco Systems, Inc.",
+        country_or_jurisdiction="United States",
+        coverage_state=CoverageState.DISCOVERED,
+        lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="CSCO",
+        primary_exchange="NASDAQ",
+        identifiers={},  # no CIK resolved or cached — Daily News-only, never a Radar identifier
+        themes=("ai-buildout",),
+        supply_chain_layers=("interconnect",),
+        evidence_confidence="Official RSS 2.0 feed verified live; company identity, NASDAQ ticker, and Delaware incorporation verified through official newsroom/investor-relations and SEC materials. The endpoint path ends in .json but the response content is RSS 2.0 XML.",
+        discovered_via="Daily News official-feed verification (design/DECISIONS.md)",
+        normalization_status=(
+            "Daily News-only candidate. Not eligible for Radar filing scanning "
+            "— no CIK resolved, not part of tracked_companies.py, structurally "
+            "excluded via DISCOVERED coverage_state."
+        ),
+        notes="Daily News official-company source only; not eligible for Radar filing scanning.",
+    ),
 )
 
 

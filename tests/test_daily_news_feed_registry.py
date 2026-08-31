@@ -295,10 +295,98 @@ def test_nvent_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investors.quantaservices.com/news-events/press-releases/detail/402/some-release", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_ten_sources():
-    assert len(PILOT_FEEDS) == 10
+def _arista_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Arista Networks, Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _cisco_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Cisco Systems, Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_arista_is_registered_with_the_exact_approved_fields():
+    source = _arista_source()
+    assert source.feed_url == "https://investors.arista.com/rss/pressrelease.aspx"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("investors.arista.com",)
+
+
+def test_arista_resolves_to_the_discovered_issuer_with_ticker_anet():
+    company = tracked_company_for("Arista Networks, Inc.")
+    assert company is not None
+    assert company.krx_code == "ANET"
+    assert company.source == ""
+    assert company.active is False
+    assert "ai-buildout" in company.themes
+
+
+def test_arista_item_url_validates_against_its_exact_canonical_domain():
+    source = _arista_source()
+    url = "https://investors.arista.com/Communications/Press-Releases-and-Events/Press-Release-Detail/2026/Arista-Networks-Inc--Reports-Second-Quarter-2026-Financial-Results/default.aspx"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_arista_rejects_bare_domain_www_other_subdomain_and_lookalike_hostnames():
+    source = _arista_source()
+    for other_url in (
+        "https://arista.com/company/news/press-release/some-release/",
+        "https://www.arista.com/company/news/press-release/some-release/",
+        "https://blog.arista.com/company/news/press-release/some-release/",
+        "https://investors.arista.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_arista_off_domain_url_is_rejected():
+    source = _arista_source()
+    assert not validate_canonical_url("https://newsroom.cisco.com/c/r/newsroom/en/us/a/y2026/m08/some-article.html", source.canonical_domains, source.feed_url)
+
+
+def test_cisco_is_registered_with_the_exact_approved_fields():
+    source = _cisco_source()
+    assert source.feed_url == "https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json?feed=press-releases"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("newsroom.cisco.com",)
+
+
+def test_cisco_resolves_to_the_discovered_issuer_with_ticker_csco():
+    company = tracked_company_for("Cisco Systems, Inc.")
+    assert company is not None
+    assert company.krx_code == "CSCO"
+    assert company.source == ""
+    assert company.active is False
+    assert "ai-buildout" in company.themes
+
+
+def test_cisco_item_url_validates_against_its_exact_canonical_domain():
+    source = _cisco_source()
+    url = "https://newsroom.cisco.com/c/r/newsroom/en/us/a/y2026/m08/cisco-secure-ai-factory-nvidia-rack-scale.html?source=rss"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_cisco_rejects_bare_domain_www_investor_subdomain_and_lookalike_hostnames():
+    source = _cisco_source()
+    for other_url in (
+        "https://cisco.com/c/r/newsroom/en/us/a/y2026/m08/some-article.html",
+        "https://www.cisco.com/c/r/newsroom/en/us/a/y2026/m08/some-article.html",
+        "https://investor.cisco.com/resources-and-faqs/rss-feeds/default.aspx",
+        "https://newsroom.cisco.com.evil-example.com/fake-article.html",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_cisco_off_domain_url_is_rejected():
+    source = _cisco_source()
+    assert not validate_canonical_url("https://investors.arista.com/Communications/Press-Releases-and-Events/some-release/", source.canonical_domains, source.feed_url)
+
+
+def test_pilot_feeds_now_has_exactly_twelve_sources():
+    assert len(PILOT_FEEDS) == 12
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
-        "Quanta Services, Inc.", "nVent Electric plc",
+        "Quanta Services, Inc.", "nVent Electric plc", "Arista Networks, Inc.", "Cisco Systems, Inc.",
     }

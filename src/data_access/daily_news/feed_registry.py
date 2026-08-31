@@ -98,6 +98,22 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("investors.nvent.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="Arista Networks, Inc.",
+        feed_url="https://investors.arista.com/rss/pressrelease.aspx",
+        feed_format="rss",
+        canonical_domains=("investors.arista.com",),
+    ),
+    DailyNewsFeedSource(
+        company_name="Cisco Systems, Inc.",
+        # Path ends in .json, but the response content is confirmed live
+        # RSS 2.0 XML — rss_atom_client.py's feedparser-based parsing
+        # doesn't care about the URL's own extension, only the actual
+        # response body, so this requires no special-casing.
+        feed_url="https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json?feed=press-releases",
+        feed_format="rss",
+        canonical_domains=("newsroom.cisco.com",),
+    ),
 )
 
 

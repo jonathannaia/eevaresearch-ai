@@ -111,3 +111,17 @@ def test_timeout_is_isolated_as_a_sanitized_failure_code(monkeypatch):
     result = rss_atom_client.fetch_entries("https://example.com/rss")
 
     assert result.failure_code == "Timeout"
+
+
+def test_feed_url_ending_in_json_still_parses_as_rss_when_content_is_rss(monkeypatch):
+    # Cisco's own registered feed URL ends in ".json" (design/DECISIONS.md)
+    # even though its response body is genuine RSS 2.0 XML — parsing must
+    # be driven entirely by the response content (feedparser), never by
+    # the URL's own file extension.
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_FIXTURE))
+
+    result = rss_atom_client.fetch_entries("https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json?feed=press-releases")
+
+    assert result.failure_code is None
+    assert len(result.entries) == 1
+    assert result.entries[0].title == "Example Announces Something"

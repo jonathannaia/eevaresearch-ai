@@ -262,7 +262,10 @@ def test_quanta_is_excluded_from_every_source_selection_path():
 # DISCOVERY_STUBS entry, never added to tracked_companies.py/TRACKED_COMPANIES ---
 
 def test_discovery_stubs_grew_by_exactly_one_for_nvent_electric():
-    assert len(DISCOVERY_STUBS) == 23
+    # DISCOVERY_STUBS grew again later (to 25) for the unrelated
+    # Arista/Cisco addition below, so this asserts "at least nVent is
+    # present" rather than an exact total tied to this batch alone.
+    assert len(DISCOVERY_STUBS) >= 23
     nvent_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "NVT"]
     assert len(nvent_matches) == 1
     nvent = nvent_matches[0]
@@ -293,3 +296,48 @@ def test_nvent_is_excluded_from_every_source_selection_path():
         assert "NVT" not in tickers
         names = {c.name for c in get_tracked_companies_for_source(source, active_only=False)}
         assert "nVent Electric plc" not in names
+
+
+# --- Arista Networks + Cisco Systems (2026-08-31) — two more Daily
+# News-only DISCOVERY_STUBS entries, never added to
+# tracked_companies.py/TRACKED_COMPANIES ---
+
+def test_discovery_stubs_grew_by_exactly_two_for_arista_and_cisco():
+    assert len(DISCOVERY_STUBS) == 25
+    arista_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "ANET"]
+    cisco_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "CSCO"]
+    assert len(arista_matches) == 1
+    assert len(cisco_matches) == 1
+    arista, cisco = arista_matches[0], cisco_matches[0]
+    assert arista.legal_name == "Arista Networks, Inc."
+    assert cisco.legal_name == "Cisco Systems, Inc."
+    for issuer in (arista, cisco):
+        assert issuer.coverage_state == CoverageState.DISCOVERED
+        assert issuer.identifiers == {}
+        assert issuer.themes == ("ai-buildout",)
+        assert issuer.supply_chain_layers == ("interconnect",)
+
+
+def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_arista_and_cisco():
+    # Both were added only to DISCOVERY_STUBS — TRACKED_COMPANIES and
+    # SEED_ISSUERS (generated from it) must stay at exactly 32.
+    assert len(get_tracked_companies(active_only=False)) == 32
+    assert len(SEED_ISSUERS) == 32
+
+
+def test_arista_and_cisco_are_excluded_from_the_compatibility_adapter():
+    compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
+    assert "ANET" not in compat_tickers
+    assert "CSCO" not in compat_tickers
+
+
+def test_arista_and_cisco_are_excluded_from_every_source_selection_path():
+    from src.config.tracked_companies import get_tracked_companies_for_source
+
+    for source in ("SEC EDGAR", "OpenDART / DART", "EDINET"):
+        tickers = {c.krx_code for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "ANET" not in tickers
+        assert "CSCO" not in tickers
+        names = {c.name for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "Arista Networks, Inc." not in names
+        assert "Cisco Systems, Inc." not in names
