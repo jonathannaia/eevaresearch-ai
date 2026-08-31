@@ -20,32 +20,52 @@ METHODOLOGY_STATEMENT = (
     "does not provide investment advice."
 )
 
-# Primary sidebar nav, in order — see brief §4's route table. Home and
+# Primary sidebar nav ("WORKSPACE" group), in order — navigation-cleanup
+# pass (design/DECISIONS.md): exactly the four core destinations. Home and
 # Company are deliberately excluded (Home is first-visit-only with no
-# sidebar at all; Company is reached only by clicking a ticker).
+# sidebar at all; Company is reached only by clicking a ticker). Coverage,
+# Themes, Signals, and Research are intentionally NOT here any more — see
+# HIDDEN_FROM_NAV below; their pages/routes/data are untouched, they are
+# simply no longer linked from any visible sidebar group.
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
-    ("radar_inbox", "Radar Inbox"),
+    ("radar_inbox", "Radar"),
     # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
-    # scoped autonomous discovery surface, not a Radar Inbox view (see the
+    # scoped autonomous discovery surface, not a Radar view (see the
     # Radar-vs-Daily-News product clarification the same document records).
-    # Placed next to Radar Inbox for IA/UX grouping only ("what's new" feeds
+    # Placed next to Radar for IA/UX grouping only ("what's new" feeds
     # together) — this has no bearing on their code/data independence.
     ("daily_news", "Daily News"),
-    # Coverage (Phase A, Issuer Registry — design/ISSUER_REGISTRY_FOUNDATION.md):
-    # a read-only observability map over the registry, placed next to Radar
-    # Inbox since both are "what's in our system" views, distinct from the
-    # theme-browsing/published-Signal pages that follow.
-    ("coverage", "Coverage"),
+    # Watchlists (UX-refinement pass) — promoted from its own separate "My
+    # watchlists" sidebar group into a primary Workspace destination
+    # (navigation-cleanup pass); the per-list quick-filter shortcuts that
+    # group used to also render (into Signals) are retired along with it —
+    # Signals is no longer a visible destination for them to point at, and
+    # the Watchlists page itself already offers each list as its own tab.
+    ("watchlists", "Watchlists"),
+]
+
+# Lower-priority "SYSTEM" group in the sidebar (navigation-cleanup pass) —
+# reuses the existing Coverage page/route verbatim (smallest routing
+# footprint: same st.Page/url_path, only the sidebar link text differs) as
+# the one "Methodology & Coverage" entry. A "Settings" entry belongs here
+# too once a real Settings route exists; none does yet, so it's
+# deliberately omitted rather than inventing a new page for it.
+SYSTEM_NAV: list[tuple[str, str]] = [
+    ("coverage", "Methodology & Coverage"),
+]
+
+# Routes that stay fully registered and reachable — direct URL, the
+# command palette (src/ui/components/command_palette.py), and existing
+# in-page cross-links (e.g. Watchlists' "Add a company" → Themes) all still
+# work exactly as before — but are no longer linked from any visible
+# sidebar group (navigation-cleanup pass, design/DECISIONS.md). Signals
+# stays conceptually part of Radar, not a separate visible destination;
+# Research stays implemented, just hidden from primary nav.
+HIDDEN_FROM_NAV: list[tuple[str, str]] = [
     ("themes", "Themes"),
     ("signals", "Signals"),
     ("research", "Research"),
-]
-
-# Static doc pages — "REFERENCE" group in the sidebar (UX-refinement pass:
-# Disclaimer is no longer a primary destination here, only reachable via
-# Methodology's own cross-link and the page footer).
-FOOTER_NAV: list[tuple[str, str]] = [
     ("methodology", "Methodology"),
     ("about", "About"),
 ]
@@ -67,8 +87,9 @@ _SIDEBAR_FORCE_CHECK_KEY = "_sidebar_force_checked"
 _SIDEBAR_DESKTOP_BREAKPOINT_PX = 768
 
 # Kept for any code that still enumerates "every visible page" (e.g. a
-# future command-palette index) — primary + footer, in nav order.
-NAV_ITEMS: list[tuple[str, str]] = PRIMARY_NAV + FOOTER_NAV
+# future command-palette index) — every page linked from a visible
+# sidebar group, in nav order. HIDDEN_FROM_NAV is deliberately excluded.
+NAV_ITEMS: list[tuple[str, str]] = PRIMARY_NAV + SYSTEM_NAV
 
 _LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "eeva-logo.png"
 _CSS_PATH = Path(__file__).resolve().parents[2] / "assets" / "styles.css"
@@ -157,22 +178,10 @@ def _correct_sidebar_state_for_width() -> None:
 
 
 def render_sidebar(current_key: str) -> None:
-    from src.data_access.container import get_repositories
-    from src.logic.unread import unread_count
-
     _correct_sidebar_state_for_width()
 
     pages = st.session_state.get("_pages", {})
     home_page = pages.get("home")
-
-    unread = 0
-    if "signals" in pages:
-        ctx = get_repositories()
-        unread = unread_count(
-            ctx.signal_repository.get_all_signals(),
-            st.session_state.get(LAST_SEEN_KEY),
-            st.session_state.get(READ_IDS_KEY, set()),
-        )
 
     with st.sidebar:
         st.markdown('<div class="er-rail-brand">', unsafe_allow_html=True)
@@ -190,8 +199,10 @@ def render_sidebar(current_key: str) -> None:
 
         render_palette_trigger()
 
-        # WORKSPACE — the four core pages (UX-refinement pass groups these
-        # explicitly apart from personal watchlists and reference docs).
+        # WORKSPACE — the four core visible destinations (navigation-cleanup
+        # pass, design/DECISIONS.md). Coverage/Themes/Signals/Research and
+        # the old "My watchlists"/per-list-shortcut/"Recent research"
+        # sections are gone from here — see PRIMARY_NAV/HIDDEN_FROM_NAV.
         st.markdown('<div class="er-rail-group-label">Workspace</div>', unsafe_allow_html=True)
         for key, label in PRIMARY_NAV:
             page = pages.get(key)
@@ -201,79 +212,15 @@ def render_sidebar(current_key: str) -> None:
             with st.container(key=f"navitem-{key}"):
                 if active_cls:
                     st.markdown(f'<div class="{active_cls}">', unsafe_allow_html=True)
-                if key == "signals" and unread:
-                    # A real separate badge, not text folded into the link
-                    # label (st.page_link only accepts a plain string) —
-                    # rendered beside it via a narrow second column.
-                    link_col, badge_col = st.columns([5, 1.4], vertical_alignment="center")
-                    with link_col:
-                        st.page_link(page, label=label)
-                    with badge_col:
-                        st.markdown(f'<span class="er-nav-badge">{unread}</span>', unsafe_allow_html=True)
-                else:
-                    st.page_link(page, label=label)
+                st.page_link(page, label=label)
                 if active_cls:
                     st.markdown("</div>", unsafe_allow_html=True)
 
-        # MY WATCHLISTS — group header links to the standalone Watchlists
-        # page (restored in the UX-refinement pass); each list name below
-        # stays a quick-filter shortcut straight into Signals, unchanged.
-        watchlists_page = pages.get("watchlists")
-        if watchlists_page is not None:
-            # A plain st.markdown('<div>') doesn't wrap subsequent st.*
-            # calls as children (confirmed elsewhere in this codebase) —
-            # so the group-label look comes from a CSS rule targeting this
-            # container's key instead of nesting.
-            with st.container(key="navitem-watchlists-header"):
-                st.page_link(watchlists_page, label="My watchlists")
-        else:
-            # Same sentence-case, non-uppercase treatment as the CSS rule
-            # below for the real page_link case — kept in sync manually
-            # since this fallback can't share a CSS class with a widget
-            # that isn't rendered.
-            st.markdown(
-                '<div style="font-size:0.78rem; font-weight:600; color:var(--text-2); '
-                'margin:var(--space-5) 0 var(--space-1) 0.25rem;">My watchlists</div>',
-                unsafe_allow_html=True,
-            )
-
-        from src.ui.pages.watchlists import WATCHLIST_NAMES, seed_watchlists
-
-        signals_page = pages.get("signals")
-        if "watchlists" not in st.session_state:
-            st.session_state["watchlists"] = seed_watchlists()
-        lists = st.session_state["watchlists"]
-        for name in WATCHLIST_NAMES:
-            count = len(lists.get(name, []))
-            if signals_page is not None:
-                # Streamlit highlights a page_link as "current" whenever its
-                # target Page object matches the active page, regardless of
-                # query string — so all four of these would light up at once
-                # just from being on Signals. A dedicated container key lets
-                # CSS strip that native highlight back to the plain nav look.
-                with st.container(key=f"navitem-watchlist-{name}"):
-                    st.page_link(signals_page, label=f"{name} ({count})", query_params={"watchlist": name})
-            else:
-                st.markdown(f'<div class="er-muted" style="padding:0.2rem 0.5rem;">{name} ({count})</div>', unsafe_allow_html=True)
-
-        # Recent research — last 5-8 threads by question text (brief §4).
-        # "Thread" here is just the asked question string (research.py has
-        # no richer thread object); session-only, like watchlists.
-        research_page = pages.get("research")
-        asked = st.session_state.get("chat_messages", [])
-        if asked and research_page is not None:
-            recent = list(dict.fromkeys(reversed(asked)))[:8]
-            st.markdown('<div class="er-rail-group-label">Recent research</div>', unsafe_allow_html=True)
-            for q in recent:
-                label = q if len(q) <= 40 else q[:37] + "…"
-                st.page_link(research_page, label=label)
-
-        # REFERENCE — static docs. Disclaimer is deliberately not a primary
-        # item here; it's reachable via Methodology's cross-link and the
-        # page footer instead (UX-refinement pass).
-        st.markdown('<div class="er-rail-group-label">Reference</div>', unsafe_allow_html=True)
+        # SYSTEM — lower-priority destinations (navigation-cleanup pass).
+        # A Settings entry belongs here once a real Settings route exists.
+        st.markdown('<div class="er-rail-group-label">System</div>', unsafe_allow_html=True)
         st.markdown('<div class="er-rail-footlinks">', unsafe_allow_html=True)
-        for key, label in FOOTER_NAV:
+        for key, label in SYSTEM_NAV:
             page = pages.get(key)
             if page is not None:
                 st.page_link(page, label=label)

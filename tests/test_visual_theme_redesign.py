@@ -220,12 +220,15 @@ def test_muted_text_is_not_used_directly_on_the_sidebar_background():
     (secondary, 9.4:1) instead (see the "sidebar contrast fix" comments in
     styles.css) — this checks that fix is actually in place for each of
     them, rather than re-deriving the sidebar DOM structure here."""
+    # The two per-list-watchlist-shortcut selectors that used to be checked
+    # here were removed along with that sidebar section itself (navigation-
+    # cleanup pass, design/DECISIONS.md — Watchlists is now a primary
+    # Workspace destination; the shortcuts pointed into Signals, no longer
+    # a visible destination for them to target).
     sidebar_muted_selectors = [
         r"\.er-rail-group-label\s*\{[^}]*color:\s*var\(--text-2\)",
         r"\.er-rail-status\s*\{[^}]*color:\s*var\(--text-2\)",
         r'\.er-rail-footlinks \[data-testid="stPageLink"\] a p\s*\{[^}]*color:\s*var\(--text-2\)',
-        r'\.st-key-navitem-watchlists-header \[data-testid="stPageLink"\] a p\s*\{[^}]*color:\s*var\(--text-2\)',
-        r'\[class\*="st-key-navitem-watchlist-"\] \[data-testid="stPageLink"\] a p\s*\{[^}]*color:\s*var\(--text-2\)',
     ]
     for pattern in sidebar_muted_selectors:
         assert re.search(pattern, _CSS, re.DOTALL), f"expected sidebar text-2 fix not found for pattern: {pattern}"

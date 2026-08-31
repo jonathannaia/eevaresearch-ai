@@ -3,12 +3,14 @@
 Run with: streamlit run app.py
 
 Registers Home (first-visit landing, no sidebar), the WORKSPACE routes
-(Dashboard, Themes, Signals, Research), the REFERENCE routes (Methodology,
-About), the restored Watchlists page (its own MY WATCHLISTS group header),
-and two hidden-from-nav-but-reachable routes (Company, reached by clicking
-a ticker; Disclaimer, reached via Methodology's cross-link and the page
-footer) — see design/eevaresearch-brief.md §4 for the original route table
-and design/DECISIONS.md for the UX-refinement pass that reorganized it.
+(Dashboard, Radar, Daily News, Watchlists), the SYSTEM route (Methodology &
+Coverage, reusing the Coverage page/route), and routes that stay fully
+reachable but are no longer linked from any visible sidebar group —
+Coverage/Themes/Signals/Research/Methodology/About (direct URL, the command
+palette, in-page cross-links), plus Company (clicking a ticker) and
+Disclaimer (Methodology's cross-link and the page footer) — see
+design/eevaresearch-brief.md §4 for the original route table and
+design/DECISIONS.md for the navigation-cleanup pass that reorganized it.
 src/ui/ui.render_sidebar is the persistent left-rail nav widget.
 """
 from __future__ import annotations
@@ -37,7 +39,7 @@ from src.ui.pages import (
     themes,
     watchlists,
 )
-from src.ui.ui import PRIMARY_NAV, FOOTER_NAV, LAST_SEEN_KEY, READ_IDS_KEY, with_chrome
+from src.ui.ui import HIDDEN_FROM_NAV, LAST_SEEN_KEY, PRIMARY_NAV, READ_IDS_KEY, SYSTEM_NAV, with_chrome
 
 _LOGO_PATH = Path(__file__).resolve().parent / "assets" / "eeva-logo.png"
 
@@ -52,6 +54,7 @@ _RENDER_FNS = {
     "dashboard": dashboard.render,
     "radar_inbox": radar_inbox.render,
     "daily_news": daily_news.render,
+    "watchlists": watchlists.render,
     "coverage": coverage.render,
     "themes": themes.render,
     "signals": signals.render,
@@ -64,6 +67,7 @@ _URL_PATHS = {
     "dashboard": "dashboard",
     "radar_inbox": "radar-inbox",
     "daily_news": "daily-news",
+    "watchlists": "watchlists",
     "coverage": "coverage",
     "themes": "themes",
     "signals": "signals",
@@ -71,6 +75,12 @@ _URL_PATHS = {
     "methodology": "methodology",
     "about": "about",
 }
+
+# Navigation-cleanup pass (design/DECISIONS.md): Coverage/Themes/Signals/
+# Research/Methodology/About stay fully registered routes (direct URL,
+# command palette, in-page cross-links) — only visibility="hidden" changes,
+# since none of them are linked from any visible sidebar group any more.
+_HIDDEN_KEYS = {key for key, _ in HIDDEN_FROM_NAV}
 
 # Navigation-bug repair (design/DECISIONS.md): `st.Page` objects — and the
 # `with_chrome(...)` closures wrapped inside them — used to be rebuilt from
@@ -89,21 +99,16 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages = {
         "home": st.Page(with_chrome(home.render, "home", show_sidebar=False), title="Home", default=not dashboard_is_default),
     }
-    for key, _label in PRIMARY_NAV + FOOTER_NAV:
+    for key, _label in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV:
         pages[key] = st.Page(
             with_chrome(_RENDER_FNS[key], key),
             title=_label,
             url_path=_URL_PATHS.get(key),
             default=(key == "dashboard" and dashboard_is_default),
+            visibility="hidden" if key in _HIDDEN_KEYS else "visible",
         )
     pages["company"] = st.Page(
         with_chrome(company.render, "company"), title="Company", url_path="company", visibility="hidden",
-    )
-    # Restored as a real destination (UX-refinement pass) — linked from the
-    # sidebar's "My Watchlists" group header and Dashboard's watchlist-changes
-    # panel. Per-list sidebar entries still shortcut straight into Signals.
-    pages["watchlists"] = st.Page(
-        with_chrome(watchlists.render, "watchlists"), title="Watchlists", url_path="watchlists",
     )
     # Disclaimer is no longer a primary sidebar item, but stays a real
     # reachable route via Methodology's cross-link and the page footer.

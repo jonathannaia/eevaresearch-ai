@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.ui.ui import PRIMARY_NAV, FOOTER_NAV
+from src.ui.ui import PRIMARY_NAV, SYSTEM_NAV
 
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
 
@@ -96,20 +96,21 @@ def test_sidebar_status_renders():
     all_html = " ".join(m.value for m in at.markdown)
     assert "EevaResearch" in all_html
     assert "Demo environment" in all_html
-    # Every primary + footer nav item renders as a real st.page_link.
-    # (Watchlist entries also render as page_links, filtering into Signals
-    # — brief §4 — so this checks a subset, not exact equality.)
+    # Every visible WORKSPACE + SYSTEM nav item renders as a real
+    # st.page_link (navigation-cleanup pass, design/DECISIONS.md) — a
+    # subset check, not exact equality, since the sidebar also renders a
+    # few other page_links (the brand/home link, the footer's Disclaimer
+    # link) that aren't part of either nav table.
     nav_link_labels = {pl.label for pl in at.get("page_link")}
-    expected = {label for _, label in PRIMARY_NAV + FOOTER_NAV}
+    expected = {label for _, label in PRIMARY_NAV + SYSTEM_NAV}
     missing = expected - nav_link_labels
     assert not missing, f"missing nav items: {missing}"
 
 
 def test_watchlists_page_renders_without_exception():
-    # Not in primary nav (brief §4: watchlists are sidebar filter entries
-    # into Signals, not a standalone page) but still a real, reachable
-    # hidden route — the add-a-ticker entry point independent of any
-    # specific company page.
+    # A primary Workspace nav destination (navigation-cleanup pass,
+    # design/DECISIONS.md) — the add-a-ticker entry point independent of
+    # any specific company page.
     at = AppTest.from_file(str(HARNESS_DIR / "watchlists_page.py"), default_timeout=10)
     at.run()
     assert not at.exception

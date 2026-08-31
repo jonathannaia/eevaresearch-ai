@@ -227,20 +227,11 @@ def test_coverage_page_hides_empty_layer_column_with_a_quiet_note():
 
 
 # ============================== SIDEBAR ==============================
-
-def test_sidebar_watchlists_heading_is_sentence_case():
-    at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=15)
-    at.run()
-    assert not at.exception
-    sidebar_text = " ".join(m.value for m in at.sidebar.get("markdown"))
-    assert "My watchlists" in sidebar_text
-    assert "My Watchlists" not in sidebar_text
-    assert "MY WATCHLISTS" not in sidebar_text.upper() or "MY WATCHLISTS" not in sidebar_text
-
-
-def test_sidebar_watchlists_heading_does_not_change_navigation_destinations():
-    """Label text only — the underlying page_link target is untouched."""
-    source = (REPO_ROOT / "src" / "ui" / "ui.py").read_text(encoding="utf-8")
-    assert 'st.page_link(watchlists_page, label="My watchlists")' in source
-    # No new route/page key introduced for this.
-    assert source.count('pages.get("watchlists")') == 1
+#
+# The two Phase D regression tests that used to live here (asserting the
+# separate "My watchlists" sidebar group header stayed sentence-case)
+# tested a UI element that no longer exists: the navigation-cleanup pass
+# (design/DECISIONS.md) promoted Watchlists into a primary WORKSPACE
+# destination and retired that separate group header as a now-duplicate
+# label — see tests/test_navigation.py and tests/test_ui_audit_navigation_cleanup.py
+# for the current sidebar-structure regression coverage.

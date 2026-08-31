@@ -38,11 +38,11 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.ui.ui import FOOTER_NAV, PRIMARY_NAV
+from src.ui.ui import HIDDEN_FROM_NAV, PRIMARY_NAV, SYSTEM_NAV
 
 APP_PATH = Path(__file__).parent.parent / "app.py"
 
-_ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + FOOTER_NAV] + ["company", "watchlists", "disclaimer", "daily_news_admin"]
+_ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + ["company", "disclaimer", "daily_news_admin"]
 
 
 @pytest.fixture(autouse=True)
@@ -90,11 +90,16 @@ def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter():
 
 
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
-    """Regression guard for requirement #5 (don't change which pages are
-    visible, or their labels/order) — asserts the nav tables app.py reads
-    from are untouched, plus every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news", "coverage", "themes", "signals", "research"]
-    assert [k for k, _ in FOOTER_NAV] == ["methodology", "about"]
+    """Regression guard for the navigation-cleanup pass (design/DECISIONS.md)
+    — asserts the exact visible WORKSPACE/SYSTEM nav tables app.py reads
+    from, that Coverage/Themes/Signals/Research/Methodology/About are still
+    registered (just no longer linked from any visible sidebar group), and
+    that every expected dict key exists post-registration."""
+    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news", "watchlists"]
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Daily News", "Watchlists"]
+    assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
+    assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["themes", "signals", "research", "methodology", "about"]
 
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()
