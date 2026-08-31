@@ -1,6 +1,184 @@
 [
   {
     "niche": "Space",
+    "headline": "Roman telescope leaves its rocket behind | Space photo of the day for Aug. 31, 2026",
+    "summary": "NASA's Nancy Grace Roman Space Telescope deployed into space shortly after launch, as captured in a recent photograph.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/roman-telescope-leaves-its-rocket-behind-space-photo-of-the-day-for-aug-31-2026",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 14:00:00 +0000",
+    "retrieved_at": "2026-08-31T18:28:38+00:00",
+    "tickers": [],
+    "relevance_reason": "Describes deployment of NASA's Nancy Grace Roman Space Telescope following launch, directly relevant to space infrastructure.",
+    "url_hash": "3c48b16680748ee8",
+    "id": "3c48b16680748ee8"
+  },
+  {
+    "niche": "Space",
+    "headline": "SpaceX, NASA delay next astronaut launch to ISS due to leak on Dragon spacecraft",
+    "summary": "SpaceX's Crew-13 mission to the ISS has been delayed from its September 12 target date due to an oxidizer leak detected on the Dragon spacecraft, with no new launch date yet announced.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-nasa-delay-next-astronaut-launch-to-iss-due-to-leak-on-dragon-spacecraft",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 15:00:00 +0000",
+    "retrieved_at": "2026-08-31T18:28:35+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article directly concerns space launch operations and spacecraft with safety implications",
+    "url_hash": "7ca0b61326c9f4b8",
+    "id": "7ca0b61326c9f4b8"
+  },
+  {
+    "niche": "Space",
+    "headline": "What's next for Roman Space Telescope? Here's how NASA's flagship observatory will open up the universe",
+    "summary": "NASA's Nancy Grace Roman Space Telescope has launched and the article outlines the upcoming steps before it begins its science operations.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/nancy-grace-roman-space-telescope-next-steps-commissioning",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 16:00:00 +0000",
+    "retrieved_at": "2026-08-31T18:28:33+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses NASA's space telescope mission and its operational timeline.",
+    "url_hash": "eff43cce06136592",
+    "id": "eff43cce06136592"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA’s Nancy Grace Roman Space Telescope Launches",
+    "summary": "NASA's Nancy Grace Roman Space Telescope launched aboard a SpaceX Falcon Heavy rocket from Kennedy Space Center on August 30, 2026, and will conduct astronomical surveys with a wider field of view than the Hubble Space Telescope.",
+    "source_url": "https://www.nasa.gov/image-article/nasas-nancy-grace-roman-space-telescope-launches/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Mon, 31 Aug 2026 14:10:31 +0000",
+    "retrieved_at": "2026-08-31T18:28:28+00:00",
+    "tickers": [
+      {
+        "ticker": "SPCE",
+        "company_name": "Virgin Galactic Holdings",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "SPACEX",
+        "company_name": "SpaceX",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct reporting on a space launch of NASA's Roman Space Telescope aboard a SpaceX vehicle.",
+    "url_hash": "b6b2f921d8364374",
+    "id": "b6b2f921d8364374"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia’s $3.5B MediaTek bet reveals its plan for tackling Big Tech’s AI chip buildout",
+    "summary": "Nvidia invested $3.5 billion in Taiwanese chipmaker MediaTek as part of its strategy to remain essential to AI infrastructure development as major technology companies begin designing their own AI chips.",
+    "source_url": "https://techcrunch.com/2026/08/31/nvidias-3-5b-mediatek-bet-reveals-its-plan-for-tackling-big-techs-ai-chip-buildout/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 15:15:25 +0000",
+    "retrieved_at": "2026-08-31T18:28:25+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "2454",
+        "company_name": "MediaTek",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Nvidia's strategic investment in MediaTek directly pertains to AI chip supply chain and hyperscaler AI infrastructure strategy.",
+    "url_hash": "493a177a82af08d6",
+    "id": "493a177a82af08d6"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Nvidia, MediaTek Bring Custom Chips to AI Racks",
+    "summary": "Nvidia is enabling custom chips to be integrated into its rack-scale AI systems, offering hyperscalers alternatives to standard GPUs. MediaTek is involved in bringing custom chips to these AI racks.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-hardware/nvidia-mediatek-bring-custom-chips-to-ai-racks",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 14:30:55 GMT",
+    "retrieved_at": "2026-08-31T18:28:22+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "2454",
+        "company_name": "MediaTek",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly addresses GPU/accelerator supply chain and hyperscaler flexibility in AI infrastructure buildout.",
+    "url_hash": "613d1ef67a8028d2",
+    "id": "613d1ef67a8028d2"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA and MediaTek Deepen Long-Standing Partnership to Build AI Edge to Cloud Computing Platforms",
+    "summary": "NVIDIA and MediaTek announced an expansion of their partnership to develop AI computing platforms across infrastructure, local AI computing, and automotive applications.",
+    "source_url": "https://nvidianews.nvidia.com/news/nvidia-and-mediatek-deepen-long-standing-partnership-to-build-ai-edge-to-cloud-computing-platforms",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Mon, 31 Aug 2026 12:30:00 GMT",
+    "retrieved_at": "2026-08-31T18:28:20+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "2454",
+        "company_name": "MediaTek",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly addresses AI infrastructure and edge-to-cloud computing platforms, core to AI Buildout scope.",
+    "url_hash": "dccec670d05c413c",
+    "id": "dccec670d05c413c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Workload-Driven HBF Substrate For Capacity-Scalable LLM Inference (Huawei, ETH Zurich, HUST)",
+    "summary": "Researchers at Huawei, ETH Zurich, and HUST published a technical paper on using high bandwidth flash memory to address memory capacity constraints in LLM inference systems, particularly for single-accelerator and small-node deployments.",
+    "source_url": "https://semiengineering.com/workload-driven-hbf-substrate-for-capacity-scalable-llm-inference-huawei-eth-zurich-hust/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 17:25:59 +0000",
+    "retrieved_at": "2026-08-31T18:28:16+00:00",
+    "tickers": [
+      {
+        "ticker": "HUAWEI",
+        "company_name": "Huawei",
+        "jurisdiction": "China",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "This article describes research on LLM inference acceleration technology directly relevant to AI infrastructure and accelerator memory optimization.",
+    "url_hash": "29e26624444ca081",
+    "id": "29e26624444ca081"
+  },
+  {
+    "niche": "Space",
     "headline": "Watch Rocket Lab launch Japanese radar satellite to orbit early on Sept. 1",
     "summary": "Rocket Lab is scheduled to launch a Japanese Earth-observing radar satellite to orbit on September 1, with a live viewing available.",
     "source_url": "https://www.space.com/space-exploration/launches-spacecraft/watch-rocket-lab-launch-japanese-radar-satellite-to-orbit-early-aug-31",
