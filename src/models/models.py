@@ -532,7 +532,12 @@ class EvidenceLocation:
     paragraph_index: int | None = None
 
 
-def record_excerpt(candidate: "CandidateSignal", excerpt_text: str | None, retrieved_at: str) -> bool:
+def record_excerpt(
+    candidate: "CandidateSignal",
+    excerpt_text: str | None,
+    retrieved_at: str,
+    evidence_source_member: str | None = None,
+) -> bool:
     """The one safe way any pipeline attaches newly extracted excerpt
     text to a CandidateSignal — evidence-packet-foundation Phase 1's
     integrity fix (design/DECISIONS.md). `excerpt_original` is set once,
@@ -542,6 +547,22 @@ def record_excerpt(candidate: "CandidateSignal", excerpt_text: str | None, retri
     silently replacing the original — the first/source excerpt and its
     provenance (`excerpt_retrieved_at`) are never lost. A repeat
     extraction that reproduces the exact same text is a no-op either way.
+
+    `evidence_source_member` (Phase 2, Step 2) is additive and optional,
+    defaulting to None — every existing call site that omits it (DART,
+    EDGAR, and EDINET's own non-ZIP bare-PDF/HTML/text extraction) is
+    completely unaffected and this field stays None for them, exactly as
+    before. When supplied (EDINET's bounded ZIP-member extraction only),
+    it is recorded ATOMICALLY with `excerpt_original`, at the exact same
+    first-write moment and never independently — there is no separate
+    "supplemental" slot for it, since it is a single provenance fact
+    about the persisted `excerpt_original`, not content that can
+    meaningfully have its own later revision. If `excerpt_original` was
+    already set by a prior extraction, this call is a no-op with respect
+    to both fields (a later/different extraction's member path is simply
+    never recorded), which guarantees `evidence_source_member`, whenever
+    populated, always names the true origin of the excerpt actually
+    persisted — never a different extraction's member.
 
     Returns True only when this call performed the first-ever assignment
     of `excerpt_original` (useful for a caller that wants to know whether
@@ -554,6 +575,8 @@ def record_excerpt(candidate: "CandidateSignal", excerpt_text: str | None, retri
     if candidate.excerpt_original is None:
         candidate.excerpt_original = excerpt_text
         candidate.excerpt_retrieved_at = retrieved_at
+        if evidence_source_member is not None:
+            candidate.evidence_source_member = evidence_source_member
         return True
     if excerpt_text != candidate.excerpt_original:
         candidate.excerpt_supplemental = excerpt_text
@@ -631,3 +654,17 @@ class CandidateSignal:
     # while building the excerpt, never from a new fetch/parser/heuristic
     # added solely to populate this field.
     evidence_location: EvidenceLocation | None = None
+    # Evidence-packet foundation, Phase 2, Step 2 (design/DECISIONS.md).
+    # A descriptive, safe archive-relative member path/name — e.g.
+    # "PublicDoc/0101.pdf" — recording which member inside an official
+    # EDINET ZIP package the persisted excerpt_original came from. Never
+    # a URL, never independently fetchable/clickable/resolvable; purely a
+    # provenance label about container structure, distinct from
+    # `evidence_location` (which describes a position *within* a
+    # document's own content, e.g. a section or page). Set only via
+    # record_excerpt() above, atomically with excerpt_original's own
+    # first write — never assigned directly by a pipeline. Currently
+    # populated only by EDINET's bounded ZIP-member extraction path;
+    # stays None for EDGAR, DART, EDINET's own bare-PDF/HTML/text
+    # extraction, and every pre-Phase-2-Step-2 record.
+    evidence_source_member: str | None = None

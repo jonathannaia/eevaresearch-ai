@@ -142,7 +142,15 @@ def process_candidate(
         # once and never silently overwritten — see record_excerpt's own
         # docstring. A repeat extraction with different text is preserved
         # in excerpt_supplemental instead of replacing the original.
-        record_excerpt(candidate, doc_result.excerpt_original, doc_result.retrieved_at)
+        # Phase 2, Step 2: doc_result.evidence_source_member is non-None
+        # only when this extraction came from a successfully-read EDINET
+        # ZIP-package PDF member; record_excerpt() records it atomically
+        # with excerpt_original's own first write, so it is never set
+        # independently and never overwritten by a later extraction.
+        record_excerpt(
+            candidate, doc_result.excerpt_original, doc_result.retrieved_at,
+            evidence_source_member=doc_result.evidence_source_member,
+        )
         if translation_provider is not None and candidate.excerpt_original:
             excerpt_translation = translate_cached(
                 translation_provider, doc_id, candidate.excerpt_original, cache_dir, source_lang="JA",

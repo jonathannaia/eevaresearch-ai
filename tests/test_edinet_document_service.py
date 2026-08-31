@@ -196,5 +196,37 @@ def test_pdf_raw_bytes_are_never_written_to_the_cache_file(tmp_path):
     assert "endobj" not in raw_cache_text  # no raw PDF syntax persisted
     import json
     cached = json.loads(raw_cache_text)["S100PDF"]
-    assert set(cached.keys()) == {"state", "excerpt_original", "detail", "retrieved_at"}
+    assert set(cached.keys()) == {"state", "excerpt_original", "detail", "retrieved_at", "evidence_source_member"}
     assert isinstance(cached["excerpt_original"], str)
+    assert cached["evidence_source_member"] is None  # bare PDF, no ZIP container to name a member from
+
+
+# --- Evidence-packet foundation, Phase 2, Step 2: ZIP-member provenance ---
+
+def _zip_with_pdf(member_name: str, text: str) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(member_name, _minimal_pdf(text))
+    return buffer.getvalue()
+
+
+def test_zip_sourced_fetch_threads_evidence_source_member_through_fresh_fetch(tmp_path):
+    client = _client(_zip_with_pdf("PublicDoc/0101.pdf", "ZIP-sourced evidence."))
+
+    result = document_service.get_or_fetch_excerpt(client, "S100ZIP", tmp_path)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
+
+
+def test_zip_sourced_evidence_source_member_survives_cache_round_trip(tmp_path):
+    client = _client(_zip_with_pdf("PublicDoc/0101.pdf", "ZIP-sourced evidence."))
+
+    document_service.get_or_fetch_excerpt(client, "S100ZIP", tmp_path)
+    cached_result = document_service.get_or_fetch_excerpt(client, "S100ZIP", tmp_path)
+
+    assert cached_result.from_cache is True
+    assert cached_result.evidence_source_member == "PublicDoc/0101.pdf"

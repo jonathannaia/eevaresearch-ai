@@ -159,6 +159,32 @@ def test_pre_phase1_row_missing_new_columns_still_loads_with_none_defaults(pg_co
     assert reloaded.excerpt_supplemental is None
     assert reloaded.flag_reason is None
     assert reloaded.evidence_location is None
+    assert reloaded.evidence_source_member is None  # Phase 2, Step 2's v4 column — also predates this row
+
+
+# --- Evidence-packet foundation, Phase 2, Step 2: evidence_source_member ---
+
+
+def test_round_trips_evidence_source_member_phase2_step2(pg_conn):
+    filing = _filing(rcept_no="acc-phase2-step2", corp_code="E02778", corp_name="SoftBank Group", source_name="EDINET", original_language="Japanese")
+    candidate = _candidate(
+        "cand-phase2-step2", filing, status=CandidateStatus.NEEDS_REVIEW,
+        excerpt_original="ZIP-sourced evidence text.", excerpt_retrieved_at="2026-08-20T00:00:00+00:00",
+        evidence_source_member="PublicDoc/0101.pdf",
+    )
+    candidate_repository.upsert_new_candidates(pg_conn, "EDINET", [candidate])
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-phase2-step2")
+
+    assert reloaded.evidence_source_member == "PublicDoc/0101.pdf"
+    assert reloaded.excerpt_original == "ZIP-sourced evidence text."
+
+
+def test_evidence_source_member_stays_none_when_not_set(pg_conn):
+    filing = _filing(rcept_no="acc-no-member")
+    candidate = _candidate("cand-no-member", filing, excerpt_original="Bare EDGAR excerpt.")
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate])
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-no-member")
+    assert reloaded.evidence_source_member is None
 
 
 # --- Optimistic version conflict ---

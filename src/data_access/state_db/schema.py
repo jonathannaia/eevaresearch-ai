@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -172,13 +172,23 @@ _V3_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN evidence_location_json TEXT",
 )
 
+# Evidence-packet foundation, Phase 2, Step 2 (design/DECISIONS.md) — one
+# additive, nullable column: CandidateSignal.evidence_source_member, the
+# safe archive-relative ZIP-member path/name EDINET's bounded ZIP
+# extraction (Phase 2, Step 1) selected, when it selected one. NULL for
+# every pre-existing row and for every non-EDINET-ZIP candidate.
+_V4_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE candidates ADD COLUMN evidence_source_member TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 4 later means appending a new (4, (...statements...))
+# Adding schema version 5 later means appending a new (5, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
     (3, _V3_STATEMENTS),
+    (4, _V4_STATEMENTS),
 )
 
 

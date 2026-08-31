@@ -33,6 +33,11 @@ class DocumentFetchResult:
     detail: str
     retrieved_at: str
     from_cache: bool
+    # Phase 2, Step 2 — the selected ZIP member's safe archive-relative
+    # path/name (see document_extractor.ExtractionResult.evidence_source_
+    # member). None for every non-ZIP-success extraction. Additive
+    # default so no existing construction of this dataclass breaks.
+    evidence_source_member: str | None = None
 
 
 def _cache_path(cache_dir: Path) -> Path:
@@ -86,6 +91,7 @@ def get_or_fetch_excerpt(
         return DocumentFetchResult(
             doc_id=doc_id, state=ExtractionState(cached["state"]), excerpt_original=cached.get("excerpt_original"),
             detail=cached.get("detail", ""), retrieved_at=cached["retrieved_at"], from_cache=True,
+            evidence_source_member=cached.get("evidence_source_member"),
         )
 
     retrieved_at = datetime.now(timezone.utc).isoformat()
@@ -103,6 +109,7 @@ def get_or_fetch_excerpt(
     result = DocumentFetchResult(
         doc_id=doc_id, state=extraction.state, excerpt_original=extraction.excerpt_original,
         detail=extraction.detail, retrieved_at=retrieved_at, from_cache=False,
+        evidence_source_member=extraction.evidence_source_member,
     )
     _cache_result(cache, cache_dir, result)
     return result
@@ -112,5 +119,6 @@ def _cache_result(cache: dict, cache_dir: Path, result: DocumentFetchResult) -> 
     cache[result.doc_id] = {
         "state": result.state.value, "excerpt_original": result.excerpt_original,
         "detail": result.detail, "retrieved_at": result.retrieved_at,
+        "evidence_source_member": result.evidence_source_member,
     }
     _save_cache(cache_dir, cache)

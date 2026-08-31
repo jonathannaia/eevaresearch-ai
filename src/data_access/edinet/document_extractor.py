@@ -132,6 +132,12 @@ class ExtractionResult:
     state: ExtractionState
     excerpt_original: str | None = None
     detail: str = ""
+    # Phase 2, Step 2 — the selected ZIP member's safe archive-relative
+    # path/name, set ONLY when this result came from a successful
+    # (EXTRACTED) ZIP-member extraction (see _extract_from_zip). None for
+    # every other path: bare PDF, plain-text/HTML, any non-EXTRACTED ZIP
+    # outcome (unsupported/malformed/no-PDF/invalid-PDF/parse-failed).
+    evidence_source_member: str | None = None
 
 
 def _decode_if_plain_text(raw: bytes) -> str | None:
@@ -231,13 +237,20 @@ def _select_safe_pdf_member(archive: "zipfile.ZipFile") -> tuple["zipfile.ZipInf
 
 
 def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
-    """Bounded ZIP-package extraction (Phase 2, Step 1). Opens the
-    archive in memory only (`io.BytesIO` — never written to disk),
-    validates `archive.infolist()` metadata before reading any member
-    content, selects at most one safe, allowlisted `.pdf` member, and
-    hands its bytes to the existing, unmodified `_extract_pdf_text()`. No
-    other member is ever read. No nested archive is followed. Never
-    raises."""
+    """Bounded ZIP-package extraction (Phase 2, Step 1; provenance added
+    Step 2). Opens the archive in memory only (`io.BytesIO` — never
+    written to disk), validates `archive.infolist()` metadata before
+    reading any member content, selects at most one safe, allowlisted
+    `.pdf` member, and hands its bytes to the existing, unmodified
+    `_extract_pdf_text()`. No other member is ever read. No nested
+    archive is followed. Never raises.
+
+    `evidence_source_member` (Step 2) is stamped onto the result ONLY
+    when `_extract_pdf_text()` itself reports EXTRACTED — every other
+    outcome (encrypted/corrupt/no-text PDF) returns `_extract_pdf_text`'s
+    own result unchanged, with `evidence_source_member` left at its
+    default of None, so provenance is never recorded for a member whose
+    content didn't actually yield a usable excerpt."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(document_bytes))
     except zipfile.BadZipFile:
@@ -258,7 +271,15 @@ def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
     if not member_bytes.startswith(_PDF_MAGIC):
         return ExtractionResult(state=ExtractionState.UNSUPPORTED_FORMAT, detail=_ZIP_INVALID_PDF_DETAIL)
 
-    return _extract_pdf_text(member_bytes)
+    pdf_result = _extract_pdf_text(member_bytes)
+    if pdf_result.state != ExtractionState.EXTRACTED:
+        return pdf_result
+    return ExtractionResult(
+        state=pdf_result.state,
+        excerpt_original=pdf_result.excerpt_original,
+        detail=pdf_result.detail,
+        evidence_source_member=selected.filename,
+    )
 
 
 def extract_excerpt(document_bytes: bytes) -> ExtractionResult:

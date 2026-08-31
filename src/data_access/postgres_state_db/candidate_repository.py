@@ -129,6 +129,7 @@ def _row_to_candidate(conn: psycopg.Connection, row) -> CandidateSignal:
         excerpt_retrieved_at=row["excerpt_retrieved_at"],
         flag_reason=_flag_reason_from_json(row["flag_reason_json"]),
         evidence_location=_evidence_location_from_json(row["evidence_location_json"]),
+        evidence_source_member=row["evidence_source_member"],
     )
 
 
@@ -171,6 +172,7 @@ def _row_to_candidate_from_lookups(
         excerpt_retrieved_at=row["excerpt_retrieved_at"],
         flag_reason=_flag_reason_from_json(row["flag_reason_json"]),
         evidence_location=_evidence_location_from_json(row["evidence_location_json"]),
+        evidence_source_member=row["evidence_source_member"],
     )
 
 
@@ -233,8 +235,8 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             extraction_state, translation_state, excerpt_quality, excerpt_original,
             title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
             materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
-            evidence_location_json, version, created_at, updated_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+            evidence_location_json, evidence_source_member, version, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
         """,
         (
             candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
@@ -244,6 +246,7 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             _translation_to_json(candidate.excerpt_translation), candidate.reviewed_at, candidate.reviewed_note,
             candidate.materiality_assessment, candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
             _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
+            candidate.evidence_source_member,
             now, now,
         ),
     )
@@ -308,7 +311,7 @@ def update_candidate(
                 title_translation_json = %s, excerpt_translation_json = %s, reviewed_at = %s,
                 reviewed_note = %s, materiality_assessment = %s, excerpt_supplemental = %s,
                 excerpt_retrieved_at = %s, flag_reason_json = %s, evidence_location_json = %s,
-                version = version + 1, updated_at = %s
+                evidence_source_member = %s, version = version + 1, updated_at = %s
             WHERE id = %s AND version = %s
             """,
             (
@@ -320,6 +323,7 @@ def update_candidate(
                 candidate.reviewed_note, candidate.materiality_assessment,
                 candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
                 _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
+                candidate.evidence_source_member,
                 now, candidate.id, expected_version,
             ),
         )

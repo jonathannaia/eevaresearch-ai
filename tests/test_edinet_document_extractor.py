@@ -108,6 +108,14 @@ def test_skips_script_and_style_content():
     assert "Disclosure text here" in result.excerpt_original
 
 
+def test_plain_html_leaves_evidence_source_member_none():
+    # Phase 2, Step 2: plain HTML/text has no ZIP container either.
+    html = "<html><body><p>有価証券報告書 summary text.</p></body></html>".encode("utf-8")
+    result = extract_excerpt(html)
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.evidence_source_member is None
+
+
 def test_excerpt_is_bounded_to_max_chars():
     long_text = ("Disclosure summary. " + "x" * 2000).encode("utf-8")
     result = extract_excerpt(long_text)
@@ -140,6 +148,7 @@ def test_corrupt_zip_shaped_payload_fails_closed_not_a_crash():
     result = extract_excerpt(zip_like)
     assert result.state == ExtractionState.PARSE_FAILED
     assert "ZIP" in result.detail
+    assert result.evidence_source_member is None
 
 
 def test_result_never_raises_for_garbage_input():
@@ -164,6 +173,15 @@ def test_valid_text_bearing_pdf_is_extracted():
     result = extract_excerpt(pdf)
     assert result.state == ExtractionState.EXTRACTED
     assert "Synthetic test evidence text" in result.excerpt_original
+
+
+def test_bare_pdf_leaves_evidence_source_member_none():
+    # Phase 2, Step 2: a bare (non-ZIP) PDF response has no container to
+    # name a member from — evidence_source_member must stay None.
+    pdf = _build_minimal_pdf("Bare PDF, no ZIP container.")
+    result = extract_excerpt(pdf)
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.evidence_source_member is None
 
 
 def test_pdf_excerpt_is_bounded_to_max_chars():
@@ -278,6 +296,9 @@ def test_zip_with_one_valid_pdf_member_is_extracted():
     result = extract_excerpt(zip_bytes)
     assert result.state == ExtractionState.EXTRACTED
     assert "Evidence extracted from inside a ZIP package" in result.excerpt_original
+    # Phase 2, Step 2: the selected member's safe path is recorded as
+    # provenance, exactly as read — never a URL, never fetchable.
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
 
 
 def test_zip_with_pdf_plus_irrelevant_members_reads_only_the_pdf():
@@ -298,6 +319,7 @@ def test_zip_with_pdf_plus_irrelevant_members_reads_only_the_pdf():
         result = extract_excerpt(zip_bytes)
     assert result.state == ExtractionState.EXTRACTED
     assert "The one true selected document" in result.excerpt_original
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
 
 
 def test_zip_with_no_pdf_member_is_unsupported_format():
@@ -308,6 +330,7 @@ def test_zip_with_no_pdf_member_is_unsupported_format():
     result = extract_excerpt(zip_bytes)
     assert result.state == ExtractionState.UNSUPPORTED_FORMAT
     assert "PDF" in result.detail
+    assert result.evidence_source_member is None
 
 
 def test_zip_with_absolute_path_pdf_member_fails_closed_before_reading():
@@ -465,6 +488,18 @@ def test_zip_with_invalid_pdf_named_content_fails_cleanly():
     result = extract_excerpt(zip_bytes)
     assert result.state == ExtractionState.UNSUPPORTED_FORMAT
     assert "pdf" in result.detail.lower()
+    assert result.evidence_source_member is None
+
+
+def test_zip_with_pdf_member_that_fails_pdf_extraction_leaves_evidence_source_member_none():
+    # Phase 2, Step 2: a member that IS a real PDF by magic bytes but
+    # fails pypdf extraction (corrupt/truncated) must not record
+    # provenance for content that never became a usable excerpt.
+    corrupt_pdf = b"%PDF-1.4\n" + bytes(range(200))
+    zip_bytes = _build_zip([("PublicDoc/0101.pdf", corrupt_pdf)])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.PARSE_FAILED
+    assert result.evidence_source_member is None
 
 
 def test_zip_with_duplicate_pdf_names_selects_first_entry_deterministically():
@@ -481,6 +516,9 @@ def test_zip_with_duplicate_pdf_names_selects_first_entry_deterministically():
     assert result.state == ExtractionState.EXTRACTED
     assert "FIRST ENTRY MUST BE SELECTED" in result.excerpt_original
     assert "SECOND ENTRY MUST NEVER BE READ" not in result.excerpt_original
+    # Phase 2, Step 2: provenance names the first ZipInfo entry actually
+    # read, matching the deterministic selection this test verifies.
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
 
 
 def test_oversized_zip_shaped_payload_is_rejected_before_zip_parsing():

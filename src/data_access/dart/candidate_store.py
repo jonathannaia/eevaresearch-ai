@@ -127,6 +127,7 @@ def _candidate_from_dict(data: dict) -> CandidateSignal:
         excerpt_retrieved_at=data.get("excerpt_retrieved_at"),
         flag_reason=_flag_reason_from_dict(data.get("flag_reason")),
         evidence_location=_evidence_location_from_dict(data.get("evidence_location")),
+        evidence_source_member=data.get("evidence_source_member"),
     )
 
 
