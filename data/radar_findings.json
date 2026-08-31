@@ -1,6 +1,55 @@
 [
   {
     "niche": "Space",
+    "headline": "Watch Rocket Lab launch Japanese radar satellite to orbit early on Sept. 1",
+    "summary": "Rocket Lab is scheduled to launch a Japanese Earth-observing radar satellite to orbit on September 1, with a live viewing available.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/watch-rocket-lab-launch-japanese-radar-satellite-to-orbit-early-aug-31",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 04:05:00 +0000",
+    "retrieved_at": "2026-08-31T10:17:14+00:00",
+    "tickers": [
+      {
+        "ticker": "RKLB",
+        "company_name": "Rocket Lab USA Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article describes a scheduled space launch by Rocket Lab carrying a Japanese satellite to orbit.",
+    "url_hash": "b0ced4728c905f4a",
+    "id": "b0ced4728c905f4a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Solid-State Transformers Power Next-Gen AI Data Centers",
+    "summary": "Solid-state transformers are emerging as a technology to convert medium-voltage AC power directly to 800V DC for AI data centers, though maturity questions persist.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/solid-state-transformers-power-next-gen-ai-data-centers",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 09:00:00 GMT",
+    "retrieved_at": "2026-08-31T10:17:07+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure technology for AI data centers, a core AI Buildout component.",
+    "url_hash": "392901adc64662a5",
+    "id": "392901adc64662a5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Photonics Forces A Chiplet Rethink",
+    "summary": "Thermal drift, stress, electromagnetic coupling, and verification gaps are making optical integration a full-system co-design problem rather than a simple bandwidth upgrade for chiplet architectures.",
+    "source_url": "https://semiengineering.com/photonics-forces-a-chiplet-rethink/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 07:01:38 +0000",
+    "retrieved_at": "2026-08-31T10:17:06+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses technical challenges in optical/photonic chiplet integration for semiconductor design, which is relevant to AI infrastructure chip supply chain and advanced packaging for AI chips.",
+    "url_hash": "21d585d3e642fdc8",
+    "id": "21d585d3e642fdc8"
+  },
+  {
+    "niche": "Space",
     "headline": "Trump calls in to NASA press conference to celebrate launch of Roman Space Telescope, a mission he tried to cancel",
     "summary": "President Trump called into a NASA press conference on August 30 to congratulate the team on the successful launch of the Nancy Grace Roman Space Telescope.",
     "source_url": "https://www.space.com/space-exploration/trump-calls-in-to-nasa-press-conference-to-celebrate-launch-of-roman-space-telescope-a-mission-he-tried-to-cancel",
