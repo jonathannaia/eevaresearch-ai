@@ -1,9 +1,11 @@
 """Daily News Slice 1's own feed-source registry. Owns only the
 approved feed URL and canonical-domain allowlist for each pilot
 company — company identity, ticker, and theme come from
-src/config/tracked_companies.py, the authoritative registry already
-used by Radar's own three sources, reused here read-only. This module
-never imports anything from src.data_access.dart/edgar/edinet and never
+src/config/tracked_companies.py (the authoritative registry already
+used by Radar's own three sources) or, for a company not tracked by any
+Radar source, src/config/issuer_registry.py's DISCOVERY_STUBS (e.g.
+Quanta Services) — both reused here read-only. This module never
+imports anything from src.data_access.dart/edgar/edinet and never
 touches any Radar store.
 
 Every entry below was independently verified live before being added —
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.config.issuer_registry import DISCOVERY_STUBS
 from src.config.tracked_companies import TrackedCompany, get_tracked_companies
 
 
@@ -83,17 +86,50 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
         feed_format="rss",
         canonical_domains=("news.skhynix.com",),
     ),
+    DailyNewsFeedSource(
+        company_name="Quanta Services, Inc.",
+        feed_url="https://investors.quantaservices.com/news-events/press-releases/rss",
+        feed_format="rss",
+        canonical_domains=("investors.quantaservices.com",),
+    ),
 )
 
 
 def tracked_company_for(company_name: str) -> TrackedCompany | None:
-    """Looks up identity/ticker/theme from tracked_companies.py by exact
-    name match — the one read-only touch point this module has into
-    that shared registry. Returns None rather than raising if a feed
-    source's company_name doesn't match any tracked company, so a
-    registry typo fails safe (the pipeline skips that source and records
-    it as a configuration warning) rather than crashing discovery."""
+    """Looks up identity/ticker/theme by exact name match, checking two
+    read-only sources in order:
+
+    1. tracked_companies.py — every company also in Radar's own scan
+       universe.
+    2. issuer_registry.DISCOVERY_STUBS — a company known to Daily News
+       only (e.g. Quanta Services), never onboarded to any Radar source.
+       A match here is synthesized into a TrackedCompany purely for this
+       module's own return-shape contract: `source=""` (never equal to
+       any real "OpenDART / DART"/"SEC EDGAR"/"EDINET" value) and
+       `active=False`. This synthesized record is never written back to
+       tracked_companies.py, never passed to with_resolved_ciks/
+       with_resolved_corp_codes, and cannot enter any EDGAR/DART/EDINET
+       pipeline — those only ever call get_tracked_companies_for_source()
+       against the real TRACKED_COMPANIES tuple directly, which
+       DISCOVERY_STUBS is never merged into (see
+       tracked_companies_from_issuer_registry()'s own docstring for why
+       that exclusion is structural, not a filter that could be
+       forgotten).
+
+    Returns None if neither source matches, so a registry typo fails
+    safe (the pipeline skips that source and records it as a
+    configuration warning) rather than crashing discovery."""
     for company in get_tracked_companies(active_only=False):
         if company.name == company_name:
             return company
+
+    for issuer in DISCOVERY_STUBS:
+        if issuer.legal_name == company_name:
+            return TrackedCompany(
+                name=issuer.legal_name, exchange=issuer.primary_exchange or "",
+                krx_code=issuer.primary_ticker or "", source="",
+                themes=issuer.themes, subthemes=issuer.subthemes, active=False,
+                notes=issuer.notes,
+            )
+
     return None

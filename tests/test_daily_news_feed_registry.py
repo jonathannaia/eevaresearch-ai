@@ -201,9 +201,56 @@ def test_sk_hynix_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investor.marvell.com/news-events/press-releases/detail/1031/some-release", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_eight_sources():
-    assert len(PILOT_FEEDS) == 8
+def _quanta_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Quanta Services, Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_quanta_is_registered_with_the_exact_approved_fields():
+    source = _quanta_source()
+    assert source.feed_url == "https://investors.quantaservices.com/news-events/press-releases/rss"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("investors.quantaservices.com",)
+
+
+def test_quanta_resolves_to_the_discovered_issuer_with_ticker_pwr():
+    # Quanta is not in tracked_companies.py at all — this proves
+    # tracked_company_for()'s DISCOVERY_STUBS fallback path resolves it.
+    company = tracked_company_for("Quanta Services, Inc.")
+    assert company is not None
+    assert company.krx_code == "PWR"
+    assert company.source == ""  # never a real Radar source value
+    assert company.active is False
+    assert "ai-buildout" in company.themes
+
+
+def test_quanta_item_url_validates_against_its_exact_canonical_domain():
+    source = _quanta_source()
+    url = "https://investors.quantaservices.com/news-events/press-releases/detail/402/quanta-services-reports-second-quarter-2026-results"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_quanta_rejects_bare_domain_www_other_subdomain_and_lookalike_hostnames():
+    source = _quanta_source()
+    for other_url in (
+        "https://quantaservices.com/news-events/press-releases/detail/402/some-release",
+        "https://www.quantaservices.com/news-events/press-releases/detail/402/some-release",
+        "https://blog.quantaservices.com/news-events/press-releases/detail/402/some-release",
+        "https://investors.quantaservices.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_quanta_off_domain_url_is_rejected():
+    source = _quanta_source()
+    assert not validate_canonical_url("https://news.skhynix.com/en/some-release/", source.canonical_domains, source.feed_url)
+
+
+def test_pilot_feeds_now_has_exactly_nine_sources():
+    assert len(PILOT_FEEDS) == 9
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
+        "Quanta Services, Inc.",
     }

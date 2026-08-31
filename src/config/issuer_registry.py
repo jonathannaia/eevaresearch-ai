@@ -345,6 +345,38 @@ DISCOVERY_STUBS: tuple[Issuer, ...] = (
             "is unresolved."
         ),
     ),
+    # Quanta Services, Inc. — a Daily News-only discovery, not from the
+    # 2026-08-20 portfolio-map seed list (see every other stub above), so
+    # it is constructed directly rather than through _stub(), which
+    # hardcodes that seed list's own discovered_via/discovered_at
+    # provenance. A verified official RSS feed exists
+    # (investors.quantaservices.com) — see design/DECISIONS.md — but no
+    # CIK has been resolved and this issuer is not part of any
+    # EDGAR/DART/EDINET scan universe. DISCOVERED coverage_state
+    # structurally excludes it from tracked_companies_from_issuer_registry()
+    # and therefore from every existing scan pipeline, same as every
+    # other entry in this tuple.
+    Issuer(
+        issuer_id="stub:PWR",
+        legal_name="Quanta Services, Inc.",
+        country_or_jurisdiction="United States (listing exchange)",
+        coverage_state=CoverageState.DISCOVERED,
+        lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="PWR",
+        primary_exchange="NYSE",
+        identifiers={},  # no CIK resolved or cached — Daily News-only, never a Radar identifier
+        themes=("ai-buildout",),
+        supply_chain_layers=("power-infrastructure",),
+        evidence_confidence="Official RSS feed verified live; company identity/ticker not independently cross-checked against SEC EDGAR",
+        discovered_via="Daily News official-feed verification (design/DECISIONS.md)",
+        discovered_at="2026-08-30",
+        normalization_status=(
+            "Daily News-only candidate. Not eligible for Radar filing scanning "
+            "— no CIK resolved, not part of tracked_companies.py, structurally "
+            "excluded via DISCOVERED coverage_state."
+        ),
+        notes="Daily News official-company source only; not eligible for Radar filing scanning.",
+    ),
 )
 
 

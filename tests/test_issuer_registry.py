@@ -205,11 +205,51 @@ def test_indi_aip_ceva_still_pass_the_lossless_migration_and_compat_invariants()
 
 
 def test_discovery_stubs_are_unaffected_by_the_indi_aip_ceva_batch():
-    # 21 stubs before and after — this batch only appended to
-    # TRACKED_COMPANIES, DISCOVERY_STUBS is a wholly separate static
-    # tuple untouched by that change.
-    assert len(DISCOVERY_STUBS) == 21
+    # 21 stubs before and after this specific batch — DISCOVERY_STUBS
+    # grew again later (to 22) for the unrelated Quanta Services
+    # addition below, so this asserts "at least the 21 from this batch
+    # are present and untouched" rather than an exact total.
+    assert len(DISCOVERY_STUBS) >= 21
     stub_tickers = {i.primary_ticker for i in DISCOVERY_STUBS}
     assert stub_tickers.isdisjoint({"INDI", "AIP", "CEVA"})
     compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
     assert stub_tickers.isdisjoint(compat_tickers)
+
+
+# --- Quanta Services (2026-08-30) — a Daily News-only DISCOVERY_STUBS
+# entry, never added to tracked_companies.py/TRACKED_COMPANIES ---
+
+def test_discovery_stubs_grew_by_exactly_one_for_quanta_services():
+    assert len(DISCOVERY_STUBS) == 22
+    quanta_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "PWR"]
+    assert len(quanta_matches) == 1
+    quanta = quanta_matches[0]
+    assert quanta.legal_name == "Quanta Services, Inc."
+    assert quanta.coverage_state == CoverageState.DISCOVERED
+    assert quanta.identifiers == {}
+
+
+def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_quanta():
+    # Quanta was added only to DISCOVERY_STUBS — TRACKED_COMPANIES and
+    # SEED_ISSUERS (generated from it) must stay at exactly 32.
+    assert len(get_tracked_companies(active_only=False)) == 32
+    assert len(SEED_ISSUERS) == 32
+
+
+def test_quanta_is_excluded_from_the_compatibility_adapter():
+    compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
+    assert "PWR" not in compat_tickers
+
+
+def test_quanta_is_excluded_from_every_source_selection_path():
+    # get_tracked_companies_for_source only ever reads TRACKED_COMPANIES
+    # directly — DISCOVERY_STUBS is never merged into it — so this is a
+    # structural guarantee, not a filter that could be forgotten. Proven
+    # explicitly here for all three real sources.
+    from src.config.tracked_companies import get_tracked_companies_for_source
+
+    for source in ("SEC EDGAR", "OpenDART / DART", "EDINET"):
+        tickers = {c.krx_code for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "PWR" not in tickers
+        names = {c.name for c in get_tracked_companies_for_source(source, active_only=False)}
+        assert "Quanta Services, Inc." not in names
