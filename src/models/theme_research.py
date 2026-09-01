@@ -56,6 +56,13 @@ class EvidenceDirection(str, Enum):
     SUPPORTS = "Supports"
     CONTRADICTS = "Contradicts"
     MIXED = "Mixed"
+    # Phase A0 (design/DECISIONS.md) — the one direction a purely
+    # rule-based automatic match is ever allowed to assert (see
+    # src.logic.research_case_theme_matching.evaluate_theme_match).
+    # SUPPORTS/CONTRADICTS/MIXED remain reserved for a human reviewer's
+    # own judgment; a keyword/category match alone is never sufficient
+    # basis to claim a filing supports or contradicts a thesis.
+    CONTEXT = "Context"
 
 
 class CompanyRole(str, Enum):
