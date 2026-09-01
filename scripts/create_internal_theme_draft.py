@@ -1,0 +1,281 @@
+"""EevaResearch — Phase A3 (design/DECISIONS.md). A private, operator-only
+authoring tool for exactly one evidence-free, internal ResearchTheme
+draft — a parent container for a later ThemeMatchingScope
+(scripts/create_theme_matching_scope.py) and for autonomous,
+CONTEXT-only ResearchCaseThemeMatch collection. Not a product feature:
+no application runtime module (app.py, any src/ui page) imports this
+script, and it is never invoked automatically by anything in this
+repository.
+
+Invoke as (from the repo root):
+
+    python -m scripts.create_internal_theme_draft --confirm [--backend json|sqlite|postgres]
+
+This is an INTERNAL EVIDENCE-COLLECTION DRAFT; NOT A PUBLISHED RESEARCH
+CONCLUSION. This tool cannot publish the Theme or make it visible at
+/themes. Publication requires a separate, future reviewed-evidence
+workflow — not yet designed, and not part of this script. The
+invariant this script actually upholds: (1) no Phase A3 tool can
+publish a Theme; (2) no Phase A3 tool can transition visibility; (3)
+every record this script creates is permanently `visibility=internal`
+at creation time, with no flag, constant, or code path here that can
+ever change that.
+
+This is a deliberately separate, independent tool from
+scripts/create_theme.py — that script's own existing requirement that a
+published-ready Theme have at least one genuine ThemeEvidenceItem stays
+fully intact and untouched; this script never imports, calls, or
+references scripts/create_theme.py in any way, and does not weaken,
+bypass, or reuse its validator. scripts/create_theme.py remains an
+existing operator tool for complete, evidence-backed curated Theme
+content — it is not described here as the sole or exclusive future
+publication mechanism, because it isn't: the actual future publication
+path is a separate, not-yet-built reviewed-evidence workflow.
+
+Safety gates (mirrors scripts/create_theme.py's own exact contract):
+
+  1. AUTHORING_ENABLED below defaults to False. An operator must
+     deliberately edit this file and set it to True before this script
+     will ever consider persisting anything.
+  2. Even with AUTHORING_ENABLED = True, the `--confirm` CLI flag is
+     also required — without it, this is a dry run: build, validate,
+     print what would happen, never write.
+  3. A content-level placeholder-sentinel scan refuses to persist a
+     draft that still contains the literal REPLACE_ME string anywhere.
+
+No external behavior: no network call, no source fetch/validation, no
+LLM/model call, no scanning/discovery, no worker invocation, no
+deployment. The deterministic Theme id uses the exact same
+content-derived convention as every other Theme in this codebase
+(src.data_access.theme_store.build_theme_id) — re-running this script
+with identical authored content is always safe: an already-inserted
+row is rejected as a duplicate with no mutation.
+
+This script creates ONLY a bare ResearchTheme through the existing
+ThemeCuratorRepositoryProtocol.insert_theme seam — no
+ThemeEvidenceItem, no ThemeCompanyMapEntry, no ThemeMatchingScope, no
+ResearchCaseThemeMatch, no ThemeMatchReviewDecision, and no call to
+set_visibility (this script does not even import that capability) —
+ever."""
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from src.config.settings import Settings, get_settings
+from src.data_access import backend_factory
+from src.data_access.theme_store import build_theme_id
+from src.models.theme_research import ResearchTheme, ThemeCategory, ThemeStatus, ThemeVisibility
+
+# =============================================================================
+# SAFETY GATE 1 of 2 — see module docstring. Must be hand-edited to True.
+# =============================================================================
+AUTHORING_ENABLED = False
+
+# A literal sentinel an operator must replace with real, checked content.
+_PLACEHOLDER_SENTINEL = "REPLACE_ME"
+
+# Hardcoded, not operator-settable — no CLI flag or constant anywhere in
+# this file can override this. Every draft this script ever creates is
+# visibility=internal, permanently, at creation time.
+_DRAFT_VISIBILITY = ThemeVisibility.INTERNAL
+
+# Defensive length cap — new code, no existing precedent to match, but
+# cheap insurance against a paste mistake producing a pathological record.
+_MAX_FIELD_LENGTH = 2000
+
+_DISCLAIMER = (
+    "Internal evidence-collection draft; not a published research conclusion. "
+    "This tool cannot publish the Theme or make it visible at /themes. "
+    "Publication requires a separate, future reviewed-evidence workflow."
+)
+
+# =============================================================================
+# OPERATOR-AUTHORED DRAFT CONTENT — edit every _PLACEHOLDER_SENTINEL value
+# below with real, checked content before setting AUTHORING_ENABLED = True.
+# _THEME_CREATED_AT must be an authored moment (a real point in time you
+# are recording this), never generated by this script — see
+# _parse_iso8601_utc_datetime()'s own docstring for the required format.
+# =============================================================================
+
+_THEME_CATEGORY = ThemeCategory.BOTTLENECK  # edit to the correct category
+_THEME_STATUS = ThemeStatus.NEW  # edit to the correct status
+_THEME_CREATED_AT = _PLACEHOLDER_SENTINEL  # e.g. "2026-09-01T00:00:00Z" or "...+00:00"
+_THEME_TITLE = _PLACEHOLDER_SENTINEL
+_THEME_KEY_QUESTION = _PLACEHOLDER_SENTINEL
+_THEME_HYPOTHESIS = _PLACEHOLDER_SENTINEL
+_THEME_WORKING_THESIS = _PLACEHOLDER_SENTINEL
+_THEME_WHY_IT_MATTERS = _PLACEHOLDER_SENTINEL
+_THEME_WHAT_COULD_CHANGE_THE_VIEW = _PLACEHOLDER_SENTINEL
+_THEME_WHAT_TO_WATCH_NEXT = _PLACEHOLDER_SENTINEL
+
+
+def _nonblank(value: object) -> bool:
+    return isinstance(value, str) and value.strip() != ""
+
+
+def _parse_iso8601_utc_datetime(value: object) -> datetime | None:
+    """Deterministic, local, no clock/network read: returns a parsed,
+    timezone-AWARE datetime only for a well-formed ISO-8601 string
+    carrying explicit timezone information (a trailing `Z`, or an
+    explicit `+HH:MM`/`-HH:MM` offset) — returns None for anything
+    blank, malformed, date-only, or timezone-naive. A trailing `Z` is
+    normalized to `+00:00` before parsing (str.replace, not a library
+    call) since not every supported Python version's own
+    datetime.fromisoformat accepts `Z` directly."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def build_authored_theme_draft(enable_authoring: bool = AUTHORING_ENABLED) -> ResearchTheme | None:
+    """Pure, no I/O. Returns None when `enable_authoring` is False (the
+    default) — the caller must not proceed to validation/persistence in
+    that case. `enable_authoring` is a parameter (not a bare module-
+    level read) specifically so tests can exercise both branches
+    without needing to edit this file."""
+    if not enable_authoring:
+        return None
+
+    theme_id = build_theme_id(_THEME_TITLE, _THEME_CREATED_AT)
+    return ResearchTheme(
+        id=theme_id,
+        category=_THEME_CATEGORY,
+        status=_THEME_STATUS,
+        visibility=_DRAFT_VISIBILITY,
+        title=_THEME_TITLE,
+        key_question=_THEME_KEY_QUESTION,
+        hypothesis=_THEME_HYPOTHESIS,
+        working_thesis=_THEME_WORKING_THESIS,
+        why_it_matters=_THEME_WHY_IT_MATTERS,
+        what_could_change_the_view=_THEME_WHAT_COULD_CHANGE_THE_VIEW,
+        what_to_watch_next=_THEME_WHAT_TO_WATCH_NEXT,
+        created_at=_THEME_CREATED_AT,
+        updated_at=_THEME_CREATED_AT,
+    )
+
+
+def contains_placeholder_sentinel(theme: ResearchTheme) -> bool:
+    values = [
+        theme.title, theme.key_question, theme.hypothesis, theme.working_thesis, theme.why_it_matters,
+        theme.what_could_change_the_view, theme.what_to_watch_next, theme.created_at,
+    ]
+    return any(isinstance(value, str) and _PLACEHOLDER_SENTINEL in value for value in values)
+
+
+def validate_theme_draft_content(theme: ResearchTheme) -> tuple[str, ...]:
+    """Plain, deterministic content checks — never raises."""
+    errors: list[str] = []
+    if theme.visibility is not ThemeVisibility.INTERNAL:
+        errors.append("theme.visibility must be internal — this script never produces any other value.")
+
+    required_fields = {
+        "title": theme.title, "key_question": theme.key_question, "hypothesis": theme.hypothesis,
+        "working_thesis": theme.working_thesis, "why_it_matters": theme.why_it_matters,
+        "what_could_change_the_view": theme.what_could_change_the_view,
+        "what_to_watch_next": theme.what_to_watch_next,
+    }
+    for field_name, value in required_fields.items():
+        if not _nonblank(value):
+            errors.append(f"theme.{field_name} must not be blank.")
+        elif len(value) > _MAX_FIELD_LENGTH:
+            errors.append(f"theme.{field_name} exceeds the maximum length of {_MAX_FIELD_LENGTH} characters.")
+
+    if _parse_iso8601_utc_datetime(theme.created_at) is None:
+        errors.append(
+            "theme.created_at must be a valid ISO-8601 date-time with explicit timezone information "
+            "(e.g. '2026-09-01T00:00:00Z' or '2026-09-01T00:00:00+00:00') — blank, malformed, "
+            "date-only, and timezone-naive values are all rejected."
+        )
+
+    return tuple(errors)
+
+
+def persist_theme_draft(
+    theme: ResearchTheme, backend: str, cache_dir=None, sqlite_path=None, postgres_url=None,
+) -> bool:
+    """One insert, through the private curator repository only — never
+    the public/UI-facing protocol, and never any evidence/company-map/
+    scope/match/decision insert. Safe to re-run: the id is content-
+    derived, so an already-inserted record is rejected with no
+    mutation rather than duplicated."""
+    settings = Settings(
+        db_backend=backend,
+        cache_dir=Path(cache_dir) if cache_dir else Settings().cache_dir,
+        state_db_path=Path(sqlite_path) if sqlite_path else None,
+        state_db_url=postgres_url,
+    )
+    curator = backend_factory.get_theme_curator_repository(settings)
+    return curator.insert_theme(theme)
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("json", "sqlite", "postgres"), default=None)
+    parser.add_argument("--cache-dir", default=None)
+    parser.add_argument("--sqlite-path", default=None)
+    parser.add_argument("--postgres-url", default=None)
+    parser.add_argument("--confirm", action="store_true", help="Required to actually persist. Without it: dry run only.")
+    return parser.parse_args(argv)
+
+
+def _resolve_backend_settings(args: argparse.Namespace):
+    settings = get_settings()
+    backend = args.backend or settings.db_backend or "json"
+    cache_dir = args.cache_dir or settings.cache_dir
+    sqlite_path = args.sqlite_path or (str(settings.state_db_path) if settings.state_db_path else None)
+    postgres_url = args.postgres_url or settings.state_db_url
+    return backend, cache_dir, sqlite_path, postgres_url
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+
+    built = build_authored_theme_draft(AUTHORING_ENABLED)
+    if built is None:
+        print("AUTHORING_ENABLED is False — this script is disabled by default. Edit "
+              "scripts/create_internal_theme_draft.py, fill in real content in place of every "
+              "REPLACE_ME placeholder, and set AUTHORING_ENABLED = True before re-running.")
+        return 0
+
+    theme = built
+    if contains_placeholder_sentinel(theme):
+        print(f"Refusing to proceed: the authored content still contains the {_PLACEHOLDER_SENTINEL!r} "
+              "placeholder in one or more fields. Replace every placeholder with real, checked content "
+              "before running again.")
+        return 1
+
+    errors = validate_theme_draft_content(theme)
+    if errors:
+        print("Draft content is invalid — nothing was persisted. Issues:")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+
+    if not args.confirm:
+        print("Dry run (pass --confirm to persist): content is well-formed and contains no placeholder text.")
+        print(f"  Theme id: {theme.id} (visibility: {theme.visibility.value})")
+        print(f"  {_DISCLAIMER}")
+        return 0
+
+    backend, cache_dir, sqlite_path, postgres_url = _resolve_backend_settings(args)
+    created = persist_theme_draft(theme, backend, cache_dir=cache_dir, sqlite_path=sqlite_path, postgres_url=postgres_url)
+    print(f"theme {theme.id}: {'created' if created else 'already existed (unchanged)'}")
+    print(f"  {_DISCLAIMER}")
+    return 0 if created else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
