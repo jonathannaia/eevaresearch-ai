@@ -1,6 +1,41 @@
 [
   {
     "niche": "Space",
+    "headline": "Private group wants to launch \"cheapest possible\" mission to Alpha Centauri",
+    "summary": "A private group is planning to launch a mission to Alpha Centauri with a focus on minimizing costs.",
+    "source_url": "https://arstechnica.com/space/2026/09/private-group-wants-to-launch-cheapest-possible-mission-to-alpha-centauri/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 10:00:33 +0000",
+    "retrieved_at": "2026-09-01T22:12:52+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses a private space mission to Alpha Centauri, directly relevant to space launch scope.",
+    "url_hash": "471cb93bdafbee22",
+    "id": "471cb93bdafbee22"
+  },
+  {
+    "niche": "Space",
+    "headline": "NASA Selects Blue Origin as Mars Telecommunications Network Provider",
+    "summary": "NASA awarded Blue Origin a firm-fixed-price contract with a maximum potential value of approximately $700 million to develop the Mars Telecommunications Network, a next-generation communications system for Mars missions.",
+    "source_url": "https://www.nasa.gov/news-release/nasa-selects-blue-origin-as-mars-telecommunications-network-provider/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 01 Sep 2026 21:08:37 +0000",
+    "retrieved_at": "2026-09-01T22:12:48+00:00",
+    "tickers": [
+      {
+        "ticker": "BLUU",
+        "company_name": "Blue Origin (Unaffiliated)",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct contract award for space infrastructure development related to Mars missions.",
+    "url_hash": "6e7e5c9b8d71612a",
+    "id": "6e7e5c9b8d71612a"
+  },
+  {
+    "niche": "Space",
     "headline": "It turns out that Orion's much-maligned heat shield performed really well",
     "summary": "Orion's heat shield, which had faced criticism, performed well according to independent safety officials, and NASA leadership changes also received positive assessment.",
     "source_url": "https://arstechnica.com/space/2026/09/it-turns-out-that-orions-much-maligned-heat-shield-performed-really-well/",
