@@ -94,6 +94,33 @@ the one, deliberately isolated place this file reads the system clock
 for this feature — never the pure selector/orchestration/factory
 modules themselves, which remain caller-supplied-date-only by their own
 design.
+
+Phase A2 (design/DECISIONS.md) — EDGAR-only, post-Research-Case
+deterministic Theme matching. After `_run_edgar_research_case_step()`
+has already printed its own summary, `_run_theme_matching_step()` runs
+in a second, entirely separate try/except in `_run_provider_tick()`:
+any exception there is caught and reported only as a sanitized
+"theme-matching step skipped (<ExceptionType>)" line, and can never
+alter ProviderScanStatus, candidate state, Research Case creation, the
+research-case step's own summary/counters, or DART/EDINET. Matching
+uses the existing pure `evaluate_theme_match()`
+(src.logic.research_case_theme_matching) against every active
+`ThemeMatchingScope` loaded once per step via the existing private
+`get_theme_matching_repository()` seam, and considers two case
+sources: (1) every Research Case bundle inserted this same tick, and
+(2) a bounded recent-case catch-up window
+(`ResearchCaseRepositoryProtocol.list_recent_cases(_THEME_MATCHING_BACKLOG_MAX_CASES)`)
+filtered to `trigger_source_type == "radar"` cases whose
+`trigger_source_id` resolves in the already-loaded EDGAR candidate
+mapping. This is a bounded, recency-ordered catch-up window — not a
+complete historical reconciliation, and not a guarantee that every
+past unmatched case will eventually be examined; a case that ages out
+of the most-recent-N window before ever receiving a scope is not
+retried by this hook. Every stored match is an insert-only, internal
+`ResearchCaseThemeMatch` with `direction=EvidenceDirection.CONTEXT`;
+this step never creates a Theme, evidence item, company-map entry,
+review decision, or visibility change, and never calls an LLM or any
+external/network service.
 """
 from __future__ import annotations
 
@@ -114,7 +141,17 @@ from src.data_access.dart import radar_service as dart_radar_service
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.logic.research_case_theme_matching import evaluate_theme_match
 from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
+from src.models.research_case import ResearchCase
+
+# CandidateSignal (src.models.models) is deliberately never imported here,
+# even just for a type hint — see tests/test_radar_worker_safety_invariants.py's
+# own structural proof that this worker never imports that module at all
+# (it's where CandidateStatus.PUBLISHED/MONITORING/DISMISSED live). This
+# file's own `from __future__ import annotations` (PEP 563) means every
+# annotation below is a string, never evaluated at runtime, so the bare
+# name "CandidateSignal" in a type hint works without importing it.
 
 # Duck-typed deliberately: postgres_state_db.scan_status_repository.ProviderScanStatus
 # has an identical field shape, and each repository's own upsert_scan_status()
@@ -244,8 +281,20 @@ def _current_utc_date() -> str:
 _EDGAR_RESEARCH_CASE_MAX_CANDIDATES = 5
 _EDGAR_ALLOWED_SOURCE_NAMES = ("SEC EDGAR",)
 
+# Phase A2 (design/DECISIONS.md). A bounded recent-case *catch-up*
+# window, not a complete historical reconciliation: list_recent_cases()
+# always returns the globally most-recent N ResearchCase rows, so a
+# case that ages out of this window before ever receiving a scope is
+# not retried by this hook. That is a deliberate, accepted tradeoff —
+# guaranteeing eventual coverage of arbitrarily old history is a
+# separate, not-yet-approved one-time backfill concern, not this tick-
+# level hook's job.
+_THEME_MATCHING_BACKLOG_MAX_CASES = 25
 
-def _run_edgar_research_case_step(worker_settings: Settings, candidate_repository) -> str:
+
+def _run_edgar_research_case_step(
+    worker_settings: Settings, candidate_repository,
+) -> tuple[str, dict[str, CandidateSignal], tuple[ResearchCase, ...]]:
     """Best-effort, EDGAR-only autonomous Research Case creation — see
     module docstring. Never called for dart/edinet. Raises on any
     unexpected failure in repository construction, the candidate load,
@@ -259,7 +308,12 @@ def _run_edgar_research_case_step(worker_settings: Settings, candidate_repositor
     prevents the remaining prepared bundles in the same tick from being
     attempted — each bundle's atomic insert is already fully
     self-contained (its own transaction/validation), so per-bundle
-    isolation costs nothing extra here."""
+    isolation costs nothing extra here.
+
+    Also returns the already-loaded EDGAR `candidates` mapping and the
+    `ResearchCase` objects for every bundle actually inserted this tick
+    — Phase A2's `_run_theme_matching_step()` reuses both directly so
+    it never re-loads the same candidate table a second time."""
     research_case_repository = backend_factory.get_research_case_repository(worker_settings)
     writer = backend_factory.get_research_case_bundle_writer(worker_settings)
 
@@ -274,6 +328,7 @@ def _run_edgar_research_case_step(worker_settings: Settings, candidate_repositor
 
     created = 0
     write_rejected = 0
+    newly_created_cases: list[ResearchCase] = []
     for bundle in result.bundles:
         try:
             inserted = writer.insert_bundle(bundle)
@@ -282,6 +337,7 @@ def _run_edgar_research_case_step(worker_settings: Settings, candidate_repositor
             continue
         if inserted:
             created += 1
+            newly_created_cases.append(bundle.case)
         else:
             write_rejected += 1
 
@@ -293,7 +349,99 @@ def _run_edgar_research_case_step(worker_settings: Settings, candidate_repositor
     )
     if result.membership_check_failed_count:
         summary += f" membership_check_failed={result.membership_check_failed_count}"
-    return summary
+    return summary, candidates, tuple(newly_created_cases)
+
+
+_ZERO_SCOPE_THEME_MATCHING_SUMMARY = (
+    "EDGAR: theme matching — scopes_loaded=0 cases_considered=0 "
+    "matches_created=0 matches_existing=0 no_match=0 matching_errors=0"
+)
+
+
+def _run_theme_matching_step(
+    worker_settings: Settings,
+    candidates: dict[str, CandidateSignal],
+    newly_created_cases: tuple[ResearchCase, ...],
+) -> str:
+    """Phase A2 (design/DECISIONS.md) — best-effort, EDGAR-only,
+    post-Research-Case deterministic Theme matching. Called only after
+    `_run_edgar_research_case_step()` has already succeeded and printed
+    its own summary; the caller (`_run_provider_tick`) is the one place
+    that catches and sanitizes any exception raised here, in a try/
+    except entirely separate from the research-case step's own — a
+    failure in this function can never affect ProviderScanStatus,
+    candidate state, Research Case creation, or the research-case
+    step's own summary/counters.
+
+    Considers two case sources: every Research Case bundle inserted
+    this same tick (`newly_created_cases`, evaluated first and never
+    duplicated), plus a bounded recent-case catch-up window (see
+    `_THEME_MATCHING_BACKLOG_MAX_CASES`'s own comment for why this is
+    not a complete historical reconciliation). Repository construction,
+    `list_active_scopes()`, `list_recent_cases()`, and the bulk
+    existing-match lookup are all unguarded here — a failure in any of
+    them aborts this whole function and propagates to the caller's own
+    try/except, exactly like `_run_edgar_research_case_step`'s own
+    repository-construction failures do today. Per-`(case, scope)`
+    evaluation/insert failures, and a defensive missing-candidate case,
+    are each isolated so one bad pair never blocks the rest of the
+    bounded batch."""
+    matching_repository = backend_factory.get_theme_matching_repository(worker_settings)
+    scopes = matching_repository.list_active_scopes()
+    if not scopes:
+        return _ZERO_SCOPE_THEME_MATCHING_SUMMARY
+
+    research_case_repository = backend_factory.get_research_case_repository(worker_settings)
+    recent_cases = research_case_repository.list_recent_cases(_THEME_MATCHING_BACKLOG_MAX_CASES)
+    backlog_eligible = [
+        case for case in recent_cases
+        if case.trigger_source_type == "radar" and case.trigger_source_id in candidates
+    ]
+    newly_created_ids = {case.id for case in newly_created_cases}
+    combined_cases = list(newly_created_cases) + [case for case in backlog_eligible if case.id not in newly_created_ids]
+
+    case_ids = tuple(dict.fromkeys(case.id for case in combined_cases))
+    existing_match_ids = matching_repository.existing_match_ids_for_case_ids(case_ids)
+
+    cases_considered = 0
+    matches_created = 0
+    matches_existing = 0
+    no_match = 0
+    matching_errors = 0
+
+    for case in combined_cases:
+        candidate = candidates.get(case.trigger_source_id)
+        if candidate is None:
+            matching_errors += 1
+            continue
+        cases_considered += 1
+        for scope in scopes:
+            try:
+                match = evaluate_theme_match(candidate, case.id, scope, case.created_at)
+            except Exception:  # noqa: BLE001 — one bad (case, scope) pair must never block the rest of the batch
+                matching_errors += 1
+                continue
+            if match is None:
+                no_match += 1
+                continue
+            if match.id in existing_match_ids:
+                matches_existing += 1
+                continue
+            try:
+                inserted = matching_repository.insert_match(match)
+            except Exception:  # noqa: BLE001 — same isolation as the evaluation call above
+                matching_errors += 1
+                continue
+            if inserted:
+                matches_created += 1
+            else:
+                matches_existing += 1
+
+    return (
+        f"EDGAR: theme matching — scopes_loaded={len(scopes)} cases_considered={cases_considered} "
+        f"matches_created={matches_created} matches_existing={matches_existing} "
+        f"no_match={no_match} matching_errors={matching_errors}"
+    )
 
 
 def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status_repo) -> None:
@@ -339,11 +487,19 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
 
         if provider_key == "edgar":
             try:
-                research_case_summary = _run_edgar_research_case_step(worker_settings, candidate_repository)
+                research_case_summary, candidates, newly_created_cases = _run_edgar_research_case_step(
+                    worker_settings, candidate_repository,
+                )
             except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate state or other providers
                 print(f"{provider_key.upper()}: research-case step skipped ({type(exc).__name__}).")
             else:
                 print(research_case_summary)
+                try:
+                    matching_summary = _run_theme_matching_step(worker_settings, candidates, newly_created_cases)
+                except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case state or other providers
+                    print(f"{provider_key.upper()}: theme-matching step skipped ({type(exc).__name__}).")
+                else:
+                    print(matching_summary)
 
 
 def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:

@@ -482,6 +482,9 @@ def test_no_ui_worker_persistence_or_migration_files_touched():
         "tests/test_theme_matching_rules.py",
         "tests/test_research_case_persistence.py",
         "tests/test_theme_repository_sqlite_postgres.py",
+        # Phase A2 (design/DECISIONS.md) — the EDGAR-only, post-Research-
+        # Case theme-matching worker hook.
+        "scripts/radar_worker.py",
     }
     assert changed <= allowed, changed - allowed
 
