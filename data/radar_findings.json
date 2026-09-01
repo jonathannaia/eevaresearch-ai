@@ -1,5 +1,116 @@
 [
   {
+    "niche": "Space",
+    "headline": "It turns out that Orion's much-maligned heat shield performed really well",
+    "summary": "Orion's heat shield, which had faced criticism, performed well according to independent safety officials, and NASA leadership changes also received positive assessment.",
+    "source_url": "https://arstechnica.com/space/2026/09/it-turns-out-that-orions-much-maligned-heat-shield-performed-really-well/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 14:46:28 +0000",
+    "retrieved_at": "2026-09-01T19:01:56+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly discusses Orion spacecraft heat shield performance, which is substantively about space launch and spacecraft development.",
+    "url_hash": "5a299e138f860b87",
+    "id": "5a299e138f860b87"
+  },
+  {
+    "niche": "Space",
+    "headline": "Historic Engines Take Their Place on Artemis III",
+    "summary": "NASA technicians began installing four RS-25 engines into the core stage of the Space Launch System rocket at Kennedy Space Center on August 24, with the vehicle planned to carry the Artemis III crew to low Earth orbit in 2027.",
+    "source_url": "https://www.nasa.gov/image-article/historic-engines-take-their-place-on-artemis-iii/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Tue, 01 Sep 2026 17:30:35 +0000",
+    "retrieved_at": "2026-09-01T19:01:52+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly covers Space Launch System rocket development and Artemis mission hardware installation.",
+    "url_hash": "9e1e550748cd57b7",
+    "id": "9e1e550748cd57b7"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Learn how physical AI is being used to do real work at RoboBusiness",
+    "summary": "Leaders from Amazon Robotics, Teradyne Robotics, and Cobot will present on how they are applying physical AI to robots deployed in customer environments.",
+    "source_url": "https://www.therobotreport.com/learn-how-physical-ai-is-being-used-to-do-real-work-at-robobusiness/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 16:48:33 +0000",
+    "retrieved_at": "2026-09-01T19:01:46+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "TER",
+        "company_name": "Teradyne",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Discusses physical AI and robotics applications in customer environments, directly relevant to humanoids/robotics automation scope.",
+    "url_hash": "a97c3f32c164df32",
+    "id": "a97c3f32c164df32"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Meeting AI Demand: Alternate Power, Design, and Site Strategy",
+    "summary": "AI's rapid growth is driving substantial changes to data center infrastructure design and site strategy, particularly around power and cooling approaches.",
+    "source_url": "https://www.datacenterknowledge.com/ai-data-centers/meeting-ai-demand-alternate-power-design-and-site-strategy",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 15:23:49 GMT",
+    "retrieved_at": "2026-09-01T19:01:37+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses data center infrastructure redesign driven by AI demand, a core AI Buildout topic.",
+    "url_hash": "9ae343d12840cb73",
+    "id": "9ae343d12840cb73"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "California Judge Orders Full Environmental Review of 330 MW Data Center",
+    "summary": "A California judge has ordered Imperial County to conduct a full environmental review of a proposed 330 MW data center project including its power, water, battery, and generation infrastructure.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-construction/california-judge-orders-full-environmental-review-of-330-mw-data-center",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 18:11:35 GMT",
+    "retrieved_at": "2026-09-01T19:01:34+00:00",
+    "tickers": [],
+    "relevance_reason": "Regulatory decision directly affecting data center infrastructure expansion, a core AI Buildout component.",
+    "url_hash": "6b689c623d8d5f36",
+    "id": "6b689c623d8d5f36"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DayOne partners with TNB to develop up to 1.5GW of onsite generation for planned data center in Selangor, Malaysia",
+    "summary": "DayOne is partnering with TNB to develop up to 1.5GW of onsite generation capacity, including battery storage, for a planned data center in Selangor, Malaysia.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/dayone-partners-with-tnb-to-develop-up-to-15gw-of-onsite-generation-for-planned-data-center-in-selangor-malaysia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 15:05:25 +0000",
+    "retrieved_at": "2026-09-01T19:01:28+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI infrastructure buildout through planned data center development with integrated power generation",
+    "url_hash": "f773fac3168a60c6",
+    "id": "f773fac3168a60c6"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Exascale Labs partners with EnergyBank on floating wind data center pilot in Norway",
+    "summary": "Exascale Labs is partnering with EnergyBank to establish a data center pilot colocated at the world's first floating wind installation in Norway.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/exascale-labs-partners-with-energybank-on-floating-wind-data-center-pilot-in-norway/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 15:50:23 +0000",
+    "retrieved_at": "2026-09-01T19:01:26+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI infrastructure buildout through a data center powered by floating wind energy.",
+    "url_hash": "aa10b37ed37a0d54",
+    "id": "aa10b37ed37a0d54"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Cash in on the AI Boom by Renting Out Your Spare Compute",
     "summary": "Several startups including Far Labs, Evolving Edge, Bless Network, Salad, and Gradient are launching platforms that compensate individuals to run AI inference workloads on spare home computing power, offering lower latency and cost alternatives to centralized data centers for smaller, open-source AI models.",

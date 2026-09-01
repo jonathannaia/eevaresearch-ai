@@ -144,6 +144,7 @@
     "5847fd42e4b5aa9f",
     "58980cd9b2243679",
     "59c9a3932c115c46",
+    "5a299e138f860b87",
     "5aae7408ab0add70",
     "5d31aa950ed02016",
     "5d5e52bd15b70866",
@@ -167,6 +168,7 @@
     "69804f465d9dfa6f",
     "6984ace22e427776",
     "6ac7852311e20805",
+    "6b689c623d8d5f36",
     "6b98c445c8d19f46",
     "6bf89a9becd06e0f",
     "6fd5b3c5ca4ea9ce",
@@ -245,6 +247,7 @@
     "9999c0fe69d68102",
     "99e86505f75ad443",
     "9a2791d055d67950",
+    "9ae343d12840cb73",
     "9aedd429cc04cd8b",
     "9b0c6e792362a18a",
     "9b5bff2aaa96ad50",
@@ -256,6 +259,7 @@
     "9d1e3eb66e02fc03",
     "9d41e09846f72758",
     "9dc5caf38ae16c32",
+    "9e1e550748cd57b7",
     "9ea9b31ec3cdf5ad",
     "9ec4af19180c800d",
     "9f03f21503eda82f",
@@ -271,6 +275,8 @@
     "a87a77f42fb2e0ab",
     "a8aebd0762e536e8",
     "a8ed5a53b730fa99",
+    "a97c3f32c164df32",
+    "aa10b37ed37a0d54",
     "abc996f7cb75dca3",
     "ac2949d5ee04d39c",
     "ad06d996e79eed1c",
@@ -400,6 +406,7 @@
     "f5d8912835d24dc8",
     "f624b95312e2afb0",
     "f6b7191062865bbc",
+    "f773fac3168a60c6",
     "f7751a62e0c6a2e9",
     "f78ed1f22d597c2d",
     "f824b6deeaa51adc",
@@ -409,6 +416,21 @@
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-09-01T19:01:16+00:00",
+      "finished_at": "2026-09-01T19:01:56+00:00",
+      "status": "partial_error",
+      "feeds_checked": 16,
+      "items_seen": 418,
+      "items_after_freshness_filter": 58,
+      "items_after_keyword_filter": 25,
+      "items_sent_to_llm": 25,
+      "items_saved": 7,
+      "items_rejected_by_guardrail": 0,
+      "errors": [
+        "Semiconductor Engineering: unparseable feed (<unknown>:11:2: mismatched tag)"
+      ]
+    },
     {
       "started_at": "2026-09-01T14:24:31+00:00",
       "finished_at": "2026-09-01T14:25:17+00:00",
