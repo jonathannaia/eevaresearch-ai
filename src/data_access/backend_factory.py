@@ -73,6 +73,7 @@ import psycopg
 from src.config.settings import Settings
 from src.data_access import comparison_store
 from src.data_access import research_store
+from src.data_access import theme_matching_store
 from src.data_access import theme_store
 from src.data_access.comparison_store import ComparisonRecord
 from src.data_access.dart import candidate_store
@@ -91,6 +92,7 @@ from src.data_access.postgres_state_db import connection as postgres_state_db_co
 from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
 from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
 from src.data_access.postgres_state_db import research_repository as postgres_research
+from src.data_access.postgres_state_db import theme_matching_repository as postgres_theme_matching
 from src.data_access.postgres_state_db import theme_repository as postgres_themes
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
@@ -105,6 +107,7 @@ from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
 from src.data_access.state_db import identifier_repository as sqlite_identifiers
 from src.data_access.state_db import research_repository as sqlite_research
+from src.data_access.state_db import theme_matching_repository as sqlite_theme_matching
 from src.data_access.state_db import theme_repository as sqlite_themes
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
@@ -114,6 +117,7 @@ from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
 from src.logic.research_case_validation import ResearchCaseBundle
 from src.models.research_case import DependencyAssertion, RelationshipAssertion, ResearchCase, ResearchEvidenceItem
+from src.models.theme_matching import ResearchCaseThemeMatch, ThemeMatchingScope, ThemeMatchReviewDecision
 from src.models.theme_research import ResearchTheme, ThemeCompanyMapEntry, ThemeEvidenceItem, ThemeVisibility
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
@@ -948,3 +952,128 @@ def get_theme_curator_repository(settings: Settings) -> ThemeCuratorRepositoryPr
     if backend == "postgres":
         return PostgresThemeCuratorRepository(conn=_require_postgres_connection(settings))
     return JsonThemeCuratorRepository(cache_dir=settings.cache_dir)
+
+
+# --- Theme-matching repository — Phase A1 (design/DECISIONS.md).
+# Wholly internal: unlike ThemeRepositoryProtocol/ThemeCuratorRepositoryProtocol
+# above, there is no public counterpart to this seam at all — matching
+# data is never shown to any user under any Theme visibility state, so
+# no split between a public and a private protocol applies here. Never
+# imported by src/ui/pages/themes_research.py, any other public UI
+# page, ThemeRepositoryProtocol, Radar, Daily News, Watchlists, or any
+# public route. Supports all three backends (like
+# ThemeCuratorRepositoryProtocol, unlike the worker-only
+# ResearchCaseBundleWriterProtocol) since a future review-decision
+# recorder is not necessarily worker-constrained. Not called by any
+# runtime entry point yet — no worker/UI code references this factory
+# or its Protocol as of this step. ---
+
+class ThemeMatchingRepositoryProtocol(Protocol):
+    def insert_scope(self, scope: ThemeMatchingScope) -> bool: ...
+    def get_scope(self, theme_id: str) -> ThemeMatchingScope | None: ...
+    def list_active_scopes(self) -> tuple[ThemeMatchingScope, ...]: ...
+    def insert_match(self, match: ResearchCaseThemeMatch) -> bool: ...
+    def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]: ...
+    def list_pending_matches(self) -> tuple[ResearchCaseThemeMatch, ...]: ...
+    def insert_review_decision(self, decision: ThemeMatchReviewDecision) -> bool: ...
+    def list_review_decisions_for_match(self, match_id: str) -> tuple[ThemeMatchReviewDecision, ...]: ...
+
+
+@dataclass(frozen=True)
+class JsonThemeMatchingRepository:
+    cache_dir: Path
+
+    def insert_scope(self, scope: ThemeMatchingScope) -> bool:
+        return theme_matching_store.insert_scope(self.cache_dir, scope)
+
+    def get_scope(self, theme_id: str) -> ThemeMatchingScope | None:
+        return theme_matching_store.get_scope(self.cache_dir, theme_id)
+
+    def list_active_scopes(self) -> tuple[ThemeMatchingScope, ...]:
+        return theme_matching_store.list_active_scopes(self.cache_dir)
+
+    def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
+        return theme_matching_store.insert_match(self.cache_dir, match)
+
+    def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        return theme_matching_store.existing_match_ids_for_case_ids(self.cache_dir, case_ids)
+
+    def list_pending_matches(self) -> tuple[ResearchCaseThemeMatch, ...]:
+        return theme_matching_store.list_pending_matches(self.cache_dir)
+
+    def insert_review_decision(self, decision: ThemeMatchReviewDecision) -> bool:
+        return theme_matching_store.insert_review_decision(self.cache_dir, decision)
+
+    def list_review_decisions_for_match(self, match_id: str) -> tuple[ThemeMatchReviewDecision, ...]:
+        return theme_matching_store.list_review_decisions_for_match(self.cache_dir, match_id)
+
+
+@dataclass(frozen=True)
+class SqliteThemeMatchingRepository:
+    conn: sqlite3.Connection
+
+    def insert_scope(self, scope: ThemeMatchingScope) -> bool:
+        return sqlite_theme_matching.insert_scope(self.conn, scope)
+
+    def get_scope(self, theme_id: str) -> ThemeMatchingScope | None:
+        return sqlite_theme_matching.get_scope(self.conn, theme_id)
+
+    def list_active_scopes(self) -> tuple[ThemeMatchingScope, ...]:
+        return sqlite_theme_matching.list_active_scopes(self.conn)
+
+    def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
+        return sqlite_theme_matching.insert_match(self.conn, match)
+
+    def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        return sqlite_theme_matching.existing_match_ids_for_case_ids(self.conn, case_ids)
+
+    def list_pending_matches(self) -> tuple[ResearchCaseThemeMatch, ...]:
+        return sqlite_theme_matching.list_pending_matches(self.conn)
+
+    def insert_review_decision(self, decision: ThemeMatchReviewDecision) -> bool:
+        return sqlite_theme_matching.insert_review_decision(self.conn, decision)
+
+    def list_review_decisions_for_match(self, match_id: str) -> tuple[ThemeMatchReviewDecision, ...]:
+        return sqlite_theme_matching.list_review_decisions_for_match(self.conn, match_id)
+
+
+@dataclass(frozen=True)
+class PostgresThemeMatchingRepository:
+    conn: psycopg.Connection
+
+    def insert_scope(self, scope: ThemeMatchingScope) -> bool:
+        return postgres_theme_matching.insert_scope(self.conn, scope)
+
+    def get_scope(self, theme_id: str) -> ThemeMatchingScope | None:
+        return postgres_theme_matching.get_scope(self.conn, theme_id)
+
+    def list_active_scopes(self) -> tuple[ThemeMatchingScope, ...]:
+        return postgres_theme_matching.list_active_scopes(self.conn)
+
+    def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
+        return postgres_theme_matching.insert_match(self.conn, match)
+
+    def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
+        return postgres_theme_matching.existing_match_ids_for_case_ids(self.conn, case_ids)
+
+    def list_pending_matches(self) -> tuple[ResearchCaseThemeMatch, ...]:
+        return postgres_theme_matching.list_pending_matches(self.conn)
+
+    def insert_review_decision(self, decision: ThemeMatchReviewDecision) -> bool:
+        return postgres_theme_matching.insert_review_decision(self.conn, decision)
+
+    def list_review_decisions_for_match(self, match_id: str) -> tuple[ThemeMatchReviewDecision, ...]:
+        return postgres_theme_matching.list_review_decisions_for_match(self.conn, match_id)
+
+
+def get_theme_matching_repository(settings: Settings) -> ThemeMatchingRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as every other
+    factory function above. No runtime caller exists yet — a future,
+    separately approved worker-wiring step (Phase A2) and/or review-
+    decision recorder are the only intended callers."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteThemeMatchingRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresThemeMatchingRepository(conn=_require_postgres_connection(settings))
+    return JsonThemeMatchingRepository(cache_dir=settings.cache_dir)

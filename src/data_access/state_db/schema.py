@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -349,8 +349,69 @@ _V7_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_theme_company_map_entries_theme_id_role ON theme_company_map_entries (theme_id, role)",
 )
 
+# EevaResearch — Phase A1 (design/DECISIONS.md). Three new, wholly
+# internal tables backing deterministic, rule-based Research-Case-to-
+# Theme matching (see src.models.theme_matching /
+# src.logic.research_case_theme_matching) — never read by the public
+# Themes UI or ThemeRepositoryProtocol. Unlike the Research Case family
+# (V6, deliberately no hard FK), these DO carry real foreign keys —
+# matching a manually-curated, low-volume record set where referential
+# integrity is cheap, the same choice already made for the Themes MVP's
+# own V7 tables. `theme_matching_scopes` is keyed by theme_id itself
+# (one scope per theme, no separate id) and is insert-only in this
+# phase — no update/replace path exists; a curator wanting to revise a
+# scope is out of scope until a later, separately approved model change
+# adds real revisioning. `research_case_theme_matches` and
+# `theme_match_review_decisions` are both insert-only and immutable —
+# "pending review" is derived purely from a match having no decision
+# row, never a mutable status column.
+_V8_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE theme_matching_scopes (
+        theme_id TEXT PRIMARY KEY REFERENCES research_themes (id),
+        sector_tags_json TEXT NOT NULL,
+        sector_subtags_json TEXT NOT NULL,
+        allowed_matched_rule_categories_json TEXT NOT NULL,
+        required_keywords_json TEXT NOT NULL,
+        excluded_keywords_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE research_case_theme_matches (
+        id TEXT PRIMARY KEY,
+        case_id TEXT NOT NULL REFERENCES research_cases (id),
+        theme_id TEXT NOT NULL REFERENCES research_themes (id),
+        confidence TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        matched_sector_tag TEXT,
+        matched_rule_categories_json TEXT NOT NULL,
+        matched_keywords_json TEXT NOT NULL,
+        rationale TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # Belt-and-suspenders: `id` is already sha256(case_id|theme_id), so
+    # this unique index is mathematically implied by the primary key
+    # today — kept explicit so the invariant survives even if the ID
+    # algorithm in research_case_theme_matching.py ever changes.
+    "CREATE UNIQUE INDEX idx_research_case_theme_matches_case_theme ON research_case_theme_matches (case_id, theme_id)",
+    "CREATE INDEX idx_research_case_theme_matches_theme_id ON research_case_theme_matches (theme_id)",
+    """
+    CREATE TABLE theme_match_review_decisions (
+        id TEXT PRIMARY KEY,
+        match_id TEXT NOT NULL REFERENCES research_case_theme_matches (id),
+        decision TEXT NOT NULL,
+        reviewer_note TEXT,
+        reviewed_at TEXT NOT NULL
+    )
+    """,
+    # Serves both "decision history for one match" and the pending-
+    # queue anti-join (WHERE NOT EXISTS (... WHERE match_id = ...)).
+    "CREATE INDEX idx_theme_match_review_decisions_match_id ON theme_match_review_decisions (match_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 8 later means appending a new (8, (...statements...))
+# Adding schema version 9 later means appending a new (9, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -360,6 +421,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (5, _V5_STATEMENTS),
     (6, _V6_STATEMENTS),
     (7, _V7_STATEMENTS),
+    (8, _V8_STATEMENTS),
 )
 
 

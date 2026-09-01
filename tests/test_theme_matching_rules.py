@@ -401,9 +401,16 @@ def test_models_module_has_no_persistence_ui_or_worker_dependency():
 
 
 def test_theme_matching_types_are_never_imported_by_public_ui_or_protocols():
+    """Public UI pages must never import anything theme-matching-named
+    at all. backend_factory.py is checked separately, at class/function
+    granularity — since Phase A1 (design/DECISIONS.md) legitimately
+    adds a private ThemeMatchingRepositoryProtocol seam to that same
+    file, a blanket whole-file import check no longer distinguishes
+    that private seam from the public ThemeRepositoryProtocol seam it
+    must stay isolated from."""
     candidate_files = [
         "src/ui/pages/themes_research.py", "src/ui/pages/radar_inbox.py", "src/ui/pages/daily_news.py",
-        "src/ui/pages/watchlists.py", "src/data_access/backend_factory.py",
+        "src/ui/pages/watchlists.py",
     ]
     offenders = []
     for rel_path in candidate_files:
@@ -423,19 +430,59 @@ def test_theme_matching_types_are_never_imported_by_public_ui_or_protocols():
     assert not offenders, offenders
 
 
+def test_backend_factory_public_theme_seam_never_references_theme_matching():
+    """backend_factory.py's own module-level import of the
+    theme-matching layer (for its private ThemeMatchingRepositoryProtocol
+    seam) is expected and allowed. What must never happen is the
+    *public* Theme seam — ThemeRepositoryProtocol and its three
+    adapters — referencing anything theme-matching-named inside its own
+    class bodies."""
+    rel_path = "src/data_access/backend_factory.py"
+    full_path = REPO_ROOT / rel_path
+    tree = ast.parse(full_path.read_text(encoding="utf-8"), filename=rel_path)
+    public_theme_classes = {
+        "ThemeRepositoryProtocol", "JsonThemeRepository", "SqliteThemeRepository", "PostgresThemeRepository",
+    }
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name in public_theme_classes:
+            for inner in ast.walk(node):
+                names_to_check = []
+                if isinstance(inner, ast.Name):
+                    names_to_check.append(inner.id)
+                elif isinstance(inner, ast.Attribute):
+                    names_to_check.append(inner.attr)
+                for name in names_to_check:
+                    if "theme_matching" in name.lower():
+                        offenders.append(f"{node.name}: references {name!r}")
+    assert not offenders, offenders
+
+
 def test_no_ui_worker_persistence_or_migration_files_touched():
-    """Only src/models/theme_research.py (one additive enum member) may
-    show up as a modified *tracked* file — the three new files
-    (src/models/theme_matching.py, src/logic/research_case_theme_
-    matching.py, this test file) are untracked and never appear in
-    `git diff HEAD` at all, by definition."""
+    """Phase A0 touched only src/models/theme_research.py (one additive
+    enum member) among tracked files. Phase A1 (design/DECISIONS.md)
+    deliberately extends this to the private theme-matching persistence
+    layer: the V8 migration in both schema.py files, the
+    ThemeMatchingRepositoryProtocol seam in backend_factory.py, and the
+    intentional test updates those changes require. The brand-new
+    theme-matching store/repository/test files themselves are untracked
+    and never appear in `git diff HEAD` at all, by definition — only
+    already-tracked files being modified show up here."""
     import subprocess
 
     result = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         return
     changed = set(result.stdout.splitlines())
-    allowed = {"src/models/theme_research.py"}
+    allowed = {
+        "src/models/theme_research.py",
+        "src/data_access/state_db/schema.py",
+        "src/data_access/postgres_state_db/schema.py",
+        "src/data_access/backend_factory.py",
+        "tests/test_theme_matching_rules.py",
+        "tests/test_research_case_persistence.py",
+        "tests/test_theme_repository_sqlite_postgres.py",
+    }
     assert changed <= allowed, changed - allowed
 
 
