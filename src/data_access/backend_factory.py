@@ -887,9 +887,19 @@ def get_theme_repository(settings: Settings) -> ThemeRepositoryProtocol:
 
 class ThemeCuratorRepositoryProtocol(Protocol):
     def get_theme(self, theme_id: str) -> ResearchTheme | None: ...
+    # Citrini-style Theme research workspace vertical slice (design/
+    # DECISIONS.md) — list_themes()/evidence_for_theme()/
+    # company_map_for_theme() are new curator-side reads for
+    # src/ui/pages/theme_workspace.py, the internal-only workspace UI.
+    # The latter two mirror ThemeRepositoryProtocol's own read shape
+    # above, but through this private seam — the internal page must
+    # never depend on the public, published-only protocol.
+    def list_themes(self) -> tuple[ResearchTheme, ...]: ...
     def insert_theme(self, theme: ResearchTheme) -> bool: ...
     def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool: ...
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]: ...
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool: ...
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]: ...
     def insert_research_note(self, note: ThemeResearchNote) -> bool: ...
     def research_notes_for_theme(self, theme_id: str) -> tuple[ThemeResearchNote, ...]: ...
     def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None: ...
@@ -902,14 +912,23 @@ class JsonThemeCuratorRepository:
     def get_theme(self, theme_id: str) -> ResearchTheme | None:
         return theme_store.get_theme(self.cache_dir, theme_id)
 
+    def list_themes(self) -> tuple[ResearchTheme, ...]:
+        return theme_store.list_themes(self.cache_dir)
+
     def insert_theme(self, theme: ResearchTheme) -> bool:
         return theme_store.append_theme(self.cache_dir, theme)
 
     def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
         return theme_store.append_theme_evidence_item(self.cache_dir, item)
 
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return theme_store.evidence_for_theme_ids(self.cache_dir, [theme_id]).get(theme_id, ())
+
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return theme_store.append_theme_company_map_entry(self.cache_dir, entry)
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return theme_store.company_map_for_theme_ids(self.cache_dir, [theme_id]).get(theme_id, ())
 
     def insert_research_note(self, note: ThemeResearchNote) -> bool:
         return theme_store.append_theme_research_note(self.cache_dir, note)
@@ -928,14 +947,23 @@ class SqliteThemeCuratorRepository:
     def get_theme(self, theme_id: str) -> ResearchTheme | None:
         return sqlite_themes.get_theme(self.conn, theme_id)
 
+    def list_themes(self) -> tuple[ResearchTheme, ...]:
+        return sqlite_themes.list_themes(self.conn)
+
     def insert_theme(self, theme: ResearchTheme) -> bool:
         return sqlite_themes.insert_theme(self.conn, theme)
 
     def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
         return sqlite_themes.insert_theme_evidence_item(self.conn, item)
 
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return sqlite_themes.evidence_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return sqlite_themes.insert_theme_company_map_entry(self.conn, entry)
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return sqlite_themes.company_map_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
 
     def insert_research_note(self, note: ThemeResearchNote) -> bool:
         return sqlite_themes.insert_theme_research_note(self.conn, note)
@@ -954,14 +982,23 @@ class PostgresThemeCuratorRepository:
     def get_theme(self, theme_id: str) -> ResearchTheme | None:
         return postgres_themes.get_theme(self.conn, theme_id)
 
+    def list_themes(self) -> tuple[ResearchTheme, ...]:
+        return postgres_themes.list_themes(self.conn)
+
     def insert_theme(self, theme: ResearchTheme) -> bool:
         return postgres_themes.insert_theme(self.conn, theme)
 
     def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
         return postgres_themes.insert_theme_evidence_item(self.conn, item)
 
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return postgres_themes.evidence_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return postgres_themes.insert_theme_company_map_entry(self.conn, entry)
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return postgres_themes.company_map_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
 
     def insert_research_note(self, note: ThemeResearchNote) -> bool:
         return postgres_themes.insert_theme_research_note(self.conn, note)

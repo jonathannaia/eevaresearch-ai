@@ -37,6 +37,7 @@ from src.ui.pages import (
     research,
     research_cases,
     signals,
+    theme_workspace,
     themes,
     themes_research,
     watchlists,
@@ -137,6 +138,17 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages["research_cases"] = st.Page(
         with_chrome(research_cases.render, "research_cases"),
         title="Research Cases", url_path="research-cases", visibility="hidden",
+    )
+    # Constraint Research Workspace (Citrini-style Theme research
+    # workspace vertical slice, design/DECISIONS.md) — same hidden-but-
+    # reachable pattern as company/disclaimer/daily_news_admin/
+    # research_cases above: never linked in the sidebar, any nav group,
+    # or the command palette. Internal-only; also gated a second way by
+    # settings.theme_workspace_enabled (checked inside the page itself,
+    # default disabled).
+    pages["theme_workspace"] = st.Page(
+        with_chrome(theme_workspace.render, "theme_workspace"),
+        title="Constraint Research Workspace", url_path="theme-workspace", visibility="hidden",
     )
     return pages
 

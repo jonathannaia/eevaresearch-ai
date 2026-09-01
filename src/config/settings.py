@@ -72,6 +72,14 @@ class Settings:
     # exists so a future, separately-approved wiring step has a ready,
     # already-fail-closed-by-default gate to read.
     edgar_discovery_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_DISCOVERY_ENABLED"))
+    # Citrini-style Theme research workspace vertical slice (design/
+    # DECISIONS.md) — a dedicated off switch for the hidden, internal-
+    # only src/ui/pages/theme_workspace.py page, on top of that page
+    # already being absent from every nav list/command palette and
+    # behind the existing app-wide private-beta login gate. Disabled by
+    # default, same "unset/blank/unrecognized -> disabled" parsing as
+    # every other flag on this class.
+    theme_workspace_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_WORKSPACE_ENABLED"))
     # Durable-State Phase 4M-0 (design/DECISIONS.md) — the master switch
     # for the standalone continuous worker (scripts/radar_worker.py)
     # only. Disabled by default, same "unset/blank/unrecognized ->

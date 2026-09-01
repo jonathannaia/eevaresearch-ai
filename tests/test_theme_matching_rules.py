@@ -485,6 +485,15 @@ def test_no_ui_worker_persistence_or_migration_files_touched():
         # Phase A2 (design/DECISIONS.md) — the EDGAR-only, post-Research-
         # Case theme-matching worker hook.
         "scripts/radar_worker.py",
+        # Citrini-style Theme research workspace vertical slice (design/
+        # DECISIONS.md) — the hidden, internal-only theme_workspace UI
+        # page and its supporting reads/settings flag.
+        "app.py",
+        "src/config/settings.py",
+        "src/data_access/theme_store.py",
+        "src/data_access/state_db/theme_repository.py",
+        "src/data_access/postgres_state_db/theme_repository.py",
+        "tests/test_navigation.py",
     }
     assert changed <= allowed, changed - allowed
 

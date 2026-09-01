@@ -138,6 +138,16 @@ def get_published_theme(cache_dir: Path, theme_id: str, filename: str = _THEMES_
     return theme
 
 
+def list_themes(cache_dir: Path, filename: str = _THEMES_FILENAME) -> tuple[ResearchTheme, ...]:
+    """Every theme regardless of visibility, deterministically ordered
+    by (updated_at DESC, id DESC) — curator/private use only (the
+    Citrini-style Theme research workspace's own list view). Unlike
+    list_published_themes() below, this applies no visibility filter at
+    all."""
+    themes = load_themes(cache_dir, filename)
+    return tuple(sorted(themes.values(), key=lambda theme: (theme.updated_at, theme.id), reverse=True))
+
+
 def list_published_themes(cache_dir: Path, filename: str = _THEMES_FILENAME) -> tuple[ResearchTheme, ...]:
     """Every PUBLISHED theme, deterministically ordered by
     (updated_at DESC, id DESC) — never dict/file iteration order. Never

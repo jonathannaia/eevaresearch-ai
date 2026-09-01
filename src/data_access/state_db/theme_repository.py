@@ -62,6 +62,13 @@ def get_published_theme(conn: sqlite3.Connection, theme_id: str) -> ResearchThem
     return _row_to_theme(row) if row is not None else None
 
 
+def list_themes(conn: sqlite3.Connection) -> tuple[ResearchTheme, ...]:
+    """Every theme regardless of visibility — curator/private use only.
+    See theme_store.list_themes()'s own docstring for why."""
+    rows = conn.execute("SELECT * FROM research_themes ORDER BY updated_at DESC, id DESC").fetchall()
+    return tuple(_row_to_theme(row) for row in rows)
+
+
 def list_published_themes(conn: sqlite3.Connection) -> tuple[ResearchTheme, ...]:
     rows = conn.execute(
         "SELECT * FROM research_themes WHERE visibility = ? ORDER BY updated_at DESC, id DESC",
