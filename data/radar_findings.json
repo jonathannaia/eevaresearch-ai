@@ -1,5 +1,33 @@
 [
   {
+    "niche": "Space",
+    "headline": "Watch 2 astronauts take 6th-ever all-female spacewalk today",
+    "summary": "NASA astronaut Jessica Meir and French astronaut Sophie Adenot are conducting the sixth all-female spacewalk outside the International Space Station on September 1.",
+    "source_url": "https://www.space.com/space-exploration/international-space-station/watch-2-astronauts-take-6th-ever-all-female-spacewalk-today",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 04:05:00 +0000",
+    "retrieved_at": "2026-09-01T09:01:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers a spacewalk event at the International Space Station, directly substantive to space exploration activities.",
+    "url_hash": "3854fe1f852e09c1",
+    "id": "3854fe1f852e09c1"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Advancing The CFET-Based Device Roadmap: Novel Integration Modules And Standard Cell Configurations",
+    "summary": "Researchers are developing improved backside contact modules and novel gate stack configurations for CFET-based devices, which are next-generation semiconductor components relevant to advanced chip manufacturing.",
+    "source_url": "https://semiengineering.com/advancing-the-cfet-based-device-roadmap-novel-integration-modules-and-standard-cell-configurations/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 07:01:52 +0000",
+    "retrieved_at": "2026-09-01T09:01:29+00:00",
+    "tickers": [],
+    "relevance_reason": "CFET (complementary field-effect transistor) technology advances are directly relevant to the AI chip supply chain and semiconductor manufacturing roadmaps that support AI infrastructure buildout.",
+    "url_hash": "d3b31795c19693a0",
+    "id": "d3b31795c19693a0"
+  },
+  {
     "niche": "Humanoids",
     "headline": "Reframe Systems raises $40M to scale its robotic microfactories for home building",
     "summary": "Reframe Systems raised $40M in funding to scale its network of automated microfactories designed to build homes near communities in need.",
