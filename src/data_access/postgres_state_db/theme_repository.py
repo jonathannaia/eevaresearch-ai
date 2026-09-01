@@ -21,10 +21,13 @@ import psycopg
 from src.models.theme_research import (
     CompanyRole,
     EvidenceDirection,
+    HypothesisConfidence,
     ResearchTheme,
     ThemeCategory,
     ThemeCompanyMapEntry,
     ThemeEvidenceItem,
+    ThemeNoteType,
+    ThemeResearchNote,
     ThemeStatus,
     ThemeVisibility,
 )
@@ -204,4 +207,52 @@ def company_map_for_theme_ids(
     by_theme: dict[str, list[ThemeCompanyMapEntry]] = {}
     for row in rows:
         by_theme.setdefault(row["theme_id"], []).append(_row_to_company_map_entry(row))
+    return {theme_id: tuple(items) for theme_id, items in by_theme.items()}
+
+
+def _row_to_research_note(row) -> ThemeResearchNote:
+    return ThemeResearchNote(
+        id=row["id"],
+        theme_id=row["theme_id"],
+        note_type=ThemeNoteType(row["note_type"]),
+        content=row["content"],
+        confidence=HypothesisConfidence(row["confidence"]) if row["confidence"] is not None else None,
+        disconfirming_condition=row["disconfirming_condition"],
+        created_at=row["created_at"],
+    )
+
+
+def insert_theme_research_note(conn: psycopg.Connection, note: ThemeResearchNote) -> bool:
+    try:
+        conn.execute(
+            """
+            INSERT INTO theme_research_notes (
+                id, theme_id, note_type, content, confidence, disconfirming_condition, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                note.id, note.theme_id, note.note_type.value, note.content,
+                note.confidence.value if note.confidence is not None else None,
+                note.disconfirming_condition, note.created_at,
+            ),
+        )
+    except psycopg.errors.UniqueViolation:
+        conn.rollback()
+        return False
+    conn.commit()
+    return True
+
+
+def research_notes_for_theme_ids(
+    conn: psycopg.Connection, theme_ids: Sequence[str],
+) -> dict[str, tuple[ThemeResearchNote, ...]]:
+    if not theme_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT * FROM theme_research_notes WHERE theme_id = ANY(%s) ORDER BY theme_id, created_at, id",
+        (list(theme_ids),),
+    ).fetchall()
+    by_theme: dict[str, list[ThemeResearchNote]] = {}
+    for row in rows:
+        by_theme.setdefault(row["theme_id"], []).append(_row_to_research_note(row))
     return {theme_id: tuple(items) for theme_id, items in by_theme.items()}

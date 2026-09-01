@@ -125,6 +125,14 @@ def insert_match(conn: sqlite3.Connection, match: ResearchCaseThemeMatch) -> boo
     return True
 
 
+def get_match(conn: sqlite3.Connection, match_id: str) -> ResearchCaseThemeMatch | None:
+    """Read-only single-match lookup — lets a caller (e.g. a match-
+    promotion tool) verify and read the actual stored match content
+    before acting on it, rather than trusting a blindly recomputed id."""
+    row = conn.execute("SELECT * FROM research_case_theme_matches WHERE id = ?", (match_id,)).fetchone()
+    return _row_to_match(row) if row is not None else None
+
+
 def existing_match_ids_for_case_ids(conn: sqlite3.Connection, case_ids: Sequence[str]) -> frozenset[str]:
     """Bulk, read-only: the ids of every persisted match whose case_id
     is one of the supplied `case_ids`. Exactly one parameterized query

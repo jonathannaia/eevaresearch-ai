@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -319,8 +319,26 @@ _V8_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_theme_match_review_decisions_match_id ON theme_match_review_decisions (match_id)",
 )
 
+# EevaResearch — Citrini-style Theme research workspace vertical slice
+# (design/DECISIONS.md). See state_db/schema.py's own V9 comment for
+# the full rationale — identical shape here.
+_V9_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE theme_research_notes (
+        id TEXT PRIMARY KEY,
+        theme_id TEXT NOT NULL REFERENCES research_themes (id),
+        note_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        confidence TEXT,
+        disconfirming_condition TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_theme_research_notes_theme_id_created_at ON theme_research_notes (theme_id, created_at)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 9 later means appending a new (9, (...statements...))
+# Adding schema version 10 later means appending a new (10, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -331,6 +349,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (6, _V6_STATEMENTS),
     (7, _V7_STATEMENTS),
     (8, _V8_STATEMENTS),
+    (9, _V9_STATEMENTS),
 )
 
 

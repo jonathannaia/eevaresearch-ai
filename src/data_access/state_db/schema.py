@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -410,8 +410,31 @@ _V8_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_theme_match_review_decisions_match_id ON theme_match_review_decisions (match_id)",
 )
 
+# EevaResearch — Citrini-style Theme research workspace vertical slice
+# (design/DECISIONS.md). One new table backing ThemeResearchNote — a
+# single, unified, insert-only research log covering hypotheses (with
+# their own confidence and disconfirming condition), curator decisions,
+# and watch items. Carries a real FK to research_themes, matching the
+# same choice already made for the Themes MVP's own V7 tables.
+# confidence/disconfirming_condition are nullable — only ever populated
+# for note_type == 'Hypothesis'.
+_V9_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE theme_research_notes (
+        id TEXT PRIMARY KEY,
+        theme_id TEXT NOT NULL REFERENCES research_themes (id),
+        note_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        confidence TEXT,
+        disconfirming_condition TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_theme_research_notes_theme_id_created_at ON theme_research_notes (theme_id, created_at)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 9 later means appending a new (9, (...statements...))
+# Adding schema version 10 later means appending a new (10, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -422,6 +445,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (6, _V6_STATEMENTS),
     (7, _V7_STATEMENTS),
     (8, _V8_STATEMENTS),
+    (9, _V9_STATEMENTS),
 )
 
 

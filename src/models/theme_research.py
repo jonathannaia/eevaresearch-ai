@@ -126,3 +126,42 @@ class ThemeCompanyMapEntry:
     company_name: str
     role: CompanyRole
     note: str | None = None
+
+
+class HypothesisConfidence(str, Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+
+
+class ThemeNoteType(str, Enum):
+    """A single, append-only research log covers three distinct kinds
+    of internal curator entry — see ThemeResearchNote's own docstring
+    for why these are unified into one record family rather than three
+    separate models/tables."""
+
+    HYPOTHESIS = "Hypothesis"
+    DECISION = "Decision"
+    WATCH_ITEM = "Watch item"
+
+
+@dataclass(frozen=True)
+class ThemeResearchNote:
+    """One entry in a theme's internal research log — a hypothesis (with
+    its own confidence and disconfirming condition), a curator decision,
+    or a watch item. Insert-only and append-only, exactly like
+    ThemeEvidenceItem/ThemeCompanyMapEntry: reassessing a hypothesis
+    means authoring a NEW note, never editing an old one — the log is a
+    chronological record of how the team's thinking evolved, not a
+    mutable current-state snapshot. `confidence`/`disconfirming_condition`
+    are only ever populated for note_type == HYPOTHESIS; both are None
+    for DECISION/WATCH_ITEM notes. Never shown to any public user — see
+    ThemeRepositoryProtocol.research_notes_for_theme's own docstring."""
+
+    id: str
+    theme_id: str
+    note_type: ThemeNoteType
+    content: str
+    confidence: HypothesisConfidence | None
+    disconfirming_condition: str | None
+    created_at: str

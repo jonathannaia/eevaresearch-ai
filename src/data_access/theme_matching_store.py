@@ -183,6 +183,14 @@ def load_matches(cache_dir: Path, filename: str = _MATCHES_FILENAME) -> dict[str
     return result
 
 
+def get_match(cache_dir: Path, match_id: str, filename: str = _MATCHES_FILENAME) -> ResearchCaseThemeMatch | None:
+    """Read-only single-match lookup — the safe alternative to a
+    caller blindly recomputing/trusting an id, e.g. for a match-
+    promotion tool that needs to read the actual stored match content
+    before acting on it."""
+    return load_matches(cache_dir, filename).get(match_id)
+
+
 def _save_matches(cache_dir: Path, matches: dict[str, ResearchCaseThemeMatch], filename: str = _MATCHES_FILENAME) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {match_id: asdict(match) for match_id, match in matches.items()}

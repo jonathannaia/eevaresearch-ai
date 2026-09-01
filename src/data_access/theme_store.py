@@ -32,10 +32,13 @@ from typing import Sequence
 from src.models.theme_research import (
     CompanyRole,
     EvidenceDirection,
+    HypothesisConfidence,
     ResearchTheme,
     ThemeCategory,
     ThemeCompanyMapEntry,
     ThemeEvidenceItem,
+    ThemeNoteType,
+    ThemeResearchNote,
     ThemeStatus,
     ThemeVisibility,
 )
@@ -43,6 +46,7 @@ from src.models.theme_research import (
 _THEMES_FILENAME = "themes.json"
 _EVIDENCE_FILENAME = "theme_evidence_items.json"
 _COMPANY_MAP_FILENAME = "theme_company_map.json"
+_RESEARCH_NOTES_FILENAME = "theme_research_notes.json"
 
 _ID_DIGEST_CHARS = 24
 
@@ -66,6 +70,11 @@ def build_theme_evidence_id(theme_id: str, source_url: str, date: str) -> str:
 def build_theme_company_map_id(theme_id: str, company_name: str, role: CompanyRole) -> str:
     digest = hashlib.sha256(f"{theme_id}|{company_name}|{role.value}".encode("utf-8")).hexdigest()
     return f"theme-company-{digest[:_ID_DIGEST_CHARS]}"
+
+
+def build_theme_research_note_id(theme_id: str, note_type: ThemeNoteType, content: str, created_at: str) -> str:
+    digest = hashlib.sha256(f"{theme_id}|{note_type.value}|{content}|{created_at}".encode("utf-8")).hexdigest()
+    return f"theme-note-{digest[:_ID_DIGEST_CHARS]}"
 
 
 # --- Themes ------------------------------------------------------------------
@@ -312,4 +321,76 @@ def company_map_for_theme_ids(
     return {
         theme_id: tuple(sorted(items, key=lambda entry: (entry.role.value, entry.company_name, entry.id)))
         for theme_id, items in by_theme.items()
+    }
+
+
+# --- Research notes (hypotheses, decisions, watch items) ---------------------
+
+
+def _research_note_from_dict(data: dict) -> ThemeResearchNote:
+    return ThemeResearchNote(
+        id=data["id"],
+        theme_id=data["theme_id"],
+        note_type=ThemeNoteType(data["note_type"]),
+        content=data["content"],
+        confidence=HypothesisConfidence(data["confidence"]) if data.get("confidence") is not None else None,
+        disconfirming_condition=data.get("disconfirming_condition"),
+        created_at=data["created_at"],
+    )
+
+
+def load_theme_research_notes(cache_dir: Path, filename: str = _RESEARCH_NOTES_FILENAME) -> dict[str, ThemeResearchNote]:
+    path = cache_dir / filename
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, ThemeResearchNote] = {}
+    for note_id, data in raw.items():
+        try:
+            result[note_id] = _research_note_from_dict(data)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return result
+
+
+def _save_theme_research_notes(cache_dir: Path, notes: dict[str, ThemeResearchNote], filename: str = _RESEARCH_NOTES_FILENAME) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {note_id: asdict(note) for note_id, note in notes.items()}
+    (cache_dir / filename).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def append_theme_research_note(cache_dir: Path, note: ThemeResearchNote, filename: str = _RESEARCH_NOTES_FILENAME) -> bool:
+    """INSERT-only, exactly like evidence items and company-map
+    entries — no update/replace path exists. A reassessed hypothesis is
+    a new note, never a mutation of an old one."""
+    notes = load_theme_research_notes(cache_dir, filename)
+    if note.id in notes:
+        return False
+    notes[note.id] = note
+    _save_theme_research_notes(cache_dir, notes, filename)
+    return True
+
+
+def research_notes_for_theme_ids(
+    cache_dir: Path, theme_ids: Sequence[str], filename: str = _RESEARCH_NOTES_FILENAME,
+) -> dict[str, tuple[ThemeResearchNote, ...]]:
+    """Bulk, read-only counterpart to evidence_for_theme_ids() — same
+    one-load, empty-input-loads-nothing, and deterministic
+    (theme_id, created_at, id) ordering (chronological research log)."""
+    if not theme_ids:
+        return {}
+    notes = load_theme_research_notes(cache_dir, filename)
+    by_theme: dict[str, list[ThemeResearchNote]] = {}
+    theme_id_set = set(theme_ids)
+    for note in notes.values():
+        if note.theme_id in theme_id_set:
+            by_theme.setdefault(note.theme_id, []).append(note)
+    return {
+        theme_id: tuple(sorted(entries, key=lambda note: (note.created_at, note.id)))
+        for theme_id, entries in by_theme.items()
     }

@@ -18,10 +18,13 @@ from src.data_access.state_db.connection import transaction
 from src.models.theme_research import (
     CompanyRole,
     EvidenceDirection,
+    HypothesisConfidence,
     ResearchTheme,
     ThemeCategory,
     ThemeCompanyMapEntry,
     ThemeEvidenceItem,
+    ThemeNoteType,
+    ThemeResearchNote,
     ThemeStatus,
     ThemeVisibility,
 )
@@ -200,4 +203,56 @@ def company_map_for_theme_ids(
     by_theme: dict[str, list[ThemeCompanyMapEntry]] = {}
     for row in rows:
         by_theme.setdefault(row["theme_id"], []).append(_row_to_company_map_entry(row))
+    return {theme_id: tuple(items) for theme_id, items in by_theme.items()}
+
+
+def _row_to_research_note(row: sqlite3.Row) -> ThemeResearchNote:
+    return ThemeResearchNote(
+        id=row["id"],
+        theme_id=row["theme_id"],
+        note_type=ThemeNoteType(row["note_type"]),
+        content=row["content"],
+        confidence=HypothesisConfidence(row["confidence"]) if row["confidence"] is not None else None,
+        disconfirming_condition=row["disconfirming_condition"],
+        created_at=row["created_at"],
+    )
+
+
+def insert_theme_research_note(conn: sqlite3.Connection, note: ThemeResearchNote) -> bool:
+    """INSERT-only, exactly like evidence items and company-map
+    entries."""
+    with transaction(conn):
+        try:
+            conn.execute(
+                """
+                INSERT INTO theme_research_notes (
+                    id, theme_id, note_type, content, confidence, disconfirming_condition, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note.id, note.theme_id, note.note_type.value, note.content,
+                    note.confidence.value if note.confidence is not None else None,
+                    note.disconfirming_condition, note.created_at,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            return False
+    return True
+
+
+def research_notes_for_theme_ids(
+    conn: sqlite3.Connection, theme_ids: Sequence[str],
+) -> dict[str, tuple[ThemeResearchNote, ...]]:
+    """Bulk, read-only counterpart to evidence_for_theme_ids(). Ordered
+    by (theme_id, created_at, id) — a chronological research log."""
+    if not theme_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in theme_ids)
+    rows = conn.execute(
+        f"SELECT * FROM theme_research_notes WHERE theme_id IN ({placeholders}) ORDER BY theme_id, created_at, id",
+        tuple(theme_ids),
+    ).fetchall()
+    by_theme: dict[str, list[ThemeResearchNote]] = {}
+    for row in rows:
+        by_theme.setdefault(row["theme_id"], []).append(_row_to_research_note(row))
     return {theme_id: tuple(items) for theme_id, items in by_theme.items()}

@@ -127,6 +127,13 @@ def insert_match(conn: psycopg.Connection, match: ResearchCaseThemeMatch) -> boo
     return True
 
 
+def get_match(conn: psycopg.Connection, match_id: str) -> ResearchCaseThemeMatch | None:
+    """Read-only single-match lookup — see the SQLite counterpart's own
+    docstring for why this exists."""
+    row = conn.execute("SELECT * FROM research_case_theme_matches WHERE id = %s", (match_id,)).fetchone()
+    return _row_to_match(row) if row is not None else None
+
+
 def existing_match_ids_for_case_ids(conn: psycopg.Connection, case_ids: Sequence[str]) -> frozenset[str]:
     """Bulk, read-only: the ids of every persisted match whose case_id
     is one of the supplied `case_ids`. Uses `= ANY(%s)` with a single

@@ -118,7 +118,13 @@ from src.models.models import CandidateSignal, FilingEvent
 from src.logic.research_case_validation import ResearchCaseBundle
 from src.models.research_case import DependencyAssertion, RelationshipAssertion, ResearchCase, ResearchEvidenceItem
 from src.models.theme_matching import ResearchCaseThemeMatch, ThemeMatchingScope, ThemeMatchReviewDecision
-from src.models.theme_research import ResearchTheme, ThemeCompanyMapEntry, ThemeEvidenceItem, ThemeVisibility
+from src.models.theme_research import (
+    ResearchTheme,
+    ThemeCompanyMapEntry,
+    ThemeEvidenceItem,
+    ThemeResearchNote,
+    ThemeVisibility,
+)
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -794,6 +800,11 @@ class ThemeRepositoryProtocol(Protocol):
     def get_published_theme(self, theme_id: str) -> ResearchTheme | None: ...
     def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]: ...
     def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]: ...
+    # Deliberately no research-notes method here at all — unlike
+    # evidence/company-map, ThemeResearchNote (hypotheses, decisions,
+    # watch items) is internal curator scratchpad content that must
+    # never reach the public surface, even after a theme is published.
+    # See ThemeCuratorRepositoryProtocol below for the read/write seam.
 
 
 @dataclass(frozen=True)
@@ -879,6 +890,8 @@ class ThemeCuratorRepositoryProtocol(Protocol):
     def insert_theme(self, theme: ResearchTheme) -> bool: ...
     def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool: ...
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool: ...
+    def insert_research_note(self, note: ThemeResearchNote) -> bool: ...
+    def research_notes_for_theme(self, theme_id: str) -> tuple[ThemeResearchNote, ...]: ...
     def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None: ...
 
 
@@ -897,6 +910,12 @@ class JsonThemeCuratorRepository:
 
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return theme_store.append_theme_company_map_entry(self.cache_dir, entry)
+
+    def insert_research_note(self, note: ThemeResearchNote) -> bool:
+        return theme_store.append_theme_research_note(self.cache_dir, note)
+
+    def research_notes_for_theme(self, theme_id: str) -> tuple[ThemeResearchNote, ...]:
+        return theme_store.research_notes_for_theme_ids(self.cache_dir, [theme_id]).get(theme_id, ())
 
     def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
         return theme_store.set_theme_visibility(self.cache_dir, theme_id, new_visibility, updated_at)
@@ -918,6 +937,12 @@ class SqliteThemeCuratorRepository:
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return sqlite_themes.insert_theme_company_map_entry(self.conn, entry)
 
+    def insert_research_note(self, note: ThemeResearchNote) -> bool:
+        return sqlite_themes.insert_theme_research_note(self.conn, note)
+
+    def research_notes_for_theme(self, theme_id: str) -> tuple[ThemeResearchNote, ...]:
+        return sqlite_themes.research_notes_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
     def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
         return sqlite_themes.set_theme_visibility(self.conn, theme_id, new_visibility, updated_at)
 
@@ -937,6 +962,12 @@ class PostgresThemeCuratorRepository:
 
     def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
         return postgres_themes.insert_theme_company_map_entry(self.conn, entry)
+
+    def insert_research_note(self, note: ThemeResearchNote) -> bool:
+        return postgres_themes.insert_theme_research_note(self.conn, note)
+
+    def research_notes_for_theme(self, theme_id: str) -> tuple[ThemeResearchNote, ...]:
+        return postgres_themes.research_notes_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
 
     def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
         return postgres_themes.set_theme_visibility(self.conn, theme_id, new_visibility, updated_at)
@@ -973,6 +1004,7 @@ class ThemeMatchingRepositoryProtocol(Protocol):
     def get_scope(self, theme_id: str) -> ThemeMatchingScope | None: ...
     def list_active_scopes(self) -> tuple[ThemeMatchingScope, ...]: ...
     def insert_match(self, match: ResearchCaseThemeMatch) -> bool: ...
+    def get_match(self, match_id: str) -> ResearchCaseThemeMatch | None: ...
     def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]: ...
     def list_pending_matches(self) -> tuple[ResearchCaseThemeMatch, ...]: ...
     def insert_review_decision(self, decision: ThemeMatchReviewDecision) -> bool: ...
@@ -994,6 +1026,9 @@ class JsonThemeMatchingRepository:
 
     def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
         return theme_matching_store.insert_match(self.cache_dir, match)
+
+    def get_match(self, match_id: str) -> ResearchCaseThemeMatch | None:
+        return theme_matching_store.get_match(self.cache_dir, match_id)
 
     def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
         return theme_matching_store.existing_match_ids_for_case_ids(self.cache_dir, case_ids)
@@ -1024,6 +1059,9 @@ class SqliteThemeMatchingRepository:
     def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
         return sqlite_theme_matching.insert_match(self.conn, match)
 
+    def get_match(self, match_id: str) -> ResearchCaseThemeMatch | None:
+        return sqlite_theme_matching.get_match(self.conn, match_id)
+
     def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
         return sqlite_theme_matching.existing_match_ids_for_case_ids(self.conn, case_ids)
 
@@ -1052,6 +1090,9 @@ class PostgresThemeMatchingRepository:
 
     def insert_match(self, match: ResearchCaseThemeMatch) -> bool:
         return postgres_theme_matching.insert_match(self.conn, match)
+
+    def get_match(self, match_id: str) -> ResearchCaseThemeMatch | None:
+        return postgres_theme_matching.get_match(self.conn, match_id)
 
     def existing_match_ids_for_case_ids(self, case_ids: Sequence[str]) -> frozenset[str]:
         return postgres_theme_matching.existing_match_ids_for_case_ids(self.conn, case_ids)

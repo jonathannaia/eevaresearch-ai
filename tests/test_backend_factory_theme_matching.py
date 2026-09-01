@@ -122,9 +122,14 @@ def test_all_three_adapters_expose_the_same_eight_methods():
         assert expected <= exported
 
 
-def test_no_forbidden_methods_beyond_the_eight_approved_ones():
+def test_no_forbidden_methods_beyond_the_nine_approved_ones():
+    # Citrini-style Theme research workspace vertical slice
+    # (design/DECISIONS.md) added get_match — a narrow, read-only
+    # single-match lookup needed by scripts/promote_match_to_evidence.py
+    # to safely read a specific match's stored content before promoting
+    # it, rather than trusting a blindly recomputed id.
     approved = {
-        "insert_scope", "get_scope", "list_active_scopes", "insert_match",
+        "insert_scope", "get_scope", "list_active_scopes", "insert_match", "get_match",
         "existing_match_ids_for_case_ids", "list_pending_matches",
         "insert_review_decision", "list_review_decisions_for_match",
     }
