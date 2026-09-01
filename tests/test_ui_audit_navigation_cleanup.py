@@ -46,14 +46,22 @@ def test_radar_label_is_radar_not_radar_inbox_in_the_sidebar():
     assert "Radar Inbox" not in labels
 
 
-def test_coverage_themes_signals_research_are_not_visible_sidebar_items():
+def test_coverage_signals_research_are_not_visible_sidebar_items():
+    """"Themes" is deliberately excluded from this list as of the
+    Evidence-First Themes MVP (design/DECISIONS.md) — that step
+    reintroduced a "Themes" sidebar entry on purpose, pointing at a new
+    public research page, not the legacy demo browser this original
+    navigation-cleanup pass had removed from visible nav. The legacy
+    demo page itself moved to a hidden "Theme Browser" route and is
+    covered by the assertion below instead."""
     at = _run_to_dashboard()
     labels = {pl.label for pl in _sidebar_page_links(at)}
     # Exact-label check, not substring — "Methodology & Coverage" legitimately
     # contains "Coverage" as a substring, so a naive "not in joined text"
     # check would false-fail on the one entry that's supposed to remain.
-    for removed_label in ("Coverage", "Themes", "Signals", "Research"):
+    for removed_label in ("Coverage", "Signals", "Research"):
         assert removed_label not in labels
+    assert "Theme Browser" not in labels
 
 
 def test_methodology_and_coverage_appears_in_the_system_group():

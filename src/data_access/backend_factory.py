@@ -73,6 +73,7 @@ import psycopg
 from src.config.settings import Settings
 from src.data_access import comparison_store
 from src.data_access import research_store
+from src.data_access import theme_store
 from src.data_access.comparison_store import ComparisonRecord
 from src.data_access.dart import candidate_store
 from src.data_access.dart import corp_code_resolver
@@ -90,6 +91,7 @@ from src.data_access.postgres_state_db import connection as postgres_state_db_co
 from src.data_access.postgres_state_db import filing_event_repository as postgres_filing_events
 from src.data_access.postgres_state_db import identifier_repository as postgres_identifiers
 from src.data_access.postgres_state_db import research_repository as postgres_research
+from src.data_access.postgres_state_db import theme_repository as postgres_themes
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
@@ -103,6 +105,7 @@ from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import filing_event_repository as sqlite_filing_events
 from src.data_access.state_db import identifier_repository as sqlite_identifiers
 from src.data_access.state_db import research_repository as sqlite_research
+from src.data_access.state_db import theme_repository as sqlite_themes
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
@@ -111,6 +114,7 @@ from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
 from src.logic.research_case_validation import ResearchCaseBundle
 from src.models.research_case import DependencyAssertion, RelationshipAssertion, ResearchCase, ResearchEvidenceItem
+from src.models.theme_research import ResearchTheme, ThemeCompanyMapEntry, ThemeEvidenceItem, ThemeVisibility
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -768,3 +772,179 @@ def get_research_case_bundle_writer(settings: Settings) -> ResearchCaseBundleWri
         "only for a future standalone worker entry point, never the ordinary "
         "dashboard's own JSON-backed default."
     )
+
+
+# --- Theme repository — Evidence-First Themes MVP (design/DECISIONS.md).
+# Read-only, PUBLISHED-only by construction: every method here is
+# server-side filtered to ThemeVisibility.PUBLISHED — an internal,
+# ready_to_publish, or archived theme is indistinguishable from a
+# nonexistent one through this Protocol. This is the *only* seam
+# src/ui/pages/themes_research.py (the public web UI) is allowed to
+# use. A separate, non-public ThemeCuratorRepositoryProtocol below
+# supports the insert/update operations a human curator (via
+# scripts/create_theme.py) needs — the public protocol exposes none of
+# them. ---
+
+class ThemeRepositoryProtocol(Protocol):
+    def list_published_themes(self) -> tuple[ResearchTheme, ...]: ...
+    def get_published_theme(self, theme_id: str) -> ResearchTheme | None: ...
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]: ...
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]: ...
+
+
+@dataclass(frozen=True)
+class JsonThemeRepository:
+    cache_dir: Path
+
+    def list_published_themes(self) -> tuple[ResearchTheme, ...]:
+        return theme_store.list_published_themes(self.cache_dir)
+
+    def get_published_theme(self, theme_id: str) -> ResearchTheme | None:
+        return theme_store.get_published_theme(self.cache_dir, theme_id)
+
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return theme_store.evidence_for_theme_ids(self.cache_dir, [theme_id]).get(theme_id, ())
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return theme_store.company_map_for_theme_ids(self.cache_dir, [theme_id]).get(theme_id, ())
+
+
+@dataclass(frozen=True)
+class SqliteThemeRepository:
+    conn: sqlite3.Connection
+
+    def list_published_themes(self) -> tuple[ResearchTheme, ...]:
+        return sqlite_themes.list_published_themes(self.conn)
+
+    def get_published_theme(self, theme_id: str) -> ResearchTheme | None:
+        return sqlite_themes.get_published_theme(self.conn, theme_id)
+
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return sqlite_themes.evidence_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return sqlite_themes.company_map_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
+
+@dataclass(frozen=True)
+class PostgresThemeRepository:
+    conn: psycopg.Connection
+
+    def list_published_themes(self) -> tuple[ResearchTheme, ...]:
+        return postgres_themes.list_published_themes(self.conn)
+
+    def get_published_theme(self, theme_id: str) -> ResearchTheme | None:
+        return postgres_themes.get_published_theme(self.conn, theme_id)
+
+    def evidence_for_theme(self, theme_id: str) -> tuple[ThemeEvidenceItem, ...]:
+        return postgres_themes.evidence_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
+    def company_map_for_theme(self, theme_id: str) -> tuple[ThemeCompanyMapEntry, ...]:
+        return postgres_themes.company_map_for_theme_ids(self.conn, [theme_id]).get(theme_id, ())
+
+
+def get_theme_repository(settings: Settings) -> ThemeRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as every other
+    factory function above. The only intended caller is
+    src/ui/pages/themes_research.py, once or twice per page render
+    (one list_published_themes() call for the index, or one
+    get_published_theme()+evidence_for_theme()+company_map_for_theme()
+    trio for the detail view) — never once per card/row."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteThemeRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresThemeRepository(conn=_require_postgres_connection(settings))
+    return JsonThemeRepository(cache_dir=settings.cache_dir)
+
+
+# --- Theme curator repository — private, non-public write seam. Never
+# imported by src/ui/pages/themes_research.py or any other runtime UI
+# path; the only intended caller is scripts/create_theme.py. Unlike
+# get_research_case_bundle_writer() (worker-only, no JSON branch), this
+# supports all three backends — the curator script's own --backend
+# json|sqlite|postgres flag requires it. Exposes get_theme() (any
+# visibility — the curator needs to see a theme regardless of its
+# publish state) and the one visibility-transition update, alongside
+# the three insert functions. No query/search/listing method beyond
+# get_theme() is exposed here — that stays out of scope for this MVP's
+# curator tool, per its own approval's "narrow" instruction. ---
+
+class ThemeCuratorRepositoryProtocol(Protocol):
+    def get_theme(self, theme_id: str) -> ResearchTheme | None: ...
+    def insert_theme(self, theme: ResearchTheme) -> bool: ...
+    def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool: ...
+    def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool: ...
+    def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None: ...
+
+
+@dataclass(frozen=True)
+class JsonThemeCuratorRepository:
+    cache_dir: Path
+
+    def get_theme(self, theme_id: str) -> ResearchTheme | None:
+        return theme_store.get_theme(self.cache_dir, theme_id)
+
+    def insert_theme(self, theme: ResearchTheme) -> bool:
+        return theme_store.append_theme(self.cache_dir, theme)
+
+    def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
+        return theme_store.append_theme_evidence_item(self.cache_dir, item)
+
+    def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
+        return theme_store.append_theme_company_map_entry(self.cache_dir, entry)
+
+    def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
+        return theme_store.set_theme_visibility(self.cache_dir, theme_id, new_visibility, updated_at)
+
+
+@dataclass(frozen=True)
+class SqliteThemeCuratorRepository:
+    conn: sqlite3.Connection
+
+    def get_theme(self, theme_id: str) -> ResearchTheme | None:
+        return sqlite_themes.get_theme(self.conn, theme_id)
+
+    def insert_theme(self, theme: ResearchTheme) -> bool:
+        return sqlite_themes.insert_theme(self.conn, theme)
+
+    def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
+        return sqlite_themes.insert_theme_evidence_item(self.conn, item)
+
+    def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
+        return sqlite_themes.insert_theme_company_map_entry(self.conn, entry)
+
+    def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
+        return sqlite_themes.set_theme_visibility(self.conn, theme_id, new_visibility, updated_at)
+
+
+@dataclass(frozen=True)
+class PostgresThemeCuratorRepository:
+    conn: psycopg.Connection
+
+    def get_theme(self, theme_id: str) -> ResearchTheme | None:
+        return postgres_themes.get_theme(self.conn, theme_id)
+
+    def insert_theme(self, theme: ResearchTheme) -> bool:
+        return postgres_themes.insert_theme(self.conn, theme)
+
+    def insert_evidence_item(self, item: ThemeEvidenceItem) -> bool:
+        return postgres_themes.insert_theme_evidence_item(self.conn, item)
+
+    def insert_company_map_entry(self, entry: ThemeCompanyMapEntry) -> bool:
+        return postgres_themes.insert_theme_company_map_entry(self.conn, entry)
+
+    def set_visibility(self, theme_id: str, new_visibility: ThemeVisibility, updated_at: str) -> ResearchTheme | None:
+        return postgres_themes.set_theme_visibility(self.conn, theme_id, new_visibility, updated_at)
+
+
+def get_theme_curator_repository(settings: Settings) -> ThemeCuratorRepositoryProtocol:
+    """Private/curator seam — only scripts/create_theme.py is expected
+    to call this. Supports all three backends, matching that script's
+    own --backend json|sqlite|postgres option."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteThemeCuratorRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresThemeCuratorRepository(conn=_require_postgres_connection(settings))
+    return JsonThemeCuratorRepository(cache_dir=settings.cache_dir)

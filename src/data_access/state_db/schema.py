@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -289,8 +289,68 @@ _V6_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_research_assertions_case_id ON research_assertions (case_id)",
 )
 
+# EevaResearch — Evidence-First Themes MVP (design/DECISIONS.md). Three
+# new tables for the public, curated ResearchTheme model family (see
+# src.models.theme_research / src.data_access.theme_store) — wholly
+# separate from the internal research_cases/research_evidence_items/
+# research_assertions family above, and from the legacy demo Theme/
+# Subtheme model (which has no table of its own; it's seed-data only).
+# Unlike the Research Case family, theme_evidence_items/
+# theme_company_map_entries DO carry a real foreign key to
+# research_themes (id) — themes are manually curated, low-volume
+# records where referential integrity is cheap and worth having; this
+# is a deliberate difference from the Research Case family's own
+# no-hard-FK choice, not an oversight. research_themes.visibility is
+# the one field ever updated after insert (a publish/archive
+# transition) — see theme_repository.py's own set_theme_visibility()
+# docstring.
+_V7_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE research_themes (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL,
+        visibility TEXT NOT NULL,
+        title TEXT NOT NULL,
+        key_question TEXT NOT NULL,
+        hypothesis TEXT NOT NULL,
+        working_thesis TEXT NOT NULL,
+        why_it_matters TEXT NOT NULL,
+        what_could_change_the_view TEXT NOT NULL,
+        what_to_watch_next TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_research_themes_visibility_updated_at ON research_themes (visibility, updated_at)",
+    """
+    CREATE TABLE theme_evidence_items (
+        id TEXT PRIMARY KEY,
+        theme_id TEXT NOT NULL REFERENCES research_themes (id),
+        date TEXT NOT NULL,
+        company TEXT NOT NULL,
+        source_name TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        fact TEXT NOT NULL,
+        relevance TEXT NOT NULL,
+        direction TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_theme_evidence_items_theme_id_date ON theme_evidence_items (theme_id, date)",
+    """
+    CREATE TABLE theme_company_map_entries (
+        id TEXT PRIMARY KEY,
+        theme_id TEXT NOT NULL REFERENCES research_themes (id),
+        company_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        note TEXT
+    )
+    """,
+    "CREATE INDEX idx_theme_company_map_entries_theme_id_role ON theme_company_map_entries (theme_id, role)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 7 later means appending a new (7, (...statements...))
+# Adding schema version 8 later means appending a new (8, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -299,6 +359,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (4, _V4_STATEMENTS),
     (5, _V5_STATEMENTS),
     (6, _V6_STATEMENTS),
+    (7, _V7_STATEMENTS),
 )
 
 

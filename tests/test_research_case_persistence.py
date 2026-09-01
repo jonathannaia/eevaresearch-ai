@@ -451,7 +451,11 @@ def test_sqlite_migration_v5_to_v6_does_not_touch_existing_candidate_or_comparis
     before_comparison = sqlite_comparison_repository.get_comparison_record(conn, comparison_record.id)
 
     result_version = sqlite_schema.migrate(conn)
-    assert result_version == 6
+    # Tracks the current latest schema version (7, after the Evidence-
+    # First Themes MVP's V7 addition) — update alongside any future
+    # migration bump; the point of this test is migration safety, not
+    # this exact number.
+    assert result_version == 7
 
     after_candidate = sqlite_candidate_repository.get_candidate(conn, "edgar-cand-1")
     after_comparison = sqlite_comparison_repository.get_comparison_record(conn, comparison_record.id)
@@ -575,7 +579,9 @@ def test_postgres_migration_v5_to_v6_does_not_touch_existing_candidate_row(pg_is
     before = postgres_candidate_repository.get_candidate(conn, "edgar-cand-pg-mig")
 
     result_version = postgres_schema.migrate(conn)
-    assert result_version == 6
+    # See the SQLite counterpart's own comment — tracks the current
+    # latest schema version.
+    assert result_version == 7
 
     after = postgres_candidate_repository.get_candidate(conn, "edgar-cand-pg-mig")
     assert before == after

@@ -97,11 +97,15 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     from, that Coverage/Themes/Signals/Research/Methodology/About are still
     registered (just no longer linked from any visible sidebar group), and
     that every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news", "watchlists"]
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Daily News", "Watchlists"]
+    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "themes", "daily_news", "watchlists"]
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Themes", "Daily News", "Watchlists"]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
-    assert [k for k, _ in HIDDEN_FROM_NAV] == ["themes", "signals", "research", "methodology", "about"]
+    # Evidence-First Themes MVP (design/DECISIONS.md): "themes" moved
+    # from here into PRIMARY_NAV above (now the new public research
+    # page); the legacy demo ticker/theme/subtheme browser moved to the
+    # hidden "theme_browser" key in its place, same module, new route.
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["theme_browser", "signals", "research", "methodology", "about"]
 
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()

@@ -30,6 +30,14 @@ METHODOLOGY_STATEMENT = (
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
     ("radar_inbox", "Radar"),
+    # Themes (Evidence-First Themes MVP, design/DECISIONS.md) — the
+    # public, curated cross-company research narrative surface. Placed
+    # directly beneath Radar: Radar surfaces individual detected
+    # company signals, Themes connects official evidence across
+    # companies into a testable thesis. Distinct from the legacy demo
+    # ticker/theme/subtheme browser, which moved to the hidden
+    # "theme_browser" route below to free up this url_path/nav slot.
+    ("themes", "Themes"),
     # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
     # scoped autonomous discovery surface, not a Radar view (see the
     # Radar-vs-Daily-News product clarification the same document records).
@@ -63,7 +71,7 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 # stays conceptually part of Radar, not a separate visible destination;
 # Research stays implemented, just hidden from primary nav.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
-    ("themes", "Themes"),
+    ("theme_browser", "Theme Browser"),
     ("signals", "Signals"),
     ("research", "Research"),
     ("methodology", "Methodology"),
