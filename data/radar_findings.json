@@ -1,5 +1,136 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Cash in on the AI Boom by Renting Out Your Spare Compute",
+    "summary": "Several startups including Far Labs, Evolving Edge, Bless Network, Salad, and Gradient are launching platforms that compensate individuals to run AI inference workloads on spare home computing power, offering lower latency and cost alternatives to centralized data centers for smaller, open-source AI models.",
+    "source_url": "https://spectrum.ieee.org/ai-inference-distributed-computing",
+    "source_name": "IEEE Spectrum — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 14:00:03 +0000",
+    "retrieved_at": "2026-09-01T14:25:07+00:00",
+    "tickers": [],
+    "relevance_reason": "Substantively covers distributed AI inference computing as an alternative infrastructure approach to traditional data centers within AI buildout scope.",
+    "url_hash": "76b4c1ec01cb39b5",
+    "id": "76b4c1ec01cb39b5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "The Pentagon now has its own version of ChatGPT and Grok",
+    "summary": "The Pentagon has developed its own versions of OpenAI's ChatGPT and SpaceX AI's Grok to be integrated alongside Google's Gemini on a central portal for AI tools.",
+    "source_url": "https://techcrunch.com/2026/08/31/the-pentagon-now-has-its-own-version-of-chatgpt-and-grok/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 31 Aug 2026 20:13:45 +0000",
+    "retrieved_at": "2026-09-01T14:25:00+00:00",
+    "tickers": [
+      {
+        "ticker": "GOOGL",
+        "company_name": "Google",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft (OpenAI investor)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Pentagon adoption of commercial AI tools represents enterprise-level AI infrastructure deployment and adoption decisions affecting major AI service providers",
+    "url_hash": "77e651c0246f9df1",
+    "id": "77e651c0246f9df1"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "One Nuclear inks binding LOI to develop 2.88GW gas plant and BESS to power data center in Louisiana",
+    "summary": "One Nuclear has signed a binding letter of intent to develop a 2.88GW gas-powered plant and battery energy storage system to supply power to a data center located between Baton Rouge and New Orleans in Louisiana.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/one-nuclear-inks-binding-loi-to-develop-288gw-gas-plant-and-bess-to-power-data-center-in-louisiana/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 11:05:05 +0000",
+    "retrieved_at": "2026-09-01T14:24:51+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns power infrastructure development for data center operations, a core AI buildout component.",
+    "url_hash": "28391faa8e1154f9",
+    "id": "28391faa8e1154f9"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Lambda secures $1bn private debt to purchase Nvidia GPUs - report",
+    "summary": "Lambda secured $1 billion in private debt to purchase Nvidia GPUs that will be leased to Microsoft.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/lambda-secures-1bn-private-debt-to-purchase-nvidia-gpus-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 13:05:48 +0000",
+    "retrieved_at": "2026-09-01T14:24:47+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Private company securing debt to purchase Nvidia GPUs for leasing represents direct activity in AI infrastructure supply chain and GPU allocation.",
+    "url_hash": "1736ee3d45f5bd6c",
+    "id": "1736ee3d45f5bd6c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Charter CFO Jessica Fischer to join Google-Blackstone's TPU neocloud",
+    "summary": "Charter Communications CFO Jessica Fischer is joining Google-Blackstone's TPU neocloud starting in October, with Kevin Howard replacing her at Charter.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/charter-cfo-jessica-fischer-to-join-google-blackstones-tpu-neocloud/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 13:09:10 +0000",
+    "retrieved_at": "2026-09-01T14:24:45+00:00",
+    "tickers": [
+      {
+        "ticker": "CHTR",
+        "company_name": "Charter Communications",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Charter's CFO is joining Google-Blackstone's TPU neocloud initiative, which relates to GPU/accelerator infrastructure buildout",
+    "url_hash": "b2716b2e02808336",
+    "id": "b2716b2e02808336"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "OnZero partners with Helen to connect Helsinki AI data center to district heating network",
+    "summary": "OnZero has partnered with Helen to connect a Helsinki AI data center to a district heating network, which is expected to supply up to 525,000MWh of heat annually from the facility.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/onzero-partners-with-helen-to-connect-helsinki-ai-data-center-to-district-heating-network/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 13:14:30 +0000",
+    "retrieved_at": "2026-09-01T14:24:44+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns AI data center infrastructure and power/cooling systems for AI buildout.",
+    "url_hash": "1bf545a75d6ef8fa",
+    "id": "1bf545a75d6ef8fa"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Green Mountain secures neocloud customer at data center in London, UK",
+    "summary": "Green Mountain secured a neocloud customer at its London data center facility, with the contract covering 14MW of capacity at the LON-East campus.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/green-mountain-secures-neocloud-customer-at-data-center-in-london-uk/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 14:09:05 +0000",
+    "retrieved_at": "2026-09-01T14:24:42+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center capacity deployment is part of AI infrastructure buildout.",
+    "url_hash": "9679dc1edbbdf0eb",
+    "id": "9679dc1edbbdf0eb"
+  },
+  {
     "niche": "Space",
     "headline": "Watch 2 astronauts take 6th-ever all-female spacewalk today",
     "summary": "NASA astronaut Jessica Meir and French astronaut Sophie Adenot are conducting the sixth all-female spacewalk outside the International Space Station on September 1.",
