@@ -197,8 +197,14 @@ def test_writer_protocol_exposes_no_update_upsert_delete_or_query_method():
 
 
 def test_no_runtime_entry_point_references_the_new_writer_or_membership_seams():
+    """`scripts/radar_worker.py` is deliberately excluded from this list
+    as of Phase 4, Step 4B-2 (design/DECISIONS.md) — that step wires
+    get_research_case_bundle_writer()/existing_case_ids() into
+    _run_provider_tick() for EDGAR only, a real, intentional,
+    separately-approved reference. Every other runtime entry point must
+    still never reference these seams."""
     candidate_files = [
-        "scripts/radar_worker.py", "scripts/run_scan.py", "scripts/create_research_case.py", "app.py",
+        "scripts/run_scan.py", "scripts/create_research_case.py", "app.py",
         "src/ui/pages/research_cases.py", "src/ui/pages/radar_inbox.py", "src/ui/pages/daily_news.py",
     ]
     forbidden_names = ("get_research_case_bundle_writer", "existing_case_ids", "ResearchCaseBundleWriterProtocol")

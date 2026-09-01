@@ -71,6 +71,29 @@ and between ticks — an in-progress provider's own scan call is never
 interrupted mid-call (that could leave a worse partial-write state than
 letting it finish), but the loop will not start a new provider or a new
 tick once the flag is set.
+
+Durable-State Phase 4B-2 (design/DECISIONS.md) — autonomous Research
+Case creation, EDGAR only. After EDGAR's own scan-status persistence
+has already completed successfully (see _run_provider_tick), and only
+for provider_key == "edgar", _run_edgar_research_case_step() reads the
+already-persisted EDGAR candidate set, runs the existing pure
+select_research_lead()/build_research_case_bundle_from_lead()/
+validate_research_case_bundle() pipeline via prepare_research_case_
+bundles() (bounded to 5 candidates, source "SEC EDGAR" only), and
+atomically persists any resulting bundle through the existing
+worker-only get_research_case_bundle_writer() seam — never a new
+persistence algorithm. This is strictly best-effort: the entire step is
+wrapped in one narrow try/except Exception at its call site, and any
+exception is swallowed and reported only as a sanitized
+"research-case step skipped (<ExceptionType>)" line — it can never
+alter ProviderScanStatus, candidate status, retry/backoff state, the
+scan report, or any other provider's own tick. DART and EDINET are
+completely untouched by this addition; their scan behavior is
+byte-for-byte identical to before this phase. `_current_utc_date()` is
+the one, deliberately isolated place this file reads the system clock
+for this feature — never the pure selector/orchestration/factory
+modules themselves, which remain caller-supplied-date-only by their own
+design.
 """
 from __future__ import annotations
 
@@ -91,6 +114,7 @@ from src.data_access.dart import radar_service as dart_radar_service
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
 
 # Duck-typed deliberately: postgres_state_db.scan_status_repository.ProviderScanStatus
 # has an identical field shape, and each repository's own upsert_scan_status()
@@ -203,6 +227,75 @@ def _record_failure(scan_status_repo, display_source: str, previous, started_at:
     ))
 
 
+def _current_utc_date() -> str:
+    """The one, deliberately isolated system-clock read for the
+    autonomous Research Case step — a standalone function so tests can
+    monkeypatch it directly for deterministic behavior. The pure
+    selector/orchestration/factory modules this feeds into never read
+    the clock themselves; this is the single caller-supplied boundary
+    value they require."""
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+# EDGAR's own existing, already-configured scan lookback default — not
+# a new environment variable or configuration surface. Reused exactly
+# as edgar_service.run_scan()'s own default already is at this file's
+# scan call site above.
+_EDGAR_RESEARCH_CASE_MAX_CANDIDATES = 5
+_EDGAR_ALLOWED_SOURCE_NAMES = ("SEC EDGAR",)
+
+
+def _run_edgar_research_case_step(worker_settings: Settings, candidate_repository) -> str:
+    """Best-effort, EDGAR-only autonomous Research Case creation — see
+    module docstring. Never called for dart/edinet. Raises on any
+    unexpected failure in repository construction, the candidate load,
+    or the orchestration call itself; the caller (_run_provider_tick)
+    is the one place that catches and sanitizes that exception, since
+    this function's own job is only to do the work and build the one
+    summary line, not to decide how a failure is reported.
+
+    A single bundle's `writer.insert_bundle()` call is individually
+    isolated (its own try/except) so one unexpected write failure never
+    prevents the remaining prepared bundles in the same tick from being
+    attempted — each bundle's atomic insert is already fully
+    self-contained (its own transaction/validation), so per-bundle
+    isolation costs nothing extra here."""
+    research_case_repository = backend_factory.get_research_case_repository(worker_settings)
+    writer = backend_factory.get_research_case_bundle_writer(worker_settings)
+
+    candidates = candidate_repository.load_candidates()
+    config = ResearchLeadOrchestrationConfig(
+        as_of_date=_current_utc_date(),
+        lookback_days=edgar_service.scan_service.DEFAULT_LOOKBACK_DAYS,
+        max_candidates=_EDGAR_RESEARCH_CASE_MAX_CANDIDATES,
+        allowed_source_names=_EDGAR_ALLOWED_SOURCE_NAMES,
+    )
+    result = prepare_research_case_bundles(candidates.values(), research_case_repository.existing_case_ids, config)
+
+    created = 0
+    write_rejected = 0
+    for bundle in result.bundles:
+        try:
+            inserted = writer.insert_bundle(bundle)
+        except Exception:  # noqa: BLE001 — one bundle's write failure must never block the rest of this batch
+            write_rejected += 1
+            continue
+        if inserted:
+            created += 1
+        else:
+            write_rejected += 1
+
+    summary = (
+        f"EDGAR: research cases — evaluated={result.evaluated_count} created={created} "
+        f"existing={result.already_existing_count} not_qualified={result.not_qualified_count} "
+        f"factory_rejected={result.factory_rejected_count} validation_rejected={result.validation_rejected_count} "
+        f"write_rejected={write_rejected}"
+    )
+    if result.membership_check_failed_count:
+        summary += f" membership_check_failed={result.membership_check_failed_count}"
+    return summary
+
+
 def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status_repo) -> None:
     display_source = _SOURCE_DISPLAY_NAMES[provider_key]
     service_module = _SERVICE_MODULES[provider_key]
@@ -243,6 +336,14 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
             f"{provider_key.upper()}: ok — candidates_detected={report.candidates_detected} "
             f"candidates_processed={report.candidates_processed} skipped_unresolved={skipped_unresolved}"
         )
+
+        if provider_key == "edgar":
+            try:
+                research_case_summary = _run_edgar_research_case_step(worker_settings, candidate_repository)
+            except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate state or other providers
+                print(f"{provider_key.upper()}: research-case step skipped ({type(exc).__name__}).")
+            else:
+                print(research_case_summary)
 
 
 def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:

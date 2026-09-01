@@ -527,8 +527,14 @@ def test_proof14_module_never_calls_or_imports_persistence_functions():
 
 
 def test_proof17_no_runtime_entry_point_references_orchestration_module():
+    """`scripts/radar_worker.py` is deliberately excluded from this list
+    as of Phase 4, Step 4B-2 (design/DECISIONS.md) — that step wires the
+    EDGAR-only autonomous Research Case step into
+    _run_provider_tick(), a real, intentional, separately-approved
+    reference to this module. Every other runtime entry point must
+    still never reference it."""
     candidate_files = [
-        "scripts/radar_worker.py", "scripts/run_scan.py", "scripts/create_research_case.py", "app.py",
+        "scripts/run_scan.py", "scripts/create_research_case.py", "app.py",
         "src/ui/pages/research_cases.py", "src/ui/pages/radar_inbox.py", "src/ui/pages/daily_news.py",
     ]
     offenders = []
