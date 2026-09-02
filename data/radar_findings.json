@@ -1,5 +1,40 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "AWS Wires a New US AI Route Across the Pacific",
+    "summary": "AWS is constructing a 420 Tbps subsea cable connecting Japan and Washington State, set to launch in 2029, to support AI workloads and increase trans-Pacific network capacity.",
+    "source_url": "https://www.datacenterknowledge.com/cables/aws-wires-a-new-us-ai-route-across-the-pacific",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 20:51:58 GMT",
+    "retrieved_at": "2026-09-02T23:42:30+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "AWS subsea cable infrastructure directly supports AI workload distribution and hyperscaler network capacity expansion.",
+    "url_hash": "84e948eea02a7ac8",
+    "id": "84e948eea02a7ac8"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Haffner Energy launches biomass power-cooling system for data centers",
+    "summary": "Haffner Energy has launched a biomass-powered system designed to provide both power and cooling for data centers, utilizing residual biomass as its fuel source.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/haffner-energy-launches-biomass-power-cooling-system-for-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 17:20:31 +0000",
+    "retrieved_at": "2026-09-02T23:42:15+00:00",
+    "tickers": [],
+    "relevance_reason": "directly addresses power and cooling infrastructure for data centers, a core AI Buildout component",
+    "url_hash": "e9d5365b54272d6b",
+    "id": "e9d5365b54272d6b"
+  },
+  {
     "niche": "Humanoids",
     "headline": "Learn why food is physical AI’s hardest problem at RoboBusiness",
     "summary": "Rajat Bhageria, founder and CEO of Chef Robotics, will discuss why food presents one of the most challenging benchmarks for physical AI systems.",
