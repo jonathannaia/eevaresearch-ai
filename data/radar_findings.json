@@ -1,6 +1,83 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Gradiant to deliver HyperSolved water treatment system for West Texas data center",
+    "summary": "Gradiant will deploy its HyperSolved water treatment system at a West Texas data center site.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/gradiant-to-deliver-hypersolved-water-treatment-system-for-west-texas-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 14:56:36 +0000",
+    "retrieved_at": "2026-09-02T17:36:31+00:00",
+    "tickers": [
+      {
+        "ticker": "GDRN",
+        "company_name": "Gradiant",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Water treatment system deployment directly supports AI infrastructure buildout by addressing cooling/water needs for data centers.",
+    "url_hash": "b9b4b5538f073f6d",
+    "id": "b9b4b5538f073f6d"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "US defense contractor Northrop Grumman awarded $7m for diamond-cooled chip technology",
+    "summary": "Northrop Grumman received a $7 million award from DARPA for developing diamond-cooled chip technology, which addresses cooling challenges for advanced semiconductor systems.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/us-defense-contractor-northrop-grumman-awarded-7m-for-diamond-cooled-chip-technology/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 14:59:54 +0000",
+    "retrieved_at": "2026-09-02T17:36:29+00:00",
+    "tickers": [
+      {
+        "ticker": "NOC",
+        "company_name": "Northrop Grumman Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Diamond-cooled chip technology is directly relevant to AI infrastructure cooling solutions, a core component of AI buildout.",
+    "url_hash": "24bba8ef62781a90",
+    "id": "24bba8ef62781a90"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Infineon, Skeleton Technologies partner on AI data center power systems",
+    "summary": "Infineon and Skeleton Technologies are partnering to combine Infineon's CoolSiC power semiconductors with Skeleton's power conversion systems expertise for AI data center applications.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/infineon-skeleton-technologies-partner-on-ai-data-center-power-systems/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 16:38:10 +0000",
+    "retrieved_at": "2026-09-02T17:36:26+00:00",
+    "tickers": [
+      {
+        "ticker": "IFX",
+        "company_name": "Infineon Technologies",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Partnership directly addresses AI data center power infrastructure through semiconductor and power conversion systems.",
+    "url_hash": "a722479a0e021840",
+    "id": "a722479a0e021840"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Telehouse adds new building to Frankfurt data center campus",
+    "summary": "Telehouse has added a new building (Building N) to its Frankfurt data center campus, providing 5.4MW of additional capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/telehouse-adds-new-building-to-frankfurt-data-center-campus/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 17:00:26 +0000",
+    "retrieved_at": "2026-09-02T17:36:24+00:00",
+    "tickers": [],
+    "relevance_reason": "Addition of data center capacity in Frankfurt is directly relevant to AI infrastructure buildout.",
+    "url_hash": "77b257e3aa906384",
+    "id": "77b257e3aa906384"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Why Data Centers Rarely Reuse Cooling Water",
     "summary": "Most data centers continue to rely on evaporative cooling rather than alternatives because the higher capital costs and operational complexity of other methods are not economically justified at present.",
     "source_url": "https://www.datacenterknowledge.com/cooling/why-data-centers-rarely-reuse-cooling-water",
