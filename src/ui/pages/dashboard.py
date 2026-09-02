@@ -146,17 +146,30 @@ def _render_priority_signals(ctx) -> None:
             st.page_link(signals_page, label="View all signals →")
 
 
-def _render_market_map(ctx) -> None:
+def _themes_available(settings) -> bool:
+    """Navigation/empty-state pass (design/DECISIONS.md) — whether at
+    least one real published Theme exists, via the same published-only
+    protocol Theme Health uses. Never raises; a repository-construction
+    failure degrades to "unavailable" (no dashboard link into Themes),
+    never a raw error."""
+    try:
+        return bool(backend_factory.get_theme_repository(settings).list_published_themes())
+    except Exception:  # noqa: BLE001 — best-effort; never show a raw error on the dashboard
+        return False
+
+
+def _render_market_map(ctx, themes_available: bool) -> None:
     """Primary visual/research module (Phase E1, design/
     DASHBOARD_MARKET_MAP_PHASE_E.md) — a theme-grouped navigator over
     Eeva's tracked-company universe (src/config/tracked_companies.py, the
     one authoritative source — see src/logic/market_map.py). No price,
-    quote, or movement data exists anywhere in this build, so every tile
-    and the map itself say "Price coverage not connected" rather than a
-    dash, blank space, or invented value."""
+    quote, or movement data exists anywhere in this build; "Price
+    coverage not connected" is removed (navigation/empty-state pass,
+    design/DECISIONS.md) rather than shown as implementation-status
+    language — cards simply omit price entirely."""
     themes = ctx.theme_repository.get_all_themes()
     companies_by_theme = group_companies_by_theme([t.slug for t in themes])
-    render_market_map(ctx, themes, companies_by_theme)
+    render_market_map(ctx, themes, companies_by_theme, themes_available)
 
 
 def _render_regional_brief(settings) -> None:
@@ -171,7 +184,7 @@ def render() -> None:
     ctx = get_repositories()
     settings = get_settings()
 
-    _render_market_map(ctx)
+    _render_market_map(ctx, _themes_available(settings))
     _render_regional_brief(settings)
     _render_theme_health(settings)
     _render_priority_signals(ctx)

@@ -2,25 +2,28 @@
 Electronics + SK Hynix), SEC EDGAR (NVIDIA, Micron Technology, Coherent
 Corp, Rockwell Automation, Rocket Lab), and EDINET (Japan) — SoftBank
 Group, Kioxia Holdings, Furukawa Electric, FANUC, ispace, all tracked as
-of Gate 7 — but EDINET has never had a live scan run against it, so its
-"Scan EDINET now" action is wired and its five companies are configured,
-while its FilingEvent/CandidateSignal counts stay at zero until a
-separately authorized live-scan gate. The only page in this app backed
-by real, live data; every other page reads from the demo AppContext (see
-src/data_access/dart/radar_service.py's module docstring for why sources
-are kept separate).
+of Gate 7. The only page in this app backed by real, live data.
 
 Deliberately visually and lexically distinct from Signals (the curated,
-published Signal Board): a Radar item is a filing-driven research lead
-under review, never a completed market read. See
-src/ui/components/radar_status.py for the separate status vocabulary.
+published Signal Board): a Radar item is a filing-driven research lead,
+never a completed market read. See src/ui/components/radar_status.py
+for the separate status vocabulary.
 
-Each source keeps its own explicit, separately-bounded "Scan ... now"
-action, its own readiness check, and its own on-disk candidate store
-(dart_candidates.json / edgar_candidates.json) — never merged into one
-"scan everything" action. A candidate's source is always distinguished
-via `filing.source_name`, never blended into one undifferentiated
-"live" label.
+Reader-facing data-integrity pass (design/DECISIONS.md): this page is
+now strictly read-only. The manual "Scan ... now" buttons, the
+Publish/Monitor/Exclude review decision, and the "Prepare/Retry analyst
+view" trigger are all removed — none of that is appropriate on a public
+page, and scanning/processing/review-decision write paths are worker-
+internal concerns now (see src.ui.components.radar_card's own module
+docstring for the equivalent removals at the per-card level, and design/
+DECISIONS.md's Section 5 report for what this means for autonomous
+processing going forward: this deployment currently has no other
+scheduled trigger for a scan, since scripts/radar_worker.py must be
+deployed as its own separate process — see design/
+RADAR_WORKER_DEPLOYMENT.md — and that gap is a deployment decision, not
+something this UI change alone resolves). Each source's own on-disk
+candidate store (dart_candidates.json / edgar_candidates.json) and
+`filing.source_name` distinction are otherwise unchanged.
 """
 from __future__ import annotations
 
@@ -38,9 +41,7 @@ from src.data_access.edgar import edgar_pipeline, edgar_service
 from src.data_access.edgar import scan_service as edgar_scan_service
 from src.data_access.edinet import edinet_pipeline, edinet_service
 from src.data_access.edinet import scan_service as edinet_scan_service
-from src.logic import review_actions
-from src.logic.radar_freshness import categorize_source_status, compute_radar_freshness, effective_interval_minutes
-from src.models.models import CandidateSignal, CandidateStatus
+from src.logic.radar_freshness import compute_radar_freshness
 from src.ui.components.empty_state import empty_state
 from src.ui.components.radar_card import candidate_row
 from src.ui.components.radar_status import RadarItem, status_label
@@ -268,45 +269,6 @@ def _build_items(cache_dir, settings: Settings | None = None) -> list[RadarItem]
     return sorted(items, key=lambda i: i.filing.rcept_dt, reverse=True)
 
 
-def _scan_summary_line(report) -> str:
-    parts = [
-        f"{report.filings_discovered} filings discovered", f"{report.new_filing_events} new",
-        f"{report.candidates_detected} candidates detected", f"{report.candidates_processed} processed",
-        f"{report.candidates_deferred} deferred", f"{report.documents_extracted} extracted",
-    ]
-    # Only DART's ScanReport has a translation step — EDGAR's report has
-    # no such field at all (see edgar_pipeline.ScanReport's own docstring).
-    translations = getattr(report, "translations_completed", None)
-    if translations is not None:
-        parts.append(f"{translations} translated")
-    return " · ".join(parts)
-
-
-def _render_scan_result(session_key_report: str, session_key_error: str) -> None:
-    if st.session_state.get(session_key_report) is not None:
-        report = st.session_state[session_key_report]
-        with st.container(border=True):
-            st.markdown(f'<div class="er-muted">Last scan: {report.scan_id} · {report.started_at}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="margin-top:0.2rem;">{_scan_summary_line(report)}</div>', unsafe_allow_html=True)
-            if report.no_data_count:
-                st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{report.no_data_count} company(s) had no new disclosures in this window.</div>', unsafe_allow_html=True)
-            if report.errors_by_category:
-                categories = ", ".join(f"{k} ({v})" for k, v in report.errors_by_category.items())
-                st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">Warnings: {categories}</div>', unsafe_allow_html=True)
-    if st.session_state.get(session_key_error):
-        st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{st.session_state[session_key_error]}</div>', unsafe_allow_html=True)
-
-
-_WORKER_TRACKED_PROVIDERS = ("SEC EDGAR", "OpenDART / DART", "EDINET")
-
-_WORKER_STATUS_SCOPE_NOTE = (
-    "Status only — not a candidate feed. The worker persists candidates "
-    "directly to its own configured store; rendering those candidates in "
-    "this dashboard requires a separately approved dashboard "
-    "persistence-read bridge, which does not exist yet."
-)
-
-
 def _worker_scan_status_snapshot(settings: Settings):
     """Durable-State Phase 4M-0 (corrected) — read-only lookup of the
     standalone worker's (scripts/radar_worker.py) own per-provider scan
@@ -347,104 +309,6 @@ def _worker_scan_status_snapshot(settings: Settings):
     except Exception:  # noqa: BLE001 — never leak a raw connection/config error into the UI
         return "unreachable", None
     return "ok", statuses
-
-
-def _render_worker_status(
-    state: str, statuses: dict | None, readiness_by_provider: dict[str, bool], interval_minutes: int | None,
-) -> None:
-    """Renders the required states without ever showing an API key,
-    DSN, EDGE_* environment-variable name, raw exception, stack trace,
-    internal resolver command, or unresolved-issuer list — only provider
-    display names, counts, and timestamps already established elsewhere
-    in this codebase as safe to print (see ScanReport's own docstring).
-    Read-only and sanitized by construction: this function itself makes
-    no repository call at all — `(state, statuses)` come from
-    `_worker_scan_status_snapshot()`, called once per
-    `_load_dashboard_snapshot()` refresh (Durable-State Phase 4M-2)
-    rather than once per render — never a write method, and never
-    displays failure_code's own raw value.
-
-    Phase C (editorial-simplicity pass): no longer its own top-level
-    expander — Streamlit can't nest expanders, and this is now called
-    from inside render()'s single merged "Ingestion status" disclosure
-    alongside the scan controls, so it renders a plain sub-heading
-    instead. Content/wording below is otherwise unchanged.
-
-    Phase F1 (design/DECISIONS.md): each tracked provider now renders one
-    of four distinct, plain-text states — disabled/not configured for
-    this deployment (per `readiness_by_provider`, so EDINET is never
-    implied to be enabled just because its tracked companies exist in
-    code — see src/config/tracked_companies.py), configured but never
-    successfully scanned, recently successful, or stale (per
-    `src.logic.radar_freshness.categorize_source_status`, the same
-    threshold rule the tester-facing freshness line uses) — distinguished
-    by wording alone, not color. A source whose most recent attempt
-    failed but has never once succeeded still reads as "no completed
-    scan yet," not a distinct failure state — `failure_code` stays
-    unexposed here, unchanged from before this phase."""
-    st.markdown(
-        '<div class="er-muted" style="margin-top:0.6rem;"><strong>Continuous worker status</strong> — '
-        'not a candidate feed (read-only)</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(f'<div class="er-muted">{_WORKER_STATUS_SCOPE_NOTE}</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="er-muted" style="margin-top:0.4rem;">Refresh mode: Automatic worker when configured; '
-        "manual scan controls remain available.</div>",
-        unsafe_allow_html=True,
-    )
-    if state == "not_configured":
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.4rem;">Automatic worker status is not configured. '
-            "This dashboard is not configured with a sqlite/postgres backend, so no worker status can be "
-            "shown here. See design/RADAR_WORKER_DEPLOYMENT.md for the separate continuous-worker "
-            "deployment path.</div>",
-            unsafe_allow_html=True,
-        )
-        return
-    if state == "unreachable":
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.4rem;">This dashboard\'s own configured store could not '
-            'be reached right now.</div>',
-            unsafe_allow_html=True,
-        )
-        return
-
-    st.markdown(
-        f'<div class="er-muted" style="margin-top:0.4rem;">Expected scan interval: '
-        f'{effective_interval_minutes(interval_minutes)} minutes</div>',
-        unsafe_allow_html=True,
-    )
-    for provider in _WORKER_TRACKED_PROVIDERS:
-        if not readiness_by_provider.get(provider, False):
-            st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: not configured for this '
-                f"deployment.</div>",
-                unsafe_allow_html=True,
-            )
-            continue
-        status = statuses.get(provider)
-        category = categorize_source_status(status, interval_minutes)
-        if category == "never_scanned":
-            st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: configured — no completed '
-                f"scan yet.</div>",
-                unsafe_allow_html=True,
-            )
-        elif category == "stale":
-            st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: stale — last successful scan '
-                f'{status.last_successful_at} · {status.candidates_created} candidate(s) created, '
-                f'{status.skipped_unresolved_count} skipped (unresolved identifier).</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<div class="er-muted" style="margin-top:0.4rem;">{provider}: recently successful — last scan '
-                f'{status.last_successful_at} · {status.candidates_created} candidate(s) created, '
-                f'{status.skipped_unresolved_count} skipped (unresolved identifier).</div>',
-                unsafe_allow_html=True,
-            )
 
 
 def _edgar_readiness_or_unavailable(settings: Settings) -> edgar_service.EdgarReadiness:
@@ -657,96 +521,12 @@ def render() -> None:
     )
     st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{freshness.message}</div>', unsafe_allow_html=True)
 
-    # Ingestion status (Phase C, editorial-simplicity pass) — one calm,
-    # default-collapsed disclosure combining scan controls (previously its
-    # own "Data controls (local/admin)" expander) and continuous-worker
-    # status (previously its own separate expander — Streamlit can't nest
-    # expanders, so _render_worker_status no longer opens one of its own;
-    # see that function's docstring). Every underlying control, action,
-    # and piece of operational detail is unchanged, just gathered under
-    # one header instead of two.
-    with st.expander("Ingestion status"):
-        # Phase R1: relocated verbatim from the default header — same
-        # scope-line content/computation (_DART_SCOPE_LINE,
-        # _EDGAR_SCOPE_LINE, snapshot.edinet_scope_line are all untouched),
-        # only shown here now instead of by default.
-        if dart_readiness.ready:
-            st.markdown(f'<div class="er-muted">{_DART_SCOPE_LINE}</div>', unsafe_allow_html=True)
-        if edgar_readiness.ready:
-            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_EDGAR_SCOPE_LINE}</div>', unsafe_allow_html=True)
-        if edinet_readiness.ready:
-            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{snapshot.edinet_scope_line}</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.2rem;">Korea DART + SEC EDGAR pilots configured '
-            '(EDINET seam present, not yet a live pilot)</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.4rem;">Candidate signals are rule-based filing flags, '
-            'not published market interpretations.</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.6rem;">Source scans can take time and are intended for local/admin use.</div>',
-            unsafe_allow_html=True,
-        )
-        scan_cols = st.columns([2, 2, 2, 2])
-        with scan_cols[0]:
-            dart_scan_clicked = dart_readiness.ready and st.button(
-                "Scan DART now", type="primary", use_container_width=True, key="scan-dart-btn",
-            )
-        with scan_cols[1]:
-            edgar_scan_clicked = edgar_readiness.ready and st.button(
-                "Scan EDGAR now", type="primary", use_container_width=True, key="scan-edgar-btn",
-            )
-        with scan_cols[2]:
-            edinet_scan_clicked = edinet_readiness.ready and st.button(
-                "Scan EDINET now", type="primary", use_container_width=True, key="scan-edinet-btn",
-            )
-
-        if dart_scan_clicked:
-            with st.spinner("Scanning DART — bounded to the configured lookback window and candidate budget..."):
-                try:
-                    st.session_state["radar_last_scan_report"] = radar_service.run_scan(settings)
-                except Exception:  # noqa: BLE001 — surfaced as a safe, generic message only
-                    st.session_state["radar_last_scan_error"] = "DART scan failed — see server logs for detail."
-        if edgar_scan_clicked:
-            with st.spinner("Scanning EDGAR — bounded to the configured lookback window, candidate budget, and rate limit..."):
-                try:
-                    st.session_state["edgar_last_scan_report"] = edgar_service.run_scan(settings)
-                except Exception:  # noqa: BLE001 — surfaced as a safe, generic message only
-                    st.session_state["edgar_last_scan_error"] = "EDGAR scan failed — see server logs for detail."
-        if edinet_scan_clicked:
-            with st.spinner("Scanning EDINET — no tracked companies configured yet, so this will report zero filings this gate..."):
-                try:
-                    st.session_state["edinet_last_scan_report"] = edinet_service.run_scan(settings)
-                except Exception:  # noqa: BLE001 — surfaced as a safe, generic message only
-                    st.session_state["edinet_last_scan_error"] = "EDINET scan failed — see server logs for detail."
-
-        _render_scan_result("radar_last_scan_report", "radar_last_scan_error")
-        _render_scan_result("edgar_last_scan_report", "edgar_last_scan_error")
-        _render_scan_result("edinet_last_scan_report", "edinet_last_scan_error")
-
-        if dart_scan_clicked or edgar_scan_clicked or edinet_scan_clicked:
-            # A manual "Scan ... now" click just wrote fresh data (JSON/SQLite)
-            # this same rerun — invalidate the cached snapshot and re-fetch so
-            # the admin who clicked it sees their own scan's results
-            # immediately, exactly like before this phase's caching was added,
-            # rather than waiting up to the 60-second TTL.
-            _load_dashboard_snapshot.clear()
-            snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
-
-        _render_worker_status(
-            snapshot.worker_status_state, snapshot.worker_status_statuses,
-            source_readiness_by_provider, settings.radar_scan_interval_minutes,
-        )
-
     items = snapshot.items
 
     if not items:
         empty_state(
-            "No filings scanned yet",
-            "Run a scan above to pull the latest tracked-company disclosures.",
+            "No filings captured yet",
+            "Official filings will appear here automatically once ingestion has run.",
         )
         return
 
@@ -838,55 +618,6 @@ def render() -> None:
     if confidence_filter:
         filtered = [i for i in filtered if i.candidate is not None and i.candidate.confidence in confidence_filter]
 
-    def _on_process(candidate_id: str) -> None:
-        # Routed by the candidate's own id prefix ("edgar-cand-",
-        # "edinet-cand-", vs "cand-") — reliable since each source's
-        # scan_service mints its own ids, and each source's action must
-        # stay independently bounded, never a merged "process anything"
-        # seam.
-        if candidate_id.startswith("edgar-cand-"):
-            edgar_service.process_candidate_now(settings, candidate_id)
-        elif candidate_id.startswith("edinet-cand-"):
-            edinet_service.process_candidate_now(settings, candidate_id)
-        else:
-            radar_service.process_candidate_now(settings, candidate_id)
-        # Invalidate the cached dashboard snapshot (Durable-State
-        # Phase 4M-2) so the st.rerun() below re-renders from this
-        # candidate's just-updated status, not a stale cached copy.
-        _load_dashboard_snapshot.clear()
-        st.rerun()
-
-    def _on_review_decision(candidate_id: str, status: CandidateStatus, note: str) -> CandidateSignal | None:
-        # Same id-prefix routing as _on_process, kept independent of it —
-        # this picks the on-disk store filename only; the actual decision
-        # logic lives entirely in review_actions.record_review_decision,
-        # which has no source awareness of its own. The caller
-        # (radar_card.py) is responsible for rerunning on success and for
-        # showing an error (never silently proceeding) on a None result.
-        if candidate_id.startswith("edgar-cand-"):
-            filename = edgar_pipeline.CANDIDATE_STORE_FILENAME
-        elif candidate_id.startswith("edinet-cand-"):
-            filename = edinet_pipeline.CANDIDATE_STORE_FILENAME
-        else:
-            filename = candidate_store._CACHE_FILENAME
-        result = review_actions.record_review_decision(settings.cache_dir, candidate_id, filename, status, note, settings=settings)
-        # Invalidate the cached dashboard snapshot (Durable-State
-        # Phase 4M-2) so the caller's own st.rerun() (radar_card.py, on
-        # success) re-renders from this decision's just-persisted
-        # status, not a stale cached copy. Harmless to clear even when
-        # `result` is None (the decision failed and nothing changed).
-        _load_dashboard_snapshot.clear()
-        return result
-
-    # Reuses the exact same readiness dict computed at the top of
-    # render() for the Scan buttons (Phase F1: renamed/shared as
-    # source_readiness_by_provider, same three booleans as before) — a
-    # candidate's "Prepare analyst view"/"Retry analyst view preparation"
-    # action needs its own source's live credentials just as much as a
-    # scan does, and must be disabled (with an honest reason) rather than
-    # silently attempted when they're absent.
-    process_readiness_by_source = source_readiness_by_provider
-
     if not filtered:
         empty_state(
             "No items match these filters", "Clear a filter to see more results.",
@@ -939,9 +670,7 @@ def render() -> None:
 
     for item in page_items:
         candidate_row(
-            item, on_process=_on_process,
-            process_ready=process_readiness_by_source.get(item.filing.source_name, False),
-            on_review_decision=_on_review_decision,
+            item,
             # Phase T1 (design/DECISIONS.md): "Latest" suppresses internal/
             # non-actionable status pills (and shows a quiet note for a
             # genuine retrieval/parse failure); "Captured filings" always

@@ -1,17 +1,29 @@
-"""Radar Inbox's per-item row + detail — a research-feed card (Phase R1,
-design/DECISIONS.md), not a review-task form. Default-visible anatomy is
-issuer/ticker, source/date, filing type, "Why this matters," theme, and
-detection confidence, plus one primary action ("Investigate →") and quiet
-secondary links (original filing, company). Everything operational —
-document-preparation ("Prepare analyst view"/retry), the Publish/Monitor/
-Exclude review decision, translation/materiality/technical detail, and
-state history — moved inside the Investigate expander (the same
-`st.expander` this file already used as "Details," just relabeled and
-promoted to the one primary control, per the approved plan's "least
-complex existing stable Streamlit pattern" instruction — no new drawer,
-no DOM hack). None of those controls' wording, status transitions,
-storage, eligibility effects, or audit trail changed — only where they
-render.
+"""Radar Inbox's per-item card (reader-facing data-integrity pass,
+design/DECISIONS.md) — a read-only research-feed card, not a review-task
+form. Every field renders directly on the card, always visible; the
+card's only action is "Open original {source} filing", opening the
+official source URL in a new tab (st.link_button's native behavior).
+
+Removed entirely this pass:
+  - The Publish/Monitor/Exclude review decision and its optional note
+    field. src/logic/review_actions.record_review_decision is no longer
+    called from this public interface.
+  - The "Prepare analyst view"/"Retry analyst view preparation"
+    trigger, which called {edgar,dart,radar}_service.
+    process_candidate_now — a live, on-demand extraction call. Removing
+    the only public caller means a PROCESSING_DEFERRED candidate is not
+    processed further until/unless a separate, autonomous caller is
+    added — flagged as a proposed worker-side change, not made here
+    (see design/DECISIONS.md's Section 5 report).
+  - The "Technical details" expander (raw enum values, filer name,
+    state history) — not research information a public reader needs.
+    The underlying CandidateStatus/reviewed_at/state_history remain on
+    the stored record for worker-internal use; they are simply never
+    rendered here.
+  - The "Investigate" expander wrapper itself — evidence status, the
+    filing-overview interpretation, the original-language excerpt and
+    its translation, and materiality now render directly on the card,
+    unconditionally, rather than behind a click.
 
 Deliberately reuses the app's existing tokens/chip conventions
 (evidence_chips.py's dashed/outline treatment, freshness.py's live/demo
@@ -22,13 +34,13 @@ for a curated, published Signal.
 from __future__ import annotations
 
 import html
-from typing import Callable
 
 import streamlit as st
 
 from src.data_access.comparison_store import ComparisonRecord
-from src.data_access.dart import dart_rules, retry_policy
-from src.models.models import CandidateSignal, CandidateStatus, EvidenceLocation, FilingEvent, LocationKind
+from src.data_access.dart import dart_rules
+from src.logic.market_map import jurisdiction_for_source
+from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
 from src.ui.components.analyst_view import render_analyst_view
 from src.ui.components.radar_status import (
     RadarItem,
@@ -36,7 +48,6 @@ from src.ui.components.radar_status import (
     default_card_status_html,
     evidence_document_id_label,
     evidence_native_text_label,
-    evidence_review_label,
     evidence_source_link_label,
     evidence_translation_label,
     status_pill_html,
@@ -44,24 +55,7 @@ from src.ui.components.radar_status import (
 )
 
 _TRANSLATION_LABEL = "Machine translation · For convenience · Verify against the original-language source"
-_INVESTIGATE_LABEL = "Investigate →"
 _COMPARISON_CAVEAT = "Deterministic rule-category comparison — not a filing-text, financial, or materiality determination."
-
-_PREPARE_ANALYST_VIEW_LABEL = "Prepare analyst view"
-_RETRY_ANALYST_VIEW_LABEL = "Retry analyst view preparation"
-_PREPARING_SPINNER_TEXT = "Preparing analyst view — retrieving and interpreting the filing…"
-_ANALYST_VIEW_CAPTION = "When ready, the analyst-ready summary appears above."
-_UNAVAILABLE_REASON = "Preparation is unavailable until this source is configured."
-
-_REVIEW_NOTE_LABEL = "Review note"
-_REVIEW_NOTE_PLACEHOLDER = "Optional note (required for Exclude)…"
-_PUBLISH_LABEL = "Publish"
-_MONITOR_LABEL = "Monitor"
-_EXCLUDE_LABEL = "Exclude"
-_CONFIRM_EXCLUDE_LABEL = "Confirm exclude"
-_CANCEL_LABEL = "Cancel"
-_EXCLUDE_NOTE_REQUIRED_REASON = "A note is required before excluding — explain why this filing doesn't need review."
-_REVIEW_DECISION_ERROR = "Could not record this decision — the candidate may no longer exist. Refresh and try again."
 
 
 def _why_this_matters_phrases(matched_rules: list[str]) -> list[str]:
@@ -129,17 +123,23 @@ def _evidence_status_panel(
     """Compact, honest, source-neutral evidence summary — plain-language
     labels only (see radar_status.py's evidence_* helpers), never a raw
     enum `.value`. Shown for every item, with or without a CandidateSignal
-    yet; the existing raw technical rows further below are untouched and
-    still show `.value` strings for anyone who wants them.
+    yet, always directly on the card (reader-facing data-integrity pass —
+    no longer behind a click).
 
     `comparison_record` (Radar evidence-packet foundation, Phase 3, Step
     3B) is additive and optional — every existing caller that omits it is
     unaffected. Never computed here, never fetched here: the caller
     (radar_inbox.py) already performed the one bulk repository read for
     the whole page and is only handing this function an already-resolved
-    record (or None)."""
+    record (or None).
+
+    Deliberately excludes the candidate's own review/status bookkeeping
+    (CandidateStatus, reviewed_at) — that is worker-internal state, not
+    research information a public reader needs (reader-facing data-
+    integrity pass, design/DECISIONS.md)."""
     st.markdown('<div class="er-muted" style="margin-top:0.2rem;"><strong>Evidence status</strong></div>', unsafe_allow_html=True)
     _detail_row("Original document", evidence_source_link_label(filing))
+    _detail_row("Captured", filing.retrieved_at)
     if filing.filed_at:
         # Evidence-packet foundation, Phase 1 — the full filed/published
         # timestamp, shown only when the source actually supplied one
@@ -148,7 +148,6 @@ def _evidence_status_panel(
     if candidate is not None:
         _detail_row("Native text", evidence_native_text_label(candidate.extraction_state))
         _detail_row("Translation", evidence_translation_label(candidate.translation_state))
-        _detail_row("Review", evidence_review_label(candidate))
         if candidate.flag_reason is not None:
             # Evidence-packet foundation, Phase 1 — the normalized,
             # source-neutral "why flagged" reason. Additive alongside the
@@ -167,11 +166,9 @@ def _evidence_status_panel(
     _detail_row(evidence_document_id_label(filing.source_name), filing.rcept_no)
     if filing.source_name == "EDINET":
         # Gate 8.1 detail (previously its own sibling "EDINET form codes"
-        # expander; Phase R1 folds it in here instead, since Investigate
-        # already is the one collapsed detail area for this card) — same
-        # three rows, same exact labels, unconditioned by candidate
-        # presence. "—" means the code was genuinely absent on the source
-        # record; any other value is shown verbatim.
+        # expander) — same three rows, same exact labels, unconditioned
+        # by candidate presence. "—" means the code was genuinely absent
+        # on the source record; any other value is shown verbatim.
         _detail_row("Ordinance code", filing.ordinance_code or "—")
         _detail_row("Form code", filing.pblntf_ty or "—")
         _detail_row("Document type code", filing.pblntf_detail_ty or "—")
@@ -205,126 +202,21 @@ def _evidence_status_panel(
         )
 
 
-def _render_process_action(candidate_id: str, label: str, key: str, ready: bool, on_process: Callable[[str], None]) -> None:
-    """Renders the one "Prepare analyst view" / "Retry analyst view
-    preparation" button — the seam that used to click and appear to do
-    nothing (no visible spinner during the synchronous retrieval/
-    extraction/translation call, which can legitimately take a long
-    time). Now: a visible spinner covers the call, a disabled state with
-    an honest, non-secret reason covers the "this source isn't
-    configured" case (readiness is checked here, not inferred), and a
-    narrow except-Exception guards only against a truly unexpected
-    failure outside the pipeline's own typed retrieval/parse/translation
-    failure states — those are already caught and persisted as a
-    CandidateStatus inside the pipeline itself and must reach the UI
-    unchanged; this is defense-in-depth only, same pattern as the Scan
-    buttons' own try/except in radar_inbox.py."""
-    if not ready:
-        st.button(label, key=key, use_container_width=True, disabled=True)
-        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_UNAVAILABLE_REASON}</div>', unsafe_allow_html=True)
-        return
-
-    error_key = f"radar-process-error-{candidate_id}"
-    if st.button(label, key=key, use_container_width=True):
-        st.session_state.pop(error_key, None)
-        with st.spinner(_PREPARING_SPINNER_TEXT):
-            try:
-                on_process(candidate_id)
-            except Exception:  # noqa: BLE001 — defense-in-depth only; see docstring above
-                st.session_state[error_key] = "Preparing the analyst view failed unexpectedly — see server logs for detail."
-    if st.session_state.get(error_key):
-        st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{st.session_state[error_key]}</div>', unsafe_allow_html=True)
-
-
-def _render_review_actions(
-    candidate: CandidateSignal,
-    on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None],
+def _render_card_detail(
+    filing: FilingEvent, candidate: CandidateSignal | None, comparison_record: ComparisonRecord | None = None,
 ) -> None:
-    """Publish / Monitor / Exclude — always offered regardless of the
-    candidate's current status, so an earlier reviewer decision can be
-    revised; every decision is recorded via the shared, source-agnostic
-    record_review_decision() seam (src/logic/review_actions.py), routed
-    to the right on-disk store by the render()-level closure passed in
-    as `on_review_decision` — this component has no source awareness of
-    its own, same separation the existing on_process callback already
-    uses. Exclude requires a non-whitespace note and a second, explicit
-    "Confirm exclude" click before anything is written; Publish/Monitor
-    are single-click with an optional note.
-
-    Phase R1: rendered inside the Investigate expander now, not in the
-    card's default body — same function, same wording, same status
-    transitions/storage/eligibility effects, only relocated."""
-    note_key = f"radar-review-note-{candidate.id}"
-    pending_exclude_key = f"radar-exclude-pending-{candidate.id}"
-    error_key = f"radar-review-error-{candidate.id}"
-
-    st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Review decision</strong></div>', unsafe_allow_html=True)
-    note = st.text_input(_REVIEW_NOTE_LABEL, key=note_key, label_visibility="collapsed", placeholder=_REVIEW_NOTE_PLACEHOLDER)
-    note_stripped = note.strip()
-
-    def _apply(status: CandidateStatus) -> None:
-        st.session_state.pop(error_key, None)
-        result = on_review_decision(candidate.id, status, note_stripped)
-        if result is None:
-            st.session_state[error_key] = _REVIEW_DECISION_ERROR
-            return
-        st.session_state.pop(note_key, None)
-        st.session_state.pop(pending_exclude_key, None)
-        st.rerun()
-
-    is_pending_exclude = st.session_state.get(pending_exclude_key, False)
-    review_cols = st.columns(4) if is_pending_exclude else st.columns(3)
-
-    with review_cols[0]:
-        if st.button(_PUBLISH_LABEL, key=f"publish-{candidate.id}", use_container_width=True):
-            _apply(CandidateStatus.PUBLISHED)
-    with review_cols[1]:
-        if st.button(_MONITOR_LABEL, key=f"monitor-{candidate.id}", use_container_width=True):
-            _apply(CandidateStatus.MONITORING)
-
-    if not is_pending_exclude:
-        with review_cols[2]:
-            if st.button(_EXCLUDE_LABEL, key=f"exclude-{candidate.id}", use_container_width=True):
-                st.session_state[pending_exclude_key] = True
-                st.rerun()
-    else:
-        with review_cols[2]:
-            if st.button(
-                _CONFIRM_EXCLUDE_LABEL, key=f"exclude-confirm-{candidate.id}",
-                use_container_width=True, disabled=not note_stripped,
-            ):
-                _apply(CandidateStatus.DISMISSED)
-        with review_cols[3]:
-            if st.button(_CANCEL_LABEL, key=f"exclude-cancel-{candidate.id}", use_container_width=True):
-                st.session_state.pop(pending_exclude_key, None)
-                st.rerun()
-        if not note_stripped:
-            st.markdown(f'<div class="er-muted" style="margin-top:0.15rem; font-size:0.78rem;">{_EXCLUDE_NOTE_REQUIRED_REASON}</div>', unsafe_allow_html=True)
-
-    if st.session_state.get(error_key):
-        st.markdown(f'<div class="er-muted" style="margin-top:0.15rem; font-size:0.78rem;">{st.session_state[error_key]}</div>', unsafe_allow_html=True)
-
-
-def _render_investigate_body(
-    filing: FilingEvent,
-    candidate: CandidateSignal,
-    on_process: Callable[[str], None] | None,
-    process_ready: bool,
-    on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None,
-    comparison_record: ComparisonRecord | None = None,
-) -> None:
-    """Everything that used to sit directly in the card body or in a
-    separate "Details" expander, now gathered behind the one Investigate
-    control (Phase R1) — source/provenance, evidence, the original-
-    language excerpt and its translation, materiality, the document-
-    preparation action, the human review decision, and the technical/
-    audit-trail detail. Nothing here changed except position: no
-    wording, status transition, storage call, or eligibility effect was
-    touched.
+    """Everything previously gathered behind the removed "Investigate"
+    expander — source/provenance, evidence, the original-language
+    excerpt and its translation, and materiality — now always visible,
+    directly on the card (reader-facing data-integrity pass, design/
+    DECISIONS.md). Read-only: no button, no write call, anywhere in this
+    function.
 
     `comparison_record` (Phase 3, Step 3B) is additive and optional — see
     _evidence_status_panel's own docstring."""
     _evidence_status_panel(filing, candidate, comparison_record)
+    if candidate is None:
+        return
     render_analyst_view(filing, candidate)
     if candidate.excerpt_original:
         st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>Original-language excerpt</strong></div>', unsafe_allow_html=True)
@@ -349,76 +241,19 @@ def _render_investigate_body(
             unsafe_allow_html=True,
         )
 
-    if on_process is not None:
-        if candidate.status == CandidateStatus.PROCESSING_DEFERRED:
-            st.markdown('<div style="margin-top:0.5rem;"></div>', unsafe_allow_html=True)
-            _render_process_action(
-                candidate.id, _PREPARE_ANALYST_VIEW_LABEL, f"process-{candidate.id}", process_ready, on_process,
-            )
-            st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
-        elif retry_policy.is_retryable(candidate):
-            eligibility = retry_policy.retry_eligibility(candidate)
-            st.markdown('<div style="margin-top:0.5rem;"></div>', unsafe_allow_html=True)
-            if eligibility.eligible:
-                _render_process_action(
-                    candidate.id, _RETRY_ANALYST_VIEW_LABEL, f"retry-{candidate.id}", process_ready, on_process,
-                )
-                st.markdown(f'<div class="er-muted" style="margin-top:0.2rem; font-size:0.78rem;">{_ANALYST_VIEW_CAPTION}</div>', unsafe_allow_html=True)
-            elif eligibility.reason == "Retry limit reached":
-                st.button(
-                    "Retry limit reached · Review original filing", key=f"retry-{candidate.id}",
-                    disabled=True, use_container_width=True,
-                )
-            else:
-                st.button(
-                    f"Retry available in {eligibility.cooldown_remaining_seconds}s",
-                    key=f"retry-{candidate.id}", disabled=True, use_container_width=True,
-                )
-
-    if on_review_decision is not None:
-        _render_review_actions(candidate, on_review_decision)
-
-    with st.expander("Technical details"):
-        _detail_row(evidence_document_id_label(filing.source_name), filing.rcept_no)
-        _detail_row("Filer", filing.flr_nm)
-        _detail_row("Filed", filing.rcept_dt)
-        _detail_row("Retrieved", filing.retrieved_at)
-        _detail_row("Extraction state", candidate.extraction_state.value)
-        _detail_row("Translation state", candidate.translation_state.value)
-        _detail_row("Excerpt quality", candidate.excerpt_quality.value)
-        if candidate.state_history:
-            st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>State history</strong></div>', unsafe_allow_html=True)
-            for transition in candidate.state_history:
-                detail = f" — {transition.detail}" if transition.detail else ""
-                st.markdown(
-                    f'<div class="er-muted" style="margin-left:0.8rem;">{transition.at} · {transition.status.value}{detail}</div>',
-                    unsafe_allow_html=True,
-                )
-
 
 def _render_quiet_links(filing: FilingEvent) -> None:
-    """Secondary access — de-emphasized (the same cta-tertiary-* ghost
-    treatment used everywhere else in the app for a low-emphasis action),
-    never the card's primary interaction. The former Company-page link
-    (rendered when a stock/ticker code existed on the filing) is removed
-    (reader-facing data-integrity pass, design/DECISIONS.md): that page
-    had no live real data — every real filing's stock_code dead-ended on
-    its "only the fictional DEMO ticker is loaded" empty state. A
-    "related evidence/Radar" link is deliberately omitted too: no
-    existing route lets this page link into itself pre-filtered by
-    company, and inventing one is out of scope for this phase."""
+    """The card's one action: opening the official source URL in a new
+    tab (st.link_button's native behavior) — de-emphasized (the same
+    cta-tertiary-* ghost treatment used everywhere else in the app for a
+    low-emphasis action), never a form control."""
     link_cols = st.columns([2, 7])
     with link_cols[0]:
         with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
             st.link_button(f"Open original {filing.source_name} filing ↗", filing.source_url, use_container_width=True)
 
 
-def candidate_row(
-    item: RadarItem, on_process: Callable[[str], None] | None = None, process_ready: bool = True,
-    on_review_decision: Callable[[str, CandidateStatus, str], CandidateSignal | None] | None = None,
-    show_full_status: bool = False,
-    comparison_record: ComparisonRecord | None = None,
-) -> None:
+def candidate_row(item: RadarItem, show_full_status: bool = False, comparison_record: ComparisonRecord | None = None) -> None:
     """`show_full_status` (Phase T1, design/DECISIONS.md) — False (the
     default, used by the "Latest" view) suppresses internal/non-
     actionable status pills and shows a quiet note for a genuine
@@ -431,14 +266,12 @@ def candidate_row(
 
     `comparison_record` (Phase 3, Step 3B, design/DECISIONS.md) is
     additive and optional, defaulting to None — every existing caller
-    that omits it renders exactly as before. The caller (radar_inbox.py)
-    is expected to have already resolved this via one bulk repository
-    read for the whole page; this component never fetches, computes, or
-    caches a comparison result itself. Passed straight through to
-    _render_investigate_body/_evidence_status_panel, which are the only
-    places that decide whether it's actually displayable (candidate
-    present with a non-empty id, and the record's own
-    current_candidate_id matching that id)."""
+    that omits it renders exactly as before.
+
+    Reader-facing data-integrity pass (design/DECISIONS.md): no
+    `on_process`/`on_review_decision`/`process_ready` parameters exist
+    any more — this card is read-only end to end, with exactly one
+    action (_render_quiet_links, below)."""
     filing = item.filing
     candidate = item.candidate
 
@@ -452,16 +285,16 @@ def candidate_row(
             # parse failure renders a quiet, honest note instead of the
             # loud red status pill; everything else (Published, a bare
             # new filing) is unchanged. "Captured filings" always shows
-            # the complete, real status. The full, real status remains
-            # available inside Investigate's own evidence-status panel
-            # either way.
+            # the complete, real status.
             indicator = status_pill_html(item) if show_full_status else default_card_status_html(item)
             if indicator:
                 st.markdown(indicator, unsafe_allow_html=True)
         with top_cols[1]:
             st.markdown(f'<div class="er-muted">{filing.corp_name} · {filing.stock_code}</div>', unsafe_allow_html=True)
         with top_cols[2]:
-            st.markdown(f'<div class="er-muted">{filing.source_name}</div>', unsafe_allow_html=True)
+            jurisdiction = jurisdiction_for_source(filing.source_name)
+            source_label = f"{filing.source_name} · {jurisdiction}" if jurisdiction else filing.source_name
+            st.markdown(f'<div class="er-muted">{source_label}</div>', unsafe_allow_html=True)
         with top_cols[3]:
             st.markdown(f'<div class="er-muted" style="text-align:right;">{filing.rcept_dt} · {filing.original_language}</div>', unsafe_allow_html=True)
 
@@ -492,11 +325,5 @@ def candidate_row(
                 unsafe_allow_html=True,
             )
 
+        _render_card_detail(filing, candidate, comparison_record)
         _render_quiet_links(filing)
-
-        if candidate is not None:
-            with st.expander(_INVESTIGATE_LABEL):
-                _render_investigate_body(filing, candidate, on_process, process_ready, on_review_decision, comparison_record)
-        else:
-            with st.expander(_INVESTIGATE_LABEL):
-                _evidence_status_panel(filing, None)

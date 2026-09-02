@@ -46,16 +46,12 @@ def _render_tile(company: TrackedCompany, theme_slug: str) -> None:
     with st.container(border=True, key=tile_key):
         st.markdown(f'<div class="er-card-title" style="font-size:0.9rem;">{company.name}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="er-muted er-mono" style="font-size:0.78rem;">{_ticker_label(company)}</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="er-muted" style="font-size:0.74rem; margin-top:0.2rem;">Price coverage not connected</div>',
-            unsafe_allow_html=True,
-        )
         btn_key = f"mm-investigate-{theme_slug}-{company.source}-{company.krx_code}"
         if st.button("Investigate →", key=btn_key, width="stretch"):
             st.session_state[SELECTED_KEY] = company_selection_key(company)
 
 
-def _render_theme_group(theme_name: str, theme_slug: str, companies: list[TrackedCompany]) -> None:
+def _render_theme_group(theme_name: str, theme_slug: str, companies: list[TrackedCompany], themes_available: bool) -> None:
     if not companies:
         return
     st.markdown(f'<div class="er-section-label" style="margin-top:0.6rem;">{theme_name}</div>', unsafe_allow_html=True)
@@ -65,7 +61,12 @@ def _render_theme_group(theme_name: str, theme_slug: str, companies: list[Tracke
         with cols[i % len(cols)]:
             _render_tile(company, theme_slug)
     remaining = len(companies) - len(shown)
-    if remaining > 0:
+    # Navigation/empty-state pass (design/DECISIONS.md): never link into
+    # the Themes route implying published research themes exist there
+    # unless at least one real published Theme actually does — this map
+    # is company-category browsing, not the published-Theme index, but
+    # they share one destination route, so the same gate applies.
+    if remaining > 0 and themes_available:
         themes_page = get_page("themes")
         if themes_page is not None:
             with st.container(key=f"cta-tertiary-mm-more-{theme_slug}"):
@@ -96,8 +97,7 @@ def _render_selected_detail(ctx) -> None:
         theme_names = ", ".join(t.replace("-", " ").title() for t in company.themes)
         st.markdown(
             f'<div class="er-muted" style="margin-top:0.1rem;">Theme membership: {theme_names}</div>'
-            f'<div class="er-muted">Listing exchange: {company.exchange} · {_ticker_label(company)}</div>'
-            '<div class="er-muted" style="font-size:0.78rem; margin-top:0.2rem;">Price coverage not connected</div>',
+            f'<div class="er-muted">Listing exchange: {company.exchange} · {_ticker_label(company)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -117,18 +117,21 @@ def _render_selected_detail(ctx) -> None:
                 st.page_link(radar_page, label="Related filings / Open Radar Inbox →")
 
 
-def render_market_map(ctx, themes, companies_by_theme: dict[str, list[TrackedCompany]]) -> None:
+def render_market_map(
+    ctx, themes, companies_by_theme: dict[str, list[TrackedCompany]], themes_available: bool = False,
+) -> None:
     """`themes` is the ordered list of Theme records (theme_repository.
     get_all_themes()); `companies_by_theme` comes from
     src.logic.market_map.group_companies_by_theme(...) keyed by the same
-    slugs. Renders the full map (grouped tiles) plus the single selected-
+    slugs. `themes_available` (navigation/empty-state pass, design/
+    DECISIONS.md) is whether at least one real published Theme exists —
+    gates the "view all in Themes" handoff link so it's never shown
+    pointing at what would currently be an empty published-Theme index.
+    Renders the full map (grouped tiles) plus the single selected-
     company detail region beneath it."""
     st.markdown('<div id="market-map"></div>', unsafe_allow_html=True)
     st.markdown('<div class="er-section-label">Market Map</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="er-muted">Company and theme map · price coverage is being connected</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="er-muted">Company and theme map</div>', unsafe_allow_html=True)
     for theme in themes:
-        _render_theme_group(theme.name, theme.slug, companies_by_theme.get(theme.slug, []))
+        _render_theme_group(theme.name, theme.slug, companies_by_theme.get(theme.slug, []), themes_available)
     _render_selected_detail(ctx)
