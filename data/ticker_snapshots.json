@@ -2,7 +2,7 @@
   "AAOI": {
     "ticker": "AAOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:12:52+00:00",
+    "retrieved_at": "2026-09-02T02:04:02+00:00",
     "errors": [],
     "price": {
       "ticker": "AAOI",
@@ -13,7 +13,7 @@
       "pct_change_1y": 3.45,
       "avg_volume_30d": 11755830.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -23,7 +23,7 @@
       "ev_to_ebitda": 878.9366,
       "price_to_sales": 18.4586,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.9929,
@@ -31,7 +31,7 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "AAOI",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 2,
       "buy": 7,
       "hold": 4,
@@ -151,7 +151,7 @@
   "ABCL": {
     "ticker": "ABCL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:00+00:00",
+    "retrieved_at": "2026-09-02T02:04:10+00:00",
     "errors": [],
     "price": {
       "ticker": "ABCL",
@@ -162,7 +162,7 @@
       "pct_change_1y": 1.746411,
       "avg_volume_30d": 8363930.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -172,7 +172,7 @@
       "ev_to_ebitda": 13.2711,
       "price_to_sales": 50.8293,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -1.7422,
@@ -180,7 +180,7 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "ABCL",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 3,
       "buy": 11,
       "hold": 1,
@@ -300,7 +300,7 @@
   "AEHR": {
     "ticker": "AEHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:08+00:00",
+    "retrieved_at": "2026-09-02T02:04:17+00:00",
     "errors": [],
     "price": {
       "ticker": "AEHR",
@@ -311,7 +311,7 @@
       "pct_change_1y": 2.177154,
       "avg_volume_30d": 2551430.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -321,7 +321,7 @@
       "ev_to_ebitda": 2173.0867,
       "price_to_sales": 81.817,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.3809,
@@ -329,8 +329,8 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "AEHR",
-      "period": "2026-08-01",
-      "strongBuy": 3,
+      "period": "2026-09-01",
+      "strongBuy": 4,
       "buy": 6,
       "hold": 1,
       "sell": 0,
@@ -449,7 +449,7 @@
   "ARM": {
     "ticker": "ARM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:14+00:00",
+    "retrieved_at": "2026-09-02T02:04:23+00:00",
     "errors": [],
     "price": {
       "ticker": "ARM",
@@ -460,7 +460,7 @@
       "pct_change_1y": 0.749042,
       "avg_volume_30d": 9021540.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -470,7 +470,7 @@
       "ev_to_ebitda": 251.8143,
       "price_to_sales": 56.3144,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.9308,
@@ -478,10 +478,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "ARM",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 5,
-      "buy": 23,
-      "hold": 15,
+      "buy": 22,
+      "hold": 16,
       "sell": 1,
       "strongSell": 1
     },
@@ -547,7 +547,7 @@
   "AVGO": {
     "ticker": "AVGO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:20+00:00",
+    "retrieved_at": "2026-09-02T02:04:30+00:00",
     "errors": [],
     "price": {
       "ticker": "AVGO",
@@ -558,7 +558,7 @@
       "pct_change_1y": 0.24530100000000002,
       "avg_volume_30d": 24027520.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -568,7 +568,7 @@
       "ev_to_ebitda": 58.8775,
       "price_to_sales": 26.5539,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -0.1782,
@@ -576,9 +576,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "AVGO",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 17,
-      "buy": 34,
+      "buy": 35,
       "hold": 5,
       "sell": 0,
       "strongSell": 0
@@ -696,7 +696,7 @@
   "AXTI": {
     "ticker": "AXTI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:26+00:00",
+    "retrieved_at": "2026-09-02T02:04:36+00:00",
     "errors": [],
     "price": {
       "ticker": "AXTI",
@@ -707,7 +707,7 @@
       "pct_change_1y": 19.9,
       "avg_volume_30d": 10420280.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -717,7 +717,7 @@
       "ev_to_ebitda": 7854.687,
       "price_to_sales": 52.0689,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -7.4245,
@@ -725,7 +725,7 @@
     "watch_trigger_move": true,
     "analyst_recommendations": {
       "symbol": "AXTI",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 3,
       "buy": 6,
       "hold": 2,
@@ -845,7 +845,7 @@
   "BE": {
     "ticker": "BE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:32+00:00",
+    "retrieved_at": "2026-09-02T02:04:42+00:00",
     "errors": [],
     "price": {
       "ticker": "BE",
@@ -856,7 +856,7 @@
       "pct_change_1y": 2.896864,
       "avg_volume_30d": 13374380.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -866,7 +866,7 @@
       "ev_to_ebitda": 598.6506,
       "price_to_sales": 28.5474,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": 3.5531,
@@ -874,10 +874,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "BE",
-      "period": "2026-08-01",
-      "strongBuy": 6,
-      "buy": 18,
-      "hold": 13,
+      "period": "2026-09-01",
+      "strongBuy": 7,
+      "buy": 17,
+      "hold": 14,
       "sell": 1,
       "strongSell": 0
     },
@@ -994,7 +994,7 @@
   "CLS": {
     "ticker": "CLS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:38+00:00",
+    "retrieved_at": "2026-09-02T02:04:48+00:00",
     "errors": [],
     "price": {
       "ticker": "CLS",
@@ -1005,7 +1005,7 @@
       "pct_change_1y": 0.554542,
       "avg_volume_30d": 431160.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1015,7 +1015,7 @@
       "ev_to_ebitda": 27.7182,
       "price_to_sales": 2.4992,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.2745,
@@ -1023,8 +1023,8 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "CLS.TO",
-      "period": "2026-08-01",
-      "strongBuy": 3,
+      "period": "2026-09-01",
+      "strongBuy": 4,
       "buy": 8,
       "hold": 1,
       "sell": 0,
@@ -1143,7 +1143,7 @@
   "COHR": {
     "ticker": "COHR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:43+00:00",
+    "retrieved_at": "2026-09-02T02:04:54+00:00",
     "errors": [],
     "price": {
       "ticker": "COHR",
@@ -1154,7 +1154,7 @@
       "pct_change_1y": 2.0709630000000003,
       "avg_volume_30d": 6216800.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1164,7 +1164,7 @@
       "ev_to_ebitda": 68.8509,
       "price_to_sales": 8.9938,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.0876,
@@ -1172,14 +1172,36 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "COHR",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 7,
-      "buy": 16,
+      "buy": 17,
       "hold": 7,
       "sell": 0,
       "strongSell": 0
     },
     "insider_transactions": [
+      {
+        "ticker": "COHR",
+        "insider_name": "Eng Julie Sheridan",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 7047.0,
+        "value_usd": 1950834.4,
+        "filing_date": "2026-09-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/820318/000089914026001037/xslF345X06/form4.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "COHR",
+        "insider_name": "Eng Julie Sheridan",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 6030.0,
+        "value_usd": 1632246.23,
+        "filing_date": "2026-09-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/820318/000089914026001037/xslF345X06/form4.xml",
+        "is_mock": false
+      },
       {
         "ticker": "COHR",
         "insider_name": "Luther Sherri R",
@@ -1209,28 +1231,6 @@
         "transaction_type": "Sell",
         "shares": 500.0,
         "value_usd": 172000.0,
-        "filing_date": "2026-05-13",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/820318/000089914026000476/xslF345X06/form4.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "COHR",
-        "insider_name": "Xia Howard H.",
-        "role": "Insider",
-        "transaction_type": "Sell",
-        "shares": 500.0,
-        "value_usd": 174000.0,
-        "filing_date": "2026-05-13",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/820318/000089914026000476/xslF345X06/form4.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "COHR",
-        "insider_name": "Xia Howard H.",
-        "role": "Insider",
-        "transaction_type": "Sell",
-        "shares": 500.0,
-        "value_usd": 179000.0,
         "filing_date": "2026-05-13",
         "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/820318/000089914026000476/xslF345X06/form4.xml",
         "is_mock": false
@@ -1292,7 +1292,7 @@
   "CRDO": {
     "ticker": "CRDO",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:50+00:00",
+    "retrieved_at": "2026-09-02T02:05:01+00:00",
     "errors": [],
     "price": {
       "ticker": "CRDO",
@@ -1303,7 +1303,7 @@
       "pct_change_1y": 0.838121,
       "avg_volume_30d": 7078330.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1313,7 +1313,7 @@
       "ev_to_ebitda": 100.9843,
       "price_to_sales": 37.1513,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -8.6476,
@@ -1321,7 +1321,7 @@
     "watch_trigger_move": true,
     "analyst_recommendations": {
       "symbol": "CRDO",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 10,
       "buy": 16,
       "hold": 2,
@@ -1441,7 +1441,7 @@
   "DRAM": {
     "ticker": "DRAM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:13:55+00:00",
+    "retrieved_at": "2026-09-02T02:05:07+00:00",
     "errors": [
       "valuation: No market cap from Finnhub for 'DRAM'.",
       "insiders: No SEC EDGAR CIK found for ticker 'DRAM' — not a US-listed filer, or the ticker is wrong.",
@@ -1456,7 +1456,7 @@
       "pct_change_1y": 0.0,
       "avg_volume_30d": 52130040.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": null,
@@ -1470,7 +1470,7 @@
   "INTC": {
     "ticker": "INTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:00+00:00",
+    "retrieved_at": "2026-09-02T02:05:12+00:00",
     "errors": [],
     "price": {
       "ticker": "INTC",
@@ -1481,7 +1481,7 @@
       "pct_change_1y": 2.675975,
       "avg_volume_30d": 127101660.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1491,7 +1491,7 @@
       "ev_to_ebitda": 34.0858,
       "price_to_sales": 9.366,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -0.6033,
@@ -1499,11 +1499,11 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "INTC",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 4,
       "buy": 15,
-      "hold": 33,
-      "sell": 3,
+      "hold": 34,
+      "sell": 2,
       "strongSell": 0
     },
     "insider_transactions": [
@@ -1586,7 +1586,7 @@
   "IREN": {
     "ticker": "IREN",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:10+00:00",
+    "retrieved_at": "2026-09-02T02:05:22+00:00",
     "errors": [],
     "price": {
       "ticker": "IREN",
@@ -1597,7 +1597,7 @@
       "pct_change_1y": 0.401624,
       "avg_volume_30d": 47640460.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1607,7 +1607,7 @@
       "ev_to_ebitda": 444.3101,
       "price_to_sales": 21.3334,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -0.7948,
@@ -1615,9 +1615,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "IREN",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 7,
-      "buy": 10,
+      "buy": 11,
       "hold": 4,
       "sell": 1,
       "strongSell": 0
@@ -1713,7 +1713,7 @@
   "LITE": {
     "ticker": "LITE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:19+00:00",
+    "retrieved_at": "2026-09-02T02:05:31+00:00",
     "errors": [],
     "price": {
       "ticker": "LITE",
@@ -1724,7 +1724,7 @@
       "pct_change_1y": 5.887734,
       "avg_volume_30d": 5365690.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1734,7 +1734,7 @@
       "ev_to_ebitda": 221.3658,
       "price_to_sales": 23.5541,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -5.0079,
@@ -1742,14 +1742,47 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "LITE",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 9,
-      "buy": 19,
+      "buy": 21,
       "hold": 5,
       "sell": 0,
       "strongSell": 0
     },
     "insider_transactions": [
+      {
+        "ticker": "LITE",
+        "insider_name": "Wupen Yuen",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 500.0,
+        "value_usd": 470475.0,
+        "filing_date": "2026-09-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000148955026000008/xslF345X06/form4-09022026_010927.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "LITE",
+        "insider_name": "Wupen Yuen",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 500.0,
+        "value_usd": 447500.0,
+        "filing_date": "2026-09-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000148955026000008/xslF345X06/form4-09022026_010927.xml",
+        "is_mock": false
+      },
+      {
+        "ticker": "LITE",
+        "insider_name": "Wupen Yuen",
+        "role": "Insider",
+        "transaction_type": "Sell",
+        "shares": 500.0,
+        "value_usd": 450520.0,
+        "filing_date": "2026-09-01",
+        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000148955026000008/xslF345X06/form4-09022026_010927.xml",
+        "is_mock": false
+      },
       {
         "ticker": "LITE",
         "insider_name": "HURLSTON MICHAEL E.",
@@ -1770,39 +1803,6 @@
         "value_usd": 479330.0,
         "filing_date": "2026-08-27",
         "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000148955026000007/xslF345X06/form4-08282026_010839.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "LITE",
-        "insider_name": "Retort Vincent",
-        "role": "Insider",
-        "transaction_type": "Sell",
-        "shares": 360.0,
-        "value_usd": 303197.8,
-        "filing_date": "2026-08-27",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000164825626000008/xslF345X06/form4-08282026_010803.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "LITE",
-        "insider_name": "Retort Vincent",
-        "role": "Insider",
-        "transaction_type": "Sell",
-        "shares": 1213.0,
-        "value_usd": 1023288.5,
-        "filing_date": "2026-08-27",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000164825626000008/xslF345X06/form4-08282026_010803.xml",
-        "is_mock": false
-      },
-      {
-        "ticker": "LITE",
-        "insider_name": "Retort Vincent",
-        "role": "Insider",
-        "transaction_type": "Sell",
-        "shares": 1053.0,
-        "value_usd": 889372.43,
-        "filing_date": "2026-08-27",
-        "url_or_identifier": "https://www.sec.gov/Archives/edgar/data/1633978/000164825626000008/xslF345X06/form4-08282026_010803.xml",
         "is_mock": false
       }
     ],
@@ -1862,7 +1862,7 @@
   "LPTH": {
     "ticker": "LPTH",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:25+00:00",
+    "retrieved_at": "2026-09-02T02:05:36+00:00",
     "errors": [],
     "price": {
       "ticker": "LPTH",
@@ -1873,7 +1873,7 @@
       "pct_change_1y": 0.8803740000000001,
       "avg_volume_30d": 3513870.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -1883,7 +1883,7 @@
       "ev_to_ebitda": 320.9164,
       "price_to_sales": 14.5155,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -5.8648,
@@ -1891,9 +1891,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "LPTH",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 3,
-      "buy": 6,
+      "buy": 7,
       "hold": 1,
       "sell": 0,
       "strongSell": 0
@@ -2011,7 +2011,7 @@
   "MP": {
     "ticker": "MP",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:31+00:00",
+    "retrieved_at": "2026-09-02T02:05:42+00:00",
     "errors": [],
     "price": {
       "ticker": "MP",
@@ -2022,7 +2022,7 @@
       "pct_change_1y": -0.230391,
       "avg_volume_30d": 6226700.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2032,7 +2032,7 @@
       "ev_to_ebitda": 344.1682,
       "price_to_sales": 28.5213,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -1.8447,
@@ -2040,7 +2040,7 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "MP",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 9,
       "buy": 18,
       "hold": 1,
@@ -2160,7 +2160,7 @@
   "MRVL": {
     "ticker": "MRVL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:38+00:00",
+    "retrieved_at": "2026-09-02T02:05:50+00:00",
     "errors": [],
     "price": {
       "ticker": "MRVL",
@@ -2171,7 +2171,7 @@
       "pct_change_1y": 2.366897,
       "avg_volume_30d": 36533340.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2181,7 +2181,7 @@
       "ev_to_ebitda": 55.1022,
       "price_to_sales": 22.3214,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -0.6,
@@ -2189,9 +2189,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "MRVL",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 13,
-      "buy": 29,
+      "buy": 30,
       "hold": 7,
       "sell": 0,
       "strongSell": 0
@@ -2309,7 +2309,7 @@
   "MU": {
     "ticker": "MU",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:45+00:00",
+    "retrieved_at": "2026-09-02T02:05:57+00:00",
     "errors": [],
     "price": {
       "ticker": "MU",
@@ -2320,7 +2320,7 @@
       "pct_change_1y": 7.055878,
       "avg_volume_30d": 47023830.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2330,7 +2330,7 @@
       "ev_to_ebitda": 15.6385,
       "price_to_sales": 12.0374,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.6379,
@@ -2338,9 +2338,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "MU",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 18,
-      "buy": 33,
+      "buy": 35,
       "hold": 4,
       "sell": 1,
       "strongSell": 0
@@ -2458,7 +2458,7 @@
   "MXL": {
     "ticker": "MXL",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:51+00:00",
+    "retrieved_at": "2026-09-02T02:06:02+00:00",
     "errors": [],
     "price": {
       "ticker": "MXL",
@@ -2469,7 +2469,7 @@
       "pct_change_1y": 2.811069,
       "avg_volume_30d": 4583950.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2479,7 +2479,7 @@
       "ev_to_ebitda": 147.6277,
       "price_to_sales": 12.426,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.8725,
@@ -2487,7 +2487,7 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "MXL",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 2,
       "buy": 8,
       "hold": 4,
@@ -2607,7 +2607,7 @@
   "NBIS": {
     "ticker": "NBIS",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:14:56+00:00",
+    "retrieved_at": "2026-09-02T02:06:08+00:00",
     "errors": [],
     "price": {
       "ticker": "NBIS",
@@ -2618,7 +2618,7 @@
       "pct_change_1y": 2.019906,
       "avg_volume_30d": 20270250.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2628,7 +2628,7 @@
       "ev_to_ebitda": 796.4917,
       "price_to_sales": 47.3556,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.2862,
@@ -2636,10 +2636,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "NBIS",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 7,
       "buy": 11,
-      "hold": 6,
+      "hold": 7,
       "sell": 0,
       "strongSell": 0
     },
@@ -2705,7 +2705,7 @@
   "PLTR": {
     "ticker": "PLTR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:02+00:00",
+    "retrieved_at": "2026-09-02T02:06:14+00:00",
     "errors": [],
     "price": {
       "ticker": "PLTR",
@@ -2716,7 +2716,7 @@
       "pct_change_1y": 0.189331,
       "avg_volume_30d": 42036620.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2726,7 +2726,7 @@
       "ev_to_ebitda": 161.5073,
       "price_to_sales": 70.1865,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.466,
@@ -2734,10 +2734,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "PLTR",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 12,
-      "buy": 15,
-      "hold": 10,
+      "buy": 16,
+      "hold": 9,
       "sell": 1,
       "strongSell": 1
     },
@@ -2854,7 +2854,7 @@
   "RKLB": {
     "ticker": "RKLB",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:08+00:00",
+    "retrieved_at": "2026-09-02T02:06:20+00:00",
     "errors": [],
     "price": {
       "ticker": "RKLB",
@@ -2865,7 +2865,7 @@
       "pct_change_1y": 0.315226,
       "avg_volume_30d": 23880760.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -2875,7 +2875,7 @@
       "ev_to_ebitda": null,
       "price_to_sales": 62.3131,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.1589,
@@ -2883,10 +2883,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "RKLB",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 7,
       "buy": 14,
-      "hold": 6,
+      "hold": 5,
       "sell": 0,
       "strongSell": 0
     },
@@ -3003,7 +3003,7 @@
   "SIVE": {
     "ticker": "SIVE",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:14+00:00",
+    "retrieved_at": "2026-09-02T02:06:26+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SIVE'.",
       "valuation: No market cap from Finnhub for 'SIVE'.",
@@ -3022,7 +3022,7 @@
   "SKHY": {
     "ticker": "SKHY",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:18+00:00",
+    "retrieved_at": "2026-09-02T02:06:31+00:00",
     "errors": [],
     "price": {
       "ticker": "SKHY",
@@ -3033,7 +3033,7 @@
       "pct_change_1y": 1.994633,
       "avg_volume_30d": 5682470.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3043,7 +3043,7 @@
       "ev_to_ebitda": 14.0534,
       "price_to_sales": 8.2994,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.3089,
@@ -3051,8 +3051,8 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "000660.KS",
-      "period": "2026-08-01",
-      "strongBuy": 15,
+      "period": "2026-09-01",
+      "strongBuy": 17,
       "buy": 29,
       "hold": 2,
       "sell": 0,
@@ -3064,7 +3064,7 @@
   "SMCI": {
     "ticker": "SMCI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:24+00:00",
+    "retrieved_at": "2026-09-02T02:06:37+00:00",
     "errors": [],
     "price": {
       "ticker": "SMCI",
@@ -3075,7 +3075,7 @@
       "pct_change_1y": -0.102552,
       "avg_volume_30d": 52805300.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3085,7 +3085,7 @@
       "ev_to_ebitda": 20.9675,
       "price_to_sales": 0.7538,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -1.529,
@@ -3093,12 +3093,12 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "SMCI",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 3,
       "buy": 7,
       "hold": 13,
-      "sell": 3,
-      "strongSell": 1
+      "sell": 4,
+      "strongSell": 0
     },
     "insider_transactions": [],
     "news": [
@@ -3157,7 +3157,7 @@
   "SMTC": {
     "ticker": "SMTC",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:34+00:00",
+    "retrieved_at": "2026-09-02T02:06:47+00:00",
     "errors": [],
     "price": {
       "ticker": "SMTC",
@@ -3168,7 +3168,7 @@
       "pct_change_1y": 1.288862,
       "avg_volume_30d": 3380110.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3178,7 +3178,7 @@
       "ev_to_ebitda": 6166.8985,
       "price_to_sales": 11.9643,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -0.519,
@@ -3186,10 +3186,10 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "SMTC",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 5,
-      "buy": 14,
-      "hold": 3,
+      "buy": 16,
+      "hold": 2,
       "sell": 0,
       "strongSell": 0
     },
@@ -3306,7 +3306,7 @@
   "SNDK": {
     "ticker": "SNDK",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:40+00:00",
+    "retrieved_at": "2026-09-02T02:06:53+00:00",
     "errors": [],
     "price": {
       "ticker": "SNDK",
@@ -3317,7 +3317,7 @@
       "pct_change_1y": 28.858966999999996,
       "avg_volume_30d": 13996770.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3327,7 +3327,7 @@
       "ev_to_ebitda": 17.6691,
       "price_to_sales": 11.1763,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -1.904,
@@ -3335,8 +3335,8 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "SNDK",
-      "period": "2026-08-01",
-      "strongBuy": 9,
+      "period": "2026-09-01",
+      "strongBuy": 11,
       "buy": 17,
       "hold": 5,
       "sell": 0,
@@ -3455,7 +3455,7 @@
   "SOI": {
     "ticker": "SOI",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:47+00:00",
+    "retrieved_at": "2026-09-02T02:07:00+00:00",
     "errors": [
       "price: No quote data from Finnhub for 'SOI'.",
       "insiders: No SEC EDGAR CIK found for ticker 'SOI' — not a US-listed filer, or the ticker is wrong.",
@@ -3469,7 +3469,7 @@
       "ev_to_ebitda": null,
       "price_to_sales": 7.6403,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": null,
@@ -3482,7 +3482,7 @@
   "SPCX": {
     "ticker": "SPCX",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:50+00:00",
+    "retrieved_at": "2026-09-02T02:07:04+00:00",
     "errors": [],
     "price": {
       "ticker": "SPCX",
@@ -3493,7 +3493,7 @@
       "pct_change_1y": 0.0,
       "avg_volume_30d": 115070740.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3503,7 +3503,7 @@
       "ev_to_ebitda": null,
       "price_to_sales": 59.7285,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -1.0161,
@@ -3511,12 +3511,12 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "SPCX",
-      "period": "2026-08-01",
-      "strongBuy": 12,
-      "buy": 20,
+      "period": "2026-09-01",
+      "strongBuy": 13,
+      "buy": 21,
       "hold": 7,
       "sell": 1,
-      "strongSell": 0
+      "strongSell": 1
     },
     "insider_transactions": [
       {
@@ -3587,7 +3587,7 @@
   "TSEM": {
     "ticker": "TSEM",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:15:57+00:00",
+    "retrieved_at": "2026-09-02T02:07:11+00:00",
     "errors": [],
     "price": {
       "ticker": "TSEM",
@@ -3598,7 +3598,7 @@
       "pct_change_1y": 2.486059,
       "avg_volume_30d": 2039520.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3608,7 +3608,7 @@
       "ev_to_ebitda": 49.3465,
       "price_to_sales": 2.10356,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -2.9212,
@@ -3616,9 +3616,9 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "TSEM",
-      "period": "2026-08-01",
-      "strongBuy": 2,
-      "buy": 7,
+      "period": "2026-09-01",
+      "strongBuy": 3,
+      "buy": 6,
       "hold": 2,
       "sell": 0,
       "strongSell": 0
@@ -3685,7 +3685,7 @@
   "USAR": {
     "ticker": "USAR",
     "jurisdiction": "United States",
-    "retrieved_at": "2026-09-01T22:16:03+00:00",
+    "retrieved_at": "2026-09-02T02:07:17+00:00",
     "errors": [],
     "price": {
       "ticker": "USAR",
@@ -3696,7 +3696,7 @@
       "pct_change_1y": 0.19437000000000001,
       "avg_volume_30d": 14599410.0,
       "trend_note": "Live price data from Finnhub (free tier). Volume figure is a 3-month average, not exactly 30 days — Finnhub's free tier doesn't expose that window. Not a trading signal on its own.",
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "valuation": {
@@ -3706,7 +3706,7 @@
       "ev_to_ebitda": null,
       "price_to_sales": null,
       "peer_median_ev_to_revenue": null,
-      "as_of_date": "2026-09-01",
+      "as_of_date": "2026-09-02",
       "is_mock": false
     },
     "pct_change_1d": -3.1425,
@@ -3714,7 +3714,7 @@
     "watch_trigger_move": false,
     "analyst_recommendations": {
       "symbol": "USAR",
-      "period": "2026-08-01",
+      "period": "2026-09-01",
       "strongBuy": 4,
       "buy": 9,
       "hold": 1,

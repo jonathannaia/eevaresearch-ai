@@ -1,6 +1,20 @@
 [
   {
     "niche": "Space",
+    "headline": "Nonprofit wants to launch 80,000-year mission to Alpha Centauri in 2029 (video)",
+    "summary": "The Fermi Explorer Mission plans to launch a small, inexpensive probe to Alpha Centauri in the coming years as part of an 80,000-year mission intended to inspire exploration and expand humanity's perspective.",
+    "source_url": "https://www.space.com/space-exploration/nonprofit-wants-to-launch-80-000-year-mission-to-alpha-centauri-in-2029-video",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 01 Sep 2026 20:00:15 +0000",
+    "retrieved_at": "2026-09-02T02:04:02+00:00",
+    "tickers": [],
+    "relevance_reason": "Space launch of a probe to Alpha Centauri falls within the Space scope",
+    "url_hash": "46d5374bc2f3f706",
+    "id": "46d5374bc2f3f706"
+  },
+  {
+    "niche": "Space",
     "headline": "Private group wants to launch \"cheapest possible\" mission to Alpha Centauri",
     "summary": "A private group is planning to launch a mission to Alpha Centauri with a focus on minimizing costs.",
     "source_url": "https://arstechnica.com/space/2026/09/private-group-wants-to-launch-cheapest-possible-mission-to-alpha-centauri/",
