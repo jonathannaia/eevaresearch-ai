@@ -34,9 +34,11 @@ PRIMARY_NAV: list[tuple[str, str]] = [
     # public, curated cross-company research narrative surface. Placed
     # directly beneath Radar: Radar surfaces individual detected
     # company signals, Themes connects official evidence across
-    # companies into a testable thesis. Distinct from the legacy demo
-    # ticker/theme/subtheme browser, which moved to the hidden
-    # "theme_browser" route below to free up this url_path/nav slot.
+    # companies into a testable thesis. The legacy demo ticker/theme/
+    # subtheme browser that previously occupied this url_path/nav slot
+    # was removed entirely (reader-facing data-integrity pass, design/
+    # DECISIONS.md) rather than kept as a hidden route — it had no live
+    # real data of its own.
     ("themes", "Themes"),
     # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
     # scoped autonomous discovery surface, not a Radar view (see the
@@ -71,7 +73,6 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 # stays conceptually part of Radar, not a separate visible destination;
 # Research stays implemented, just hidden from primary nav.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
-    ("theme_browser", "Theme Browser"),
     ("signals", "Signals"),
     ("research", "Research"),
     ("methodology", "Methodology"),

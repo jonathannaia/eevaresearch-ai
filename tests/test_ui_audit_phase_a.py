@@ -76,22 +76,6 @@ def test_company_page_shows_honest_empty_state_for_fundamental_and_technical_sna
     assert len(at.dataframe) == 0
 
 
-# --- Themes: duplicated per-subtheme line now appears once per theme ---
-
-def test_themes_page_investigate_guidance_appears_once_per_theme_not_per_subtheme():
-    at = AppTest.from_file(str(HARNESS_DIR / "themes_page.py"), default_timeout=10)
-    at.run()
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    occurrences = all_text.count("What to investigate")
-    # Exactly one per theme (5 themes) — previously one per subtheme
-    # (strictly more, since every theme has at least one subtheme).
-    assert occurrences == 5
-    # The guidance text itself is preserved verbatim in substance, not deleted.
-    assert "which companies" in all_text
-    assert "bottleneck" in all_text
-
-
 # --- Home: hero + 3-step + one primary CTA ---
 
 def test_home_page_shows_exactly_three_steps():

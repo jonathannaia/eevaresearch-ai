@@ -38,7 +38,6 @@ from src.ui.pages import (
     research_cases,
     signals,
     theme_workspace,
-    themes,
     themes_research,
     watchlists,
 )
@@ -59,12 +58,7 @@ _RENDER_FNS = {
     "daily_news": daily_news.render,
     "watchlists": watchlists.render,
     "coverage": coverage.render,
-    # Evidence-First Themes MVP (design/DECISIONS.md): "themes" now
-    # points at the new public research-narrative page, not the legacy
-    # demo ticker/theme/subtheme browser — that page moved to
-    # "theme_browser" below, same module, new hidden route/url_path.
     "themes": themes_research.render,
-    "theme_browser": themes.render,
     "signals": signals.render,
     "research": research.render,
     "methodology": methodology.render,
@@ -78,7 +72,6 @@ _URL_PATHS = {
     "watchlists": "watchlists",
     "coverage": "coverage",
     "themes": "themes",
-    "theme_browser": "theme-browser",
     "signals": "signals",
     "research": "research",
     "methodology": "methodology",

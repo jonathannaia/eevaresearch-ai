@@ -45,30 +45,6 @@ def test_radar_inbox_not_configured_state_collapses_detail_into_expander(tmp_pat
     assert "Configuration details" in labels
 
 
-# --- Themes Companies filter: empty-option dimensions stop rendering ---
-
-def test_themes_companies_filter_hides_dimensions_with_no_options():
-    at = AppTest.from_file(str(HARNESS_DIR / "themes_page.py"), default_timeout=15)
-    at.run()
-    assert not at.exception
-
-    # AI Buildout (the first outer tab) has one demo ticker (DEMO, under
-    # Photonics) so its Companies tab has zero tickers loaded — every
-    # per-ticker-attribute dimension (Exposure/Market cap/Risk level/
-    # Liquidity/Technical strength) computes an empty option list and
-    # must not render as a dead multiselect. Subcategory always has
-    # options (from the theme's own subthemes, independent of tickers).
-    multiselect_labels = [m.label for m in at.multiselect]
-    assert "Subcategory" in multiselect_labels
-    # These would only appear if at least one ticker exists somewhere
-    # with a non-empty value for that attribute — Photonics' one DEMO
-    # ticker does supply placeholder values, so the dead-filter guard is
-    # proven by checking the *count* stays bounded rather than asserting
-    # global absence (a real ticker elsewhere would legitimately add one).
-    assert multiselect_labels.count("Exposure") <= 1
-    assert multiselect_labels.count("Market cap") <= 1
-
-
 # --- Coverage: Layer filter hidden when empty, expander labels dynamic ---
 
 def test_coverage_layer_filter_absent_when_no_seed_issuer_has_a_layer():

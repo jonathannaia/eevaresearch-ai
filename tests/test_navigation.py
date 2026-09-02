@@ -103,9 +103,10 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
     # Evidence-First Themes MVP (design/DECISIONS.md): "themes" moved
     # from here into PRIMARY_NAV above (now the new public research
-    # page); the legacy demo ticker/theme/subtheme browser moved to the
-    # hidden "theme_browser" key in its place, same module, new route.
-    assert [k for k, _ in HIDDEN_FROM_NAV] == ["theme_browser", "signals", "research", "methodology", "about"]
+    # page). The legacy demo ticker/theme/subtheme browser that used to
+    # occupy this slot was removed entirely (reader-facing data-
+    # integrity pass, design/DECISIONS.md), not just hidden.
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "research", "methodology", "about"]
 
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()
@@ -132,7 +133,7 @@ def test_page_objects_stay_identical_across_reruns_within_the_same_default_phase
         assert pages_a[key] is pages_b[key], f"'{key}' page object was rebuilt across reruns in the same phase"
 
 
-@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "daily_news_page.py", "coverage_page.py", "themes_page.py", "signals_page.py", "research_page.py", "methodology_page.py", "about_page.py", "watchlists_page.py"])
+@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "daily_news_page.py", "coverage_page.py", "signals_page.py", "research_page.py", "methodology_page.py", "about_page.py", "watchlists_page.py"])
 def test_every_visible_route_renders_through_its_registered_render_callable(harness_file):
     """Every harness here calls the exact same `with_chrome(render_fn, key)`
     callable app.py registers as that route's `st.Page` — not a

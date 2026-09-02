@@ -18,7 +18,6 @@ PRIMARY_PAGES = [
     "home_page.py",
     "dashboard_page.py",
     "radar_inbox_page.py",
-    "themes_page.py",
     "signals_page.py",
     "research_page.py",
     "methodology_page.py",
@@ -116,15 +115,3 @@ def test_watchlists_page_renders_without_exception():
     assert not at.exception
 
 
-def test_themes_page_all_five_themes_present():
-    at = AppTest.from_file(str(HARNESS_DIR / "themes_page.py"), default_timeout=10)
-    at.run()
-    assert not at.exception
-    tab_labels = [t.label for t in at.tabs]
-    # Outer tab is one per theme; each theme also nests Map/Rotation/
-    # Companies/Catalysts tabs (brief §4), so all labels appear together
-    # in the flattened tab list rather than as five bare top-level tabs.
-    for name in ["AI Buildout", "Humanoids", "Space", "Memory", "Photonics"]:
-        assert name in tab_labels
-    for name in ["Map", "Rotation", "Companies", "Catalysts"]:
-        assert tab_labels.count(name) == 5
