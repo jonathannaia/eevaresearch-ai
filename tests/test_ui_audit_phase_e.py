@@ -197,45 +197,22 @@ def test_region_source_mapping_matches_the_three_real_filing_sources_only():
     assert "China" not in REGION_SOURCE
 
 
-# ============================== CAPITAL ROTATION ==============================
-
-def test_capital_rotation_is_a_secondary_collapsed_expander_labeled_as_demo_snapshot():
-    at = _run_dashboard()
-    assert not at.exception
-    expander_labels = {e.label for e in at.expander}
-    assert "Capital Rotation — demo snapshot" in expander_labels
-    all_text = _text(at)
-    assert "Aug 15, 2026" in all_text  # the real as_of date, not "today"
-    for forbidden in ("Capital Rotation — Today", "Capital Rotation — Live", "Capital Rotation — Current", "Capital Rotation — Real-time"):
-        assert forbidden not in all_text
-
-
-def test_capital_rotation_calculation_and_data_are_unchanged():
-    """Phase E1 only relocates/relabels Capital Rotation — its source
-    (data/seed/rotation_metrics.json) and computation
-    (src/logic/theme_metrics.py) are untouched. A direct read confirms
-    the same five fixed, is_demo=True records this repo has always had."""
-    from src.data_access.container import get_repositories
-
-    ctx = get_repositories()
-    metrics = ctx.market_data_provider.get_rotation_metrics()
-    assert len(metrics) == 5
-    for m in metrics:
-        assert m.is_demo is True
-        assert m.as_of.startswith("2026-08-15")
-
-
 # ============================== EXISTING MODULES / ROUTES INTACT ==============================
 
-def test_dashboard_keeps_every_pre_existing_module():
-    """Watchlist Changes is excluded (reader-facing data-integrity pass,
-    design/DECISIONS.md) — it depended on the Watchlists page, which had
-    no live real data and was removed in the same pass."""
+def test_dashboard_has_no_capital_rotation_catalysts_or_todays_read():
+    """Capital Rotation, Catalysts, and Today's Read were removed
+    entirely (reader-facing data-integrity pass, design/DECISIONS.md) —
+    no real live source exists in this build for market performance,
+    breadth, rotation, or a catalyst calendar, and none was invented to
+    replace them. Fixture-driven presence/absence checks for Theme
+    Health and Priority Signals (which depend on whether any real
+    published Theme/real signal exists) live in
+    tests/test_dashboard_data_integrity.py, not here."""
     at = _run_dashboard()
     all_text = _text(at)
-    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts"):
-        assert heading in all_text
-    assert "Watchlist Changes" not in all_text
+    for heading in ("Today's Read", "Capital Rotation", "Next Catalysts", "Watchlist Changes"):
+        assert heading not in all_text
+    assert at.expander == []
 
 
 def test_market_map_open_radar_handoff_uses_the_existing_route():

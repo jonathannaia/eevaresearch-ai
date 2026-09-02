@@ -41,6 +41,7 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.backend_factory import ThemeRepositoryProtocol
+from src.logic.market_map import jurisdiction_for_source
 from src.models.theme_research import CompanyRole, ResearchTheme
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
@@ -272,7 +273,9 @@ def _render_evidence_row(item) -> None:
         with cols[1]:
             st.markdown(f'<div class="er-muted">{_esc(item.company)}</div>', unsafe_allow_html=True)
         with cols[2]:
-            st.markdown(f'<div class="er-muted">{_esc(item.source_name)}</div>', unsafe_allow_html=True)
+            jurisdiction = jurisdiction_for_source(item.source_name)
+            source_label = f"{item.source_name} · {jurisdiction}" if jurisdiction else item.source_name
+            st.markdown(f'<div class="er-muted">{_esc(source_label)}</div>', unsafe_allow_html=True)
         with cols[3]:
             st.markdown(f'<div class="er-muted" style="text-align:right;">{_enum_label(item.direction)}</div>', unsafe_allow_html=True)
 

@@ -54,3 +54,15 @@ REGION_SOURCE: dict[str, str] = {
 }
 REGIONS_WITH_COVERAGE = tuple(REGION_SOURCE.keys())
 REGIONS_ALL = (*REGIONS_WITH_COVERAGE, "China")
+
+_SOURCE_REGION = {source: region for region, source in REGION_SOURCE.items()}
+
+
+def jurisdiction_for_source(source_name: str) -> str | None:
+    """Reader-facing data-integrity pass (design/DECISIONS.md) — the
+    inverse of REGION_SOURCE above, so any real, official-source-backed
+    record (a Signal, a Theme evidence item) can display its filing
+    jurisdiction from the same one real source-name field it already
+    carries, never a guess. Returns None for an unrecognized source name
+    — the caller omits the jurisdiction rather than inventing one."""
+    return _SOURCE_REGION.get(source_name)

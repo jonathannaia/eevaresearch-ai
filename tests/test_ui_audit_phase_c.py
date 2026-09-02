@@ -79,82 +79,9 @@ def test_dashboard_has_no_market_overview_page_title():
     assert "Theme leadership, signals, catalysts, and watchlist changes." not in all_text
 
 
-def test_dashboard_todays_read_is_the_first_section_on_the_page():
-    at = _run_dashboard()
-    ordered = _ordered(at)
-    # First Markdown after the stylesheet block itself.
-    first_content_index = next(i for i, (c, v) in enumerate(ordered) if c == "Markdown" and v and "<style>" not in v)
-    assert "Today" in str(ordered[first_content_index][1])
-
-
 def test_dashboard_has_no_dividers_between_modules():
     at = _run_dashboard()
     assert at.get("divider") == []
-
-
-def test_dashboard_primary_and_secondary_cta_are_visually_distinct():
-    """Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): the primary CTA's
-    anchor target moved from Capital Rotation (now a secondary, collapsed
-    expander) to the new Market Map section — same pill-vs-ghost visual
-    contrast this test checks, unchanged."""
-    at = _run_dashboard()
-    all_text = " ".join(m.value for m in at.markdown)
-    # Primary: filled midnight-blue pill with the shared glow recipe.
-    assert 'href="#market-map"' in all_text
-    primary_start = all_text.index('href="#market-map"')
-    primary_chunk = all_text[primary_start : primary_start + 400]
-    assert "background:var(--invert-bg)" in primary_chunk
-    assert "box-shadow" in primary_chunk
-    # Secondary: quiet ghost text link — no fill, no border, no glow.
-    assert 'href="#priority-signals"' in all_text
-    ghost_start = all_text.index('href="#priority-signals"')
-    ghost_chunk = all_text[ghost_start : ghost_start + 400]
-    assert "background:var(--invert-bg)" not in ghost_chunk
-    assert "box-shadow" not in ghost_chunk
-    assert "color:var(--text-3)" in ghost_chunk
-
-
-def test_dashboard_theme_health_uses_direction_dot_not_status_pill():
-    at = _run_dashboard()
-    all_text = _text_excluding_stylesheet(at)
-    # er-status-tag was the tinted-pill treatment this phase replaces with
-    # the shared direction_dot_html glyph+text marker (er-dir/er-dir-glyph)
-    # — nothing else on Dashboard renders er-status-tag as an actual
-    # element (the class's own CSS *definition* is excluded above).
-    assert "er-status-tag" not in all_text
-    assert all_text.count("er-dir-glyph") >= 5  # one per theme in Theme Health
-
-
-def test_dashboard_breadth_measure_is_labeled():
-    at = _run_dashboard()
-    all_text = " ".join(m.value for m in at.markdown)
-    assert all_text.count(">Breadth<") == 5  # one explicit label per Theme Health card
-
-
-def test_dashboard_keeps_every_module_and_priority_signals_is_no_longer_emphasized():
-    """Phase C's product rule (one clear primary element per page) demotes
-    Priority Signals back to the same standard weight as Capital
-    Rotation/Catalysts — Today's Read is the page's one primary element.
-
-    Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): Capital Rotation's
-    heading now lives in its collapsed `st.expander`'s own `label` rather
-    than a rendered markdown div — checked separately below via
-    `at.expander`; Market Map and Regional Brief are new primary/secondary
-    modules this phase adds, checked here too since "nothing removed" now
-    also means "the new required modules are actually present"."""
-    at = _run_dashboard()
-    all_text = " ".join(m.value for m in at.markdown)
-    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts", "Market Map", "Regional Brief"):
-        assert heading in all_text
-    # Watchlist Changes was removed entirely (reader-facing data-
-    # integrity pass, design/DECISIONS.md) — it depended on the
-    # Watchlists page, which had no live real data.
-    assert "Watchlist Changes" not in all_text
-    assert "Capital Rotation — demo snapshot" in {e.label for e in at.expander}
-    todays_read_heavy = '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>'
-    assert todays_read_heavy in all_text
-    assert '>Priority Signals</div>' in all_text or 'Priority Signals' in all_text
-    assert 'style="color:var(--text); font-weight:600; font-size:0.92rem;">Priority Signals' not in all_text
 
 
 _TRANSLATED_SPINE_SCRIPT = """

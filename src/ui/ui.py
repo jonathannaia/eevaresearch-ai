@@ -230,10 +230,13 @@ def render_sidebar(current_key: str) -> None:
                 st.page_link(page, label=label)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown(
-            '<div class="er-rail-status"><span class="dot"></span>Demo environment · sample data</div>',
-            unsafe_allow_html=True,
-        )
+        # Reader-facing data-integrity pass (design/DECISIONS.md): the
+        # previous blanket "Demo environment · sample data" status was
+        # removed rather than replaced with an equally blanket claim —
+        # some pages (Radar, Themes, Daily News, Signals, parts of
+        # Dashboard) are real and live, others (About's theme cards,
+        # Methodology/Disclaimer's own copy) are not yet, and there is
+        # no single truthful word for the whole app at once.
 
 
 # Full text stays on Methodology/Disclaimer (which already carry this
@@ -241,7 +244,13 @@ def render_sidebar(current_key: str) -> None:
 # but harmlessly, in this longer footer variant reserved for just those
 # two pages. Every other page gets the compact one-liner below instead of
 # repeating it at the same length (usability follow-up).
-_COMPACT_FOOTER_TEXT = "Evidence-first research · Sample data only · Not investment advice"
+#
+# Reader-facing data-integrity pass (design/DECISIONS.md): the previous
+# "Sample data only"/"demo/mock data only"/"Foundation phase (demo
+# data)" blanket claims are removed — several pages (Radar, Themes,
+# Daily News, Signals, parts of Dashboard) are real and live now, so a
+# blanket demo/sample claim on every page's footer would be false.
+_COMPACT_FOOTER_TEXT = "Evidence-first research · Not investment advice"
 _FULL_FOOTER_PAGES = {"methodology", "disclaimer"}
 
 
@@ -252,9 +261,8 @@ def render_footer(nav_key: str | None = None) -> None:
             <div class="er-footer">
                 <div>{APP_NAME} is evidence-first: every claim is labeled Fact, Interpretation,
                 Inference, or Uncertainty, and material claims link to their source.</div>
-                <div style="margin-top:0.4rem;">Data freshness: demo/mock data only — no live feed connected in this phase.</div>
                 <div style="margin-top:0.4rem;">{METHODOLOGY_STATEMENT}</div>
-                <div class="er-footer-version">{APP_NAME} v{APP_VERSION} · Foundation phase (demo data)</div>
+                <div class="er-footer-version">{APP_NAME} v{APP_VERSION}</div>
             </div>
             """,
             unsafe_allow_html=True,

@@ -50,8 +50,6 @@ def test_full_footer_page_renders_full_footer(harness_file):
 
 @pytest.mark.parametrize("harness_file", _COMPACT_FOOTER_PAGES)
 def test_other_pages_render_compact_footer(harness_file):
-    # Demo status lives in the sidebar (see test_sidebar_status_renders), not
-    # per-page — with_chrome only guarantees the footer.
     at = AppTest.from_file(str(HARNESS_DIR / harness_file), default_timeout=10)
     at.run()
     all_html = " ".join(m.value for m in at.markdown)
@@ -60,12 +58,16 @@ def test_other_pages_render_compact_footer(harness_file):
 
 
 def test_sidebar_status_renders():
+    """The previous blanket "Demo environment · sample data" status was
+    removed (reader-facing data-integrity pass, design/DECISIONS.md) —
+    several pages are real and live now, so no single truthful word
+    describes the whole app at once; nothing replaced it."""
     at = AppTest.from_file(str(HARNESS_DIR / "sidebar_rail.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_html = " ".join(m.value for m in at.markdown)
     assert "EevaResearch" in all_html
-    assert "Demo environment" in all_html
+    assert "Demo environment" not in all_html
     # Every visible WORKSPACE + SYSTEM nav item renders as a real
     # st.page_link (navigation-cleanup pass, design/DECISIONS.md) — a
     # subset check, not exact equality, since the sidebar also renders a

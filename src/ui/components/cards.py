@@ -9,14 +9,38 @@ which becomes a `st-key-{key}` class (confirmed against the running app).
 """
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 from src.logic.evidence import source_label
 from src.logic.formatting import fmt_date, fmt_pct
+from src.logic.market_map import jurisdiction_for_source
 from src.models.models import CapitalRotationMetric, Catalyst, EvidenceItem, Signal, Theme
 from src.ui.components.badges import demo_badge, direction_dot_html, direction_rail_class, freshness_badge
 from src.ui.components.evidence_chips import evidence_chip
 from src.ui.components.excerpts import render_excerpt
+
+
+def _esc(value: object) -> str:
+    if value is None:
+        return ""
+    return html.escape(str(value))
+
+
+def _safe_url(url: object) -> str | None:
+    """Only an http://​/https:// URL is ever rendered as a clickable link
+    — same discipline as src/ui/pages/themes_research.py's own
+    _safe_source_url. Anything else (empty, malformed, or an unsafe
+    scheme) returns None, so the caller renders no link at all rather
+    than an unsafe one."""
+    if not isinstance(url, str):
+        return None
+    stripped = url.strip()
+    lowered = stripped.lower()
+    if lowered.startswith("https://") or lowered.startswith("http://"):
+        return stripped
+    return None
 
 
 def _display_theme_name(signal: Signal, theme_name: str | None) -> str:
@@ -150,9 +174,11 @@ def signal_card(
                 # inferred. Empty for every demo signal. exchange_symbol
                 # only appears on an exact tracked-company registry match.
                 identity = f"{signal.issuer} · {signal.exchange_symbol}" if signal.exchange_symbol else signal.issuer
+                jurisdiction = jurisdiction_for_source(signal.source_name)
+                source_label_text = f"{signal.source_name} · {jurisdiction}" if jurisdiction else signal.source_name
                 st.markdown(
                     f'<div class="er-muted" style="font-size:0.85rem; margin-top:0.15rem;">'
-                    f'{identity} · {signal.source_name} · {fmt_date(signal.last_updated)}</div>',
+                    f'{identity} · {source_label_text} · {fmt_date(signal.last_updated)}</div>',
                     unsafe_allow_html=True,
                 )
         with top[1]:
@@ -283,16 +309,22 @@ def catalyst_timeline_row(catalyst: Catalyst) -> None:
     )
 
 
-def priority_signal_row(
-    signal: Signal, evidence_repository=None, theme_name: str | None = None, order: int | None = None,
-) -> None:
+def priority_signal_row(signal: Signal, order: int | None = None) -> None:
     """The compact single-line-plus-meta row used by Dashboard's Priority
     Signals (top 2-3 only) — direction, theme/subtheme, title, strength,
     horizon, one-line interpretation, and a real 'Review evidence →'
     action. Distinct from both the full `signal_card` (too tall for a
     dashboard summary) and `compact_signal_row` (no evidence action).
     `order` (1-based) renders a small "01"/"02" marker so the section reads
-    as ranked rather than an arbitrary list (final polish pass)."""
+    as ranked rather than an arbitrary list (final polish pass).
+
+    Reader-facing data-integrity pass (design/DECISIONS.md): this
+    component is only ever called with a real Radar-promoted signal
+    (is_demo=False unconditionally, see src/logic/signal_promotion.py) —
+    no `evidence_repository`/`theme_name` parameters, since both only
+    ever fed the now-removed demo path. Every row shows the full real
+    provenance (company, jurisdiction, source, date, original-source
+    link) directly, not just behind an extra click."""
     key = f"card-priority-signal-{signal.id}"
     rail_var = {"er-rail-pos": "var(--pos)", "er-rail-neg": "var(--neg)", "er-rail-mix": "var(--mix)"}[direction_rail_class(signal.direction)]
     st.markdown(f'<style>.st-key-{key} {{ border-left: 2px solid {rail_var} !important; }}</style>', unsafe_allow_html=True)
@@ -304,10 +336,27 @@ def priority_signal_row(
         with row[1]:
             tag_line = signal.theme_slug + (f" / {signal.subtheme_slug}" if signal.subtheme_slug else "")
             st.markdown(
-                f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {signal.title}</div>'
-                f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{tag_line}</div>',
+                f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {_esc(signal.title)}</div>'
+                f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>',
                 unsafe_allow_html=True,
             )
+            jurisdiction = jurisdiction_for_source(signal.source_name)
+            provenance = [p for p in (signal.issuer, jurisdiction, signal.source_name) if p]
+            if signal.last_updated:
+                provenance.append(fmt_date(signal.last_updated))
+            if provenance:
+                st.markdown(
+                    f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">{_esc(" · ".join(provenance))}</div>',
+                    unsafe_allow_html=True,
+                )
+            safe_url = _safe_url(signal.source_url)
+            if safe_url:
+                st.markdown(
+                    f'<div style="margin-top:0.1rem;"><a href="{html.escape(safe_url, quote=True)}" '
+                    f'target="_blank" rel="noopener noreferrer" style="color:var(--text-2); font-size:0.74rem; '
+                    f'text-decoration:underline;">Original source ↗</a></div>',
+                    unsafe_allow_html=True,
+                )
         with row[2]:
             st.markdown(f'<div class="er-metric-label">Strength</div><div class="er-mono" style="font-size:0.8rem;">{signal.strength.value}</div>', unsafe_allow_html=True)
         with row[3]:
@@ -317,10 +366,10 @@ def priority_signal_row(
                 if st.button("Review evidence", key=f"priority-review-{signal.id}", width="stretch"):
                     from src.ui.components.signal_drawer import open_signal_drawer
 
-                    open_signal_drawer(signal, evidence_repository=evidence_repository)
+                    open_signal_drawer(signal)
         st.markdown(
             f'<div class="er-muted" style="font-size:0.82rem; margin-top:var(--space-2); white-space:nowrap; '
-            f'overflow:hidden; text-overflow:ellipsis;">{signal.interpretation}</div>',
+            f'overflow:hidden; text-overflow:ellipsis;">{_esc(signal.interpretation)}</div>',
             unsafe_allow_html=True,
         )
 

@@ -1,44 +1,57 @@
 """Dashboard — answers one question: "what should I investigate now?"
-(UX-refinement pass, design/DECISIONS.md). Not an archive of every module —
-Today's Read, Theme Health, 2-3 Priority Signals, a compact Capital
-Rotation snapshot, and 2-3 Catalysts. Full signal discovery lives on
-Signals, full rotation detail on each theme's Rotation tab.
+(UX-refinement pass, design/DECISIONS.md).
 
-Reader-facing data-integrity pass (design/DECISIONS.md): the Watchlist
-Changes module is removed — it depended entirely on the Watchlists page
-(session-only, seeded from illustrative data, not live real data), which
-was removed in the same pass. Today's Read/Theme Health/Capital Rotation/
-Catalysts below are still demo data pending a follow-up pass; only
-Priority Signals, Market Map, and Regional Brief are real.
+Reader-facing data-integrity pass (design/DECISIONS.md): every module on
+this page now renders only from a real, live, source-backed data source,
+or does not render at all. Today's Read (a canned narrative built from
+100% static demo rotation-metrics seed data), Theme Health's old
+breadth/performance-bar treatment, Capital Rotation, Catalysts, and
+Watchlist Changes are all removed — no real live source exists in this
+build for market performance, breadth, rotation, or catalyst-calendar
+data, and none was invented to replace them. The exact real data source
+powering each remaining module:
 
-Phase C (editorial-simplicity pass, design/DECISIONS.md): the page-level
-"Market Overview" title/subtitle is gone — the sidebar's own active-nav
-highlight already establishes "you are on Dashboard," so repeating that in
-a page title read as redundant admin-tool chrome. Today's Read is now the
-first, strongest, and only "primary" module on the page (Priority Signals
-reverts to the same supporting-section weight as Catalysts/Watchlist
-Changes — it was briefly promoted to a second "primary" module in the
-prior UI-audit pass, but this phase's product rule is one clear primary
-element per page). The stacked full-width st.divider() rule between every
-module is gone too, replaced by the vertical spacing every section header
-already carries via --space-6 (assets/styles.css's own documented "32:
-between major Dashboard modules" token) — removing the divider doesn't
-remove any spacing, since that margin was never coming from the divider.
+  - Market Map: src/config/tracked_companies.py (the real tracked-issuer
+    registry) via src.logic.market_map.group_companies_by_theme; matched
+    signals in the selected-company detail come from the real Radar
+    signal repository. No price/quote/movement data exists anywhere in
+    this build, so every tile says "Price coverage not connected" rather
+    than a dash or invented value. Known, disclosed limitation: the
+    theme-group *display names/order* (e.g. "AI Buildout") still come
+    from ctx.theme_repository — the same real, permanent 5-category
+    taxonomy tracked_companies.py itself encodes on every company's
+    `themes` field, just currently housed in a legacy demo-data-shaped
+    repository rather than a plain static config module. No company,
+    figure, or fact shown here is fabricated; this is a mislocation of
+    real label text, not mock content, and is flagged here for a
+    follow-up relocation rather than silently left unmentioned.
+  - Regional Brief: backend_factory.get_filing_event_repository() per
+    jurisdiction — real, dated tracked-issuer filing titles for US/KR/JP;
+    an explicit "not connected yet" state for China.
+  - Theme Health: backend_factory.get_theme_repository().
+    list_published_themes() — the exact published-only protocol
+    src/ui/pages/themes_research.py itself uses, so an internal or
+    candidate Theme can never appear here. Renders nothing at all (no
+    header, no link into Themes) unless at least one real published
+    Theme exists; shows only real evidence-item/distinct-company counts
+    for each one, never a price/breadth/performance statistic.
+  - Priority Signals: backend_factory.get_signal_repository() (real
+    EDGAR/DART/EDINET Radar promotions only, see
+    src/data_access/live/radar_signal_repository.py) — renders nothing
+    at all unless at least one real signal qualifies.
 """
 from __future__ import annotations
+
+import html
 
 import streamlit as st
 
 from src.config.settings import get_settings
+from src.data_access import backend_factory
 from src.data_access.container import get_repositories
-from src.logic.formatting import fmt_date, fmt_pct
 from src.logic.market_map import group_companies_by_theme
-from src.logic.theme_metrics import leaders_and_laggards, rank_by_performance
 from src.logic.unread import is_unread
-from src.models.models import Direction
-from src.ui.components.badges import direction_dot_html
-from src.ui.components.cards import catalyst_timeline_row, priority_signal_row
-from src.ui.components.freshness import freshness_chip
+from src.ui.components.cards import priority_signal_row
 from src.ui.components.market_map import render_market_map
 from src.ui.components.regional_brief import render_regional_brief
 from src.ui.components.section import section_header
@@ -46,148 +59,72 @@ from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
 
 PRIORITY_SIGNAL_COUNT = 3
 
-# Phase C: the two Today's Read actions must not read as visually
-# identical outlined buttons — one filled primary pill, one quiet ghost
-# text link. These are same-page fragment jumps (#capital-rotation-
-# snapshot / #priority-signals), not real st.page_link targets, so the
-# shared cta-primary-*/cta-tertiary-* CSS (which selects specifically for
-# Streamlit's own stPageLink/stBaseButton descendants) can't reach a raw
-# <a> automatically — the exact same declarations from those CSS rules
-# are duplicated here inline instead, rather than inventing new colors.
-_PRIMARY_PILL_STYLE = (
-    "display:inline-flex; align-items:center; justify-content:center; "
-    "box-sizing:border-box; min-height:2.5rem; padding:0.5rem 1.1rem; "
-    "background:var(--invert-bg); color:var(--invert-fg); "
-    "border:none; border-radius:999px; font-weight:600; font-size:0.85rem; "
-    "text-decoration:none; white-space:nowrap; "
-    "box-shadow: 0 0 0 1px rgba(16,42,67,.25), 0 0 22px var(--glow), 0 2px 10px rgba(16,42,67,.18);"
-)
-_GHOST_LINK_STYLE = (
-    "display:inline-flex; align-items:center; box-sizing:border-box; min-height:2.5rem; "
-    "color:var(--text-3); font-size:0.85rem; font-weight:500; "
-    "text-decoration:none; white-space:nowrap;"
-)
+_MAX_THEME_HEALTH_CARDS = 5
 
 
-def _infer_direction(relative_performance_pct: float) -> Direction:
-    if relative_performance_pct > 2:
-        return Direction.IMPROVING
-    if relative_performance_pct < -2:
-        return Direction.WEAKENING
-    return Direction.MIXED
+def _esc(value: object) -> str:
+    if value is None:
+        return ""
+    return html.escape(str(value))
 
 
-def _render_todays_read(ctx) -> None:
-    """One evidence-labeled editorial paragraph derived from existing
-    rotation-metrics logic — the first, strongest, and only "primary"
-    element on the page (Phase C). The card itself is the shared white
-    card surface plus one added rule (.st-key-card-todays-read in
-    assets/styles.css) giving it a restrained midnight-blue left-edge
-    accent — no new fill, gradient, or one-off visual system."""
-    themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
-    metrics = ctx.market_data_provider.get_rotation_metrics()
-    ranked = rank_by_performance(metrics)
+def _render_theme_health(settings) -> None:
+    """Real data only, via the published-only ThemeRepositoryProtocol
+    (see module docstring). Renders nothing — no header, no Themes
+    link — unless at least one real published Theme exists. Only ever
+    shows a published Theme's own real evidence-item count and distinct-
+    company count, computed the same way themes_research.py's own index
+    cards compute them; never a price/breadth/performance statistic,
+    since no real live source for any of those exists in this build."""
+    try:
+        repository = backend_factory.get_theme_repository(settings)
+        themes = repository.list_published_themes()
+    except Exception:  # noqa: BLE001 — best-effort supplementary module; never show a raw error on the dashboard
+        return
+    if not themes:
+        return
 
-    head_cols = st.columns([4, 2])
-    with head_cols[0]:
-        st.markdown(
-            '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>',
-            unsafe_allow_html=True,
-        )
-    with head_cols[1]:
-        st.markdown('<div style="text-align:right; margin-top:0.3rem;">', unsafe_allow_html=True)
-        freshness_chip("demo", key="fresh-dashboard-head")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with st.container(border=True, key="card-todays-read"):
-        if not ranked or ranked[0].theme_slug not in themes:
-            st.markdown('<div class="er-muted">Not enough sample data yet to build a read.</div>', unsafe_allow_html=True)
-            return
-        leader = themes[ranked[0].theme_slug]
-        breadth_note = "broad participation" if ranked[0].breadth_pct >= 60 else "breadth that's still building"
-        second_line = ""
-        if len(ranked) > 1 and ranked[1].theme_slug in themes:
-            second = themes[ranked[1].theme_slug]
-            second_line = f" {second.name} follows; the next question is whether that leadership broadens or stays concentrated in {leader.name}."
-        st.markdown(
-            f'<div style="line-height:1.6;">{leader.name} leads this sample snapshot on relative performance '
-            f'({fmt_pct(ranked[0].relative_performance_pct)}) with {ranked[0].breadth_pct:.0f}% breadth — {breadth_note}.'
-            f'{second_line}</div>',
-            unsafe_allow_html=True,
-        )
-        link_cols = st.columns([2, 2, 3], gap="medium")
-        with link_cols[0]:
-            with st.container(key="cta-primary-read-market-map"):
-                st.markdown(
-                    f'<a href="#market-map" style="{_PRIMARY_PILL_STYLE}">Explore Market Map →</a>',
-                    unsafe_allow_html=True,
-                )
-        with link_cols[1]:
-            with st.container(key="cta-tertiary-read-signals"):
-                st.markdown(
-                    f'<a href="#priority-signals" style="{_GHOST_LINK_STYLE}">Review priority signals →</a>',
-                    unsafe_allow_html=True,
-                )
-
-
-def _render_theme_health(ctx) -> None:
-    """Quick-scan card row, standardized to the shared card treatment
-    (Phase C) — the previous per-card injected <style> for a colored top
-    border was a one-off visual pattern not used anywhere else on the
-    page/product; the direction glyph+text below already carries the same
-    signal without it. The pill-style status tag is now a small semantic
-    dot+text (direction_dot_html, the same shared component Themes/
-    Company/Signals already use for this) instead of a tinted-background
-    pill — same underlying direction data and terminology, less visual
-    weight. "Breadth" gets its own small metric-label above the bar so the
-    measure is named, not just implied by the number beside it."""
     section_header("Theme Health")
-    themes = ctx.theme_repository.get_all_themes()
-    metrics = {m.theme_slug: m for m in ctx.market_data_provider.get_rotation_metrics()}
     themes_page = get_page("themes")
-    cols = st.columns(min(len(themes), 5) or 1)
-    for i, (col, theme) in enumerate(zip(cols, themes)):
-        metric = metrics.get(theme.slug)
+    shown = themes[:_MAX_THEME_HEALTH_CARDS]
+    cols = st.columns(min(len(shown), _MAX_THEME_HEALTH_CARDS) or 1)
+    for col, theme in zip(cols, shown):
         with col:
-            key = f"card-breadth-{theme.slug}"
-            with st.container(border=True, key=key):
-                st.markdown(f'<div class="er-metric-label">{theme.name}</div>', unsafe_allow_html=True)
-                if metric is None:
-                    st.markdown('<div class="er-muted">No data.</div>', unsafe_allow_html=True)
-                    continue
-                st.markdown(f'<div class="er-metric-value">{fmt_pct(metric.relative_performance_pct)}</div>', unsafe_allow_html=True)
+            with st.container(border=True, key=f"card-theme-health-{theme.id}"):
+                st.markdown(f'<div class="er-metric-label">{_esc(theme.title)}</div>', unsafe_allow_html=True)
+                try:
+                    evidence = repository.evidence_for_theme(theme.id)
+                    company_map = repository.company_map_for_theme(theme.id)
+                    distinct_companies = {item.company for item in evidence} | {entry.company_name for entry in company_map}
+                except Exception:  # noqa: BLE001 — one theme's count lookup failing must not take down the row
+                    evidence, distinct_companies = (), set()
+                st.markdown(f'<div class="er-metric-value">{len(evidence)}</div>', unsafe_allow_html=True)
+                st.markdown('<div class="er-metric-label" style="margin-top:var(--space-2);">Evidence items</div>', unsafe_allow_html=True)
+                company_word = "company" if len(distinct_companies) == 1 else "companies"
                 st.markdown(
-                    f'<div class="er-metric-label" style="margin-top:var(--space-2);">Breadth</div>'
-                    f'<div class="er-muted" style="margin-top:var(--space-1);">{metric.breadth_pct:.0f}%</div>',
+                    f'<div class="er-muted" style="margin-top:var(--space-1);">{len(distinct_companies)} {company_word}</div>',
                     unsafe_allow_html=True,
                 )
-                st.markdown(
-                    f'<div class="bar" style="margin-top:var(--space-1);">'
-                    f'<i style="--w:{metric.breadth_pct:.0f}%; animation-delay:{i * 40}ms;"></i></div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f'<div style="margin-top:var(--space-2);">{direction_dot_html(_infer_direction(metric.relative_performance_pct))}</div>',
-                    unsafe_allow_html=True,
-                )
-                # Only real if it opens Themes — it does (page_link, not a
-                # decorative click target).
                 if themes_page is not None:
-                    with st.container(key=f"cta-tertiary-health-{theme.slug}"):
-                        st.page_link(themes_page, label=f"Explore {theme.name} →")
+                    with st.container(key=f"cta-tertiary-health-{theme.id}"):
+                        st.page_link(themes_page, label="Explore →", query_params={"theme_id": theme.id})
+    remaining = len(themes) - len(shown)
+    if remaining > 0 and themes_page is not None:
+        with st.container(key="cta-tertiary-health-more"):
+            st.page_link(themes_page, label=f"+{remaining} more — view all in Themes →")
 
 
 def _render_priority_signals(ctx) -> None:
-    """Lower-priority supporting section (Phase C) — same standard
-    section-header weight as Capital Rotation/Catalysts, not the elevated
-    "second primary module" treatment from the prior UI-audit pass; Today's
-    Read is this page's one primary element."""
-    st.markdown('<div id="priority-signals"></div>', unsafe_allow_html=True)
-    section_header("Priority Signals", "Highest-conviction sample signals by direction, strength, and evidence.")
+    """Real signals only (ctx.signal_repository is backend_factory.
+    get_signal_repository()'s RadarSignalRepository — see module
+    docstring). Renders nothing at all — no header, no anchor — if zero
+    real signals qualify, rather than a placeholder caption."""
     signals = ctx.signal_repository.get_all_signals()
     if not signals:
-        st.caption("No signals loaded.")
         return
+
+    st.markdown('<div id="priority-signals"></div>', unsafe_allow_html=True)
+    section_header("Priority Signals", "Highest-conviction real signals by direction, strength, and evidence.")
 
     prev_last_seen = st.session_state.get(LAST_SEEN_KEY)
     read_ids = st.session_state.setdefault(READ_IDS_KEY, set())
@@ -200,72 +137,13 @@ def _render_priority_signals(ctx) -> None:
     )
     priority = (unread_signals + ranked_rest)[:PRIORITY_SIGNAL_COUNT]
 
-    themes = {t.slug: t.name for t in ctx.theme_repository.get_all_themes()}
     for i, s in enumerate(priority, start=1):
-        priority_signal_row(s, evidence_repository=ctx.evidence_repository, theme_name=themes.get(s.theme_slug), order=i)
+        priority_signal_row(s, order=i)
 
     signals_page = get_page("signals")
     if signals_page is not None:
         with st.container(key="cta-tertiary-dashboard-signals"):
             st.page_link(signals_page, label="View all signals →")
-
-
-def _render_rotation_snapshot(ctx) -> None:
-    """Secondary, collapsed disclosure (Phase E1, design/
-    DASHBOARD_MARKET_MAP_PHASE_E.md) — Capital Rotation is 100% static
-    demo seed data (data/seed/rotation_metrics.json, fixed as_of
-    2026-08-15 on every record) and must never read as "today" or
-    "live". The panel_header's freshness chip is passed that real as_of
-    date explicitly (not "now") so the truthful date is what a reader
-    sees, not an implied current one."""
-    themes = {t.slug: t for t in ctx.theme_repository.get_all_themes()}
-    metrics = ctx.market_data_provider.get_rotation_metrics()
-    ranked = rank_by_performance(metrics)
-    as_of = fmt_date(ranked[0].as_of) if ranked else "2026-08-15"
-    freshness_chip("demo", timestamp=as_of, key="fresh-rotation-snapshot")
-    st.markdown('<div class="er-muted" style="margin-top:0.2rem;">Relative performance · sample data, not current</div>', unsafe_allow_html=True)
-    if not ranked:
-        st.caption("No rotation data loaded.")
-        return
-    max_abs = max(abs(m.relative_performance_pct) for m in ranked) or 1
-    for m in ranked:
-        if m.theme_slug not in themes:
-            continue
-        pct = m.relative_performance_pct
-        half_width = min(abs(pct) / max_abs * 50, 50)
-        # Restrained semantic color (not just neutral grey) so positive vs.
-        # negative reads at a glance, matching the pos/neg direction system
-        # used elsewhere (usability follow-up) — magnitude still carries
-        # the bar length, color only adds direction legibility.
-        bar_color = "var(--pos)" if pct >= 0 else "var(--neg)"
-        side_style = (
-            f"left:50%; width:{half_width:.1f}%; background:{bar_color};" if pct >= 0
-            else f"right:50%; width:{half_width:.1f}%; background:{bar_color};"
-        )
-        st.markdown(
-            f"""
-            <div class="er-divbar-row">
-                <div class="er-divbar-label">{themes[m.theme_slug].name}</div>
-                <div class="er-divbar-track">
-                    <div class="er-divbar-zero"></div>
-                    <div class="er-divbar-fill" style="{side_style}"></div>
-                </div>
-                <div class="er-divbar-value">{fmt_pct(pct)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    leaders, laggards = leaders_and_laggards(metrics, top_n=1)
-    if leaders and laggards and leaders[0].theme_slug in themes and laggards[0].theme_slug in themes:
-        st.markdown(
-            f'<div class="er-muted" style="font-size:0.8rem; margin-top:var(--space-3);">Leading: <strong>{themes[leaders[0].theme_slug].name}</strong> '
-            f'· Lagging: <strong>{themes[laggards[0].theme_slug].name}</strong></div>',
-            unsafe_allow_html=True,
-        )
-    themes_page = get_page("themes")
-    if themes_page is not None:
-        with st.container(key="cta-tertiary-dashboard-rotation"):
-            st.page_link(themes_page, label="See full rotation →")
 
 
 def _render_market_map(ctx) -> None:
@@ -289,37 +167,11 @@ def _render_regional_brief(settings) -> None:
     render_regional_brief(settings)
 
 
-def _render_catalysts(ctx) -> None:
-    section_header("Next Catalysts")
-    upcoming = ctx.catalyst_repository.get_upcoming_catalysts(limit=3)
-    if not upcoming:
-        st.caption("No catalysts scheduled.")
-    else:
-        for c in upcoming:
-            catalyst_timeline_row(c)
-
-
 def render() -> None:
     ctx = get_repositories()
     settings = get_settings()
 
-    # Phase C: the "Market Overview" page title + subtitle are gone — the
-    # sidebar's own active-nav highlight already establishes "you are on
-    # Dashboard," and Today's Read (below) is now the first thing on the
-    # page. The freshness chip that used to sit beside the title now sits
-    # beside Today's Read's own heading instead.
-    #
-    # Phase E1 (design/DASHBOARD_MARKET_MAP_PHASE_E.md): Market Map is now
-    # the primary visual/research module, with the Regional Brief right
-    # beneath it — Capital Rotation moves into a collapsed, truthfully
-    # labeled expander (it is 100% static demo data, never "today" or
-    # "live"). Theme Health and Priority Signals keep their existing
-    # secondary weight and underlying logic, just lower on the page.
-    _render_todays_read(ctx)
     _render_market_map(ctx)
     _render_regional_brief(settings)
-    _render_theme_health(ctx)
+    _render_theme_health(settings)
     _render_priority_signals(ctx)
-    with st.expander("Capital Rotation — demo snapshot", expanded=False):
-        _render_rotation_snapshot(ctx)
-    _render_catalysts(ctx)
