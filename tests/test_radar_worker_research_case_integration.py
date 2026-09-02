@@ -116,15 +116,19 @@ def test_proof1_research_case_step_runs_only_for_edgar(tmp_path, monkeypatch, ca
     ("dart", "OpenDART / DART", {}),
     ("edinet", "EDINET", {}),
 ])
-def test_proof2_dart_and_edinet_never_touch_research_case_machinery(tmp_path, monkeypatch, capsys, provider_key, display_source, report_kwargs):
+def test_proof2_dart_and_edinet_now_create_research_cases_via_the_shared_pipeline(tmp_path, monkeypatch, capsys, provider_key, display_source, report_kwargs):
+    """Autonomous Theme candidate detection, Phase 2 (design/
+    DECISIONS.md): this test previously proved the OPPOSITE — that
+    DART/EDINET never touched research-case machinery at all. That was
+    correct for Phase 4B-2/Phase A2's own EDGAR-only scope, and is now
+    deliberately superseded: research_lead_orchestration/
+    research_lead_selection/research_lead_factory were already fully
+    source-agnostic, so Phase 2 widens `allowed_source_names` per
+    provider via the new, generic `_run_source_research_case_step`
+    (scripts/radar_worker.py) rather than building a new pipeline.
+    `_run_edgar_research_case_step` itself remains completely untouched
+    and is never called for dart/edinet."""
     worker_settings = _worker_settings(tmp_path)
-
-    def _forbidden(*_a, **_k):
-        raise AssertionError(f"{provider_key} tick must never call this")
-
-    monkeypatch.setattr(backend_factory, "get_research_case_repository", _forbidden)
-    monkeypatch.setattr(backend_factory, "get_research_case_bundle_writer", _forbidden)
-    monkeypatch.setattr(research_lead_orchestration, "prepare_research_case_bundles", _forbidden)
 
     monkeypatch.setitem(
         radar_worker._SERVICE_MODULES, provider_key,
@@ -137,7 +141,7 @@ def test_proof2_dart_and_edinet_never_touch_research_case_machinery(tmp_path, mo
     radar_worker._run_provider_tick(provider_key, worker_settings, scan_status_repo)
 
     out = capsys.readouterr().out
-    assert "research cases" not in out
+    assert f"{provider_key.upper()}: research cases" in out
     assert scan_status_repo.get_scan_status(display_source) is not None
 
 
@@ -620,7 +624,20 @@ def test_proof18_scope_guard_only_approved_files_changed():
     changed = set(result.stdout.splitlines())
     allowed = {
         "scripts/radar_worker.py",
+        "src/config/settings.py",
+        "src/ui/pages/theme_workspace.py",
+        "tests/test_radar_worker_research_case_integration.py",
+        "tests/test_radar_worker_safety_invariants.py",
+        "tests/test_radar_worker_theme_candidate_detection_integration.py",
+        "tests/test_radar_worker_theme_matching_integration.py",
+        "tests/test_theme_matching_rules.py",
     }
+    # New Phase 2 test files are untracked and never appear in `git diff
+    # HEAD` at all (by definition — only already-tracked, modified files
+    # show up here), so they need no entry in `allowed` above. See
+    # tests/test_theme_matching_rules.py's own
+    # test_no_ui_worker_persistence_or_migration_files_touched for the
+    # same established precedent.
     assert changed <= allowed, changed - allowed
 
 

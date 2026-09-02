@@ -382,6 +382,54 @@ def test_publish_transition_archived_has_no_further_transitions():
 
 
 # ============================================================
+# unpublish_theme — Phase 2 auto-publish policy (design/DECISIONS.md):
+# reversible only via this explicit, audited path
+# ============================================================
+
+
+def test_unpublish_theme_rejects_blank_reason(tmp_path):
+    settings = Settings(db_backend="json", cache_dir=tmp_path)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.PUBLISHED)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.unpublish_theme(curator, theme, "   ", "2026-09-01T00:00:00+00:00")
+    assert updated is None
+    assert "reason" in errors[0].lower()
+    assert curator.get_theme(theme.id).visibility is ThemeVisibility.PUBLISHED
+
+
+def test_unpublish_theme_rejects_disallowed_transition(tmp_path):
+    settings = Settings(db_backend="json", cache_dir=tmp_path)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.unpublish_theme(curator, theme, "no longer relevant", "2026-09-01T00:00:00+00:00")
+    assert updated is None
+    assert "cannot transition" in errors[0].lower()
+
+
+def test_unpublish_theme_success_archives_and_records_audit_note(tmp_path):
+    settings = Settings(db_backend="json", cache_dir=tmp_path)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.PUBLISHED)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.unpublish_theme(
+        curator, theme, "Thesis invalidated by capacity expansion announcement.", "2026-09-01T00:00:00+00:00",
+    )
+    assert errors == ()
+    assert updated.visibility is ThemeVisibility.ARCHIVED
+    assert curator.get_theme(theme.id).visibility is ThemeVisibility.ARCHIVED
+
+    notes = curator.research_notes_for_theme(theme.id)
+    decision_notes = [n for n in notes if n.note_type is ThemeNoteType.DECISION]
+    assert len(decision_notes) == 1
+    assert "Thesis invalidated by capacity expansion announcement." in decision_notes[0].content
+
+
+# ============================================================
 # Public/private boundary and safety guards
 # ============================================================
 
@@ -493,6 +541,41 @@ def test_detail_view_renders_all_tabs_without_exception(monkeypatch, tmp_path):
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "TSMC" in all_text
+
+
+def test_internal_theme_renders_auto_publish_eligibility_section(monkeypatch, tmp_path):
+    """Phase 2 (design/DECISIONS.md) — the live, read-only eligibility
+    section is only rendered while a theme is still internal, and never
+    persists anything (no note is inserted just from viewing it)."""
+    settings = Settings(db_backend="json", cache_dir=tmp_path, theme_workspace_enabled=True)
+    theme, scope, candidate, case, match = _full_scenario(settings)
+    curator = backend_factory.get_theme_curator_repository(settings)
+
+    monkeypatch.setattr(theme_workspace, "get_settings", lambda: settings)
+    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=30)
+    at.query_params["theme_id"] = theme.id
+    at.run()
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Auto-publish eligibility" in all_text
+    assert "distinct_companies" in all_text
+
+    assert curator.research_notes_for_theme(theme.id) == ()
+
+
+def test_published_theme_does_not_render_eligibility_section(monkeypatch, tmp_path):
+    settings = Settings(db_backend="json", cache_dir=tmp_path, theme_workspace_enabled=True)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.PUBLISHED)
+    curator.insert_theme(theme)
+
+    monkeypatch.setattr(theme_workspace, "get_settings", lambda: settings)
+    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=30)
+    at.query_params["theme_id"] = theme.id
+    at.run()
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Auto-publish eligibility" not in all_text
 
 
 def test_theme_not_found_renders_empty_state(monkeypatch, tmp_path):

@@ -91,6 +91,18 @@ class Settings:
     theme_candidate_detection_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_CANDIDATE_DETECTION_ENABLED")
     )
+    # Autonomous Theme candidate detection, Phase 2 (design/DECISIONS.md)
+    # — the master switch for scripts/radar_worker.py's own
+    # _run_theme_auto_publish_step. Disabled by default, same "unset/
+    # blank/unrecognized -> disabled" parsing as every other flag on
+    # this class. Read only by the worker (via worker_settings, which
+    # carries this field through unchanged), never by the Streamlit
+    # dashboard. Even when enabled, a theme only ever auto-publishes
+    # once every deterministic gate in src.logic.theme_auto_publish
+    # passes — this flag alone never publishes anything by itself.
+    theme_auto_publish_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_AUTO_PUBLISH_ENABLED")
+    )
     # Durable-State Phase 4M-0 (design/DECISIONS.md) — the master switch
     # for the standalone continuous worker (scripts/radar_worker.py)
     # only. Disabled by default, same "unset/blank/unrecognized ->

@@ -498,6 +498,13 @@ def test_no_ui_worker_persistence_or_migration_files_touched():
         "src/ui/pages/theme_workspace.py",
         "tests/test_theme_workspace_page.py",
         "tests/test_radar_worker_no_secrets_guard.py",
+        # Phase 2 (design/DECISIONS.md) — cross-market (EDGAR/DART/
+        # EDINET) research-case creation, cross-market theme clustering,
+        # and the gated auto-publish policy.
+        "tests/test_radar_worker_research_case_integration.py",
+        "tests/test_radar_worker_safety_invariants.py",
+        "tests/test_radar_worker_theme_candidate_detection_integration.py",
+        "tests/test_radar_worker_theme_matching_integration.py",
     }
     assert changed <= allowed, changed - allowed
 

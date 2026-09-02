@@ -168,6 +168,7 @@ from src.data_access.state_db.scan_status_repository import ProviderScanStatus
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
 from src.logic.research_case_theme_matching import evaluate_theme_match
 from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
+from src.logic.theme_auto_publish import evaluate_auto_publish_gates
 from src.logic.theme_candidate_detection import detect_theme_candidates
 from src.models.research_case import ResearchCase
 from src.models.theme_matching import ThemeMatchingScope
@@ -381,6 +382,78 @@ def _run_edgar_research_case_step(
 
     summary = (
         f"EDGAR: research cases — evaluated={result.evaluated_count} created={created} "
+        f"existing={result.already_existing_count} not_qualified={result.not_qualified_count} "
+        f"factory_rejected={result.factory_rejected_count} validation_rejected={result.validation_rejected_count} "
+        f"write_rejected={write_rejected}"
+    )
+    if result.membership_check_failed_count:
+        summary += f" membership_check_failed={result.membership_check_failed_count}"
+    return summary, candidates, tuple(newly_created_cases)
+
+
+# Autonomous Theme candidate detection, Phase 2 (design/DECISIONS.md) —
+# a bounded per-tick cap for DART/EDINET research-case creation,
+# mirroring _EDGAR_RESEARCH_CASE_MAX_CANDIDATES's own value exactly
+# (same conservative default, not a new policy decision).
+_SOURCE_RESEARCH_CASE_MAX_CANDIDATES = 5
+
+# The directly-imported, never-monkeypatched real service modules —
+# deliberately NOT `_SERVICE_MODULES[provider_key]`, which tests
+# legitimately replace with a fake `run_scan`-only namespace for the
+# scan call itself. Mirrors _run_edgar_research_case_step's own
+# pattern of reading `edgar_service.scan_service.DEFAULT_LOOKBACK_DAYS`
+# from the real, directly-imported module rather than the mutable
+# dispatch dict.
+_LOOKBACK_SERVICE_MODULES = {"dart": dart_radar_service, "edinet": edinet_service}
+
+
+def _run_source_research_case_step(
+    provider_key: str, worker_settings: Settings, candidate_repository,
+) -> tuple[str, dict[str, CandidateSignal], tuple[ResearchCase, ...]]:
+    """Best-effort, DART/EDINET autonomous Research Case creation —
+    Phase 2's generic counterpart to _run_edgar_research_case_step
+    above, which stays completely untouched (never refactored to share
+    this function, to avoid any risk to its own already-verified
+    behavior). `research_lead_orchestration`/`research_lead_selection`/
+    `research_lead_factory` were already fully source-agnostic before
+    this phase — the only thing that changes per provider is
+    `allowed_source_names` and the lookback default, both already
+    exposed per-source exactly like EDGAR's own. Never called for
+    provider_key == 'edgar'. Same isolation contract as the EDGAR
+    step: the caller (_run_provider_tick) is the one place that
+    catches and sanitizes any exception raised here."""
+    display_source = _SOURCE_DISPLAY_NAMES[provider_key]
+    lookback_service_module = _LOOKBACK_SERVICE_MODULES[provider_key]
+
+    research_case_repository = backend_factory.get_research_case_repository(worker_settings)
+    writer = backend_factory.get_research_case_bundle_writer(worker_settings)
+
+    candidates = candidate_repository.load_candidates()
+    config = ResearchLeadOrchestrationConfig(
+        as_of_date=_current_utc_date(),
+        lookback_days=lookback_service_module.scan_service.DEFAULT_LOOKBACK_DAYS,
+        max_candidates=_SOURCE_RESEARCH_CASE_MAX_CANDIDATES,
+        allowed_source_names=(display_source,),
+    )
+    result = prepare_research_case_bundles(candidates.values(), research_case_repository.existing_case_ids, config)
+
+    created = 0
+    write_rejected = 0
+    newly_created_cases: list[ResearchCase] = []
+    for bundle in result.bundles:
+        try:
+            inserted = writer.insert_bundle(bundle)
+        except Exception:  # noqa: BLE001 — one bundle's write failure must never block the rest of this batch
+            write_rejected += 1
+            continue
+        if inserted:
+            created += 1
+            newly_created_cases.append(bundle.case)
+        else:
+            write_rejected += 1
+
+    summary = (
+        f"{provider_key.upper()}: research cases — evaluated={result.evaluated_count} created={created} "
         f"existing={result.already_existing_count} not_qualified={result.not_qualified_count} "
         f"factory_rejected={result.factory_rejected_count} validation_rejected={result.validation_rejected_count} "
         f"write_rejected={write_rejected}"
@@ -655,7 +728,88 @@ def _run_theme_candidate_detection_step(
     )
 
 
-def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status_repo) -> None:
+def _run_theme_auto_publish_step(worker_settings: Settings) -> str:
+    """Autonomous Theme candidate detection, Phase 2 (design/
+    DECISIONS.md) — best-effort, cross-market autonomous publication.
+    Gated by `worker_settings.theme_auto_publish_enabled` (default
+    disabled) at the call site in `run_one_tick()`; this function
+    itself does not re-check the flag. Only ever evaluates themes
+    currently at `visibility == internal` — once a theme leaves that
+    state (published or archived), it is never reconsidered here again,
+    which is what makes this step naturally idempotent across ticks.
+    Uses the pure, shared `src.logic.theme_auto_publish.
+    evaluate_auto_publish_gates` — the exact same function
+    src/ui/pages/theme_workspace.py's own live eligibility display
+    calls — so the worker and the UI can never disagree about whether a
+    theme is eligible. On a successful publish, inserts exactly one
+    immutable DECISION `ThemeResearchNote` recording every gate's
+    outcome and the evidence ids that satisfied it — never written for
+    a failed evaluation, so this step never spams the research log.
+    Never creates evidence, never changes a company-map entry, never
+    touches a theme that is not currently internal. One bad theme's
+    evaluation/publish failure never blocks the rest of the batch."""
+    curator = backend_factory.get_theme_curator_repository(worker_settings)
+    themes = curator.list_themes()
+    internal_themes = [t for t in themes if t.visibility is ThemeVisibility.INTERNAL]
+
+    themes_considered = len(internal_themes)
+    themes_published = 0
+    themes_ineligible = 0
+    evaluation_errors = 0
+
+    for theme in internal_themes:
+        try:
+            evidence = curator.evidence_for_theme(theme.id)
+            notes = curator.research_notes_for_theme(theme.id)
+            evaluation = evaluate_auto_publish_gates(theme, evidence, notes)
+            if not evaluation.eligible:
+                themes_ineligible += 1
+                continue
+
+            updated_at = datetime.now(timezone.utc).isoformat()
+            updated = curator.set_visibility(theme.id, ThemeVisibility.PUBLISHED, updated_at)
+            if updated is None:
+                evaluation_errors += 1
+                continue
+            themes_published += 1
+
+            audit_note = ThemeResearchNote(
+                id=build_theme_research_note_id(theme.id, ThemeNoteType.DECISION, evaluation.audit_summary, updated_at),
+                theme_id=theme.id, note_type=ThemeNoteType.DECISION, content=evaluation.audit_summary,
+                confidence=None, disconfirming_condition=None, created_at=updated_at,
+            )
+            try:
+                curator.insert_research_note(audit_note)
+            except Exception:  # noqa: BLE001 — the publish itself already succeeded; a note-insert failure must not be reported as a publish failure
+                pass
+        except Exception:  # noqa: BLE001 — one bad theme's evaluation must never block the rest of the batch
+            evaluation_errors += 1
+            continue
+
+    return (
+        f"EDGAR: theme auto-publish — themes_considered={themes_considered} themes_published={themes_published} "
+        f"themes_ineligible={themes_ineligible} evaluation_errors={evaluation_errors}"
+    )
+
+
+_NO_CASES_GATHERED: tuple[dict[str, CandidateSignal], tuple[ResearchCase, ...]] = ({}, ())
+
+
+def _run_provider_tick(
+    provider_key: str, worker_settings: Settings, scan_status_repo,
+) -> tuple[dict[str, CandidateSignal], tuple[ResearchCase, ...]]:
+    """Phase 2 (design/DECISIONS.md): now returns this tick's own
+    `(candidates, newly_created_cases)` for EVERY provider — EDGAR,
+    DART, and EDINET alike — so `run_one_tick()` can merge all three
+    into one cross-market pool for the theme-matching/detection/auto-
+    publish steps, which no longer run nested inside this function at
+    all (see `run_one_tick()`'s own docstring for why: providers are
+    processed in a fixed order, so a step nested inside one provider's
+    own branch could never see a later provider's same-tick output).
+    Returns `_NO_CASES_GATHERED` (empty dict, empty tuple) on every
+    early-return path (lock not acquired, scan failure, research-case
+    step failure) — never `None`, so the caller never needs a None
+    check."""
     display_source = _SOURCE_DISPLAY_NAMES[provider_key]
     service_module = _SERVICE_MODULES[provider_key]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -663,7 +817,7 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
     with _provider_lock(f"{provider_key}-{worker_settings.db_backend}") as acquired:
         if not acquired:
             print(f"{provider_key.upper()}: skipped this tick — another scan for this provider is already in progress.")
-            return
+            return _NO_CASES_GATHERED
 
         previous_status = scan_status_repo.get_scan_status(display_source)
 
@@ -673,7 +827,7 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
         except Exception as exc:  # noqa: BLE001 — one provider's failure must never stop the others
             _record_failure(scan_status_repo, display_source, previous_status, started_at, type(exc).__name__)
             print(f"{provider_key.upper()}: scan failed ({type(exc).__name__}) — skipped this tick.")
-            return
+            return _NO_CASES_GATHERED
 
         completed_at = datetime.now(timezone.utc).isoformat()
         cursor_value = getattr(report, "end_de", None) or getattr(report, "end_date", None)
@@ -703,22 +857,22 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
                 )
             except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate state or other providers
                 print(f"{provider_key.upper()}: research-case step skipped ({type(exc).__name__}).")
-            else:
-                print(research_case_summary)
-                try:
-                    matching_summary = _run_theme_matching_step(worker_settings, candidates, newly_created_cases)
-                except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case state or other providers
-                    print(f"{provider_key.upper()}: theme-matching step skipped ({type(exc).__name__}).")
-                else:
-                    print(matching_summary)
+                return _NO_CASES_GATHERED
+            print(research_case_summary)
+            return candidates, newly_created_cases
 
-                if worker_settings.theme_candidate_detection_enabled:
-                    try:
-                        detection_summary = _run_theme_candidate_detection_step(worker_settings, candidates, newly_created_cases)
-                    except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case/matching state or other providers
-                        print(f"{provider_key.upper()}: theme-candidate-detection step skipped ({type(exc).__name__}).")
-                    else:
-                        print(detection_summary)
+        if provider_key in ("dart", "edinet"):
+            try:
+                research_case_summary, candidates, newly_created_cases = _run_source_research_case_step(
+                    provider_key, worker_settings, candidate_repository,
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate state or other providers
+                print(f"{provider_key.upper()}: research-case step skipped ({type(exc).__name__}).")
+                return _NO_CASES_GATHERED
+            print(research_case_summary)
+            return candidates, newly_created_cases
+
+        return _NO_CASES_GATHERED
 
 
 def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:
@@ -726,9 +880,52 @@ def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:
     isolated from the others' exceptions. Never loops, never sleeps,
     never checks the shutdown flag itself — the only function tests
     should call directly; main()'s own while-loop is not meant to be
-    unit-tested as a whole."""
+    unit-tested as a whole.
+
+    Phase 2 (design/DECISIONS.md): after every provider's own scan +
+    research-case step has run, this function merges all three
+    providers' `(candidates, newly_created_cases)` into one cross-
+    market pool and calls the theme-matching, theme-candidate-
+    detection, and theme-auto-publish steps exactly once per tick —
+    never nested inside any single provider's own branch, and never
+    holding any provider's own lock. Each of the three is isolated in
+    its own try/except here: a failure in one can never affect
+    ProviderScanStatus, candidate state, Research Case creation, or
+    either of the other two steps. `_run_theme_matching_step`/
+    `_run_theme_candidate_detection_step` are entirely unchanged from
+    Phase A2/the prior autonomous-detection phase — only their call
+    site moved; their own summary lines still read "EDGAR: ..." as a
+    legacy label predating cross-market support, not a claim they are
+    EDGAR-only."""
+    all_candidates: dict[str, CandidateSignal] = {}
+    all_newly_created_cases: list[ResearchCase] = []
     for provider_key in _PROVIDERS:
-        _run_provider_tick(provider_key, worker_settings, scan_status_repo)
+        candidates, newly_created_cases = _run_provider_tick(provider_key, worker_settings, scan_status_repo)
+        all_candidates.update(candidates)
+        all_newly_created_cases.extend(newly_created_cases)
+
+    try:
+        matching_summary = _run_theme_matching_step(worker_settings, all_candidates, tuple(all_newly_created_cases))
+    except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case state
+        print(f"EDGAR: theme-matching step skipped ({type(exc).__name__}).")
+    else:
+        print(matching_summary)
+
+    if worker_settings.theme_candidate_detection_enabled:
+        try:
+            detection_summary = _run_theme_candidate_detection_step(worker_settings, all_candidates, tuple(all_newly_created_cases))
+        except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case/matching state
+            print(f"EDGAR: theme-candidate-detection step skipped ({type(exc).__name__}).")
+        else:
+            print(detection_summary)
+
+    if worker_settings.theme_auto_publish_enabled:
+        try:
+            auto_publish_summary = _run_theme_auto_publish_step(worker_settings)
+        except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect any other step's own state
+            print(f"EDGAR: theme-auto-publish step skipped ({type(exc).__name__}).")
+        else:
+            print(auto_publish_summary)
 
 
 def _sleep_in_chunks(total_seconds: int, chunk_seconds: int = 5) -> None:

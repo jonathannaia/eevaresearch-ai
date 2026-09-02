@@ -48,6 +48,7 @@ from src.data_access.backend_factory import (
 )
 from src.data_access.theme_matching_store import build_review_decision_id
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
+from src.logic.theme_auto_publish import evaluate_auto_publish_gates
 from src.logic.theme_evidence_promotion import build_evidence_from_accepted_match
 from src.models.theme_matching import (
     MatchReviewStatus,
@@ -305,6 +306,33 @@ def publish_transition(
     updated = curator.set_visibility(theme.id, new_visibility, updated_at)
     if updated is None:
         return None, ("Transition failed — theme not found.",)
+    return updated, ()
+
+
+def unpublish_theme(
+    curator: ThemeCuratorRepositoryProtocol, theme: ResearchTheme, reason: str, updated_at: str,
+) -> tuple[ResearchTheme | None, tuple[str, ...]]:
+    """Publication is reversible only via this explicit, audited path
+    (design/DECISIONS.md, Phase 2 auto-publish policy): reuses the
+    already-allowed PUBLISHED -> ARCHIVED transition, but requires a
+    non-blank reason and records it as one immutable DECISION
+    ThemeResearchNote."""
+    if not reason or not reason.strip():
+        return None, ("A reason is required to unpublish (archive) a published theme.",)
+    updated, errors = publish_transition(curator, theme, ThemeVisibility.ARCHIVED, updated_at)
+    if errors or updated is None:
+        return updated, errors
+    note_content = f"Unpublished (archived): {reason.strip()}"
+    note = ThemeResearchNote(
+        id=build_theme_research_note_id(theme.id, ThemeNoteType.DECISION, note_content, updated_at),
+        theme_id=theme.id,
+        note_type=ThemeNoteType.DECISION,
+        content=note_content,
+        confidence=None,
+        disconfirming_condition=None,
+        created_at=updated_at,
+    )
+    curator.insert_research_note(note)
     return updated, ()
 
 
@@ -685,8 +713,41 @@ def _render_note(note: ThemeResearchNote) -> None:
         _detail_row("Recorded", _esc(note.created_at))
 
 
+def _render_auto_publish_eligibility(curator: ThemeCuratorRepositoryProtocol, theme: ResearchTheme) -> None:
+    """Live, read-only eligibility computed on every render — never
+    persists anything (the audit DECISION note is only ever written by
+    the worker's own successful auto-publish transition, or by the
+    explicit unpublish action below, to avoid research-log spam)."""
+    section_header("Auto-publish eligibility")
+    try:
+        evidence = curator.evidence_for_theme(theme.id)
+        notes = curator.research_notes_for_theme(theme.id)
+        evaluation = evaluate_auto_publish_gates(theme, evidence, notes)
+    except Exception:
+        st.caption("Auto-publish eligibility is temporarily unavailable.")
+        return
+    for gate in evaluation.gates:
+        icon = "✅" if gate.passed else "❌"
+        st.markdown(
+            f'<div class="er-muted">{icon} <strong>{_esc(gate.name)}:</strong> {_esc(gate.detail)}</div>',
+            unsafe_allow_html=True,
+        )
+    if evaluation.eligible:
+        st.caption(
+            "All auto-publish gates currently pass. If EDGE_THEME_AUTO_PUBLISH_ENABLED is on, the worker "
+            "will publish this theme on a future tick."
+        )
+    else:
+        st.caption("Not yet eligible for auto-publish — see failing gates above.")
+    st.divider()
+
+
 def _render_publish_tab(curator: ThemeCuratorRepositoryProtocol, theme: ResearchTheme) -> None:
     _detail_row("Current visibility", _enum_label(theme.visibility))
+
+    if theme.visibility is ThemeVisibility.INTERNAL:
+        _render_auto_publish_eligibility(curator, theme)
+
     allowed = _ALLOWED_VISIBILITY_TRANSITIONS.get(theme.visibility, frozenset())
     if not allowed:
         st.caption("No further transitions are possible from this state.")
@@ -694,10 +755,21 @@ def _render_publish_tab(curator: ThemeCuratorRepositoryProtocol, theme: Research
 
     options = sorted(v.value for v in allowed)
     choice = st.selectbox("Transition to", options, key=f"theme-workspace-publish-select-{theme.id}")
+
+    is_unpublish = theme.visibility is ThemeVisibility.PUBLISHED and choice == ThemeVisibility.ARCHIVED.value
+    reason = ""
+    if is_unpublish:
+        reason = st.text_area(
+            "Reason for unpublishing (required)", key=f"theme-workspace-unpublish-reason-{theme.id}"
+        )
+
     if st.button("Apply transition", key=f"theme-workspace-publish-btn-{theme.id}"):
         new_visibility = ThemeVisibility(choice)
         updated_at = datetime.now(timezone.utc).isoformat()
-        updated, errors = publish_transition(curator, theme, new_visibility, updated_at)
+        if is_unpublish:
+            updated, errors = unpublish_theme(curator, theme, reason, updated_at)
+        else:
+            updated, errors = publish_transition(curator, theme, new_visibility, updated_at)
         if errors:
             for error in errors:
                 st.error(error)

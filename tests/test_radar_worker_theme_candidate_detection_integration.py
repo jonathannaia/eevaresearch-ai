@@ -48,6 +48,19 @@ def _set_edgar_run_scan(monkeypatch, report=None):
     )
 
 
+def _set_dart_and_edinet_no_op_scan(monkeypatch):
+    """Phase 2 (design/DECISIONS.md): theme-candidate-detection now
+    runs once per tick via run_one_tick() (after all three providers),
+    not nested inside _run_provider_tick("edgar", ...) — DART/EDINET
+    are mocked to safe no-ops so a test exercising that call site
+    stays network-free."""
+    for provider_key in ("dart", "edinet"):
+        monkeypatch.setitem(
+            radar_worker._SERVICE_MODULES, provider_key,
+            types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: _fake_report()),
+        )
+
+
 def _candidate(candidate_id, company, rcept_dt, theme_slug="ai-buildout", subtheme_slug="compute-accelerators"):
     filing = FilingEvent(
         rcept_no=f"acc-{candidate_id}", corp_code=f"code-{candidate_id}", corp_name=company, stock_code="X",
@@ -107,11 +120,15 @@ def test_disabled_by_default_never_runs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(radar_worker, "_run_theme_candidate_detection_step", _forbidden)
     _set_edgar_run_scan(monkeypatch)
+    _set_dart_and_edinet_no_op_scan(monkeypatch)
     scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
-    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker.run_one_tick(worker_settings, scan_status_repo)
 
 
 def test_enabled_runs_end_to_end_via_provider_tick(tmp_path, monkeypatch, capsys):
+    """Phase 2 (design/DECISIONS.md): theme-candidate-detection now
+    runs once per tick via run_one_tick(), after all three providers —
+    DART/EDINET are mocked to safe no-ops so this stays network-free."""
     worker_settings = _worker_settings(tmp_path, detection_enabled=True)
     candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
     # _run_edgar_research_case_step loads candidates from the real EDGAR
@@ -120,10 +137,11 @@ def test_enabled_runs_end_to_end_via_provider_tick(tmp_path, monkeypatch, capsys
     candidate_repo = backend_factory.get_candidate_repository(worker_settings, "SEC EDGAR")
     candidate_repo.upsert_new_candidates(list(candidates.values()))
     _set_edgar_run_scan(monkeypatch)
+    _set_dart_and_edinet_no_op_scan(monkeypatch)
     _set_fixed_as_of_date(monkeypatch)
     scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
 
-    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker.run_one_tick(worker_settings, scan_status_repo)
     out = capsys.readouterr().out
     assert "EDGAR: theme candidate detection" in out
     assert "themes_created=1" in out
@@ -314,13 +332,14 @@ def test_archived_scope_does_not_block_redetection(tmp_path, monkeypatch):
 def test_detection_step_failure_isolated_via_provider_tick(tmp_path, monkeypatch, capsys):
     worker_settings = _worker_settings(tmp_path, detection_enabled=True)
     _set_edgar_run_scan(monkeypatch)
+    _set_dart_and_edinet_no_op_scan(monkeypatch)
     scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
 
     def _raise(*_a, **_k):
         raise RuntimeError("detection failed")
 
     monkeypatch.setattr(radar_worker, "_run_theme_candidate_detection_step", _raise)
-    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker.run_one_tick(worker_settings, scan_status_repo)
     out = capsys.readouterr().out
     assert "EDGAR: theme-candidate-detection step skipped (RuntimeError)." in out
     assert "research cases" in out  # research-case step's own summary is untouched

@@ -61,6 +61,18 @@ def _set_edgar_run_scan(monkeypatch, report=None):
     )
 
 
+def _set_dart_and_edinet_no_op_scan(monkeypatch):
+    """Phase 2 (design/DECISIONS.md): theme-matching/detection now run
+    once per tick via run_one_tick(), after all three providers — so a
+    test exercising that call site must mock DART/EDINET too, or
+    run_one_tick() would attempt their real run_scan()."""
+    for provider_key in ("dart", "edinet"):
+        monkeypatch.setitem(
+            radar_worker._SERVICE_MODULES, provider_key,
+            types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: _fake_report()),
+        )
+
+
 def _theme(theme_id="theme-1", **overrides):
     defaults = dict(
         id=theme_id, category=ThemeCategory.BOTTLENECK, status=ThemeStatus.NEW, visibility=ThemeVisibility.INTERNAL,
@@ -151,11 +163,16 @@ def test_zero_scopes_never_calls_list_recent_cases_or_inserts(tmp_path, monkeypa
 
 
 def test_zero_scopes_end_to_end_via_run_provider_tick(tmp_path, monkeypatch, capsys):
+    """Phase 2 (design/DECISIONS.md): theme-matching now runs once per
+    tick via run_one_tick() (after all three providers), not nested
+    inside _run_provider_tick("edgar", ...) — DART/EDINET are mocked to
+    safe no-ops so this stays network-free."""
     worker_settings = _worker_settings(tmp_path)
     _set_edgar_run_scan(monkeypatch)
+    _set_dart_and_edinet_no_op_scan(monkeypatch)
     scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
 
-    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker.run_one_tick(worker_settings, scan_status_repo)
     out = capsys.readouterr().out
     assert radar_worker._ZERO_SCOPE_THEME_MATCHING_SUMMARY in out
 
@@ -402,6 +419,7 @@ def test_per_match_insert_exception_is_isolated(tmp_path, monkeypatch):
 def test_scope_load_failure_isolated_via_provider_tick(tmp_path, monkeypatch, capsys):
     worker_settings = _worker_settings(tmp_path)
     _set_edgar_run_scan(monkeypatch)
+    _set_dart_and_edinet_no_op_scan(monkeypatch)
     scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
 
     class _RaisingScopesRepo:
@@ -410,7 +428,7 @@ def test_scope_load_failure_isolated_via_provider_tick(tmp_path, monkeypatch, ca
 
     monkeypatch.setattr(backend_factory, "get_theme_matching_repository", lambda s: _RaisingScopesRepo())
 
-    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker.run_one_tick(worker_settings, scan_status_repo)
     out = capsys.readouterr().out
     assert "EDGAR: theme-matching step skipped (RuntimeError)." in out
     assert "research cases" in out  # research-case step's own summary is untouched

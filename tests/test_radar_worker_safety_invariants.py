@@ -49,10 +49,26 @@ def test_radar_worker_never_references_the_three_human_only_statuses():
     """Belt-and-suspenders on top of the import check above: no
     CandidateStatus.PUBLISHED/MONITORING/DISMISSED attribute access
     appears anywhere in the worker's own source at all — it doesn't even
-    import CandidateStatus."""
+    import CandidateStatus. The one already-authoritative proof of this
+    is the module-import check below (CandidateStatus lives in
+    src.models.models, which this file never imports) — the attribute-
+    name scan is only a belt-and-suspenders addition on top of that, so
+    it must not flag an attribute access on an unrelated enum that
+    happens to share an attribute name (e.g. `ThemeVisibility.PUBLISHED`
+    — a Theme's own, entirely separate visibility state, introduced by
+    Phase 2's autonomous auto-publish step, design/DECISIONS.md) as if
+    it were the forbidden CandidateStatus/SignalStatus one."""
     tree = ast.parse(_RADAR_WORKER.read_text(encoding="utf-8"))
     forbidden_attrs = {"PUBLISHED", "MONITORING", "DISMISSED"}
-    offenders = [node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr in forbidden_attrs]
+    # Enum classes this file legitimately uses whose members happen to
+    # share a name with the forbidden CandidateStatus/SignalStatus
+    # values — verified unrelated to Signal/Candidate review state.
+    _unrelated_enum_bases = {"ThemeVisibility", "ThemeStatus"}
+    offenders = [
+        node.attr for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr in forbidden_attrs
+        and not (isinstance(node.value, ast.Name) and node.value.id in _unrelated_enum_bases)
+    ]
     assert offenders == []
     assert "src.models.models" not in _imported_module_names(_RADAR_WORKER)
 
