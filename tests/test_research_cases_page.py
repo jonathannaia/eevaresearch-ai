@@ -203,6 +203,7 @@ class _RaisingRepo:
 
 
 def _run_with_repo(monkeypatch, repo, case_id=None):
+    monkeypatch.setenv("EDGE_RESEARCH_CASES_ENABLED", "true")
     monkeypatch.setattr(research_cases.backend_factory, "get_research_case_repository", lambda settings: repo)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     if case_id is not None:
@@ -491,6 +492,7 @@ def test_proof15_repository_construction_failure_renders_restrained_message(monk
     def _boom(settings):
         raise RuntimeError("connection boom - must never reach the UI")
 
+    monkeypatch.setenv("EDGE_RESEARCH_CASES_ENABLED", "true")
     monkeypatch.setattr(research_cases.backend_factory, "get_research_case_repository", _boom)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     at.run()

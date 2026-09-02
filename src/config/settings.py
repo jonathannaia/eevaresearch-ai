@@ -80,6 +80,15 @@ class Settings:
     # default, same "unset/blank/unrecognized -> disabled" parsing as
     # every other flag on this class.
     theme_workspace_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_WORKSPACE_ENABLED"))
+    # Reader-facing data-integrity pass (design/DECISIONS.md) — same
+    # hidden-but-reachable-by-URL exposure theme_workspace_enabled above
+    # already closes for the Constraint Research Workspace: Research
+    # Cases and Daily News Admin are real-data operator/invited-tester
+    # tooling, not a general reader surface, but previously had no gate
+    # beyond "absent from nav." Disabled by default, same parsing as
+    # every other flag on this class.
+    research_cases_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_CASES_ENABLED"))
+    daily_news_admin_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_DAILY_NEWS_ADMIN_ENABLED"))
     # Autonomous Theme candidate detection (design/DECISIONS.md) — the
     # master switch for scripts/radar_worker.py's own
     # _run_theme_candidate_detection_step. Disabled by default, same

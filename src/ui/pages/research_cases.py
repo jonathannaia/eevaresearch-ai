@@ -61,6 +61,7 @@ _FOOTER_DISCLAIMER = (
 )
 _LIST_LIMIT = 20
 _UNAVAILABLE_MESSAGE = "Research cases are temporarily unavailable."
+_NOT_ENABLED_MESSAGE = "Research Cases is not enabled on this deployment."
 
 
 def _esc(value: object) -> str:
@@ -107,6 +108,10 @@ def _footer_disclaimer() -> None:
 
 def render() -> None:
     settings = get_settings()
+    if not settings.research_cases_enabled:
+        st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
+        st.info(_NOT_ENABLED_MESSAGE)
+        return
     case_id = st.query_params.get("case_id", "").strip()
 
     try:

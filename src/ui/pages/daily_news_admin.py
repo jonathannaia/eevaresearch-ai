@@ -17,12 +17,16 @@ from src.ui.components.section import section_header
 
 def render() -> None:
     st.markdown('<div class="er-page-title">Daily News — Admin / Status</div>', unsafe_allow_html=True)
+
+    settings = get_settings()
+    if not settings.daily_news_admin_enabled:
+        st.info("Daily News — Admin is not enabled on this deployment.")
+        return
+
     st.markdown(
         '<div class="er-muted">Internal ingestion status — not linked from the public sidebar.</div>',
         unsafe_allow_html=True,
     )
-
-    settings = get_settings()
 
     if st.button("Run discovery now"):
         with st.spinner("Polling pilot feeds..."):
