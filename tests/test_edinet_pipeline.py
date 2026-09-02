@@ -4,14 +4,14 @@ seam (no provider call — see module docstring). Fully mocked
 EdinetClient, zero network, no Subscription-Key required."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store
 from src.data_access.edinet import edinet_pipeline
 from src.data_access.edinet.errors import EdinetNotFoundError
-from src.models.models import CandidateStatus, ExtractionState, TranslationState
+from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, TranslationState
 
 _TEST_MAP = {"010:030:120": "fictional_category_alpha"}  # fictional key/category, not real EDINET data
 
@@ -360,3 +360,82 @@ def test_status_gate_upstream_still_prevents_non_default_status_filings_from_eve
     # be called against already had default status at persist time.
     from src.data_access.edinet import scan_service
     assert not scan_service._status_fields_are_default({"withdrawalStatus": "1", "docInfoEditStatus": "0", "disclosureStatus": "0"})
+
+
+# --- Automatic retry of stale, retryable translation failures (translation
+# reliability workstream) — same shape as DART's own radar_pipeline.py. ---
+
+
+class _FakeTranslationProvider:
+    name = "DeepL"
+
+    def __init__(self, result: str | None = None, error: Exception | None = None):
+        self._result = result
+        self._error = error
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        if self._error:
+            raise self._error
+        return self._result
+
+
+def _translation_failed_candidate(doc_id: str, next_retry_minutes_from_now: int) -> CandidateSignal:
+    now = datetime.now(timezone.utc)
+    filing = FilingEvent(
+        rcept_no=doc_id, corp_code="E00001", corp_name="Acme Test Co", stock_code="1234",
+        report_nm="有価証券報告書", rcept_dt="2026-08-17", flr_nm="Acme Test Co",
+        source_name="EDINET", original_language="Japanese",
+    )
+    return CandidateSignal(
+        id=f"edinet-cand-{doc_id}", filing=filing, matched_rules=["fictional_category_alpha:010:030:120"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="日本語の抜粋。",
+        translation_state=TranslationState.UNAVAILABLE, translation_failure_category="rate_limit",
+        translation_failure_reason="Translation provider rate limit exceeded.", translation_retry_count=0,
+        translation_next_retry_at=(now + timedelta(minutes=next_retry_minutes_from_now)).isoformat(),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=now.isoformat())],
+    )
+
+
+def test_stale_translation_failure_past_its_scheduled_retry_is_automatically_retried(tmp_path):
+    candidate = _translation_failed_candidate("S100RETRY", next_retry_minutes_from_now=-1)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
+    client = _make_client({})  # no new filings this tick
+    provider = _FakeTranslationProvider(result="Recovered translation.")
+
+    edinet_pipeline.run_pipeline(client, [], tmp_path, translation_provider=provider)
+
+    client.fetch_document.assert_not_called()  # never re-fetches the document
+    updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate.id]
+    assert updated.translation_state == TranslationState.TRANSLATED
+    assert updated.excerpt_translation.translated_text == "Recovered translation."
+    assert updated.translation_retry_count == 1
+    assert updated.translation_next_retry_at is None
+
+
+def test_translation_failure_not_yet_due_is_not_automatically_retried_edinet(tmp_path):
+    candidate = _translation_failed_candidate("S100NOTDUE", next_retry_minutes_from_now=30)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
+    client = _make_client({})
+    provider = _FakeTranslationProvider(result="should not be used")
+
+    edinet_pipeline.run_pipeline(client, [], tmp_path, translation_provider=provider)
+
+    updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate.id]
+    assert updated.translation_state == TranslationState.UNAVAILABLE
+    assert updated.translation_retry_count == 0
+
+
+def test_no_automatic_translation_retry_when_no_provider_configured(tmp_path):
+    # Mirrors the pre-Phase-1 lifecycle seam: with no translation_provider
+    # at all, no candidate could ever have become UNAVAILABLE in the
+    # first place, and the retry step itself must not attempt anything.
+    candidate = _translation_failed_candidate("S100NOPROVIDER", next_retry_minutes_from_now=-1)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate], edinet_pipeline.CANDIDATE_STORE_FILENAME)
+    client = _make_client({})
+
+    edinet_pipeline.run_pipeline(client, [], tmp_path)  # translation_provider omitted
+
+    updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate.id]
+    assert updated.translation_state == TranslationState.UNAVAILABLE
+    assert updated.translation_retry_count == 0

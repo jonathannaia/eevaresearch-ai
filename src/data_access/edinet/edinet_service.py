@@ -19,6 +19,12 @@ and radar_inbox.py's own "EDINET has never had a live scan run against
 it" framing. This module's own `run_scan`/`edinet_readiness` shape was
 unchanged by this correction; only this docstring's factual claim was
 wrong.
+
+Translation reliability workstream: `EdinetReadiness` now also checks
+`EDGE_TRANSLATION_API_KEY` (`translation_key_configured`), mirroring
+DART's own `RadarReadiness` — before this, EDINET's readiness never
+considered the translation key at all, so a scan could report "ready"
+and still fail every excerpt translation silently.
 """
 from __future__ import annotations
 
@@ -40,10 +46,17 @@ _EDINET_SOURCE = "EDINET"
 class EdinetReadiness:
     subscription_key_configured: bool
     unresolved_companies: tuple[str, ...]
+    # Translation reliability workstream — EDINET's excerpt translation
+    # uses the exact same shared EDGE_TRANSLATION_API_KEY DART's own
+    # RadarReadiness already gates on (see radar_service.py); before this,
+    # EdinetReadiness never checked it at all, so EDINET always attempted
+    # a real DeepL call and failed silently on every excerpt whenever the
+    # key was unset, with no readiness signal ever surfacing that cause.
+    translation_key_configured: bool = True
 
     @property
     def ready(self) -> bool:
-        return self.subscription_key_configured and not self.unresolved_companies
+        return self.subscription_key_configured and self.translation_key_configured and not self.unresolved_companies
 
 
 def get_edinet_companies(cache_dir: Path) -> tuple[TrackedCompany, ...]:
@@ -66,6 +79,7 @@ def edinet_readiness(settings: Settings) -> EdinetReadiness:
     return EdinetReadiness(
         subscription_key_configured=bool(settings.edinet_subscription_key),
         unresolved_companies=unresolved,
+        translation_key_configured=bool(settings.translation_api_key),
     )
 
 

@@ -139,7 +139,9 @@ def test_dart_process_candidate_never_overwrites_excerpt_original_on_reprocess(t
         DartDocumentFetchResult(rcept_no="R1", state=ExtractionState.EXTRACTED, excerpt_original="Second, different extraction text.", detail="", retrieved_at="2026-08-21T00:00:00+00:00", from_cache=False),
     ])
     monkeypatch.setattr(dart_radar_pipeline.document_service, "get_or_fetch_excerpt", lambda *a, **k: next(results))
-    monkeypatch.setattr(dart_radar_pipeline, "translate_cached", lambda *a, **k: None)
+    from src.data_access.translation.translation_service import TranslationAttempt
+
+    monkeypatch.setattr(dart_radar_pipeline, "translate_cached_with_outcome", lambda *a, **k: TranslationAttempt(translation=None))
     provider = MagicMock()
     provider.name = "DeepL"
 
@@ -261,12 +263,14 @@ def test_edinet_translates_excerpt_when_provider_given(tmp_path, monkeypatch):
     )
     seen_calls = []
 
-    def _fake_translate_cached(provider, document_id, text, cache_dir, source_lang="KO"):
+    def _fake_translate_cached_with_outcome(provider, document_id, text, cache_dir, source_lang="KO"):
         seen_calls.append(source_lang)
+        from src.data_access.translation.translation_service import TranslationAttempt
         from src.models.models import Translation
-        return Translation(translated_text="Japanese excerpt.", provider="DeepL", source_lang=source_lang.lower(), target_lang="en", translated_at=_now())
+        translation = Translation(translated_text="Japanese excerpt.", provider="DeepL", source_lang=source_lang.lower(), target_lang="en", translated_at=_now())
+        return TranslationAttempt(translation=translation)
 
-    monkeypatch.setattr(edinet_pipeline, "translate_cached", _fake_translate_cached)
+    monkeypatch.setattr(edinet_pipeline, "translate_cached_with_outcome", _fake_translate_cached_with_outcome)
     provider = MagicMock()
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0, "translations_completed": 0}
     edinet_pipeline.process_candidate(MagicMock(), candidate, tmp_path, counters, {}, translation_provider=provider)
@@ -278,18 +282,30 @@ def test_edinet_translates_excerpt_when_provider_given(tmp_path, monkeypatch):
     assert counters["translations_completed"] == 1
 
 
-@pytest.mark.parametrize("side_effect_name", ["missing_config", "rate_limit_or_timeout", "malformed_response"])
-def test_edinet_translation_failure_is_non_fatal_original_retained(tmp_path, monkeypatch, side_effect_name):
+@pytest.mark.parametrize(
+    "side_effect_name,category,retryable",
+    [
+        ("missing_config", "config_missing_key", False),
+        ("rate_limit_or_timeout", "rate_limit", True),
+        ("malformed_response", "parse_error", False),
+    ],
+)
+def test_edinet_translation_failure_is_non_fatal_original_retained(tmp_path, monkeypatch, side_effect_name, category, retryable):
     candidate = _edinet_candidate_ready_for_extraction()
     monkeypatch.setattr(
         edinet_pipeline.document_service, "get_or_fetch_excerpt",
         lambda *a, **k: EdinetDocumentFetchResult(doc_id="S100YYYY", state=ExtractionState.EXTRACTED, excerpt_original="日本語の抜粋。", detail="", retrieved_at=_now(), from_cache=False),
     )
-    # translate_cached itself already collapses every failure mode to
-    # None (missing key, network, rate limit, timeout, malformed
-    # response) — this proves the EDINET call site handles that None
-    # the same non-fatal way DART's own call site already does.
-    monkeypatch.setattr(edinet_pipeline, "translate_cached", lambda *a, **k: None)
+    # translate_cached_with_outcome itself already categorizes every
+    # failure mode (translation reliability workstream) — this proves the
+    # EDINET call site persists that category/reason/retry schedule the
+    # same non-fatal way DART's own call site does.
+    from src.data_access.translation.translation_service import TranslationAttempt
+
+    monkeypatch.setattr(
+        edinet_pipeline, "translate_cached_with_outcome",
+        lambda *a, **k: TranslationAttempt(translation=None, failure_category=category, failure_reason="simulated failure", retryable=retryable),
+    )
     provider = MagicMock()
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0, "translations_completed": 0}
 
@@ -299,6 +315,12 @@ def test_edinet_translation_failure_is_non_fatal_original_retained(tmp_path, mon
     assert processed.excerpt_translation is None
     assert processed.excerpt_original == "日本語の抜粋。"  # retained regardless of translation failure
     assert processed.status == CandidateStatus.NEEDS_REVIEW  # candidate is not failed by a translation failure
+    assert processed.translation_failure_category == category
+    assert processed.translation_failure_reason == "simulated failure"
+    if retryable:
+        assert processed.translation_next_retry_at is not None
+    else:
+        assert processed.translation_next_retry_at is None
 
 
 def test_translate_cached_default_source_lang_is_unchanged_for_dart(tmp_path, monkeypatch):
@@ -329,7 +351,9 @@ def test_dart_flag_reason_enriched_with_materiality_detail_after_processing(tmp_
     provider = MagicMock()
     provider.name = "DeepL"
     provider.translate.return_value = "Translated."
-    monkeypatch.setattr(dart_radar_pipeline, "translate_cached", lambda *a, **k: None)
+    from src.data_access.translation.translation_service import TranslationAttempt
+
+    monkeypatch.setattr(dart_radar_pipeline, "translate_cached_with_outcome", lambda *a, **k: TranslationAttempt(translation=None))
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "translations_completed": 0, "cache_hits": 0}
 
     processed = dart_radar_pipeline.process_candidate(MagicMock(), provider, candidate, tmp_path, counters, {})

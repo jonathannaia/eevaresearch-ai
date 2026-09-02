@@ -52,8 +52,11 @@ def _text(at) -> str:
 
 def _settings(**overrides) -> Settings:
     fields = dict(
-        dart_api_key=None, translation_api_key=None, edgar_user_agent=None,
-        edinet_subscription_key="test-key",  # cheapest way to pass the page's top-level readiness gate
+        dart_api_key=None, edgar_user_agent=None,
+        # Translation reliability workstream: EdinetReadiness now also
+        # checks the translation key, so both must be set together as
+        # the cheapest way to pass the page's top-level readiness gate.
+        edinet_subscription_key="test-key", translation_api_key="test-key",
         radar_worker_db_backend=None, radar_worker_state_db_path=None, radar_worker_state_db_url=None,
     )
     fields.update(overrides)

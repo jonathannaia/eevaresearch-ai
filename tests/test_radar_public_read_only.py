@@ -219,9 +219,10 @@ def test_radar_cards_only_action_is_the_original_source_link(tmp_path):
     # key — every former per-candidate action (Publish/Monitor/Exclude/
     # Prepare/Retry) is gone, leaving only the link_button below.
     assert not any(candidate.id in (b.key or "") for b in at.button)
-    link_buttons = [b for b in at.get("link_button") if getattr(b, "label", "").startswith("Open original")]
+    # Radar simplicity workstream: the label is the exact fixed string
+    # the approved spec calls for — no source name interpolated into it.
+    link_buttons = [b for b in at.get("link_button") if getattr(b, "label", "") == "Open original filing ↗"]
     assert len(link_buttons) >= 1
-    assert any("OpenDART / DART" in b.label or "SEC EDGAR" in b.label or "EDINET" in b.label for b in link_buttons)
 
 
 # ============================================================
@@ -242,13 +243,20 @@ def test_radar_page_has_no_card_level_expanders(tmp_path):
     assert expander_labels <= {"Advanced filters"}
 
 
-def test_radar_card_shows_evidence_provenance_jurisdiction_captured_and_materiality_directly(tmp_path):
+def test_radar_card_shows_only_the_five_approved_public_fields(tmp_path):
+    # Radar simplicity workstream: Evidence status, jurisdiction,
+    # captured timestamp, and materiality are all removed from the
+    # public card — replaced by this direct test of the 5-field contract
+    # (company+ticker, English title, Original, English translation,
+    # Open original filing link) that superseded them.
     candidate = _seed_one_candidate(tmp_path, materiality_assessment="Material · new facility investment")
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "Evidence status" in all_text
-    assert "Captured" in all_text
-    assert candidate.filing.retrieved_at in all_text
-    assert "South Korea" in all_text  # jurisdiction, derived from OpenDART / DART
-    assert "Material · new facility investment" in all_text
+    assert "Evidence status" not in all_text
+    assert candidate.filing.retrieved_at not in all_text
+    assert "South Korea" not in all_text
+    assert "Material · new facility investment" not in all_text
+    assert candidate.filing.corp_name in all_text
+    assert candidate.filing.stock_code in all_text
+    assert candidate.excerpt_original in all_text

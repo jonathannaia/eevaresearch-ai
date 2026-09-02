@@ -36,8 +36,9 @@ from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.edinet import document_service, edinet_rules, scan_service
 from src.data_access.edinet.client import EdinetClient
+from src.data_access.translation import translation_service
 from src.data_access.translation.interfaces import TranslationProvider
-from src.data_access.translation.translation_service import translate_cached
+from src.data_access.translation.translation_service import translate_cached_with_outcome
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState, record_excerpt
 
 _PROCESSABLE_CONFIDENCE_LEVELS = frozenset({"Moderate", "High"})
@@ -152,15 +153,14 @@ def process_candidate(
             evidence_source_member=doc_result.evidence_source_member,
         )
         if translation_provider is not None and candidate.excerpt_original:
-            excerpt_translation = translate_cached(
+            excerpt_attempt = translate_cached_with_outcome(
                 translation_provider, doc_id, candidate.excerpt_original, cache_dir, source_lang="JA",
             )
-            candidate.excerpt_translation = excerpt_translation
-            if excerpt_translation is not None:
-                candidate.translation_state = TranslationState.TRANSLATED
+            candidate.excerpt_translation = excerpt_attempt.translation
+            translation_service.record_translation_attempt(candidate, excerpt_attempt)
+            if excerpt_attempt.translation is not None:
                 counters["translations_completed"] = counters.get("translations_completed", 0) + 1
             else:
-                candidate.translation_state = TranslationState.UNAVAILABLE
                 error_counts["translation_unavailable"] = error_counts.get("translation_unavailable", 0) + 1
         else:
             # No provider configured — the pre-Phase-1 lifecycle seam
@@ -370,6 +370,24 @@ def run_pipeline(
             candidate_store.update_candidate(cache_dir, deferred, CANDIDATE_STORE_FILENAME)
         else:
             candidate_repository.update_candidate(deferred)
+
+    # Automatic, bounded retry of stale translation failures whose cause
+    # is retryable — translation reliability workstream, same shape as
+    # DART's own radar_pipeline.run_pipeline. Only runs when a real
+    # translation provider is configured; with none, no candidate here
+    # was ever translated in the first place, so none can be UNAVAILABLE.
+    if translation_provider is not None:
+        stale_translation_failures = sorted(
+            (c for c in store.values() if translation_service.translation_retry_eligible(c)),
+            key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no),
+        )[:translation_service.AUTOMATIC_TRANSLATION_RETRY_MAX_PER_TICK]
+
+        for candidate in stale_translation_failures:
+            retried = translation_service.retry_translation_for_candidate(translation_provider, candidate, cache_dir)
+            if candidate_repository is None:
+                candidate_store.update_candidate(cache_dir, retried, CANDIDATE_STORE_FILENAME)
+            else:
+                candidate_repository.update_candidate(retried)
 
     warnings: list[str] = []
     for message in scan_result.errors:

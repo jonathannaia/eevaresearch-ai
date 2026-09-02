@@ -27,14 +27,14 @@ from src.data_access.dart import candidate_store, document_service, ownership_ma
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.dart.client import DartClient
 from src.data_access.dart.document_extractor import assess_excerpt_quality
+from src.data_access.translation import translation_service
 from src.data_access.translation.interfaces import TranslationProvider
-from src.data_access.translation.translation_service import translate_cached
+from src.data_access.translation.translation_service import translate_cached_with_outcome
 from src.models.models import (
     CandidateSignal,
     CandidateStatus,
     ExtractionState,
     StateTransition,
-    TranslationState,
     build_flag_reason,
     record_excerpt,
 )
@@ -144,26 +144,28 @@ def process_candidate(
     # the title comes from FilingEvent, not the document body, so a
     # failed/unsupported document doesn't block it.
     candidate = _transition(candidate, CandidateStatus.TRANSLATION_PENDING)
-    title_translation = translate_cached(translation_provider, candidate.filing.rcept_no, candidate.filing.report_nm, cache_dir)
-    candidate.title_translation = title_translation
-    if title_translation is not None:
+    title_attempt = translate_cached_with_outcome(translation_provider, candidate.filing.rcept_no, candidate.filing.report_nm, cache_dir)
+    candidate.title_translation = title_attempt.translation
+    if title_attempt.translation is not None:
         counters["translations_completed"] += 1
 
-    excerpt_translation = None
+    excerpt_attempt = None
     if candidate.excerpt_original:
-        excerpt_translation = translate_cached(translation_provider, candidate.filing.rcept_no, candidate.excerpt_original, cache_dir)
-        candidate.excerpt_translation = excerpt_translation
-        if excerpt_translation is not None:
+        excerpt_attempt = translate_cached_with_outcome(translation_provider, candidate.filing.rcept_no, candidate.excerpt_original, cache_dir)
+        candidate.excerpt_translation = excerpt_attempt.translation
+        if excerpt_attempt.translation is not None:
             counters["translations_completed"] += 1
 
-    if candidate.excerpt_original:
-        if excerpt_translation is not None:
-            candidate.translation_state = TranslationState.TRANSLATED
-        else:
-            candidate.translation_state = TranslationState.UNAVAILABLE
-            error_counts["translation_unavailable"] = error_counts.get("translation_unavailable", 0) + 1
-    else:
-        candidate.translation_state = TranslationState.TRANSLATED if title_translation is not None else TranslationState.UNAVAILABLE
+    # translation_state (and, on failure, the persisted failure category/
+    # reason/retry schedule — translation reliability workstream) is
+    # driven by the excerpt's own outcome when an excerpt exists, else by
+    # the title's — the same "primary text" convention retry_translation_
+    # for_candidate() uses so a later automatic retry re-attempts exactly
+    # the text that actually caused UNAVAILABLE.
+    primary_attempt = excerpt_attempt if candidate.excerpt_original else title_attempt
+    translation_service.record_translation_attempt(candidate, primary_attempt)
+    if primary_attempt.translation is None:
+        error_counts["translation_unavailable"] = error_counts.get("translation_unavailable", 0) + 1
 
     transition_detail = ""
     if candidate.extraction_state == ExtractionState.EXTRACTED:
@@ -280,6 +282,25 @@ def run_pipeline(
 
     for candidate in stale_failures:
         retried = process_candidate(client, translation_provider, candidate, cache_dir, counters, error_counts)
+        if candidate_repository is None:
+            candidate_store.update_candidate(cache_dir, retried)
+        else:
+            candidate_repository.update_candidate(retried)
+
+    # Automatic, bounded retry of stale translation failures whose cause
+    # is retryable (rate limit/timeout/network/transient provider error) —
+    # translation reliability workstream. Separately budgeted from every
+    # loop above; re-attempts only the translation itself (never
+    # re-fetches/re-extracts the document), so a NEEDS_REVIEW candidate
+    # with TranslationState.UNAVAILABLE is picked up here without ever
+    # re-entering the retrieval/extraction eligibility pool above.
+    stale_translation_failures = sorted(
+        (c for c in store.values() if translation_service.translation_retry_eligible(c)),
+        key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no),
+    )[:translation_service.AUTOMATIC_TRANSLATION_RETRY_MAX_PER_TICK]
+
+    for candidate in stale_translation_failures:
+        retried = translation_service.retry_translation_for_candidate(translation_provider, candidate, cache_dir)
         if candidate_repository is None:
             candidate_store.update_candidate(cache_dir, retried)
         else:

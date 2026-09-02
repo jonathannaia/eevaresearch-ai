@@ -691,3 +691,70 @@ def test_manual_process_single_candidate_now_actually_refetches_a_stale_failure(
     assert result.status == CandidateStatus.NEEDS_REVIEW
     assert result.extraction_state == ExtractionState.EXTRACTED
     assert client.fetch_document_zip.call_count == 2  # an actual second network attempt happened
+
+
+# --- Automatic retry of stale, retryable translation failures (translation
+# reliability workstream) — separately budgeted from the RETRIEVAL_FAILED
+# retry above; re-attempts only the translation, never the document fetch. ---
+
+
+def _translation_failed_candidate(rcept_no: str, next_retry_minutes_from_now: int) -> CandidateSignal:
+    now = datetime.now(timezone.utc)
+    filing = FilingEvent(
+        rcept_no=rcept_no, corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+        report_nm="신규시설투자등", rcept_dt="20260810", flr_nm="삼성전자",
+    )
+    return CandidateSignal(
+        id=f"cand-{rcept_no}", filing=filing,
+        matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="신규시설투자등 관련 원문",
+        translation_state=TranslationState.UNAVAILABLE, translation_failure_category="rate_limit",
+        translation_failure_reason="Translation provider rate limit exceeded.", translation_retry_count=0,
+        translation_next_retry_at=(now + timedelta(minutes=next_retry_minutes_from_now)).isoformat(),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=now.isoformat())],
+    )
+
+
+def test_stale_translation_failure_past_its_scheduled_retry_is_automatically_retried(tmp_path):
+    candidate = _translation_failed_candidate("20260810000001", next_retry_minutes_from_now=-1)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate])
+    client = _make_client({"00126380": {1: ([], 0)}})  # no new filings this tick
+    provider = _FakeTranslationProvider(result="Recovered translation.")
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    client.fetch_document_zip.assert_not_called()  # never re-fetches the document
+    updated = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
+    assert updated.translation_state == TranslationState.TRANSLATED
+    assert updated.excerpt_translation.translated_text == "Recovered translation."
+    assert updated.translation_retry_count == 1
+    assert updated.translation_next_retry_at is None
+    assert updated.translation_failure_category is None
+
+
+def test_translation_failure_not_yet_due_is_not_automatically_retried(tmp_path):
+    candidate = _translation_failed_candidate("20260810000001", next_retry_minutes_from_now=30)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate])
+    client = _make_client({"00126380": {1: ([], 0)}})
+    provider = _FakeTranslationProvider(result="should not be used")
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    updated = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
+    assert updated.translation_state == TranslationState.UNAVAILABLE  # completely untouched
+    assert updated.translation_retry_count == 0
+
+
+def test_automatic_translation_retry_continues_backoff_on_a_second_failure(tmp_path):
+    candidate = _translation_failed_candidate("20260810000001", next_retry_minutes_from_now=-1)
+    candidate_store.upsert_new_candidates(tmp_path, [candidate])
+    client = _make_client({"00126380": {1: ([], 0)}})
+    provider = _FakeTranslationProvider(error=TranslationApiError("429", "still limited"))
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    updated = candidate_store.load_candidates(tmp_path)["cand-20260810000001"]
+    assert updated.translation_state == TranslationState.UNAVAILABLE
+    assert updated.translation_retry_count == 1  # one retry attempt was made
+    assert updated.translation_next_retry_at is not None  # a further retry remains scheduled

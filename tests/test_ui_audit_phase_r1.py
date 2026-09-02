@@ -191,7 +191,10 @@ def test_default_filter_row_is_search_source_theme_date_only(tmp_path):
 
 # ============================== FILING CARDS ==============================
 
-def test_card_shows_why_this_matters(tmp_path):
+def test_card_shows_original_and_english_translation(tmp_path):
+    # Radar simplicity workstream: "Why this matters" (and "Why flagged")
+    # are both removed from the public card — replaced by this test of
+    # the actual 5-field contract that superseded it.
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000001", "신규시설투자등 결정")
     _seed_filing_events(tmp_path, [filing])
@@ -205,8 +208,9 @@ def test_card_shows_why_this_matters(tmp_path):
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "Why this matters:" in all_text
+    assert "Why this matters:" not in all_text
     assert "Why flagged:" not in all_text
+    assert "신규시설투자등 관련 원문" in all_text
 
 
 def test_publish_still_gates_signal_eligibility_unchanged():

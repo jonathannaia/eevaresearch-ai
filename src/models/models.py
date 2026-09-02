@@ -668,3 +668,22 @@ class CandidateSignal:
     # stays None for EDGAR, DART, EDINET's own bare-PDF/HTML/text
     # extraction, and every pre-Phase-2-Step-2 record.
     evidence_source_member: str | None = None
+    # Translation reliability (Radar simplicity + translation reliability
+    # workstream) — persisted separately from `translation_state` so a
+    # failure's cause and retry schedule survive a process restart, not
+    # just the coarse UNAVAILABLE bucket. `translation_failure_category`
+    # is one of translation_service.py's own category strings (e.g.
+    # "rate_limit", "timeout", "network", "provider_error" — retryable;
+    # "config_missing_key", "parse_error" — terminal); None whenever
+    # translation_state is not UNAVAILABLE. `translation_next_retry_at`
+    # is set only while a bounded, backed-off automatic retry is actually
+    # still scheduled (see translation_service.record_translation_attempt)
+    # — None means no further retry will happen (either the failure was
+    # terminal, or the retry cap was reached), which is exactly the signal
+    # the public card uses to distinguish "being prepared" from a silent,
+    # honest fallback to the original text.
+    translation_failure_category: str | None = None
+    translation_failure_reason: str | None = None
+    translation_failure_at: str | None = None
+    translation_retry_count: int = 0
+    translation_next_retry_at: str | None = None

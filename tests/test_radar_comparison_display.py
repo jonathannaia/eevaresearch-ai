@@ -243,6 +243,13 @@ def test_comparison_status_label_never_raises_on_malformed_input(malformed):
 
 # ============================================================
 # Part C — card display (proofs 6-15)
+#
+# Radar simplicity workstream: the Comparison row (and the Evidence
+# status panel it lived inside) is removed from the public card
+# entirely — none of the render-specific proofs below apply any more.
+# The absence-only proofs are kept (they remain trivially, meaningfully
+# true) and the render-positive proofs are replaced by
+# test_no_comparison_row_renders_in_any_state below.
 # ============================================================
 
 
@@ -259,32 +266,21 @@ def _render_single_candidate_page(tmp_path, candidate: CandidateSignal, records_
     return at
 
 
-@pytest.mark.parametrize("status,expected_label", [
-    (ComparisonStatus.NOT_AVAILABLE.value, "Comparison unavailable"),
-    (ComparisonStatus.NOT_COMPARABLE.value, "Not comparable"),
-    (ComparisonStatus.NO_MATERIAL_CHANGE.value, "Detection categories unchanged"),
-    (ComparisonStatus.CHANGE_DETECTED.value, "Detection categories changed"),
+@pytest.mark.parametrize("status", [
+    ComparisonStatus.NOT_AVAILABLE.value, ComparisonStatus.NOT_COMPARABLE.value,
+    ComparisonStatus.NO_MATERIAL_CHANGE.value, ComparisonStatus.CHANGE_DETECTED.value,
+    "SOME_FUTURE_STATUS_NOT_YET_KNOWN",
 ])
-def test_matched_record_renders_the_correct_status_label_and_caveat(tmp_path, status, expected_label):
+def test_no_comparison_row_renders_in_any_state(tmp_path, status):
     candidate = _candidate("cand-R-01", _filing("R-01"))
     record = _comparison_record("cand-R-01", comparison_status=status)
     at = _render_single_candidate_page(tmp_path, candidate, {"cand-R-01": record})
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert expected_label in all_text
-    assert _COMPARISON_CAVEAT in all_text
-
-
-def test_unknown_status_renders_safe_fallback_label_and_still_shows_caveat(tmp_path):
-    candidate = _candidate("cand-R-01", _filing("R-01"))
-    record = _comparison_record("cand-R-01", comparison_status="SOME_FUTURE_STATUS_NOT_YET_KNOWN")
-    at = _render_single_candidate_page(tmp_path, candidate, {"cand-R-01": record})
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Comparison unavailable" in all_text
-    assert _COMPARISON_CAVEAT in all_text
+    assert _COMPARISON_CAVEAT not in all_text
+    assert "Detection categories" not in all_text
+    assert "Not comparable" not in all_text
 
 
 def test_no_comparison_record_renders_no_row_and_no_caveat(tmp_path):
@@ -335,17 +331,11 @@ def test_candidate_absent_renders_no_comparison_row(tmp_path):
     assert _COMPARISON_CAVEAT not in all_text
 
 
-def test_caveat_appears_exactly_once_per_matched_comparison_row(tmp_path):
-    candidate = _candidate("cand-R-01", _filing("R-01"))
-    record = _comparison_record("cand-R-01")
-    at = _render_single_candidate_page(tmp_path, candidate, {"cand-R-01": record})
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert all_text.count(_COMPARISON_CAVEAT) == 1
-
-
 def test_unsafe_content_in_record_fields_never_appears_in_rendered_output(tmp_path):
+    # Radar simplicity workstream: the Comparison row itself no longer
+    # renders at all, so this is now a simpler, still-meaningful proof
+    # that a comparison record's own fields never leak into the card
+    # regardless.
     candidate = _candidate("cand-R-01", _filing("R-01"))
     unsafe_record = _comparison_record(
         "cand-R-01",
@@ -360,41 +350,26 @@ def test_unsafe_content_in_record_fields_never_appears_in_rendered_output(tmp_pa
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    # None of the raw stored field values are ever rendered — only the
-    # fixed status label + fixed caveat.
     assert "alert('added')" not in all_text
     assert "alert('removed')" not in all_text
     assert "unsafe limitation" not in all_text
     assert "prior excerpt" not in all_text
     assert "current excerpt" not in all_text
     assert "R-prior" not in all_text
-    assert "Detection categories changed" in all_text  # the row itself still renders, just with the safe label only
+    assert "Detection categories changed" not in all_text
 
 
 # ============================================================
-# Part D — existing behavior preserved (proofs 16, 17)
+# Part D — existing behavior preserved (proof 17)
 # ============================================================
-
-
-def test_existing_evidence_file_row_unaffected_by_comparison_wiring(tmp_path):
-    filing = FilingEvent(
-        rcept_no="S100AAAA", corp_code="E02778", corp_name="SoftBank Group", stock_code="9984",
-        report_nm="有価証券報告書", rcept_dt="20260812", flr_nm="SoftBank Group", source_name="EDINET",
-        original_language="Japanese",
-    )
-    candidate = _candidate("edinet-cand-1", filing, evidence_source_member="PublicDoc/0101.pdf")
-    at = _render_single_candidate_page(tmp_path, candidate, {})
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Evidence file" in all_text
-    assert "PublicDoc/0101.pdf" in all_text
 
 
 def test_existing_filtering_ordering_pagination_source_links_and_translation_unchanged(tmp_path):
     # A light-touch confirmation that the surrounding page still behaves;
     # the full behavioral suite lives in tests/test_radar_inbox_page.py
-    # and passes unmodified alongside this file.
+    # and passes unmodified alongside this file. Radar simplicity
+    # workstream: "English working translation"/"Original document" are
+    # gone — the card's own new 5-field contract is what's confirmed here.
     from src.models.models import Translation
 
     filing = _filing("R-01")
@@ -406,8 +381,8 @@ def test_existing_filtering_ordering_pagination_source_links_and_translation_unc
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "English working translation" in all_text or "English translation" in all_text
-    assert "Original document" in all_text  # source link row still present
+    assert "Body excerpt." in all_text
+    assert any(b.label == "Open original filing ↗" for b in at.get("link_button"))
 
 
 # ============================================================

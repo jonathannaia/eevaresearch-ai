@@ -128,6 +128,11 @@ def _candidate_from_dict(data: dict) -> CandidateSignal:
         flag_reason=_flag_reason_from_dict(data.get("flag_reason")),
         evidence_location=_evidence_location_from_dict(data.get("evidence_location")),
         evidence_source_member=data.get("evidence_source_member"),
+        translation_failure_category=data.get("translation_failure_category"),
+        translation_failure_reason=data.get("translation_failure_reason"),
+        translation_failure_at=data.get("translation_failure_at"),
+        translation_retry_count=data.get("translation_retry_count", 0),
+        translation_next_retry_at=data.get("translation_next_retry_at"),
     )
 
 

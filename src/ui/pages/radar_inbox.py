@@ -158,6 +158,14 @@ def _render_missing_configuration(
         )
     if not edinet_readiness.subscription_key_configured:
         lines.append("EDGE_EDINET_SUBSCRIPTION_KEY is not configured.")
+    if not edinet_readiness.translation_key_configured:
+        lines.append("EDGE_TRANSLATION_API_KEY is not configured.")
+    # Translation reliability workstream: DART and EDINET share one
+    # EDGE_TRANSLATION_API_KEY, so a missing key can append the identical
+    # sentence twice above (once per source's own readiness check) —
+    # de-duplicated here, order-preserving, rather than teaching either
+    # readiness check about the other.
+    lines = list(dict.fromkeys(lines))
     # Phase B (UI audit): the top-level state is now one calm sentence —
     # the full env-var/resolver/unresolved-company dump moves into a
     # collapsed expander below, unchanged in content. Readiness logic and

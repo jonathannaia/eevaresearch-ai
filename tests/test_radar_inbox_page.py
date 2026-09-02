@@ -137,12 +137,12 @@ def _seed_edinet_filing_events(cache_dir, filings: list[FilingEvent]) -> None:
     (cache_dir / "edinet_filing_events.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def test_radar_inbox_shows_all_three_edinet_form_codes_for_a_softbank_shaped_event(tmp_path):
-    # Gate 8.1 item 4/B: the real SoftBank Group annual-report triplet
-    # (ordinanceCode="010", formCode="030000", docTypeCode="120") must be
-    # visible in the rendered event, unconditioned by candidate presence
-    # (an EDINET FilingEvent realistically has no candidate while the
-    # category map stays empty).
+def test_radar_inbox_shows_a_candidate_less_edinet_filing_only_in_captured_filings_view(tmp_path):
+    # Radar simplicity workstream: the public card no longer shows
+    # ordinance/form/docType codes at all (technical/process metadata,
+    # not one of the 5 approved fields) — this now only proves the
+    # "Latest" vs. "Captured filings" membership rule still holds for a
+    # candidate-less EDINET event.
     softbank_filing = FilingEvent(
         rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
         report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22",
@@ -153,7 +153,7 @@ def test_radar_inbox_shows_all_three_edinet_form_codes_for_a_softbank_shaped_eve
     _seed_edinet_filing_events(tmp_path, [softbank_filing])
 
     settings = Settings(
-        dart_api_key=None, translation_api_key=None, edgar_user_agent=None,
+        dart_api_key=None, translation_api_key="test-key", edgar_user_agent=None,
         edinet_subscription_key="test-key", cache_dir=tmp_path,
     )
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
@@ -178,9 +178,7 @@ def test_radar_inbox_shows_all_three_edinet_form_codes_for_a_softbank_shaped_eve
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Ordinance code" in all_text and "010" in all_text
-    assert "Form code" in all_text and "030000" in all_text
-    assert "Document type code" in all_text and "120" in all_text
+    assert "有価証券報告書" in all_text  # the bare event's own title, now visible
 
 
 def test_radar_inbox_missing_configuration_state_is_unaffected_by_local_env(tmp_path, monkeypatch):
@@ -241,26 +239,16 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         at.run()
 
         assert not at.exception
-        # Default view ("Latest"): the 3 candidates render,
-        # but `new_filing` — a bare FilingEvent with no CandidateSignal —
-        # is excluded. Its own report title is a precise, non-coincidental
-        # marker (unlike the "New filing" status label, which also appears
-        # verbatim inside assets/styles.css's own design-system comments).
-        # Phase T1 (design/DECISIONS.md): "Latest" suppresses the internal
-        # "Needs review"/"Processing deferred" *status pills* entirely,
-        # and shows the quiet failure note instead of the raw "Retrieval
-        # failed" pill — same three candidates, different top-of-card
-        # treatment. The words themselves still legitimately appear
-        # elsewhere on the page (e.g. inside Investigate's own state-
-        # history audit trail, which AppTest renders regardless of the
-        # expander's collapsed state) — checked as the specific pill
-        # markup, not a bare substring, to avoid a false failure there.
+        # Default view ("Latest"): the 3 candidates render, but
+        # `new_filing` — a bare FilingEvent with no CandidateSignal — is
+        # excluded. Radar simplicity workstream: the public card no longer
+        # shows any status pill or failure note in either view — this now
+        # only proves the "Latest" membership rule (`candidate is not
+        # None`) still holds.
         default_text = " ".join(m.value for m in at.markdown)
         assert "일반 공고" not in default_text
-        assert 'er-status-tag er-tag-mix">Needs review' not in default_text
-        assert 'er-status-tag er-tag-neutral">Processing deferred' not in default_text
-        assert 'er-status-tag er-tag-neg">Retrieval failed' not in default_text
-        assert "Source document could not be retrieved." in default_text
+        assert "New facility investment decision" in default_text  # English title translation
+        assert "New facility investment original text" in default_text  # English excerpt translation
 
         at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
@@ -268,17 +256,16 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "일반 공고" in all_text  # the bare event's own title, now visible
-    # "Captured filings" always shows the complete, real status (Phase T1)
-    # — the whole point of that view is truthful completeness.
-    assert "Needs review" in all_text
-    assert "Processing deferred" in all_text
-    assert "Retrieval failed" in all_text
     assert "New facility investment decision" in all_text  # English title translation
     assert "New facility investment original text" in all_text  # English excerpt translation
-    assert "Machine translation" in all_text
 
 
-def test_radar_inbox_shows_not_material_label_for_routine_ownership_candidate(tmp_path):
+def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_path):
+    # Radar simplicity workstream: "Potential materiality" and every other
+    # workflow-status label (including "Not material · routine ownership
+    # update") are removed from the public card entirely — the underlying
+    # materiality_assessment field is untouched (see models.py), just
+    # never rendered here.
     _seed_corp_codes(tmp_path)
     ownership_filing = _filing("20260812000009", "주식등의대량보유상황보고서(일반)")
     _seed_filing_events(tmp_path, [ownership_filing])
@@ -300,20 +287,28 @@ def test_radar_inbox_shows_not_material_label_for_routine_ownership_candidate(tm
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Not material · routine ownership update" in all_text
+    assert "주식등의대량보유상황보고서" in all_text  # the card itself still renders
+    assert "Not material" not in all_text
+    assert "routine ownership update" not in all_text
     # Nothing here claims a broader market-conviction/investment reading.
     assert "market conviction" not in all_text.lower()
     assert "investment confidence" not in all_text.lower()
 
 
 def _seed_edgar_ciks(cache_dir) -> None:
+    # Seeds every currently-tracked EDGAR company (src/config/
+    # tracked_companies.py) with a synthetic CIK, not just a fixed
+    # historical subset — edgar_readiness.ready requires every tracked
+    # company resolved, so a hardcoded partial list silently rots (and
+    # silently stops mattering) every time a new EDGAR company is added
+    # to the real registry, the same class of test-isolation drift
+    # documented elsewhere in this file for EDINET's own real env key.
+    from src.config.tracked_companies import get_tracked_companies_for_source
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
-        "NVDA": {"cik": "0001045810", "company_name": "NVIDIA CORP", "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "MU": {"cik": "0000723125", "company_name": "MICRON TECHNOLOGY INC", "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "COHR": {"cik": "0000021510", "company_name": "COHERENT CORP", "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "ROK": {"cik": "0001024478", "company_name": "ROCKWELL AUTOMATION INC", "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "RKLB": {"cik": "0001819994", "company_name": "ROCKET LAB USA INC", "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"},
+        c.krx_code: {"cik": f"{i:010d}", "company_name": c.name.upper(), "source": "test", "retrieved_at": "2026-08-01T00:00:00+00:00"}
+        for i, c in enumerate(get_tracked_companies_for_source("SEC EDGAR"), start=1)
     }
     (cache_dir / "edgar_ciks.json").write_text(json.dumps(payload), encoding="utf-8")
 
@@ -353,353 +348,35 @@ def test_radar_inbox_edgar_only_configured_renders_edgar_candidates(tmp_path):
     )
     candidate_store.save_candidates(tmp_path, {edgar_candidate.id: edgar_candidate}, "edgar_candidates.json")
 
-    settings = Settings(dart_api_key=None, translation_api_key=None, edgar_user_agent="EevaResearch test@example.com", cache_dir=tmp_path)
+    # edinet_subscription_key is explicitly None here — omitting it would
+    # let a real locally-configured EDGE_EDINET_SUBSCRIPTION_KEY leak in
+    # via Settings' own os.getenv default and (now that EdinetReadiness
+    # also checks the translation key) mask what this test is actually
+    # proving, which is that EDGAR alone is sufficient to render.
+    settings = Settings(
+        dart_api_key=None, translation_api_key=None, edgar_user_agent="EevaResearch test@example.com",
+        edinet_subscription_key=None, cache_dir=tmp_path,
+    )
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "SEC EDGAR" in all_text
     assert "NVIDIA" in all_text
-    assert "Revenue increased" in all_text
+    assert "Revenue increased" in all_text  # English excerpt shown directly, no Original/translation duplication
     # No translation UI leaks in for an EDGAR (native-English) candidate.
-    assert "Machine translation" not in all_text
+    assert "Original</strong>" not in all_text
+    assert "English translation</strong>" not in all_text
     # DART is unconfigured here — its scope line must not render.
     assert "OpenDART / DART · Samsung" not in all_text
 
 
-# --- Analyst view (deterministic, template-only Details section) ---
-
-
-def test_radar_inbox_analyst_view_renders_for_dart_market_rumor_response_candidate(tmp_path):
-    _seed_corp_codes(tmp_path)
-    rumor_filing = FilingEvent(
-        rcept_no="20260812000100", corp_code="00164779", corp_name="SK Hynix", stock_code="000660",
-        report_nm="조회공시요구(풍문또는보도)에대한답변(미확정)", rcept_dt="20260812", flr_nm="SK 하이닉스",
-        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000100",
-        retrieved_at=_now_iso(),
-    )
-    _seed_filing_events(tmp_path, [rumor_filing])
-    rumor_candidate = CandidateSignal(
-        id="cand-rumor-1", filing=rumor_filing,
-        matched_rules=["market_rumor_response:rumor_inquiry_or_response:풍문또는보도"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        translation_state=TranslationState.TRANSLATED,
-        excerpt_original="한국거래소의조회공시요구에대한답변으로,보도된내용에대해확인된바없습니다. 향후확인되는대로재공시하겠습니다.",
-        excerpt_translation=Translation(
-            translated_text="In response to the exchange's disclosure inquiry, nothing has been confirmed regarding the reported content.",
-            provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso(),
-        ),
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {rumor_candidate.id: rumor_candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" in all_text
-    assert "Phase 1" in all_text
-    assert "Not a substantive summary of the filing text." in all_text
-    # 1. What happened — deterministic, structured-fields-only sentence,
-    # plus the plain-English restatement of why Radar flagged it.
-    assert "What happened" in all_text
-    assert "SK Hynix filed “조회공시요구(풍문또는보도)에대한답변(미확정)” with OpenDART / DART on 20260812." in all_text
-    assert "Radar flagged this filing because:" in all_text
-    assert "matched keyword “풍문또는보도”" in all_text
-    assert "Open original filing" in all_text
-    # 2. What remains uncertain — the exact required wording, plus the
-    # follow-up checklist merged into the same section.
-    assert "What remains uncertain" in all_text
-    assert (
-        "This filing is a disclosure inquiry or response about reported information. "
-        "It does not confirm that a transaction has occurred." in all_text
-    )
-    assert "Watch for:" in all_text
-    assert "A formal company response or clarification" in all_text
-    assert "A subsequent filing that confirms or denies the reported matter" in all_text
-    assert "An amendment or related disclosure" in all_text
-    # 3. Why it matters — the one real hand-written template for this category.
-    assert "Why it matters" in all_text
-    assert "This may matter because it is a company's formal response to reported information" in all_text
-    # 4. Evidence and provenance — native text + translation still visible,
-    # nothing invented (no amount/counterparty this fixture never stated).
-    assert "한국거래소의조회공시요구에대한답변" in all_text  # native excerpt still rendered below
-    assert "nothing has been confirmed" in all_text  # translation still rendered below
-    assert "KRW" not in all_text
-    assert "China" not in all_text
-    assert "trillion" not in all_text
-    # Claim-type vocabulary reused correctly.
-    assert "Fact" in all_text
-    assert "Uncertainty" in all_text
-    assert "Interpretation" in all_text
-
-
-def test_radar_inbox_analyst_view_absent_for_deferred_and_failed_candidates(tmp_path):
-    _seed_corp_codes(tmp_path)
-    deferred_filing = _filing("20260812000101", "유상증자 결정")
-    failed_filing = _filing("20260812000102", "실적 발표")
-    _seed_filing_events(tmp_path, [deferred_filing, failed_filing])
-    deferred = CandidateSignal(
-        id="cand-deferred-av", filing=deferred_filing, matched_rules=["financing:capital_raise_or_treasury_stock:유상증자"],
-        confidence="Moderate", status=CandidateStatus.PROCESSING_DEFERRED,
-        state_history=[StateTransition(status=CandidateStatus.PROCESSING_DEFERRED, at=_now_iso())],
-    )
-    failed = CandidateSignal(
-        id="cand-failed-av", filing=failed_filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.PARSE_FAILED, extraction_state=ExtractionState.PARSE_FAILED,
-        state_history=[StateTransition(status=CandidateStatus.PARSE_FAILED, at=_now_iso(), detail="No extractable text.")],
-    )
-    candidate_store.save_candidates(tmp_path, {deferred.id: deferred, failed.id: failed})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" not in all_text
-    assert "What happened" not in all_text
-
-
-def test_radar_inbox_analyst_view_unknown_category_uses_exact_fallback_wording(tmp_path):
-    _seed_corp_codes(tmp_path)
-    capex_filing = _filing("20260812000103", "신규시설투자 결정")
-    _seed_filing_events(tmp_path, [capex_filing])
-    capex_candidate = CandidateSignal(
-        id="cand-capex-av", filing=capex_filing,
-        matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="신규시설투자관련공시내용입니다. 투자금액및목적등자세한사항은첨부서류를참고하시기바랍니다.",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {capex_candidate.id: capex_candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" in all_text
-    assert "What remains uncertain" in all_text
-    assert (
-        "This filing type has no specific uncertainty template yet. "
-        "Read the source excerpt directly before drawing conclusions." in all_text
-    )
-    assert "Review subsequent company filings or official statements related to this disclosure." in all_text
-    # The DART-rumor-specific wording must never leak into an unrelated category.
-    assert "does not confirm that a transaction has occurred" not in all_text
-    assert "A formal company response or clarification" not in all_text
-    # "Why it matters" only exists for market_rumor_response — absent here.
-    assert "Why it matters" not in all_text
-
-
-def test_radar_inbox_analyst_view_edgar_omits_translation_line_when_not_requested(tmp_path):
-    _seed_edgar_ciks(tmp_path)
-    edgar_filing = FilingEvent(
-        rcept_no="0001045810-26-000099", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
-        report_nm="8-K filing", rcept_dt="2026-08-12", flr_nm="NVIDIA", pblntf_ty="8-K", theme_slug="ai-buildout",
-        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000099/",
-        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="nvda-8k.htm",
-    )
-    payload = {
-        "seen_keys": [f"SEC EDGAR:0001045810:{edgar_filing.rcept_no}"],
-        "filing_events": [
-            {
-                "rcept_no": edgar_filing.rcept_no, "corp_code": edgar_filing.corp_code, "corp_name": edgar_filing.corp_name,
-                "stock_code": edgar_filing.stock_code, "report_nm": edgar_filing.report_nm, "rcept_dt": edgar_filing.rcept_dt,
-                "flr_nm": edgar_filing.flr_nm, "pblntf_ty": edgar_filing.pblntf_ty, "pblntf_detail_ty": "",
-                "theme_slug": edgar_filing.theme_slug, "subtheme_slug": None, "source_url": edgar_filing.source_url,
-                "retrieved_at": edgar_filing.retrieved_at, "source_name": edgar_filing.source_name,
-                "original_language": edgar_filing.original_language, "is_demo": False,
-                "primary_document": edgar_filing.primary_document,
-            }
-        ],
-        "candidate_signals": [],
-    }
-    (tmp_path / "edgar_filing_events.json").write_text(json.dumps(payload), encoding="utf-8")
-
-    edgar_candidate = CandidateSignal(
-        id="edgar-cand-av-1", filing=edgar_filing,
-        matched_rules=["earnings_or_results:8-K item 2.02"], confidence="Moderate",
-        status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        translation_state=TranslationState.NOT_REQUESTED,
-        # excerpt_quality deliberately left at its default (UNKNOWN) — real
-        # EDGAR candidates never have this field set at all (confirmed by
-        # grep; see analyst_view.py's module docstring). This is the exact
-        # regression case: a substantive excerpt must still render full
-        # "What happened" content based on length alone, not ExcerptQuality.
-        excerpt_original="Item 2.02 Results of Operations. Revenue increased.",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {edgar_candidate.id: edgar_candidate}, "edgar_candidates.json")
-
-    settings = Settings(dart_api_key=None, translation_api_key=None, edgar_user_agent="EevaResearch test@example.com", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" in all_text
-    assert "NVIDIA filed “8-K filing” with SEC EDGAR on 2026-08-12." in all_text
-    assert "Item 2.02 Results of Operations. Revenue increased." in all_text  # native excerpt still shown
-    # Requirement: the Analyst view's own translation-status line must not
-    # appear for a NOT_REQUESTED candidate (the pre-existing, unrelated
-    # "Translation state: Not requested" raw technical-detail row is fine
-    # and untouched — this only checks the new Evidence and provenance line).
-    assert "Machine translation: see below" not in all_text
-    assert "not currently available for this excerpt" not in all_text
-    # EDGAR has no hand-written "Why it matters" template — never shown.
-    assert "Why it matters" not in all_text
-
-
-def test_radar_inbox_analyst_view_edinet_never_labels_a_code_match_as_a_keyword_match(tmp_path):
-    edinet_filing = FilingEvent(
-        rcept_no="S100YTEST", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
-        report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22",
-        flr_nm="ソフトバンクグループ株式会社", pblntf_ty="030000", pblntf_detail_ty="120", ordinance_code="010",
-        theme_slug="ai-buildout", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100YTEST",
-        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
-    )
-    cache_dir = tmp_path
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    from dataclasses import asdict
-    edinet_payload = {
-        "seen_keys": [f"EDINET:{edinet_filing.corp_code}:{edinet_filing.rcept_no}"],
-        "filing_events": [asdict(edinet_filing)], "candidate_signals": [],
-    }
-    (cache_dir / "edinet_filing_events.json").write_text(json.dumps(edinet_payload, ensure_ascii=False), encoding="utf-8")
-
-    edinet_candidate = CandidateSignal(
-        id="edinet-cand-test-av", filing=edinet_filing,
-        matched_rules=["annual_securities_report:010:030000:120"], confidence="Moderate",
-        status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="有価証券報告書の記載内容です。事業の状況及び経理の状況について詳細に記載しております。",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(cache_dir, {edinet_candidate.id: edinet_candidate}, "edinet_candidates.json")
-
-    settings = Settings(
-        dart_api_key=None, translation_api_key=None, edgar_user_agent=None,
-        edinet_subscription_key="test-key", cache_dir=cache_dir,
-    )
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" in all_text
-    # The new Analyst view section's own phrasing (precisely isolated —
-    # see test_analyst_view.py's own unit test for the exact contract):
-    # a routing-code match, correctly never called a keyword match.
-    assert "Annual securities report — matched by filing type/form code (010:030000:120)" in all_text
-    # Note: the separate, pre-existing "Why this matters:" list elsewhere
-    # on this same card (relabeled from "Why flagged:" in Phase R1,
-    # design/DECISIONS.md — radar_card.py's _why_this_matters_phrases,
-    # renamed from _why_flagged_phrases, content unchanged) still
-    # mislabels EDINET code matches as "keyword match" — a real, known
-    # gap this task's scope did not include fixing. Not yet documented in
-    # design/DECISIONS.md.
-
-
-def test_radar_inbox_analyst_view_insufficient_excerpt_uses_exact_fallback_and_no_invented_content(tmp_path):
-    """Phase 1 "What happened" fallback — the excerpt is shorter than
-    _MIN_SUBSTANTIVE_EXCERPT_CHARS (40), so nothing beyond the exact
-    approved fallback sentence should appear; no keyword-match phrase, no
-    source-facts sentence, nothing invented. Length-based, not
-    ExcerptQuality — this candidate never sets excerpt_quality at all
-    (stays at its default), matching how EDGAR/EDINET candidates work in
-    real data."""
-    _seed_corp_codes(tmp_path)
-    thin_filing = _filing("20260812000104", "실적 발표")
-    _seed_filing_events(tmp_path, [thin_filing])
-    thin_candidate = CandidateSignal(
-        id="cand-thin-excerpt-av", filing=thin_filing,
-        matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="…",  # non-empty (passes should_render_analyst_view) but well under the 40-char floor
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {thin_candidate.id: thin_candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filing overview" in all_text
-    assert "What happened" in all_text
-    assert (
-        "The filing was detected, but the available excerpt is not sufficient "
-        "to summarize the disclosure reliably. Read the original filing." in all_text
-    )
-    # No structured-facts sentence or keyword-match phrase — those are
-    # gated on the length threshold only.
-    assert "filed “실적 발표”" not in all_text
-    assert "Radar flagged this filing because:" not in all_text
-    # The source link is still offered even when the excerpt is thin.
-    assert "Open original filing" in all_text
-
-
-def test_radar_inbox_analyst_view_excerpt_at_exact_threshold_boundary(tmp_path):
-    """Boundary check on the approved constant itself: exactly
-    _MIN_SUBSTANTIVE_EXCERPT_CHARS (40) chars renders full content; one
-    character short falls back. Proves the gate is length, not
-    ExcerptQuality (never set on either candidate here)."""
-    _seed_corp_codes(tmp_path)
-    at_threshold_filing = _filing("20260812000106", "실적 발표")
-    one_under_filing = _filing("20260812000107", "실적 발표")
-    _seed_filing_events(tmp_path, [at_threshold_filing, one_under_filing])
-    exactly_40 = "x" * 40
-    one_under_40 = "x" * 39
-    assert len(exactly_40) == 40
-    assert len(one_under_40) == 39
-    at_threshold_candidate = CandidateSignal(
-        id="cand-at-threshold-av", filing=at_threshold_filing,
-        matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original=exactly_40,
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    one_under_candidate = CandidateSignal(
-        id="cand-one-under-av", filing=one_under_filing,
-        matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original=one_under_40,
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(
-        tmp_path, {at_threshold_candidate.id: at_threshold_candidate, one_under_candidate.id: one_under_candidate},
-    )
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    # The at-threshold candidate gets full content (structured-facts
-    # sentence); the one-under candidate gets only the fallback sentence.
-    # Both share the same filing title, so we assert via the distinctive
-    # "Radar flagged this filing because:" marker's total count instead
-    # of the (identical, non-distinguishing) source-facts sentence text.
-    assert all_text.count("Radar flagged this filing because:") == 1
-
-
-
-def test_radar_inbox_bare_event_shows_translation_availability_copy(tmp_path):
+def test_radar_inbox_bare_event_shows_native_title_only_no_fabricated_translation(tmp_path):
+    # Radar simplicity workstream: a bare FilingEvent with no
+    # CandidateSignal has never had anything extracted or translated —
+    # the card shows its native title as "Original" and no English
+    # translation section at all, never a fabricated one.
     _seed_corp_codes(tmp_path)
     bare_filing = _filing("20260812000011", "단순 공시")
     _seed_filing_events(tmp_path, [bare_filing])
@@ -715,7 +392,9 @@ def test_radar_inbox_bare_event_shows_translation_availability_copy(tmp_path):
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Translation:</strong> Available after document processing" in all_text
+    assert "단순 공시" in all_text
+    assert "English translation</strong>" not in all_text
+    assert "being prepared" not in all_text
     # Requirement 4: never fabricate excerpt/translation/extraction/status
     # for a bare event.
     assert "Extraction state" not in all_text
@@ -949,10 +628,17 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     assert not (tmp_path / "dart_candidates.json").exists()
 
 
-# --- Evidence-packet foundation, Phase 1: new optional field exposure ---
+# --- Radar simplicity workstream: the Evidence status panel (flag_reason,
+# evidence_location, evidence_source_member) is removed from the public
+# card entirely — the underlying CandidateSignal fields are untouched
+# (models.py), just never rendered here any more. The one remaining
+# safety property worth a dedicated test is that a candidate carrying
+# these fields still renders its 5 approved fields normally and without
+# exception, and that unsafe characters in rendered content are always
+# escaped. ---
 
 
-def test_radar_inbox_renders_new_evidence_packet_fields_when_present(tmp_path):
+def test_radar_inbox_renders_stably_when_evidence_packet_fields_are_present(tmp_path):
     _seed_corp_codes(tmp_path)
     filing = _filing("20260817000001", "유상증자 결정")
     _seed_filing_events(tmp_path, [filing])
@@ -966,6 +652,7 @@ def test_radar_inbox_renders_new_evidence_packet_fields_when_present(tmp_path):
             human_readable_reason="Matched a capital-increase financing keyword.", source_detail="detail",
         ),
         evidence_location=EvidenceLocation(kind=LocationKind.SECTION, section="Item 2.03"),
+        evidence_source_member="PublicDoc/0101.pdf",
         state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
     )
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
@@ -977,134 +664,36 @@ def test_radar_inbox_renders_new_evidence_packet_fields_when_present(tmp_path):
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Matched a capital-increase financing keyword." in all_text
-    assert "Item 2.03" in all_text
-    assert "English working translation" in all_text
-
-
-def test_radar_inbox_renders_stably_when_new_evidence_packet_fields_are_absent(tmp_path):
-    # Every new field is optional and defaults to None — a candidate that
-    # predates Phase 1 (or simply never populated them) must still render
-    # without exception and without a broken/placeholder row appearing.
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260817000002", "일반 공고")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-phase1-absent", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Why flagged" not in all_text  # no flag_reason row for a candidate without one
-    assert "Evidence location" not in all_text  # no location row for a candidate without one
-    assert "Evidence file" not in all_text  # no evidence_source_member row for a candidate without one
-
-
-# --- Evidence-packet foundation, Phase 2, Step 3: EDINET ZIP-member
-# provenance display ("Evidence file"). The underlying `_evidence_status_
-# panel` render logic is source-agnostic (it only checks whether
-# `candidate.evidence_source_member` is truthy) — exactly like the
-# existing Phase 1 tests above, which also attach source-shaped optional
-# fields (an EDGAR-style `EvidenceLocation` section) onto a DART-shaped
-# candidate purely to exercise the display logic, not to simulate a real
-# EDINET pipeline run. ---
-
-
-def test_radar_inbox_renders_evidence_source_member_when_present(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260817000003", "유상증자 결정")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-phase2-step3-present", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.", evidence_source_member="PublicDoc/0101.pdf",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Evidence file" in all_text
-    assert "PublicDoc/0101.pdf" in all_text
-
-    # Not rendered as a link, button, or otherwise fetchable reference —
-    # the raw markdown/HTML source (what AppTest captures) never wraps
-    # this value in an anchor tag, and no download/button element exists
-    # for it.
-    matching_rows = [m.value for m in at.markdown if "Evidence file" in m.value]
-    assert len(matching_rows) == 1
-    assert "<a " not in matching_rows[0] and "href=" not in matching_rows[0]
-
-
-def test_radar_inbox_escapes_unsafe_characters_in_evidence_source_member(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260817000004", "유상증자 결정")
-    _seed_filing_events(tmp_path, [filing])
-    unsafe_member = 'PublicDoc/<script>alert(1)</script>"onerror="x.pdf'
-    candidate = CandidateSignal(
-        id="cand-phase2-step3-unsafe", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.", evidence_source_member=unsafe_member,
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    matching_rows = [m.value for m in at.markdown if "Evidence file" in m.value]
-    assert len(matching_rows) == 1
-    row_html = matching_rows[0]
-    assert "&lt;script&gt;" in row_html
-    assert "<script>" not in row_html  # never rendered as executable/unsafe HTML
-    assert "&quot;" in row_html or "&#x27;" in row_html or '\\"' not in row_html  # the raw quote is not left unescaped to break out of an attribute
-
-
-def test_radar_inbox_evidence_file_row_is_absent_and_no_placeholder_for_edgar_dart_candidates(tmp_path):
-    # Confirms EDGAR/DART/EDINET-non-ZIP cards (evidence_source_member
-    # always None for them) render no "Evidence file" row and no blank/
-    # placeholder line in its place — same guarantee already proven for
-    # flag_reason/evidence_location by the existing "renders stably when
-    # absent" test above, extended to this new field explicitly.
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260817000005", "일반 공고")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-phase2-step3-absent", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
-    )
-    assert candidate.evidence_source_member is None
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
+    assert "본문 발췌." in all_text
+    assert "Body excerpt." in all_text
+    assert "Matched a capital-increase financing keyword." not in all_text
+    assert "Item 2.03" not in all_text
+    assert "PublicDoc/0101.pdf" not in all_text
     assert "Evidence file" not in all_text
-    # Every other existing evidence field from Phase 1 still renders as
-    # before — this row's presence/absence never disturbs them.
-    assert "Original document" in all_text
-    assert "Native text" in all_text
-    assert "Translation" in all_text
+    assert "Why flagged" not in all_text
+    assert "Evidence location" not in all_text
+
+
+def test_radar_inbox_escapes_unsafe_characters_in_excerpt_and_title(tmp_path):
+    _seed_corp_codes(tmp_path)
+    unsafe_report_nm = 'PublicDoc/<script>alert(1)</script>"onerror="x'
+    filing = _filing("20260817000004", unsafe_report_nm)
+    _seed_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="cand-unsafe-excerpt", filing=filing, matched_rules=["financing:capital_increase:유상증자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original='<script>alert(2)</script>"onerror="y',
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    raw_html = "\n".join(m.value for m in at.markdown)
+    assert "<script>alert(1)</script>" not in raw_html
+    assert "<script>alert(2)</script>" not in raw_html
+    assert "&lt;script&gt;" in raw_html

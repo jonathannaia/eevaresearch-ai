@@ -215,7 +215,9 @@ def test_dart_candidates_never_populate_evidence_source_member(tmp_path, monkeyp
 
     doc_result = DartDocumentFetchResult(rcept_no="R2", state=ExtractionState.EXTRACTED, excerpt_original="DART excerpt.", detail="", retrieved_at="2026-08-20T00:00:00+00:00", from_cache=False)
     monkeypatch.setattr(dart_radar_pipeline.document_service, "get_or_fetch_excerpt", lambda *a, **k: doc_result)
-    monkeypatch.setattr(dart_radar_pipeline, "translate_cached", lambda *a, **k: None)
+    from src.data_access.translation.translation_service import TranslationAttempt
+
+    monkeypatch.setattr(dart_radar_pipeline, "translate_cached_with_outcome", lambda *a, **k: TranslationAttempt(translation=None))
     provider = MagicMock()
     provider.name = "DeepL"
 

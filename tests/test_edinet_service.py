@@ -24,8 +24,13 @@ from src.data_access import backend_factory
 from src.data_access.edinet import edinet_service
 
 
-def _settings(cache_dir, subscription_key=None) -> Settings:
-    return Settings(edinet_subscription_key=subscription_key, cache_dir=cache_dir)
+def _settings(cache_dir, subscription_key=None, translation_key=None) -> Settings:
+    # translation_key defaults to None explicitly (not omitted) — omitting
+    # it would fall back to Settings' own os.getenv default, which can
+    # leak a real, locally-configured EDGE_TRANSLATION_API_KEY and mask
+    # exactly the readiness gap the translation reliability workstream's
+    # own tests below are proving.
+    return Settings(edinet_subscription_key=subscription_key, translation_api_key=translation_key, cache_dir=cache_dir)
 
 
 def test_readiness_reports_missing_subscription_key(tmp_path):
@@ -38,13 +43,38 @@ def test_readiness_reports_missing_subscription_key(tmp_path):
 def test_readiness_ready_when_key_present_and_cohort_already_resolved(tmp_path):
     # The five EDINET cohort entries are hardcoded/pre-resolved (Gate 7),
     # so unresolved_companies is empty and readiness is driven entirely
-    # by the key — same readiness shape DART/EDGAR reach once their own
-    # companies are resolved.
-    readiness = edinet_service.edinet_readiness(_settings(tmp_path, subscription_key="test-key"))
+    # by the two keys — same readiness shape DART/EDGAR reach once their
+    # own companies are resolved.
+    readiness = edinet_service.edinet_readiness(_settings(tmp_path, subscription_key="test-key", translation_key="deepl-key"))
 
     assert readiness.subscription_key_configured
+    assert readiness.translation_key_configured
     assert readiness.unresolved_companies == ()
     assert readiness.ready
+
+
+def test_readiness_not_ready_when_translation_key_missing_even_with_subscription_key(tmp_path):
+    # Translation reliability workstream: before this, EdinetReadiness
+    # never checked the translation key at all, so a scan could report
+    # "ready" and then fail every excerpt translation silently. The
+    # subscription key alone is no longer sufficient.
+    readiness = edinet_service.edinet_readiness(_settings(tmp_path, subscription_key="test-key", translation_key=None))
+
+    assert readiness.subscription_key_configured
+    assert not readiness.translation_key_configured
+    assert not readiness.ready
+
+
+def test_readiness_checks_translation_key_without_making_any_provider_call(tmp_path):
+    # edinet_readiness() takes no TranslationProvider/client argument at
+    # all — this proves the gate is a pure settings read, structurally
+    # incapable of making a network call, rather than a runtime credential
+    # check against DeepL's own API.
+    readiness = edinet_service.edinet_readiness(_settings(tmp_path, subscription_key="test-key", translation_key=None))
+    assert readiness.translation_key_configured is False
+    import inspect
+
+    assert "provider" not in inspect.signature(edinet_service.edinet_readiness).parameters
 
 
 def test_get_edinet_companies_returns_the_five_live_verified_cohort_entries(tmp_path):
