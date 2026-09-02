@@ -220,13 +220,12 @@ def signal_card(
             unsafe_allow_html=True,
         )
         if signal.related_tickers:
-            # Every ticker mention links to its Company page (acceptance
-            # checklist: "every ticker in the app links to one").
-            links = ", ".join(
-                f'<a href="company?symbol={t}" style="color:var(--text-2); text-decoration:underline;">{t}</a>'
-                for t in signal.related_tickers
-            )
-            st.markdown(f'<div class="er-muted" style="font-size:0.78rem;">Related: {links}</div>', unsafe_allow_html=True)
+            # Plain text, not a link (reader-facing data-integrity pass,
+            # design/DECISIONS.md) — the Company page these used to link
+            # to had no live real data and was removed; there is no
+            # per-ticker detail route to link to today.
+            tickers = ", ".join(signal.related_tickers)
+            st.markdown(f'<div class="er-muted" style="font-size:0.78rem;">Related: {tickers}</div>', unsafe_allow_html=True)
         if signal.source_url:
             st.markdown(
                 f'<div class="er-muted" style="font-size:0.78rem;">'

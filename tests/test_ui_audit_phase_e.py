@@ -228,17 +228,22 @@ def test_capital_rotation_calculation_and_data_are_unchanged():
 # ============================== EXISTING MODULES / ROUTES INTACT ==============================
 
 def test_dashboard_keeps_every_pre_existing_module():
+    """Watchlist Changes is excluded (reader-facing data-integrity pass,
+    design/DECISIONS.md) — it depended on the Watchlists page, which had
+    no live real data and was removed in the same pass."""
     at = _run_dashboard()
     all_text = _text(at)
-    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts", "Watchlist Changes"):
+    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts"):
         assert heading in all_text
+    assert "Watchlist Changes" not in all_text
 
 
-def test_market_map_open_company_handoff_uses_the_existing_company_route():
-    """No new route is invented — the same hidden `company` page/query-
-    param pattern every other ticker link in the app already uses (e.g.
-    Themes' demo-ticker link, Dashboard's Watchlist Changes rows)."""
+def test_market_map_open_radar_handoff_uses_the_existing_route():
+    """The "Open company"/"Ask Research" handoff links were removed
+    (reader-facing data-integrity pass, design/DECISIONS.md) along with
+    the Company and Research pages, neither of which had live real data
+    — only the Radar Inbox handoff remains, no new route invented."""
     source = (REPO_ROOT / "src" / "ui" / "components" / "market_map.py").read_text(encoding="utf-8")
-    assert 'get_page("company")' in source
     assert 'get_page("radar_inbox")' in source
-    assert 'get_page("research")' in source
+    assert 'get_page("company")' not in source
+    assert 'get_page("research")' not in source

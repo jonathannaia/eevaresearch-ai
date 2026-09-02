@@ -42,7 +42,6 @@ from src.ui.components.radar_status import (
     status_pill_html,
     translation_unavailable_tag_html,
 )
-from src.ui.ui import get_page
 
 _TRANSLATION_LABEL = "Machine translation · For convenience · Verify against the original-language source"
 _INVESTIGATE_LABEL = "Investigate →"
@@ -400,23 +399,18 @@ def _render_investigate_body(
 def _render_quiet_links(filing: FilingEvent) -> None:
     """Secondary access — de-emphasized (the same cta-tertiary-* ghost
     treatment used everywhere else in the app for a low-emphasis action),
-    never the card's primary interaction. Company links only when a
-    stock/ticker code exists on the filing, reusing the exact existing
-    Company-page route/query-param pattern Market Map already established
-    (get_page("company"), ?symbol=) — no new route. A "related evidence/
-    Radar" link is deliberately omitted: no existing route lets this page
-    link into itself pre-filtered by company, and inventing one is out of
-    scope for this phase."""
-    link_cols = st.columns([2, 2, 5])
+    never the card's primary interaction. The former Company-page link
+    (rendered when a stock/ticker code existed on the filing) is removed
+    (reader-facing data-integrity pass, design/DECISIONS.md): that page
+    had no live real data — every real filing's stock_code dead-ended on
+    its "only the fictional DEMO ticker is loaded" empty state. A
+    "related evidence/Radar" link is deliberately omitted too: no
+    existing route lets this page link into itself pre-filtered by
+    company, and inventing one is out of scope for this phase."""
+    link_cols = st.columns([2, 7])
     with link_cols[0]:
         with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
             st.link_button(f"Open original {filing.source_name} filing ↗", filing.source_url, use_container_width=True)
-    if filing.stock_code:
-        company_page = get_page("company")
-        if company_page is not None:
-            with link_cols[1]:
-                with st.container(key=f"cta-tertiary-radar-company-{filing.rcept_no}"):
-                    st.page_link(company_page, label="Company", query_params={"symbol": filing.stock_code})
 
 
 def candidate_row(

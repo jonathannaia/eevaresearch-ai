@@ -1,9 +1,15 @@
 """Dashboard — answers one question: "what should I investigate now?"
 (UX-refinement pass, design/DECISIONS.md). Not an archive of every module —
 Today's Read, Theme Health, 2-3 Priority Signals, a compact Capital
-Rotation snapshot, 2-3 Catalysts, and 1-2 Watchlist Changes only. Full
-signal discovery lives on Signals, full watchlist management on
-Watchlists, full rotation detail on each theme's Rotation tab.
+Rotation snapshot, and 2-3 Catalysts. Full signal discovery lives on
+Signals, full rotation detail on each theme's Rotation tab.
+
+Reader-facing data-integrity pass (design/DECISIONS.md): the Watchlist
+Changes module is removed — it depended entirely on the Watchlists page
+(session-only, seeded from illustrative data, not live real data), which
+was removed in the same pass. Today's Read/Theme Health/Capital Rotation/
+Catalysts below are still demo data pending a follow-up pass; only
+Priority Signals, Market Map, and Regional Brief are real.
 
 Phase C (editorial-simplicity pass, design/DECISIONS.md): the page-level
 "Market Overview" title/subtitle is gone — the sidebar's own active-nav
@@ -29,7 +35,6 @@ from src.logic.formatting import fmt_date, fmt_pct
 from src.logic.market_map import group_companies_by_theme
 from src.logic.theme_metrics import leaders_and_laggards, rank_by_performance
 from src.logic.unread import is_unread
-from src.logic.watchlist_risk import is_moving_against_thesis
 from src.models.models import Direction
 from src.ui.components.badges import direction_dot_html
 from src.ui.components.cards import catalyst_timeline_row, priority_signal_row
@@ -37,11 +42,9 @@ from src.ui.components.freshness import freshness_chip
 from src.ui.components.market_map import render_market_map
 from src.ui.components.regional_brief import render_regional_brief
 from src.ui.components.section import section_header
-from src.ui.pages.watchlists import WATCHLIST_NAMES, seed_watchlists
 from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
 
 PRIORITY_SIGNAL_COUNT = 3
-WATCHLIST_ALERT_COUNT = 2
 
 # Phase C: the two Today's Read actions must not read as visually
 # identical outlined buttons — one filled primary pill, one quiet ghost
@@ -207,44 +210,6 @@ def _render_priority_signals(ctx) -> None:
             st.page_link(signals_page, label="View all signals →")
 
 
-def _render_watchlist_changes(ctx) -> None:
-    # Lower-priority supporting section (Phase C, carried over from the
-    # prior UI-audit pass) — lighter weight/opacity only, same label text
-    # and position, not reordered or hidden.
-    st.markdown(
-        '<div class="er-section-label" style="opacity:0.7;">Watchlist Changes</div>',
-        unsafe_allow_html=True,
-    )
-    if "watchlists" not in st.session_state:
-        st.session_state["watchlists"] = seed_watchlists()
-    lists = st.session_state["watchlists"]
-    entries = [(name, e) for name in WATCHLIST_NAMES for e in lists.get(name, [])]
-    signals = ctx.signal_repository.get_all_signals()
-    against_entries = [(name, e) for name, e in entries if is_moving_against_thesis(e.ticker_symbol, signals) and e.invalidates_if]
-
-    if not against_entries:
-        st.markdown('<div class="er-muted">No watchlist names are moving against thesis right now.</div>', unsafe_allow_html=True)
-    for list_name, e in against_entries[:WATCHLIST_ALERT_COUNT]:
-        st.markdown(
-            f'<div class="er-row" style="border-bottom:none; padding-bottom:var(--space-1);">'
-            f'<a href="company?symbol={e.ticker_symbol}" class="er-mono" '
-            f'style="color:var(--text); text-decoration:underline;">{e.ticker_symbol}</a> '
-            f'<span class="er-muted" style="margin-left:var(--space-2);">{list_name}</span></div>'
-            # Muted-rose left rail + tinted background (the same --neg-dim
-            # tint already used for status-tag pills) plus a small rose
-            # dot on the label — readable at any width, not large/bright.
-            f'<div class="er-alert-neg" style="margin-bottom:var(--space-4);">'
-            f'<div class="er-alert-neg-label">Moving against thesis</div>'
-            f'<div class="er-alert-neg-note">You wrote: "{e.invalidates_if}"</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    watchlists_page = get_page("watchlists")
-    if watchlists_page is not None:
-        with st.container(key="cta-tertiary-open-watchlists"):
-            st.page_link(watchlists_page, label="Open Watchlists →")
-
-
 def _render_rotation_snapshot(ctx) -> None:
     """Secondary, collapsed disclosure (Phase E1, design/
     DASHBOARD_MARKET_MAP_PHASE_E.md) — Capital Rotation is 100% static
@@ -358,4 +323,3 @@ def render() -> None:
     with st.expander("Capital Rotation — demo snapshot", expanded=False):
         _render_rotation_snapshot(ctx)
     _render_catalysts(ctx)
-    _render_watchlist_changes(ctx)

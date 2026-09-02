@@ -19,7 +19,6 @@ PRIMARY_PAGES = [
     "dashboard_page.py",
     "radar_inbox_page.py",
     "signals_page.py",
-    "research_page.py",
     "methodology_page.py",
     "disclaimer_page.py",
     "about_page.py",
@@ -60,34 +59,6 @@ def test_other_pages_render_compact_footer(harness_file):
     assert "does not provide investment advice" not in all_html
 
 
-def test_company_page_receives_demo_symbol_via_query_params():
-    at = AppTest.from_file(str(HARNESS_DIR / "company_page.py"), default_timeout=10)
-    at.query_params["symbol"] = "DEMO"
-    at.run()
-    assert not at.exception
-    all_markdown = " ".join(m.value for m in at.markdown)
-    assert "Nova Aperture Systems" in all_markdown
-
-
-def test_company_page_unknown_symbol_shows_empty_state_not_exception():
-    at = AppTest.from_file(str(HARNESS_DIR / "company_page.py"), default_timeout=10)
-    at.query_params["symbol"] = "NOTREAL"
-    at.run()
-    assert not at.exception
-    all_markdown = " ".join(m.value for m in at.markdown)
-    assert "No ticker found" in all_markdown
-
-
-def test_company_page_shows_demo_evidence_with_no_fabricated_source():
-    at = AppTest.from_file(str(HARNESS_DIR / "company_page.py"), default_timeout=10)
-    at.query_params["symbol"] = "DEMO"
-    at.run()
-    assert not at.exception
-    all_markdown = " ".join(m.value for m in at.markdown)
-    assert "EevaResearch Demo Data" in all_markdown
-    assert "no external source" in all_markdown
-
-
 def test_sidebar_status_renders():
     at = AppTest.from_file(str(HARNESS_DIR / "sidebar_rail.py"), default_timeout=10)
     at.run()
@@ -104,14 +75,5 @@ def test_sidebar_status_renders():
     expected = {label for _, label in PRIMARY_NAV + SYSTEM_NAV}
     missing = expected - nav_link_labels
     assert not missing, f"missing nav items: {missing}"
-
-
-def test_watchlists_page_renders_without_exception():
-    # A primary Workspace nav destination (navigation-cleanup pass,
-    # design/DECISIONS.md) — the add-a-ticker entry point independent of
-    # any specific company page.
-    at = AppTest.from_file(str(HARNESS_DIR / "watchlists_page.py"), default_timeout=10)
-    at.run()
-    assert not at.exception
 
 

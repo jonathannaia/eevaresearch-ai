@@ -50,30 +50,6 @@ def test_dead_pages_are_not_referenced_anywhere_in_src_or_app():
     assert offenders == []
 
 
-# --- Research: "Saved threads" removed ---
-
-def test_research_page_no_longer_shows_saved_threads():
-    at = AppTest.from_file(str(HARNESS_DIR / "research_page.py"), default_timeout=10)
-    at.run()
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
-    assert "Saved threads" not in all_text
-    assert "Not built in this phase" not in all_text
-
-
-# --- Company: em-dash placeholder tables replaced with an honest empty state ---
-
-def test_company_page_shows_honest_empty_state_for_fundamental_and_technical_snapshots():
-    at = AppTest.from_file(str(HARNESS_DIR / "company_page.py"), default_timeout=10)
-    at.query_params["symbol"] = "DEMO"
-    at.run()
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "No fundamental data connected yet." in all_text
-    assert "No technical data connected yet." in all_text
-    # The old raw metric-name-to-em-dash tables are gone as dataframes —
-    # neither snapshot section renders a dataframe anymore.
-    assert len(at.dataframe) == 0
 
 
 # --- Home: hero + 3-step + one primary CTA ---

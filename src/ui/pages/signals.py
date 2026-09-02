@@ -1,6 +1,5 @@
 """Signals — structured, filterable view of every tracked signal (brief §4:
-absorbs Signal Board; Watchlists fold in as sidebar filter entries rather
-than a standalone page). Sourced from real DART/EDINET Radar candidates
+absorbs Signal Board). Sourced from real DART/EDINET Radar candidates
 (src/data_access/live/radar_signal_repository.py) — only candidates
 eligible per src/logic/signal_promotion.py are ever shown; no demo/sample
 rows appear here.
@@ -23,7 +22,6 @@ from src.ui.components.badges import demo_badge, direction_dot_html
 from src.ui.components.cards import signal_card
 from src.ui.components.empty_state import empty_state
 from src.ui.components.freshness import freshness_chip
-from src.ui.pages.watchlists import seed_watchlists
 from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
 
 
@@ -132,29 +130,6 @@ def render(signal_repository: SignalRepository | None = None) -> None:
         _render_example_signal_card()
         return
 
-    # Watchlists are sidebar entries filtering this same view, not a
-    # standalone page (brief §4) — the sidebar's watchlist links set
-    # ?watchlist=<name>, resolved here against the same session-state
-    # watchlists used everywhere else.
-    watchlist_name = st.query_params.get("watchlist")
-    watchlist_symbols: set[str] | None = None
-    if watchlist_name:
-        if "watchlists" not in st.session_state:
-            st.session_state["watchlists"] = seed_watchlists()
-        watchlist_symbols = {e.ticker_symbol for e in st.session_state["watchlists"].get(watchlist_name, [])}
-        notice_cols = st.columns([5, 1])
-        with notice_cols[0]:
-            st.markdown(
-                f'<div class="er-muted">Filtered from the <strong>{watchlist_name}</strong> watchlist '
-                f'({len(watchlist_symbols)} name{"s" if len(watchlist_symbols) != 1 else ""}).</div>',
-                unsafe_allow_html=True,
-            )
-        with notice_cols[1]:
-            with st.container(key="cta-tertiary-clear-watchlist-filter"):
-                if st.button("Clear filter", key="clear-watchlist-filter"):
-                    del st.query_params["watchlist"]
-                    st.rerun()
-
     # Phase B (UI audit): Direction/Time horizon only render once they have
     # more than one possible value — with a single real value each today,
     # they narrowed nothing and read as broken. Theme and Strength always
@@ -191,8 +166,6 @@ def render(signal_repository: SignalRepository | None = None) -> None:
         )
 
     filtered = signals
-    if watchlist_symbols is not None:
-        filtered = [s for s in filtered if watchlist_symbols.intersection(s.related_tickers)]
     if theme_filter:
         name_to_slug = {v: k for k, v in themes.items()}
         slugs = {name_to_slug[n] for n in theme_filter}

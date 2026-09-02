@@ -11,8 +11,11 @@ Reuses the existing card container/hover treatment (any `st.container(key=
 "card-...")` already gets assets/styles.css's shared card styling for
 free), the existing `signal_card` component for evidence display (so the
 Fact/Interpretation/Inference/Uncertainty distinction is inherited, not
-reimplemented), and existing routes only (Company, Radar Inbox, Research) —
-no new page is introduced.
+reimplemented), and an existing route only (Radar Inbox) — no new page is
+introduced. The "Open company"/"Ask Research" handoff links were removed
+(reader-facing data-integrity pass, design/DECISIONS.md) along with the
+Company and Research pages themselves, neither of which had live real
+data.
 """
 from __future__ import annotations
 
@@ -78,9 +81,7 @@ def _render_selected_detail(ctx) -> None:
         return
 
     themes_page = get_page("themes")
-    company_page = get_page("company")
     radar_page = get_page("radar_inbox")
-    research_page = get_page("research")
 
     with st.container(border=True, key="card-mm-detail"):
         top = st.columns([5, 1])
@@ -111,19 +112,9 @@ def _render_selected_detail(ctx) -> None:
         else:
             st.markdown('<div class="er-muted">No verified catalyst linked yet.</div>', unsafe_allow_html=True)
 
-        handoff_cols = st.columns(3)
-        with handoff_cols[0]:
-            if company_page is not None:
-                with st.container(key=f"cta-tertiary-mm-open-company-{selected_key}"):
-                    st.page_link(company_page, label="Open company →", query_params={"symbol": company.krx_code})
-        with handoff_cols[1]:
-            if radar_page is not None:
-                with st.container(key=f"cta-tertiary-mm-open-radar-{selected_key}"):
-                    st.page_link(radar_page, label="Related filings / Open Radar Inbox →")
-        with handoff_cols[2]:
-            if research_page is not None:
-                with st.container(key=f"cta-tertiary-mm-ask-research-{selected_key}"):
-                    st.page_link(research_page, label="Ask Research →")
+        if radar_page is not None:
+            with st.container(key=f"cta-tertiary-mm-open-radar-{selected_key}"):
+                st.page_link(radar_page, label="Related filings / Open Radar Inbox →")
 
 
 def render_market_map(ctx, themes, companies_by_theme: dict[str, list[TrackedCompany]]) -> None:

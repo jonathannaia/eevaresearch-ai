@@ -46,13 +46,6 @@ PRIMARY_NAV: list[tuple[str, str]] = [
     # Placed next to Radar for IA/UX grouping only ("what's new" feeds
     # together) — this has no bearing on their code/data independence.
     ("daily_news", "Daily News"),
-    # Watchlists (UX-refinement pass) — promoted from its own separate "My
-    # watchlists" sidebar group into a primary Workspace destination
-    # (navigation-cleanup pass); the per-list quick-filter shortcuts that
-    # group used to also render (into Signals) are retired along with it —
-    # Signals is no longer a visible destination for them to point at, and
-    # the Watchlists page itself already offers each list as its own tab.
-    ("watchlists", "Watchlists"),
 ]
 
 # Lower-priority "SYSTEM" group in the sidebar (navigation-cleanup pass) —
@@ -67,14 +60,16 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 
 # Routes that stay fully registered and reachable — direct URL, the
 # command palette (src/ui/components/command_palette.py), and existing
-# in-page cross-links (e.g. Watchlists' "Add a company" → Themes) all still
-# work exactly as before — but are no longer linked from any visible
-# sidebar group (navigation-cleanup pass, design/DECISIONS.md). Signals
-# stays conceptually part of Radar, not a separate visible destination;
-# Research stays implemented, just hidden from primary nav.
+# in-page cross-links all still work exactly as before — but are no
+# longer linked from any visible sidebar group (navigation-cleanup pass,
+# design/DECISIONS.md). Signals stays conceptually part of Radar, not a
+# separate visible destination. Watchlists and Research (the canned-
+# demo-answer chat) were removed entirely (reader-facing data-integrity
+# pass, design/DECISIONS.md) rather than kept as hidden routes — neither
+# had any live real data of its own; likewise Company, previously
+# reachable only via query params, not this list.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
     ("signals", "Signals"),
-    ("research", "Research"),
     ("methodology", "Methodology"),
     ("about", "About"),
 ]
@@ -286,10 +281,6 @@ def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = 
         load_css()
         if show_sidebar:
             render_sidebar(nav_key)
-
-        from src.ui.components.save_dialog import render_pending_save_dialog
-
-        render_pending_save_dialog()
 
         with st.container(key="page-content"):
             page_fn()

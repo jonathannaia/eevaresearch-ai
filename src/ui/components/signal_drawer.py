@@ -15,8 +15,7 @@ from src.models.models import ClaimType, Signal
 from src.ui.components.badges import direction_dot_html
 from src.ui.components.evidence_chips import evidence_chip
 from src.ui.components.excerpts import render_excerpt
-from src.ui.components.save_dialog import TRIGGER_KEY
-from src.ui.ui import READ_IDS_KEY, get_page
+from src.ui.ui import READ_IDS_KEY
 
 
 def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
@@ -106,24 +105,12 @@ def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
         st.write(signal.invalidation_criteria)
 
         st.divider()
-        foot_cols = st.columns(3)
-        with foot_cols[0]:
-            with st.container(key=f"cta-primary-drawer-save-{signal.id}"):
-                if st.button("Save to watchlist", key=f"drawer-save-{signal.id}", width="stretch"):
-                    st.session_state[TRIGGER_KEY] = signal.related_tickers[0] if signal.related_tickers else None
-                    st.rerun()
-        with foot_cols[1]:
-            if signal.source_url:
-                st.link_button("Open filing", signal.source_url, width="stretch")
-            else:
-                st.button(
-                    "Open filing", key=f"drawer-filing-{signal.id}", width="stretch", disabled=True,
-                    help="No source document link available for this signal.",
-                )
-        with foot_cols[2]:
-            research_page = get_page("research")
-            if research_page is not None:
-                with st.container(key=f"cta-secondary-drawer-research-{signal.id}"):
-                    st.page_link(research_page, label="Ask about this →")
+        if signal.source_url:
+            st.link_button("Open filing", signal.source_url, width="stretch")
+        else:
+            st.button(
+                "Open filing", key=f"drawer-filing-{signal.id}", width="stretch", disabled=True,
+                help="No source document link available for this signal.",
+            )
 
     _drawer()

@@ -184,34 +184,22 @@ def test_dashboard_shows_visual_hierarchy_between_primary_and_secondary_modules(
     DASHBOARD_MARKET_MAP_PHASE_E.md): Capital Rotation moved into a
     collapsed `st.expander`, so its heading text now lives in the
     expander's own `label` rather than as a rendered `er-section-label`
-    markdown div — checked via `at.expander` instead of `all_text` below,
-    everything else unchanged."""
+    markdown div — checked via `at.expander` instead of `all_text` below.
+
+    Superseded again by the reader-facing data-integrity pass (design/
+    DECISIONS.md): Watchlist Changes is removed — it depended entirely
+    on the Watchlists page, which had no live real data and was removed
+    in the same pass."""
     at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "font-weight:600; font-size:0.92rem" in all_text  # Today's Read only
     assert all_text.count("font-weight:600; font-size:0.92rem") == 1
-    assert "opacity:0.7" in all_text  # Watchlist Changes
-    # Nothing was removed, reordered, or hidden — every module still renders.
-    for heading in ("Today's Read", "Priority Signals", "Next Catalysts", "Watchlist Changes"):
+    for heading in ("Today's Read", "Priority Signals", "Next Catalysts"):
         assert heading in all_text
+    assert "Watchlist Changes" not in all_text
     assert "Capital Rotation — demo snapshot" in {e.label for e in at.expander}
-
-
-# --- Company: template-preview notice ---
-
-def test_company_page_shows_template_preview_notice():
-    at = AppTest.from_file(str(HARNESS_DIR / "company_page.py"), default_timeout=10)
-    at.query_params["symbol"] = "DEMO"
-    at.run()
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Template preview" in all_text
-    # Nothing was removed: every existing section/empty-state is intact.
-    assert "No fundamental data connected yet." in all_text
-    assert "No technical data connected yet." in all_text
-    assert "Evidence timeline" in all_text
 
 
 # --- UI infrastructure: mtime-keyed CSS cache ---

@@ -163,12 +163,6 @@ def test_charts_component_uses_new_palette_not_legacy_colors():
     assert "#64748B" in source
 
 
-def test_watchlists_thesis_warning_uses_negative_semantic_token():
-    source = (REPO_ROOT / "src" / "ui" / "pages" / "watchlists.py").read_text(encoding="utf-8")
-    assert "rgba(255,255,255,.025)" not in source
-    assert "var(--neg-dim)" in source
-
-
 # --- WCAG AA contrast math on the actual token values ---
 
 def _linearize(channel: float) -> float:

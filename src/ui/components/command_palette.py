@@ -1,5 +1,9 @@
-"""Command palette (brief §12) — ⌘K/Ctrl+K fuzzy search over companies,
-themes, signals, watchlists, research threads, and actions.
+"""Command palette (brief §12) — ⌘K/Ctrl+K fuzzy search over themes,
+signals, and actions. The former "Companies"/"Watchlists"/"Recent
+research"/"New research thread" groups were removed (reader-facing
+data-integrity pass, design/DECISIONS.md) along with the Company,
+Watchlists, and Research pages they pointed at — none had live real
+data.
 
 Streamlit has no native palette. Two things had to be tested for real
 feasibility (per the brief's own instruction) rather than assumed:
@@ -64,21 +68,10 @@ def render_palette_trigger() -> None:
 
 def _index(ctx) -> list[dict]:
     items: list[dict] = []
-    for t in ctx.ticker_repository.get_all_tickers():
-        theme = ctx.theme_repository.get_theme(t.theme_slug)
-        layer = theme.name if theme else t.theme_slug
-        items.append({"group": "Companies", "label": f"{t.symbol} · {t.company_name}", "sub": layer, "go": "company", "symbol": t.symbol})
     for th in ctx.theme_repository.get_all_themes():
         items.append({"group": "Themes", "label": th.name, "sub": f"{len(th.subthemes)} subcategories", "go": "themes"})
     for s in ctx.signal_repository.get_all_signals():
         items.append({"group": "Signals", "label": s.title, "sub": s.theme_slug, "go": "signals"})
-    from src.ui.pages.watchlists import WATCHLIST_NAMES
-
-    for name in WATCHLIST_NAMES:
-        items.append({"group": "Watchlists", "label": name, "sub": "watchlist", "go": "signals"})
-    for q in st.session_state.get("chat_messages", [])[-8:]:
-        items.append({"group": "Recent research", "label": q, "sub": "thread", "go": "research"})
-    items.append({"group": "Actions", "label": "New research thread", "sub": "⌘N", "go": "research"})
     items.append({"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"})
     return items
 
@@ -100,7 +93,7 @@ def _open_palette() -> None:
         # custom component (see module docstring). The button below is an
         # explicit, honestly-labeled action instead of overloading Enter.
         query = st.text_input(
-            "Search", placeholder="Search companies, themes, signals, threads…",
+            "Search", placeholder="Search themes, signals…",
             label_visibility="collapsed", key="cmdk-query",
         )
         items = _index(ctx)
@@ -113,7 +106,7 @@ def _open_palette() -> None:
             return
 
         if not shown:
-            st.markdown('<div class="er-muted">No matches. Try a ticker, theme, or filing venue.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="er-muted">No matches. Try a theme or signal.</div>', unsafe_allow_html=True)
             return
 
         last_group = None
@@ -143,6 +136,4 @@ def _navigate(item: dict) -> None:
     page = get_page(item["go"])
     if page is None:
         return
-    if item.get("symbol"):
-        st.query_params["symbol"] = item["symbol"]
     st.switch_page(page)

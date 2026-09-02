@@ -32,11 +32,15 @@ def _sidebar_page_links(at: AppTest):
     return list(at.sidebar.get("page_link"))
 
 
-def test_workspace_shows_exactly_dashboard_radar_daily_news_watchlists():
+def test_workspace_shows_exactly_dashboard_radar_themes_daily_news():
+    # Watchlists was removed entirely (reader-facing data-integrity
+    # pass, design/DECISIONS.md) — session-only, seeded from illustrative
+    # data, no live real data of its own.
     at = _run_to_dashboard()
     labels = [pl.label for pl in _sidebar_page_links(at)]
-    for expected in ("Dashboard", "Radar", "Daily News", "Watchlists"):
+    for expected in ("Dashboard", "Radar", "Themes", "Daily News"):
         assert expected in labels
+    assert "Watchlists" not in labels
 
 
 def test_radar_label_is_radar_not_radar_inbox_in_the_sidebar():
@@ -52,8 +56,10 @@ def test_coverage_signals_research_are_not_visible_sidebar_items():
     reintroduced a "Themes" sidebar entry on purpose, pointing at a new
     public research page, not the legacy demo browser this original
     navigation-cleanup pass had removed from visible nav. The legacy
-    demo page itself moved to a hidden "Theme Browser" route and is
-    covered by the assertion below instead."""
+    demo page itself (moved to a hidden "Theme Browser" route by that
+    step) was later removed entirely, not just hidden (reader-facing
+    data-integrity pass, design/DECISIONS.md) — it had no live real
+    data."""
     at = _run_to_dashboard()
     labels = {pl.label for pl in _sidebar_page_links(at)}
     # Exact-label check, not substring — "Methodology & Coverage" legitimately
@@ -78,15 +84,18 @@ def test_settings_is_not_invented_since_no_settings_route_exists():
     assert "settings" not in at.session_state["_pages"]
 
 
-def test_coverage_themes_signals_research_routes_remain_registered():
+def test_coverage_themes_signals_routes_remain_registered():
     # Existing direct URLs must remain operational — hidden from the
     # sidebar, not deleted. Reuses the exact keys/url_path table app.py
-    # builds pages from.
+    # builds pages from. Research (canned-demo-answer chat) was removed
+    # entirely (reader-facing data-integrity pass, design/DECISIONS.md),
+    # not just hidden — it had no live real data.
     at = _run_to_dashboard()
     pages = at.session_state["_pages"]
-    for key in ("coverage", "themes", "signals", "research", "methodology", "about"):
+    for key in ("coverage", "themes", "signals", "methodology", "about"):
         assert key in pages
         assert pages[key] is not None
+    assert "research" not in pages
 
 
 def test_radar_and_daily_news_remain_two_distinct_registered_pages():

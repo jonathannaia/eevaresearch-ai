@@ -3,15 +3,18 @@
 Run with: streamlit run app.py
 
 Registers Home (first-visit landing, no sidebar), the WORKSPACE routes
-(Dashboard, Radar, Daily News, Watchlists), the SYSTEM route (Methodology &
+(Dashboard, Radar, Themes, Daily News), the SYSTEM route (Methodology &
 Coverage, reusing the Coverage page/route), and routes that stay fully
 reachable but are no longer linked from any visible sidebar group —
-Coverage/Themes/Signals/Research/Methodology/About (direct URL, the command
-palette, in-page cross-links), plus Company (clicking a ticker) and
-Disclaimer (Methodology's cross-link and the page footer) — see
-design/eevaresearch-brief.md §4 for the original route table and
-design/DECISIONS.md for the navigation-cleanup pass that reorganized it.
-src/ui/ui.render_sidebar is the persistent left-rail nav widget.
+Coverage/Signals/Methodology/About (direct URL, the command palette,
+in-page cross-links) and Disclaimer (Methodology's cross-link and the
+page footer) — see design/eevaresearch-brief.md §4 for the original
+route table and design/DECISIONS.md for the navigation-cleanup pass that
+reorganized it. Watchlists, Research (canned-demo-answer chat), and
+Company (a single fictional ticker) were removed entirely in the
+reader-facing data-integrity pass (design/DECISIONS.md) — none had any
+live real data of its own. src/ui/ui.render_sidebar is the persistent
+left-rail nav widget.
 """
 from __future__ import annotations
 
@@ -25,7 +28,6 @@ from src.logic.unread import seed_initial_last_seen
 from src.ui.beta_gate import evaluate_beta_gate
 from src.ui.pages import (
     about,
-    company,
     coverage,
     daily_news,
     daily_news_admin,
@@ -34,12 +36,10 @@ from src.ui.pages import (
     home,
     methodology,
     radar_inbox,
-    research,
     research_cases,
     signals,
     theme_workspace,
     themes_research,
-    watchlists,
 )
 from src.ui.ui import HIDDEN_FROM_NAV, LAST_SEEN_KEY, PRIMARY_NAV, READ_IDS_KEY, SYSTEM_NAV, with_chrome
 
@@ -56,11 +56,9 @@ _RENDER_FNS = {
     "dashboard": dashboard.render,
     "radar_inbox": radar_inbox.render,
     "daily_news": daily_news.render,
-    "watchlists": watchlists.render,
     "coverage": coverage.render,
     "themes": themes_research.render,
     "signals": signals.render,
-    "research": research.render,
     "methodology": methodology.render,
     "about": about.render,
 }
@@ -69,18 +67,16 @@ _URL_PATHS = {
     "dashboard": "dashboard",
     "radar_inbox": "radar-inbox",
     "daily_news": "daily-news",
-    "watchlists": "watchlists",
     "coverage": "coverage",
     "themes": "themes",
     "signals": "signals",
-    "research": "research",
     "methodology": "methodology",
     "about": "about",
 }
 
-# Navigation-cleanup pass (design/DECISIONS.md): Coverage/Themes/Signals/
-# Research/Methodology/About stay fully registered routes (direct URL,
-# command palette, in-page cross-links) — only visibility="hidden" changes,
+# Navigation-cleanup pass (design/DECISIONS.md): Coverage/Signals/
+# Methodology/About stay fully registered routes (direct URL, command
+# palette, in-page cross-links) — only visibility="hidden" changes,
 # since none of them are linked from any visible sidebar group any more.
 _HIDDEN_KEYS = {key for key, _ in HIDDEN_FROM_NAV}
 
@@ -109,34 +105,35 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
             default=(key == "dashboard" and dashboard_is_default),
             visibility="hidden" if key in _HIDDEN_KEYS else "visible",
         )
-    pages["company"] = st.Page(
-        with_chrome(company.render, "company"), title="Company", url_path="company", visibility="hidden",
-    )
     # Disclaimer is no longer a primary sidebar item, but stays a real
     # reachable route via Methodology's cross-link and the page footer.
     pages["disclaimer"] = st.Page(
         with_chrome(disclaimer.render, "disclaimer"), title="Disclaimer", url_path="disclaimer", visibility="hidden",
     )
     # Daily News admin/status (Slice 1) — same hidden-but-reachable pattern
-    # as company/disclaimer above: not linked in the sidebar, reachable only
-    # by direct URL, for controlled pilot verification.
+    # as disclaimer above: not linked in the sidebar, reachable only by
+    # direct URL, for controlled pilot verification. Also gated a second
+    # way by settings.daily_news_admin_enabled (checked inside the page
+    # itself, default disabled — reader-facing data-integrity pass).
     pages["daily_news_admin"] = st.Page(
         with_chrome(daily_news_admin.render, "daily_news_admin"),
         title="Daily News — Admin", url_path="daily-news-admin", visibility="hidden",
     )
     # Research Cases (Phase 4, Step 3C) — same hidden-but-reachable
-    # pattern as company/disclaimer/daily_news_admin above: not linked in
-    # the sidebar or any nav group, reachable only by direct URL, for
-    # invited-tester review of manually curated research cases.
+    # pattern as disclaimer/daily_news_admin above: not linked in the
+    # sidebar or any nav group, reachable only by direct URL, for
+    # invited-tester review of manually curated research cases. Also
+    # gated a second way by settings.research_cases_enabled (default
+    # disabled — reader-facing data-integrity pass).
     pages["research_cases"] = st.Page(
         with_chrome(research_cases.render, "research_cases"),
         title="Research Cases", url_path="research-cases", visibility="hidden",
     )
     # Constraint Research Workspace (Citrini-style Theme research
     # workspace vertical slice, design/DECISIONS.md) — same hidden-but-
-    # reachable pattern as company/disclaimer/daily_news_admin/
-    # research_cases above: never linked in the sidebar, any nav group,
-    # or the command palette. Internal-only; also gated a second way by
+    # reachable pattern as disclaimer/daily_news_admin/research_cases
+    # above: never linked in the sidebar, any nav group, or the command
+    # palette. Internal-only; also gated a second way by
     # settings.theme_workspace_enabled (checked inside the page itself,
     # default disabled).
     pages["theme_workspace"] = st.Page(

@@ -144,71 +144,17 @@ def test_dashboard_keeps_every_module_and_priority_signals_is_no_longer_emphasiz
     also means "the new required modules are actually present"."""
     at = _run_dashboard()
     all_text = " ".join(m.value for m in at.markdown)
-    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts", "Watchlist Changes", "Market Map", "Regional Brief"):
+    for heading in ("Today's Read", "Theme Health", "Priority Signals", "Next Catalysts", "Market Map", "Regional Brief"):
         assert heading in all_text
+    # Watchlist Changes was removed entirely (reader-facing data-
+    # integrity pass, design/DECISIONS.md) — it depended on the
+    # Watchlists page, which had no live real data.
+    assert "Watchlist Changes" not in all_text
     assert "Capital Rotation — demo snapshot" in {e.label for e in at.expander}
     todays_read_heavy = '<div class="er-section-label" style="color:var(--text); font-weight:600; font-size:0.92rem;">Today\'s Read</div>'
     assert todays_read_heavy in all_text
     assert '>Priority Signals</div>' in all_text or 'Priority Signals' in all_text
     assert 'style="color:var(--text); font-weight:600; font-size:0.92rem;">Priority Signals' not in all_text
-
-
-# ============================== RESEARCH ==============================
-
-def _run_research():
-    at = AppTest.from_file(str(HARNESS_DIR / "research_page.py"), default_timeout=15)
-    at.run()
-    return at
-
-
-def test_research_has_no_duplicate_thread_start_paths():
-    at = _run_research()
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Start a research thread" not in all_text
-    assert "New thread" not in all_text
-    button_labels = {b.label for b in at.button}
-    assert "New thread" not in button_labels
-
-
-def test_research_shows_one_clear_prompt_with_input_directly_beneath_it():
-    at = _run_research()
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "What would you like to investigate?" in all_text
-    assert len(at.text_input) == 1
-    assert at.text_input[0].placeholder == "Ask about a company, theme, filing, catalyst, or market move."
-    assert "Ask" in {b.label for b in at.button}
-
-    ordered = _ordered(at)
-    prompt_idx = _index_of(ordered, "Markdown", "What would you like to investigate?")
-    input_idx = next(i for i, (c, _) in enumerate(ordered) if c == "TextInput")
-    ask_idx = _index_of(ordered, "Button", "Ask")
-    suggested_idx = _index_of(ordered, "Markdown", "Or try one of these")
-    assert prompt_idx < input_idx < ask_idx < suggested_idx
-
-
-def test_research_suggested_questions_render_as_tertiary_ghost_links():
-    at = _run_research()
-    # Same shared cta-tertiary-* treatment as every other low-emphasis
-    # action in the app, not a large bordered button competing with the
-    # input — verified at the container-key level (Streamlit turns this
-    # into a st-key-cta-tertiary-suggested-* class picked up by the
-    # existing generic ghost-link CSS rule).
-    keys = {b.key for b in at.button}
-    assert any(k and k.startswith("suggested-") for k in keys)
-
-
-def test_research_answer_shows_one_quiet_metadata_line_not_three_pills():
-    at = _run_research()
-    suggested_button = next(b for b in at.button if b.label == "What is happening in AI networking and photonics?")
-    suggested_button.click().run()
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    # The old per-answer badges rendered via st.badge, which serializes as
-    # literal ":gray-badge[...]" markdown directives — gone now that this
-    # is one plain muted text line instead.
-    assert ":gray-badge[Confidence" not in all_text
-    assert "Confidence:" in all_text
-    assert "Freshness:" in all_text
 
 
 _TRANSLATED_SPINE_SCRIPT = """

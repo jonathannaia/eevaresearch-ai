@@ -43,7 +43,7 @@ from src.ui.ui import HIDDEN_FROM_NAV, PRIMARY_NAV, SYSTEM_NAV
 APP_PATH = Path(__file__).parent.parent / "app.py"
 
 _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + [
-    "company", "disclaimer", "daily_news_admin", "research_cases", "theme_workspace",
+    "disclaimer", "daily_news_admin", "research_cases", "theme_workspace",
 ]
 
 
@@ -94,19 +94,21 @@ def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter():
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     """Regression guard for the navigation-cleanup pass (design/DECISIONS.md)
     — asserts the exact visible WORKSPACE/SYSTEM nav tables app.py reads
-    from, that Coverage/Themes/Signals/Research/Methodology/About are still
-    registered (just no longer linked from any visible sidebar group), and
-    that every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "themes", "daily_news", "watchlists"]
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Themes", "Daily News", "Watchlists"]
+    from, that Coverage/Signals/Methodology/About are still registered
+    (just no longer linked from any visible sidebar group), and that
+    every expected dict key exists post-registration."""
+    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "themes", "daily_news"]
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Themes", "Daily News"]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
     # Evidence-First Themes MVP (design/DECISIONS.md): "themes" moved
     # from here into PRIMARY_NAV above (now the new public research
     # page). The legacy demo ticker/theme/subtheme browser that used to
-    # occupy this slot was removed entirely (reader-facing data-
-    # integrity pass, design/DECISIONS.md), not just hidden.
-    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "research", "methodology", "about"]
+    # occupy this slot, and Watchlists/Research (canned-demo-answer
+    # chat)/Company, were removed entirely (reader-facing data-integrity
+    # pass, design/DECISIONS.md) rather than kept as hidden routes — none
+    # had any live real data of their own.
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about"]
 
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()
@@ -133,7 +135,7 @@ def test_page_objects_stay_identical_across_reruns_within_the_same_default_phase
         assert pages_a[key] is pages_b[key], f"'{key}' page object was rebuilt across reruns in the same phase"
 
 
-@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "daily_news_page.py", "coverage_page.py", "signals_page.py", "research_page.py", "methodology_page.py", "about_page.py", "watchlists_page.py"])
+@pytest.mark.parametrize("harness_file", ["dashboard_page.py", "radar_inbox_page.py", "daily_news_page.py", "coverage_page.py", "signals_page.py", "methodology_page.py", "about_page.py"])
 def test_every_visible_route_renders_through_its_registered_render_callable(harness_file):
     """Every harness here calls the exact same `with_chrome(render_fn, key)`
     callable app.py registers as that route's `st.Page` — not a
