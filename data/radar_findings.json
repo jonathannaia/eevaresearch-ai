@@ -1,5 +1,33 @@
 [
   {
+    "niche": "Humanoids",
+    "headline": "Learn why food is physical AI’s hardest problem at RoboBusiness",
+    "summary": "Rajat Bhageria, founder and CEO of Chef Robotics, will discuss why food presents one of the most challenging benchmarks for physical AI systems.",
+    "source_url": "https://www.therobotreport.com/learn-why-food-is-physical-ai-hardest-problem-chef-robotics-robobusiness/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 17:37:50 +0000",
+    "retrieved_at": "2026-09-02T20:19:20+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses physical AI and robotics challenges in food handling, directly relevant to robotics automation scope.",
+    "url_hash": "84ad7bd42e0612b1",
+    "id": "84ad7bd42e0612b1"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "NexCOBOT discusses physical AI market hurdles and acceleration",
+    "summary": "NexCOBOT, a provider of functional safety and motion controllers, discusses market hurdles and growth opportunities in physical AI, including how it benefits from involvement by major technology companies.",
+    "source_url": "https://www.therobotreport.com/nexcobot-discusses-physical-ai-market-hurdles-and-acceleration/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 19:45:19 +0000",
+    "retrieved_at": "2026-09-02T20:19:19+00:00",
+    "tickers": [],
+    "relevance_reason": "The article discusses physical AI market development and growth, which is directly relevant to robotics automation and the humanoids scope.",
+    "url_hash": "7cec6dcbd520f20c",
+    "id": "7cec6dcbd520f20c"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Gradiant to deliver HyperSolved water treatment system for West Texas data center",
     "summary": "Gradiant will deploy its HyperSolved water treatment system at a West Texas data center site.",
