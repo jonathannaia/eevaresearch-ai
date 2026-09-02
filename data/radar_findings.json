@@ -1,6 +1,97 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Why Data Centers Rarely Reuse Cooling Water",
+    "summary": "Most data centers continue to rely on evaporative cooling rather than alternatives because the higher capital costs and operational complexity of other methods are not economically justified at present.",
+    "source_url": "https://www.datacenterknowledge.com/cooling/why-data-centers-rarely-reuse-cooling-water",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 09:00:00 GMT",
+    "retrieved_at": "2026-09-02T13:58:52+00:00",
+    "tickers": [],
+    "relevance_reason": "Substantively addresses data center cooling infrastructure economics, a core AI Buildout concern",
+    "url_hash": "0c09557135b1846f",
+    "id": "0c09557135b1846f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Cerebras starts construction on 165MW data center in Mikkeli, Finland",
+    "summary": "Cerebras has begun construction on a 165MW data center in Mikkeli, Finland, with an initial 50MW phase underway.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/cerebras-starts-construction-on-165mw-data-center-in-mikkeli-finland/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 12:07:41 +0000",
+    "retrieved_at": "2026-09-02T13:58:34+00:00",
+    "tickers": [
+      {
+        "ticker": "CBRS",
+        "company_name": "Cerebras Systems",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Cerebras is constructing a large-scale AI data center with significant power capacity, directly relevant to AI infrastructure buildout.",
+    "url_hash": "f8f7bfabd4d87e9c",
+    "id": "f8f7bfabd4d87e9c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "ChronoScale and Microsoft partner on 50MW deployment in North America",
+    "summary": "ChronoScale and Microsoft are partnering on a 50MW deployment in North America using Nvidia GB300 NVL72 systems.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/chronoscale-and-microsoft-partner-on-50mw-deployment-in-north-america/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 12:19:38 +0000",
+    "retrieved_at": "2026-09-02T13:58:32+00:00",
+    "tickers": [
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Deployment of Nvidia AI accelerators for hyperscaler infrastructure is directly relevant to AI Buildout scope.",
+    "url_hash": "9e65544326bb41fa",
+    "id": "9e65544326bb41fa"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Electricity-free cooling system for data centers prototyped by scientists in Germany and Japan",
+    "summary": "Scientists from Germany and Japan have prototyped an electricity-free solid-state cooling system for data centers, raising questions about scalability of the technology.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/electricity-free-cooling-system-for-data-centers-prototyped-by-researchers-in-germany-and-japan/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 12:31:00 +0000",
+    "retrieved_at": "2026-09-02T13:58:31+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses cooling technology for data centers, a core AI infrastructure component.",
+    "url_hash": "2704eb2125d81233",
+    "id": "2704eb2125d81233"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AWS and Humain commit to bringing 50MW online at Saudi AI Zone by 2028",
+    "summary": "AWS and Humain have committed to bringing 50MW of capacity online at Saudi AI Zone by 2028, with AWS also on track to launch a cloud region in December 2026.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/aws-and-humain-commit-to-bringing-50mw-online-at-saudi-ai-zone-by-2028/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 13:35:01 +0000",
+    "retrieved_at": "2026-09-02T13:58:29+00:00",
+    "tickers": [
+      {
+        "ticker": "AMZN",
+        "company_name": "Amazon Web Services (Amazon)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "directly addresses hyperscaler capex and AI infrastructure buildout in a major data center commitment",
+    "url_hash": "7bf151e2bba2193d",
+    "id": "7bf151e2bba2193d"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Security Sign-Off Is Coming For Chips — But Standards May Not Be Enough",
     "summary": "As AI, post-quantum cryptography, chiplets, and custom silicon expand the attack surface, semiconductor security is shifting from isolated safeguards to full-stack verification and formal sign-off processes.",
     "source_url": "https://semiengineering.com/security-sign-off-is-coming-for-chips-but-standards-may-not-be-enough/",
