@@ -80,6 +80,17 @@ class Settings:
     # default, same "unset/blank/unrecognized -> disabled" parsing as
     # every other flag on this class.
     theme_workspace_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_WORKSPACE_ENABLED"))
+    # Autonomous Theme candidate detection (design/DECISIONS.md) — the
+    # master switch for scripts/radar_worker.py's own
+    # _run_theme_candidate_detection_step. Disabled by default, same
+    # "unset/blank/unrecognized -> disabled" parsing as every other flag
+    # on this class. Read only by the worker (via worker_settings, which
+    # carries this field through unchanged from the ambient Settings —
+    # see _build_worker_settings's own dataclasses.replace call), never
+    # by the Streamlit dashboard.
+    theme_candidate_detection_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_CANDIDATE_DETECTION_ENABLED")
+    )
     # Durable-State Phase 4M-0 (design/DECISIONS.md) — the master switch
     # for the standalone continuous worker (scripts/radar_worker.py)
     # only. Disabled by default, same "unset/blank/unrecognized ->

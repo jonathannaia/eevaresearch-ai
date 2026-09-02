@@ -121,6 +121,30 @@ retried by this hook. Every stored match is an insert-only, internal
 this step never creates a Theme, evidence item, company-map entry,
 review decision, or visibility change, and never calls an LLM or any
 external/network service.
+
+Autonomous Theme candidate detection (design/DECISIONS.md) —
+`_run_theme_candidate_detection_step()`, gated by
+`settings.theme_candidate_detection_enabled` (default disabled), runs
+after the theme-matching step above, in its own separate try/except.
+Uses the pure, general `src.logic.theme_candidate_detection` engine to
+cluster already-case-linked EDGAR candidates by
+(theme_slug, subtheme_slug) and, when independent official-source
+evidence for one cluster crosses a configurable threshold within a
+configurable window, auto-creates one INTERNAL candidate
+`ResearchTheme` plus its `ThemeMatchingScope`, bootstrap CONTEXT-only
+`ResearchCaseThemeMatch` rows for the contributing cases, `role=EXPOSED`
+`ThemeCompanyMapEntry` rows for every contributing company, and two
+`ThemeResearchNote`s (a HYPOTHESIS with confidence/disconfirming
+condition, and a DECISION explaining exactly why the candidate fired).
+Never auto-creates a `ThemeEvidenceItem` or a review decision, never
+promotes CONTEXT to SUPPORTS/CONTRADICTS/MIXED, and never changes
+visibility — every one of those stays a human action through the
+existing src/ui/pages/theme_workspace.py workspace. The constraint
+keyword/rule-category vocabulary and the threshold/window are plain
+module-level constants here, not hardcoded inside the detection engine
+itself, which takes them as parameters — the engine is general-purpose,
+this file's own constants are just today's semiconductor/AI-
+infrastructure starting seed.
 """
 from __future__ import annotations
 
@@ -141,9 +165,23 @@ from src.data_access.dart import radar_service as dart_radar_service
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
 from src.logic.research_case_theme_matching import evaluate_theme_match
 from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
+from src.logic.theme_candidate_detection import detect_theme_candidates
 from src.models.research_case import ResearchCase
+from src.models.theme_matching import ThemeMatchingScope
+from src.models.theme_research import (
+    CompanyRole,
+    HypothesisConfidence,
+    ResearchTheme,
+    ThemeCategory,
+    ThemeCompanyMapEntry,
+    ThemeNoteType,
+    ThemeResearchNote,
+    ThemeStatus,
+    ThemeVisibility,
+)
 
 # CandidateSignal (src.models.models) is deliberately never imported here,
 # even just for a type hint — see tests/test_radar_worker_safety_invariants.py's
@@ -444,6 +482,179 @@ def _run_theme_matching_step(
     )
 
 
+# Autonomous Theme candidate detection — plain worker-level tunables,
+# not hardcoded inside src.logic.theme_candidate_detection itself (see
+# that module's own docstring for why). Today's starting seed is
+# semiconductor/AI-infrastructure-flavored, matching the same values an
+# operator would otherwise type into scripts/create_theme_matching_scope.py
+# by hand — the engine itself has no opinion about sector.
+_THEME_CANDIDATE_DETECTION_WINDOW_DAYS = 90
+_THEME_CANDIDATE_DETECTION_MIN_COMPANIES = 2
+_THEME_CANDIDATE_DETECTION_RULE_CATEGORIES: tuple[str, ...] = (
+    "material_agreement", "financing_or_debt", "other_material_event",
+)
+_THEME_CANDIDATE_DETECTION_KEYWORDS: tuple[str, ...] = (
+    "capacity", "wafer", "fab", "foundry", "packaging", "hbm", "dram", "allocation",
+    "lead time", "yield", "node", "supply agreement", "capacity expansion", "shortage", "backlog",
+)
+_THEME_CANDIDATE_DETECTION_EXCLUDED_KEYWORDS: tuple[str, ...] = (
+    "share repurchase", "stock buyback", "dividend declaration",
+    "annual meeting of stockholders", "proxy statement", "executive compensation",
+)
+
+
+def _gather_case_candidate_pairs_for_detection(
+    worker_settings: Settings, candidates: dict[str, CandidateSignal], newly_created_cases: tuple[ResearchCase, ...],
+) -> list[tuple[ResearchCase, CandidateSignal]]:
+    """The same bounded reachable-case logic _run_theme_matching_step
+    already computes internally (Phase A2) — reimplemented here rather
+    than refactored out of that already-verified function, to avoid any
+    risk of altering its tested behavior. Bounded to `newly_created_cases`
+    (this tick) plus the same `_THEME_MATCHING_BACKLOG_MAX_CASES`-sized
+    recent-case window — not a full historical scan."""
+    research_case_repository = backend_factory.get_research_case_repository(worker_settings)
+    recent_cases = research_case_repository.list_recent_cases(_THEME_MATCHING_BACKLOG_MAX_CASES)
+    backlog_eligible = [
+        case for case in recent_cases
+        if case.trigger_source_type == "radar" and case.trigger_source_id in candidates
+    ]
+    newly_created_ids = {case.id for case in newly_created_cases}
+    combined_cases = list(newly_created_cases) + [case for case in backlog_eligible if case.id not in newly_created_ids]
+    pairs: list[tuple[ResearchCase, CandidateSignal]] = []
+    for case in combined_cases:
+        candidate = candidates.get(case.trigger_source_id)
+        if candidate is not None:
+            pairs.append((case, candidate))
+    return pairs
+
+
+def _run_theme_candidate_detection_step(
+    worker_settings: Settings, candidates: dict[str, CandidateSignal], newly_created_cases: tuple[ResearchCase, ...],
+) -> str:
+    """Best-effort, EDGAR-only autonomous Theme CANDIDATE detection —
+    see module docstring. Called only after `_run_theme_matching_step()`
+    has already returned, in its own separate try/except at the call
+    site — a failure here can never affect ProviderScanStatus, candidate
+    state, Research Case creation, or either theme-matching step's own
+    summary/counters. Repository construction and the pure
+    `detect_theme_candidates()` call are unguarded (a failure there
+    aborts this whole function, exactly like the sibling steps' own
+    repository-construction failures do); each detected candidate's own
+    persistence sequence is wrapped so one bad candidate never blocks
+    the rest of the batch."""
+    matching_repository = backend_factory.get_theme_matching_repository(worker_settings)
+    curator = backend_factory.get_theme_curator_repository(worker_settings)
+
+    active_scopes = matching_repository.list_active_scopes()
+    already_covered: set[tuple[str, str | None]] = set()
+    for scope in active_scopes:
+        for tag in scope.sector_tags:
+            already_covered.add((tag, None))
+            for subtag in scope.sector_subtags:
+                already_covered.add((tag, subtag))
+
+    pairs = _gather_case_candidate_pairs_for_detection(worker_settings, candidates, newly_created_cases)
+    detected = detect_theme_candidates(
+        pairs, as_of_date=_current_utc_date(), window_days=_THEME_CANDIDATE_DETECTION_WINDOW_DAYS,
+        min_distinct_companies=_THEME_CANDIDATE_DETECTION_MIN_COMPANIES,
+        constraint_keywords=_THEME_CANDIDATE_DETECTION_KEYWORDS,
+        constraint_rule_categories=_THEME_CANDIDATE_DETECTION_RULE_CATEGORIES,
+        already_covered=frozenset(already_covered),
+    )
+
+    case_by_id = {case.id: case for case, _candidate in pairs}
+    candidate_by_case_id = {case.id: candidate for case, candidate in pairs}
+
+    clusters_detected = len(detected)
+    themes_created = 0
+    matches_created = 0
+    company_roles_created = 0
+    notes_created = 0
+    creation_errors = 0
+
+    for theme_candidate in detected:
+        try:
+            created_at = datetime.now(timezone.utc).isoformat()
+            title = theme_candidate.research_question
+            theme_id = build_theme_id(title, created_at)
+            theme = ResearchTheme(
+                id=theme_id, category=ThemeCategory.BOTTLENECK, status=ThemeStatus.NEW, visibility=ThemeVisibility.INTERNAL,
+                title=title, key_question=theme_candidate.research_question, hypothesis=theme_candidate.hypothesis_statement,
+                working_thesis=theme_candidate.working_thesis, why_it_matters=theme_candidate.why_it_matters,
+                what_could_change_the_view=theme_candidate.what_could_change_the_view,
+                what_to_watch_next=theme_candidate.what_to_watch_next, created_at=created_at, updated_at=created_at,
+            )
+            if not curator.insert_theme(theme):
+                creation_errors += 1
+                continue
+            themes_created += 1
+
+            scope = ThemeMatchingScope(
+                theme_id=theme_id, sector_tags=(theme_candidate.theme_slug,),
+                sector_subtags=(theme_candidate.subtheme_slug,) if theme_candidate.subtheme_slug else (),
+                allowed_matched_rule_categories=theme_candidate.matched_rule_categories,
+                required_keywords=theme_candidate.matched_keywords,
+                excluded_keywords=_THEME_CANDIDATE_DETECTION_EXCLUDED_KEYWORDS,
+            )
+            matching_repository.insert_scope(scope)
+
+            for case_id in theme_candidate.member_case_ids:
+                member_case = case_by_id.get(case_id)
+                member_candidate = candidate_by_case_id.get(case_id)
+                if member_case is None or member_candidate is None:
+                    continue
+                try:
+                    match = evaluate_theme_match(member_candidate, case_id, scope, member_case.created_at)
+                except Exception:  # noqa: BLE001 — one bad bootstrap match must never block the rest
+                    continue
+                if match is None:
+                    continue
+                try:
+                    if matching_repository.insert_match(match):
+                        matches_created += 1
+                except Exception:  # noqa: BLE001 — same isolation as above
+                    continue
+
+            for company_name in theme_candidate.company_names:
+                entry = ThemeCompanyMapEntry(
+                    id=build_theme_company_map_id(theme_id, company_name, CompanyRole.EXPOSED),
+                    theme_id=theme_id, company_name=company_name, role=CompanyRole.EXPOSED,
+                    note="Auto-detected: filed a constraint-relevant disclosure contributing to this candidate.",
+                )
+                try:
+                    if curator.insert_company_map_entry(entry):
+                        company_roles_created += 1
+                except Exception:  # noqa: BLE001 — one bad company-map insert must never block the rest
+                    continue
+
+            hypothesis_note = ThemeResearchNote(
+                id=build_theme_research_note_id(theme_id, ThemeNoteType.HYPOTHESIS, theme_candidate.hypothesis_statement, created_at),
+                theme_id=theme_id, note_type=ThemeNoteType.HYPOTHESIS, content=theme_candidate.hypothesis_statement,
+                confidence=HypothesisConfidence.MEDIUM, disconfirming_condition=theme_candidate.disconfirming_condition,
+                created_at=created_at,
+            )
+            decision_note = ThemeResearchNote(
+                id=build_theme_research_note_id(theme_id, ThemeNoteType.DECISION, theme_candidate.rationale_summary, created_at),
+                theme_id=theme_id, note_type=ThemeNoteType.DECISION, content=theme_candidate.rationale_summary,
+                confidence=None, disconfirming_condition=None, created_at=created_at,
+            )
+            for note in (hypothesis_note, decision_note):
+                try:
+                    if curator.insert_research_note(note):
+                        notes_created += 1
+                except Exception:  # noqa: BLE001 — one bad note insert must never block the rest
+                    continue
+        except Exception:  # noqa: BLE001 — one bad candidate must never block the rest of the batch
+            creation_errors += 1
+            continue
+
+    return (
+        f"EDGAR: theme candidate detection — clusters_detected={clusters_detected} themes_created={themes_created} "
+        f"matches_created={matches_created} company_roles_created={company_roles_created} notes_created={notes_created} "
+        f"creation_errors={creation_errors}"
+    )
+
+
 def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status_repo) -> None:
     display_source = _SOURCE_DISPLAY_NAMES[provider_key]
     service_module = _SERVICE_MODULES[provider_key]
@@ -500,6 +711,14 @@ def _run_provider_tick(provider_key: str, worker_settings: Settings, scan_status
                     print(f"{provider_key.upper()}: theme-matching step skipped ({type(exc).__name__}).")
                 else:
                     print(matching_summary)
+
+                if worker_settings.theme_candidate_detection_enabled:
+                    try:
+                        detection_summary = _run_theme_candidate_detection_step(worker_settings, candidates, newly_created_cases)
+                    except Exception as exc:  # noqa: BLE001 — best-effort only; must never affect scan/candidate/research-case/matching state or other providers
+                        print(f"{provider_key.upper()}: theme-candidate-detection step skipped ({type(exc).__name__}).")
+                    else:
+                        print(detection_summary)
 
 
 def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:

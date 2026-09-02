@@ -494,6 +494,10 @@ def test_no_ui_worker_persistence_or_migration_files_touched():
         "src/data_access/state_db/theme_repository.py",
         "src/data_access/postgres_state_db/theme_repository.py",
         "tests/test_navigation.py",
+        # Autonomous Theme candidate detection (design/DECISIONS.md).
+        "src/ui/pages/theme_workspace.py",
+        "tests/test_theme_workspace_page.py",
+        "tests/test_radar_worker_no_secrets_guard.py",
     }
     assert changed <= allowed, changed - allowed
 

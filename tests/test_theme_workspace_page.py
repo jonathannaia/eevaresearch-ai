@@ -317,16 +317,51 @@ def test_publish_transition_requires_evidence_before_ready_to_publish(tmp_path):
     assert "evidence" in errors[0].lower()
 
 
-def test_publish_transition_succeeds_with_evidence(tmp_path):
+def test_publish_transition_succeeds_with_evidence_threshold_met(tmp_path):
+    """The strengthened gate requires >= _MIN_EVIDENCE_ITEMS_TO_PUBLISH
+    items from >= _MIN_DISTINCT_EVIDENCE_COMPANIES_TO_PUBLISH distinct
+    companies — one item from one company (below both minimums) must
+    still be rejected; two items from two companies must pass."""
+    from src.models.theme_research import ThemeEvidenceItem
+
     settings = Settings(db_backend="json", cache_dir=tmp_path)
     theme, scope, candidate, case, match = _full_scenario(settings)
     curator = backend_factory.get_theme_curator_repository(settings)
     matching_repo = backend_factory.get_theme_matching_repository(settings)
     theme_workspace.promote_candidate(matching_repo, curator, candidate, match, EvidenceDirection.SUPPORTS, "f", "r", "2026-08-16T00:00:00+00:00")
 
+    below_threshold, errors = theme_workspace.publish_transition(curator, theme, ThemeVisibility.READY_TO_PUBLISH, "2026-09-01T00:00:00+00:00")
+    assert below_threshold is None
+    assert errors
+
+    curator.insert_evidence_item(ThemeEvidenceItem(
+        id="evidence-2", theme_id=theme.id, date="2026-08-17", company="Samsung", source_name="SEC EDGAR",
+        source_url="https://example.com/2", fact="f2", relevance="r2", direction=EvidenceDirection.SUPPORTS,
+    ))
+
     updated, errors = theme_workspace.publish_transition(curator, theme, ThemeVisibility.READY_TO_PUBLISH, "2026-09-01T00:00:00+00:00")
     assert errors == ()
     assert updated.visibility is ThemeVisibility.READY_TO_PUBLISH
+
+
+def test_publish_transition_rejects_same_company_evidence_below_distinct_threshold(tmp_path):
+    """Two evidence items from the SAME company still fail the
+    distinct-companies half of the threshold."""
+    from src.models.theme_research import ThemeEvidenceItem
+
+    settings = Settings(db_backend="json", cache_dir=tmp_path)
+    theme, scope, candidate, case, match = _full_scenario(settings)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    matching_repo = backend_factory.get_theme_matching_repository(settings)
+    theme_workspace.promote_candidate(matching_repo, curator, candidate, match, EvidenceDirection.SUPPORTS, "f", "r", "2026-08-16T00:00:00+00:00")
+    curator.insert_evidence_item(ThemeEvidenceItem(
+        id="evidence-2", theme_id=theme.id, date="2026-08-17", company="TSMC", source_name="SEC EDGAR",
+        source_url="https://example.com/2", fact="f2", relevance="r2", direction=EvidenceDirection.SUPPORTS,
+    ))
+
+    updated, errors = theme_workspace.publish_transition(curator, theme, ThemeVisibility.READY_TO_PUBLISH, "2026-09-01T00:00:00+00:00")
+    assert updated is None
+    assert "distinct companies" in errors[0]
 
 
 def test_publish_transition_rejects_disallowed_transition(tmp_path):
@@ -483,6 +518,8 @@ def test_no_unexpected_files_touched():
         "app.py", "src/config/settings.py", "src/data_access/backend_factory.py",
         "src/data_access/theme_store.py", "src/data_access/state_db/theme_repository.py",
         "src/data_access/postgres_state_db/theme_repository.py",
+        # Autonomous Theme candidate detection (design/DECISIONS.md).
+        "scripts/radar_worker.py",
     }
     unexpected = changed - allowed_prefixes_and_files
     unexpected = {c for c in unexpected if not c.startswith("src/ui/pages/theme_workspace.py") and not c.startswith("tests/")}

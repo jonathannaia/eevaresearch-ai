@@ -76,8 +76,14 @@ def test_phase4m0_files_never_reference_real_local_state_or_non_loopback_hosts()
         for ip in _IPV4_PATTERN.findall(source):
             if ip not in _ALLOWED_HOST_LITERALS:
                 offenders.append(f"{path.name}: contains non-loopback IPv4 literal {ip!r}")
-        lowered = source.lower()
+        # Case-sensitive, not source.lower(): every real hosted-provider
+        # domain/suffix this guard watches for is always written
+        # lowercase in practice, whereas lowercasing the source first
+        # produced a false positive against a real, conventionally-
+        # uppercase Python enum member once autonomous Theme candidate
+        # detection started referencing it directly in this file — see
+        # design/DECISIONS.md.
         for keyword in _SUSPICIOUS_HOST_KEYWORDS:
-            if keyword in lowered:
+            if keyword in source:
                 offenders.append(f"{path.name}: contains suspicious hosted-provider keyword {keyword!r}")
     assert not offenders, offenders

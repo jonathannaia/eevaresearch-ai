@@ -81,6 +81,12 @@ _NOT_ENABLED_MESSAGE = "The constraint research workspace is not enabled on this
 # EDGAR-only for now, matching Phase A2's own worker scope.
 _CANDIDATE_SOURCE_NAME = "SEC EDGAR"
 
+# Explicit evidence threshold before a theme may leave `internal` —
+# necessary but not sufficient: the human "Apply transition" click is
+# still always required regardless of whether these are met.
+_MIN_EVIDENCE_ITEMS_TO_PUBLISH = 2
+_MIN_DISTINCT_EVIDENCE_COMPANIES_TO_PUBLISH = 2
+
 # Same state machine as scripts/create_theme.py's own
 # _ALLOWED_VISIBILITY_TRANSITIONS — duplicated, not imported (this app
 # must never import a script).
@@ -284,8 +290,18 @@ def publish_transition(
     if new_visibility not in allowed:
         return None, (f"Cannot transition from {theme.visibility.value!r} to {new_visibility.value!r}.",)
     if theme.visibility is ThemeVisibility.INTERNAL and new_visibility is ThemeVisibility.READY_TO_PUBLISH:
-        if not curator.evidence_for_theme(theme.id):
-            return None, ("At least one evidence item is required before marking this theme ready to publish.",)
+        evidence = curator.evidence_for_theme(theme.id)
+        if len(evidence) < _MIN_EVIDENCE_ITEMS_TO_PUBLISH:
+            return None, (
+                f"At least {_MIN_EVIDENCE_ITEMS_TO_PUBLISH} evidence items are required before marking this "
+                f"theme ready to publish (currently {len(evidence)}).",
+            )
+        distinct_companies = {item.company for item in evidence if item.company}
+        if len(distinct_companies) < _MIN_DISTINCT_EVIDENCE_COMPANIES_TO_PUBLISH:
+            return None, (
+                f"Evidence from at least {_MIN_DISTINCT_EVIDENCE_COMPANIES_TO_PUBLISH} distinct companies is "
+                f"required before marking this theme ready to publish (currently {len(distinct_companies)}).",
+            )
     updated = curator.set_visibility(theme.id, new_visibility, updated_at)
     if updated is None:
         return None, ("Transition failed — theme not found.",)
