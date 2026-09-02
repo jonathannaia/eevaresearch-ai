@@ -29,7 +29,10 @@ _PHASE_4M0_FILES = (
     # problem already documented for DECISIONS.md's own guards.
     _REPO_ROOT / "tests" / "test_radar_worker.py",
     _REPO_ROOT / "tests" / "test_resolve_tracked_identifiers.py",
-    _REPO_ROOT / "tests" / "test_radar_inbox_worker_status.py",
+    # test_radar_inbox_worker_status.py deleted (reader-facing data-
+    # integrity pass, design/DECISIONS.md) — it was a dedicated test
+    # module for the worker-status display, which was removed from the
+    # public Radar Inbox page in the same pass.
     _REPO_ROOT / "tests" / "test_backend_factory_scan_status.py",
     _REPO_ROOT / "tests" / "test_state_db_scan_status_repository.py",
     _REPO_ROOT / "tests" / "test_state_db_postgres_scan_status_repository.py",

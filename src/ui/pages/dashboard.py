@@ -15,8 +15,9 @@ powering each remaining module:
     registry) via src.logic.market_map.group_companies_by_theme; matched
     signals in the selected-company detail come from the real Radar
     signal repository. No price/quote/movement data exists anywhere in
-    this build, so every tile says "Price coverage not connected" rather
-    than a dash or invented value. Known, disclosed limitation: the
+    this build, so price is omitted entirely from every tile (navigation/
+    empty-state pass, design/DECISIONS.md) rather than naming its own
+    absence as implementation-status copy. Known, disclosed limitation: the
     theme-group *display names/order* (e.g. "AI Buildout") still come
     from ctx.theme_repository — the same real, permanent 5-category
     taxonomy tracked_companies.py itself encodes on every company's

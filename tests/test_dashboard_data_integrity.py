@@ -282,3 +282,36 @@ def test_public_theme_evidence_row_shows_jurisdiction(tmp_path, monkeypatch):
     all_text = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
     assert "SEC EDGAR" in all_text
     assert "United States" in all_text
+
+
+# ============================================================
+# Market Map "view all in Themes" link — gated on real published-Theme
+# count (navigation/empty-state pass, design/DECISIONS.md)
+# ============================================================
+
+
+def test_market_map_view_all_in_themes_link_absent_with_zero_published_themes(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    _patch_dashboard_settings(monkeypatch, settings)
+    at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
+    at.run()
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.main.get("markdown") if not m.value.startswith("<style>"))
+    assert "view all in Themes" not in all_text
+
+
+def test_market_map_view_all_in_themes_link_present_with_a_real_published_theme(tmp_path, monkeypatch):
+    """get_page("themes") only resolves to a real Page object when run
+    through app.py's real st.navigation entry point — an isolated
+    per-page AppTest harness never populates st.session_state["_pages"]
+    (same limitation documented elsewhere in this test suite), so this
+    test runs through app.py instead of DASHBOARD_HARNESS."""
+    settings = _settings(tmp_path)
+    _publish_theme(settings)
+    _patch_dashboard_settings(monkeypatch, settings)
+    at = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=15)
+    at.run()
+    at.run()  # second run: dashboard becomes the default page
+    assert not at.exception
+    page_links = [pl for pl in at.main.get("page_link") if "view all in Themes" in (pl.label or "")]
+    assert len(page_links) >= 1

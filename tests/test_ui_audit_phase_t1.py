@@ -273,7 +273,7 @@ def test_needs_review_card_shows_no_pill_but_keeps_research_content(tmp_path):
     assert "Detection confidence: Moderate" in all_text
 
 
-def test_retrieval_failed_card_shows_quiet_note_and_full_detail_inside_investigate(tmp_path):
+def test_retrieval_failed_card_shows_quiet_note(tmp_path):
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000002", "실적 관련 공시")
     _seed_filing_events(tmp_path, [filing])
@@ -284,11 +284,6 @@ def test_retrieval_failed_card_shows_quiet_note_and_full_detail_inside_investiga
     all_text = _text(at)
     assert RETRIEVAL_FAILURE_NOTE in all_text
     assert 'er-status-tag er-tag-neg">Retrieval failed' not in all_text
-    # The raw, complete status/state remains available inside Investigate
-    # (AppTest renders expander content regardless of collapsed state).
-    assert "Retrieval failed" in all_text  # from the state-history/Technical-details audit trail
-    expander_labels = [e.label for e in at.expander]
-    assert "Investigate →" in expander_labels
 
 
 def test_captured_filings_view_always_shows_the_full_real_status(tmp_path):

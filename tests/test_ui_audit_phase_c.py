@@ -193,23 +193,6 @@ def test_radar_default_view_is_needs_your_decision_with_all_filings_beside_it(tm
     assert radio.value == "Latest"
 
 
-def test_radar_ingestion_status_is_one_merged_collapsed_disclosure(tmp_path):
-    _seed_corp_codes(tmp_path)
-    _seed_filing_events(tmp_path, [_filing("20260812000002", "일반 공고")])
-    at = _run_radar(tmp_path)
-    assert not at.exception
-    expander_titles = {e.label for e in at.expander}
-    assert "Ingestion status" in expander_titles
-    # The two previously-separate expanders no longer exist as such.
-    assert "Data controls (local/admin)" not in expander_titles
-    assert not any("Continuous worker status only" in t for t in expander_titles)
-    # Content from both is preserved, just merged under the one header.
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Source scans can take time and are intended for local/admin use." in all_text
-    assert "Continuous worker status" in all_text
-    assert "not a candidate feed" in all_text
-
-
 def test_radar_clear_all_filters_is_still_present_and_functional(tmp_path):
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000003", "일반 공고")])

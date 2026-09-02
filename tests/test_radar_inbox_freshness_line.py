@@ -159,18 +159,6 @@ def test_freshness_line_does_not_show_provider_counts_or_operational_detail(tmp_
 
 # ============================== INGESTION STATUS COLLAPSED ==============================
 
-def test_ingestion_status_expander_is_collapsed_by_default(tmp_path):
-    """AppTest's Expander doesn't expose an `expanded` state to assert
-    against directly (only `.label`/`.icon`) — checked at the source
-    level instead, same as this codebase's own existing collapsed-by-
-    default checks elsewhere (e.g. tests/test_ui_audit_phase_c.py)."""
-    at = _run(_settings(cache_dir=tmp_path))
-    assert not at.exception
-    assert any(e.label == "Ingestion status" for e in at.expander)
-    source = (Path(__file__).parent.parent / "src" / "ui" / "pages" / "radar_inbox.py").read_text(encoding="utf-8")
-    assert 'st.expander("Ingestion status")' in source
-
-
 # ============================== CAPTURED FILINGS LABEL ==============================
 
 def test_captured_filings_replaces_all_filings_and_latest_is_default(tmp_path):

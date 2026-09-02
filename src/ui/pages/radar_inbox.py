@@ -114,7 +114,7 @@ def _edinet_scope_line(cache_dir, settings: Settings | None = None) -> str:
     `"sqlite"` — a repository-construction or read failure is caught and
     degrades to a count of zero for this line only, never a raw
     exception or crash; the same fail-closed discipline as
-    `_build_items`/`_render_worker_status`."""
+    `_build_items`."""
     company_count = len(edinet_service.get_edinet_companies(cache_dir))
     backend = (settings.db_backend or "json").strip().lower() if settings is not None else "json"
     use_repository_backend = backend in ("sqlite", "postgres")
@@ -475,11 +475,7 @@ def render() -> None:
     edgar_readiness = snapshot.edgar_readiness
     edinet_readiness = snapshot.edinet_readiness
     # Phase F1 (design/DECISIONS.md): computed once, reused by the
-    # tester-facing freshness line, the operator panel's per-source
-    # disabled/never-scanned/recent/stale distinction, and the existing
-    # candidate "Process" button gating below — same three readiness
-    # booleans as before, just named/shared in one place instead of
-    # redefined later in this function.
+    # tester-facing freshness line below.
     source_readiness_by_provider = {
         "SEC EDGAR": edgar_readiness.ready,
         "OpenDART / DART": dart_readiness.ready,

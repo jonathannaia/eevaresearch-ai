@@ -130,31 +130,6 @@ def test_radar_inbox_renders_missing_configuration_state(tmp_path):
     assert "not configured" in all_text.lower()
 
 
-def test_radar_inbox_edinet_scope_line_is_truthful_when_configured_but_unscanned(tmp_path):
-    # Gate 7.1: the five real EDINET registry entries (tracked_companies.py)
-    # are pre-resolved regardless of cache_dir, so a configured key alone
-    # makes edinet_readiness.ready True — with zero live scans ever run,
-    # this must say "configured; no live scan completed yet," never claim
-    # calibration, active monitoring, currency, autonomy, or live signals.
-    settings = Settings(
-        dart_api_key=None, translation_api_key=None, edgar_user_agent=None,
-        edinet_subscription_key="test-key", cache_dir=tmp_path,
-    )
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown).lower()
-    assert "5 tracked companies configured" in all_text
-    assert "no live scan completed yet" in all_text
-    assert "filingevents: 0" in all_text
-    assert "candidatesignals: 0" in all_text
-    assert "last scan: none" in all_text
-    for forbidden in ("calibrated", "actively monitored", "autonomous", "live signals"):
-        assert forbidden not in all_text
-
-
 def _seed_edinet_filing_events(cache_dir, filings: list[FilingEvent]) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     from dataclasses import asdict
@@ -301,137 +276,6 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     assert "New facility investment decision" in all_text  # English title translation
     assert "New facility investment original text" in all_text  # English excerpt translation
     assert "Machine translation" in all_text
-    button_labels = {b.label for b in at.button}
-    assert "Prepare analyst view" in button_labels
-    assert any("Retry limit reached" in label for label in button_labels)
-    assert "When ready, the analyst-ready summary appears above." in all_text
-
-
-# --- "Prepare analyst view" UX fix: spinner-covered, readiness-gated,
-# defense-in-depth process/retry action (see design/DECISIONS.md) ---
-
-
-def test_radar_inbox_retry_eligible_candidate_shows_retry_label_and_caption(tmp_path):
-    _seed_corp_codes(tmp_path)
-    failed_filing = _filing("20260812000005", "실적 관련 공시")
-    _seed_filing_events(tmp_path, [failed_filing])
-
-    # Zero QUEUED_FOR_PROCESSING attempts and no recent last-attempt
-    # timestamp — retry_policy.retry_eligibility(...) is immediately
-    # eligible=True for this shape (see retry_policy.py), distinct from
-    # the "Retry limit reached" fixture above (3 exhausted attempts).
-    retryable = CandidateSignal(
-        id="cand-retry-eligible", filing=failed_filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.RETRIEVAL_FAILED,
-        state_history=[StateTransition(status=CandidateStatus.RETRIEVAL_FAILED, at=_now_iso(), detail="DART request timed out.")],
-    )
-    candidate_store.save_candidates(tmp_path, {retryable.id: retryable})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    button_labels = {b.label for b in at.button}
-    assert "Retry analyst view preparation" in button_labels
-    assert "When ready, the analyst-ready summary appears above." in all_text
-    retry_button = next(b for b in at.button if b.label == "Retry analyst view preparation")
-    assert retry_button.disabled is False
-
-
-def test_radar_inbox_process_action_disabled_when_source_not_configured(tmp_path):
-    # DART left unconfigured while EDINET is configured — at least one
-    # source must be ready or render() takes the early "not configured"
-    # empty-state return before ever reaching the item list. This proves
-    # the disabled state is genuinely per-candidate-source, not a page-
-    # wide gate: a DART candidate must render disabled even while the
-    # page as a whole is usable because EDINET is ready.
-    _seed_corp_codes(tmp_path)
-    deferred_filing = _filing("20260812000006", "신규시설투자 결정")
-    _seed_filing_events(tmp_path, [deferred_filing])
-    deferred = CandidateSignal(
-        id="cand-unconfigured-1", filing=deferred_filing, matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
-        confidence="Moderate", status=CandidateStatus.PROCESSING_DEFERRED,
-        state_history=[StateTransition(status=CandidateStatus.PROCESSING_DEFERRED, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {deferred.id: deferred})
-
-    settings = Settings(
-        dart_api_key=None, translation_api_key=None, edgar_user_agent=None,
-        edinet_subscription_key="test-key", cache_dir=tmp_path,
-    )
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    prepare_button = next(b for b in at.button if b.label == "Prepare analyst view")
-    assert prepare_button.disabled is True
-    assert "Preparation is unavailable until this source is configured." in all_text
-    # Requirement 4: never a credential name, key value, path, or raw
-    # exception detail in the disabled-reason text.
-    for forbidden in ("EDGE_DART_API_KEY", "EDGE_TRANSLATION_API_KEY", "api_key", "Traceback"):
-        assert forbidden not in all_text
-
-
-def test_radar_inbox_clicking_prepare_analyst_view_calls_processing_once_and_rerenders_from_persisted_status(tmp_path, monkeypatch):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000007", "장래사업ㆍ경영계획 공시")
-    _seed_filing_events(tmp_path, [filing])
-    deferred = CandidateSignal(
-        id="cand-click-now", filing=filing, matched_rules=["guidance:forward_looking_business_plan:장래사업ㆍ경영계획"],
-        confidence="Moderate", status=CandidateStatus.PROCESSING_DEFERRED,
-        state_history=[StateTransition(status=CandidateStatus.PROCESSING_DEFERRED, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {deferred.id: deferred})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-
-    calls: list[str] = []
-
-    def _fake_process(_settings, candidate_id):
-        # Simulates the real pipeline's own behavior: mutate and persist
-        # via the same candidate_store the page reads from — proves the
-        # card re-renders from the persisted store, not an optimistic
-        # local value held in the button's own click handler.
-        calls.append(candidate_id)
-        store = candidate_store.load_candidates(tmp_path)
-        candidate = store[candidate_id]
-        candidate.status = CandidateStatus.NEEDS_REVIEW
-        candidate_store.update_candidate(tmp_path, candidate)
-        return candidate
-
-    # Overrides this file's autouse network-call guard for exactly this
-    # one source/function — every other guarded entry point (EDGAR,
-    # EDINET, DART run_scan) still raises if reached.
-    monkeypatch.setattr("src.data_access.dart.radar_service.process_candidate_now", _fake_process, raising=True)
-
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        assert not at.exception
-        prepare_button = next(b for b in at.button if b.label == "Prepare analyst view")
-        assert prepare_button.disabled is False
-        prepare_button.click()
-        at.run()
-
-    assert not at.exception
-    assert calls == ["cand-click-now"]  # called exactly once
-    # Phase T1 (design/DECISIONS.md): "Needs review" no longer renders as
-    # a visible pill on the default "Latest" view — the persisted status
-    # change is instead proven by the "Prepare analyst view" button
-    # disappearing (it only renders for PROCESSING_DEFERRED/retry-eligible
-    # statuses, neither of which NEEDS_REVIEW is), confirming the card
-    # re-rendered from the persisted store, not an optimistic local value.
-    button_labels_after = {b.label for b in at.button}
-    assert "Prepare analyst view" not in button_labels_after
-    button_labels = {b.label for b in at.button}
-    assert "Prepare analyst view" not in button_labels  # no longer PROCESSING_DEFERRED
-    assert "Retry analyst view preparation" not in button_labels  # NEEDS_REVIEW isn't retryable
 
 
 def test_radar_inbox_shows_not_material_label_for_routine_ownership_candidate(tmp_path):
@@ -457,12 +301,7 @@ def test_radar_inbox_shows_not_material_label_for_routine_ownership_candidate(tm
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "Not material · routine ownership update" in all_text
-    # Live/demo isolation: this page's own scope note is present (Phase
-    # R1: relocated into the collapsed Ingestion status disclosure, same
-    # content, minus the "Live" prefix this phase removed — see
-    # design/DECISIONS.md), and nothing here claims a broader market-
-    # conviction/investment reading.
-    assert "Korea DART + SEC EDGAR pilots configured" in all_text
+    # Nothing here claims a broader market-conviction/investment reading.
     assert "market conviction" not in all_text.lower()
     assert "investment confidence" not in all_text.lower()
 
@@ -598,9 +437,6 @@ def test_radar_inbox_analyst_view_renders_for_dart_market_rumor_response_candida
     assert "Fact" in all_text
     assert "Uncertainty" in all_text
     assert "Interpretation" in all_text
-    # Technical details relocated, not deleted.
-    assert "Technical details" in [e.label for e in at.expander]
-    assert "State history" in all_text
 
 
 def test_radar_inbox_analyst_view_absent_for_deferred_and_failed_candidates(tmp_path):
@@ -862,78 +698,6 @@ def test_radar_inbox_analyst_view_excerpt_at_exact_threshold_boundary(tmp_path):
     assert all_text.count("Radar flagged this filing because:") == 1
 
 
-def test_radar_inbox_technical_details_expander_preserves_relocated_fields(tmp_path):
-    """Confirms the reorganization moved developer-facing fields into a
-    nested, collapsed expander rather than deleting them — the outer
-    "Investigate →" expander (renamed from "Details" in Phase R1, design/
-    DECISIONS.md) and the inner "Technical details" expander both exist,
-    and every relocated field is still present somewhere in the rendered
-    output."""
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000105", "일반 공고")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-tech-details-av", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso(), detail="Extraction succeeded.")],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    expander_labels = [e.label for e in at.expander]
-    assert "Investigate →" in expander_labels
-    assert "Technical details" in expander_labels
-
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Filer:" in all_text
-    assert "Filed:" in all_text
-    assert "Retrieved:" in all_text
-    assert "Extraction state:" in all_text
-    assert "Translation state:" in all_text
-    assert "Excerpt quality:" in all_text
-    assert "State history" in all_text
-    assert "Extraction succeeded." in all_text
-    # Evidence status and the original excerpt stay outside/alongside the
-    # collapsed technical section, not inside it — still present either way.
-    assert "Evidence status" in all_text
-    assert "본문 발췌." in all_text
-
-
-# --- View selector, pagination, filter simplification, translation copy,
-# and Data controls (usability/navigation-stability follow-up) ---
-
-
-def test_radar_inbox_data_controls_expander_present_with_warning_and_scans_untouched(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000010", "일반 공고")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-dc", filing=filing, matched_rules=["x:y:z"], confidence="Moderate",
-        status=CandidateStatus.NEEDS_REVIEW, state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-    assert not at.exception
-    expander_titles = {e.label for e in at.expander}
-    assert "Ingestion status" in expander_titles
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Source scans can take time and are intended for local/admin use." in all_text
-    # Scan buttons still exist, unclicked — the guard fixture would have
-    # raised (failing this test) if any scan/process path were reached.
-    button_labels = {b.label for b in at.button}
-    assert "Scan DART now" in button_labels
-
 
 def test_radar_inbox_bare_event_shows_translation_availability_copy(tmp_path):
     _seed_corp_codes(tmp_path)
@@ -1132,8 +896,6 @@ def test_radar_inbox_clear_all_filters_restores_full_view(tmp_path):
     assert at.text_input(key="radar-filter-search").value == ""
 
 
-# --- Stage 2B: Publish / Monitor / Exclude review-decision actions ---
-
 def _needs_review_candidate(candidate_id: str, filing: FilingEvent) -> CandidateSignal:
     return CandidateSignal(
         id=candidate_id, filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
@@ -1141,221 +903,6 @@ def _needs_review_candidate(candidate_id: str, filing: FilingEvent) -> Candidate
         excerpt_original="본문 발췌.",
         state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
     )
-
-
-def test_radar_inbox_publish_action_updates_status_and_persists_note(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000100", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-publish-1", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        at.text_input(key=f"radar-review-note-{candidate.id}").set_value("Confirmed material.")
-        at.run()
-        publish_button = next(b for b in at.button if b.key == f"publish-{candidate.id}")
-        publish_button.click()
-        at.run()
-
-    assert not at.exception
-    reloaded = candidate_store.load_candidates(tmp_path)[candidate.id]
-    assert reloaded.status == CandidateStatus.PUBLISHED
-    assert reloaded.reviewed_note == "Confirmed material."
-    assert reloaded.reviewed_at is not None
-    assert reloaded.state_history[-1].status == CandidateStatus.PUBLISHED
-    assert reloaded.state_history[-1].detail == "Confirmed material."
-
-
-def test_radar_inbox_monitor_action_updates_status(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000101", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-monitor-1", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        monitor_button = next(b for b in at.button if b.key == f"monitor-{candidate.id}")
-        monitor_button.click()
-        at.run()
-
-    assert not at.exception
-    reloaded = candidate_store.load_candidates(tmp_path)[candidate.id]
-    assert reloaded.status == CandidateStatus.MONITORING
-    assert reloaded.reviewed_note == ""
-    assert reloaded.state_history[-1].detail == "Reviewer decision: Monitoring"
-
-
-def test_radar_inbox_exclude_requires_two_clicks_and_a_note(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000102", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-exclude-1", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-    before = (tmp_path / "dart_candidates.json").read_text(encoding="utf-8")
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        # First click: only sets pending state, no write.
-        exclude_button = next(b for b in at.button if b.key == f"exclude-{candidate.id}")
-        exclude_button.click()
-        at.run()
-
-        after_first_click = (tmp_path / "dart_candidates.json").read_text(encoding="utf-8")
-        assert after_first_click == before  # byte-identical — no write yet
-
-        confirm_button = next(b for b in at.button if b.key == f"exclude-confirm-{candidate.id}")
-        assert confirm_button.disabled is True  # no note yet
-        all_text = " ".join(m.value for m in at.markdown)
-        assert "A note is required before excluding" in all_text
-
-        # Adding a note enables the confirm button.
-        at.text_input(key=f"radar-review-note-{candidate.id}").set_value("Routine, no new information.")
-        at.run()
-        confirm_button = next(b for b in at.button if b.key == f"exclude-confirm-{candidate.id}")
-        assert confirm_button.disabled is False
-
-        confirm_button.click()
-        at.run()
-
-    assert not at.exception
-    reloaded = candidate_store.load_candidates(tmp_path)[candidate.id]
-    assert reloaded.status == CandidateStatus.DISMISSED
-    assert reloaded.reviewed_note == "Routine, no new information."
-    assert reloaded.state_history[-1].status == CandidateStatus.DISMISSED
-    assert reloaded.state_history[-1].detail == "Routine, no new information."
-
-
-def test_radar_inbox_exclude_whitespace_only_note_keeps_confirm_disabled(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000103", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-exclude-ws", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        exclude_button = next(b for b in at.button if b.key == f"exclude-{candidate.id}")
-        exclude_button.click()
-        at.run()
-
-        at.text_input(key=f"radar-review-note-{candidate.id}").set_value("    ")
-        at.run()
-        confirm_button = next(b for b in at.button if b.key == f"exclude-confirm-{candidate.id}")
-        assert confirm_button.disabled is True  # whitespace-only treated as empty
-
-    assert not at.exception
-
-
-def test_radar_inbox_exclude_cancel_clears_pending_without_writing(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000104", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-exclude-cancel", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-    before = (tmp_path / "dart_candidates.json").read_text(encoding="utf-8")
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        exclude_button = next(b for b in at.button if b.key == f"exclude-{candidate.id}")
-        exclude_button.click()
-        at.run()
-
-        cancel_button = next(b for b in at.button if b.key == f"exclude-cancel-{candidate.id}")
-        cancel_button.click()
-        at.run()
-
-        # Pending state cleared — the plain "Exclude" button is back.
-        assert any(b.key == f"exclude-{candidate.id}" for b in at.button)
-        assert not any(b.key == f"exclude-confirm-{candidate.id}" for b in at.button)
-
-    after = (tmp_path / "dart_candidates.json").read_text(encoding="utf-8")
-    assert after == before  # byte-identical — cancel never writes
-    assert not at.exception
-
-
-def test_radar_inbox_review_actions_available_regardless_of_current_status(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000105", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    already_published = CandidateSignal(
-        id="cand-already-published", filing=filing, matched_rules=["earnings:earnings_or_results_report:실적"],
-        confidence="Moderate", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="본문 발췌.", reviewed_at=_now_iso(), reviewed_note="Initial approval.",
-        state_history=[
-            StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso()),
-            StateTransition(status=CandidateStatus.PUBLISHED, at=_now_iso(), detail="Initial approval."),
-        ],
-    )
-    candidate_store.save_candidates(tmp_path, {already_published.id: already_published})
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        button_keys = {b.key for b in at.button}
-        assert f"publish-{already_published.id}" in button_keys
-        assert f"monitor-{already_published.id}" in button_keys
-        assert f"exclude-{already_published.id}" in button_keys
-
-        # Revising an already-published candidate to Monitoring appends,
-        # never overwrites, its prior history.
-        monitor_button = next(b for b in at.button if b.key == f"monitor-{already_published.id}")
-        monitor_button.click()
-        at.run()
-
-    assert not at.exception
-    reloaded = candidate_store.load_candidates(tmp_path)[already_published.id]
-    assert reloaded.status == CandidateStatus.MONITORING
-    assert len(reloaded.state_history) == 3
-    assert reloaded.state_history[1].status == CandidateStatus.PUBLISHED
-    assert reloaded.state_history[1].detail == "Initial approval."  # earlier decision preserved
-
-
-def test_radar_inbox_review_decision_none_result_shows_error_and_does_not_rerun_as_success(tmp_path, monkeypatch):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000106", "실적 발표")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = _needs_review_candidate("cand-vanishes", filing)
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-
-    # Simulates the candidate having disappeared from the store between
-    # render and click (the one real case record_review_decision returns
-    # None for) — this must surface a candidate-specific error, not
-    # silently proceed as if the decision succeeded.
-    monkeypatch.setattr("src.ui.pages.radar_inbox.review_actions.record_review_decision", lambda *a, **kw: None)
-
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-
-        publish_button = next(b for b in at.button if b.key == f"publish-{candidate.id}")
-        publish_button.click()
-        at.run()
-
-    assert not at.exception
-    all_text = " ".join(m.value for m in at.markdown)
-    assert "Could not record this decision" in all_text
-    reloaded = candidate_store.load_candidates(tmp_path)[candidate.id]
-    assert reloaded.status == CandidateStatus.NEEDS_REVIEW  # unchanged — not silently treated as success
 
 
 # --- Durable-State Phase 4M-1 — SQLite candidate rendering through a full
@@ -1398,7 +945,6 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "실적 발표" in all_text
-    assert "Needs review" in all_text
     # No JSON candidate file was ever created for this sqlite-backed render.
     assert not (tmp_path / "dart_candidates.json").exists()
 

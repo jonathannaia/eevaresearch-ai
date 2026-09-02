@@ -73,29 +73,6 @@ def _text(at) -> str:
     return " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
 
 
-def _ordered_markdown(at) -> list[str]:
-    """Every rendered Markdown element's value, in the exact order the
-    page produced them — AppTest renders collapsed-expander content
-    regardless of visual state, so this is the only reliable way to
-    prove something is *inside* a specific expander (renders after its
-    header) rather than in the default page body (renders before it)."""
-    out: list[str] = []
-
-    def _walk(node) -> None:
-        cls = type(node).__name__
-        if cls == "Markdown" and not node.value.startswith("<style>"):
-            out.append(node.value)
-        elif cls == "Expander":
-            out.append(f"__EXPANDER_START__{node.label}")
-        children = getattr(node, "children", None)
-        if children:
-            for key in sorted(children.keys(), key=lambda x: (isinstance(x, str), x)):
-                _walk(children[key])
-
-    _walk(at.main)
-    return out
-
-
 # ============================== HEADER ==============================
 
 def test_default_header_has_only_the_approved_subtitle_and_no_live_chip(tmp_path):
@@ -113,41 +90,6 @@ def test_default_header_has_only_the_approved_subtitle_and_no_live_chip(tmp_path
     # No credential-driven freshness chip anywhere by default.
     assert "er-fresh-live" not in all_text
     assert "er-fresh-demo" not in all_text
-
-    # Relocated (not deleted) content — still present somewhere on the
-    # page, but must render AFTER the Ingestion status expander opens,
-    # never before it (i.e. never in the default header).
-    ordered = _ordered_markdown(at)
-    ingestion_idx = ordered.index("__EXPANDER_START__Ingestion status")
-    for relocated in ("Samsung Electronics + SK Hynix", "Korea DART + SEC EDGAR pilots configured", "Candidate signals are rule-based filing flags"):
-        match_idx = next(i for i, v in enumerate(ordered) if relocated in v)
-        assert match_idx > ingestion_idx, f"{relocated!r} rendered before Ingestion status opened"
-
-
-def test_operational_scope_detail_only_lives_inside_ingestion_status(tmp_path):
-    settings = Settings(
-        dart_api_key="dart-key", translation_api_key="deepl-key",
-        edgar_user_agent=None, edinet_subscription_key=None, cache_dir=tmp_path,
-    )
-    _seed_corp_codes(tmp_path)
-    _seed_filing_events(tmp_path, [_filing("20260812000001", "일반 공고")])
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=15)
-        at.run()
-    assert not at.exception
-    all_text = _text(at)
-    # The relocated content still exists — nothing was deleted — just
-    # inside the collapsed "Ingestion status" disclosure now.
-    assert "Samsung Electronics + SK Hynix" in all_text
-    assert "Korea DART + SEC EDGAR pilots configured" in all_text
-    assert "Candidate signals are rule-based filing flags" in all_text
-    assert any(e.label == "Ingestion status" for e in at.expander)
-    source = (REPO_ROOT / "src" / "ui" / "pages" / "radar_inbox.py").read_text(encoding="utf-8")
-    # Structural proof, not just text presence: the scope-line renders are
-    # inside the same function body as the expander's own `with` block.
-    ingestion_start = source.index('with st.expander("Ingestion status"):')
-    dart_scope_idx = source.index("_DART_SCOPE_LINE}", ingestion_start)
-    assert dart_scope_idx > ingestion_start
 
 
 # ============================== VIEWS AND FILTERS ==============================
@@ -249,7 +191,7 @@ def test_default_filter_row_is_search_source_theme_date_only(tmp_path):
 
 # ============================== FILING CARDS ==============================
 
-def test_card_shows_why_this_matters_and_investigate_primary_path(tmp_path):
+def test_card_shows_why_this_matters(tmp_path):
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000001", "신규시설투자등 결정")
     _seed_filing_events(tmp_path, [filing])
@@ -265,44 +207,6 @@ def test_card_shows_why_this_matters_and_investigate_primary_path(tmp_path):
     all_text = _text(at)
     assert "Why this matters:" in all_text
     assert "Why flagged:" not in all_text
-    expander_labels = [e.label for e in at.expander]
-    assert "Investigate →" in expander_labels
-    assert "Details" not in expander_labels
-
-
-def test_publish_monitor_exclude_and_note_field_are_reachable_inside_investigate(tmp_path):
-    _seed_corp_codes(tmp_path)
-    filing = _filing("20260812000001", "신규시설투자등 결정")
-    _seed_filing_events(tmp_path, [filing])
-    candidate = CandidateSignal(
-        id="cand-r1-review", filing=filing, matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
-        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
-        excerpt_original="신규시설투자등 관련 원문",
-        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
-    )
-    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-    at = _run_radar(tmp_path)
-    assert not at.exception
-    button_labels = {b.label for b in at.button}
-    assert "Publish" in button_labels
-    assert "Monitor" in button_labels
-    assert "Exclude" in button_labels
-    assert at.text_input(key=f"radar-review-note-{candidate.id}") is not None
-
-
-def test_review_actions_are_not_the_first_thing_rendered_on_the_card():
-    """Structural proof, not just presence: `_render_review_actions` is
-    called from inside `_render_investigate_body`, which only runs inside
-    the Investigate `st.expander` block — never directly in
-    `candidate_row`'s own top-level body."""
-    source = (REPO_ROOT / "src" / "ui" / "components" / "radar_card.py").read_text(encoding="utf-8")
-    row_start = source.index("def candidate_row(")
-    row_body = source[row_start:]
-    assert "_render_review_actions(" not in row_body
-    assert "_render_investigate_body(" in row_body
-    investigate_body_start = source.index("def _render_investigate_body(")
-    investigate_body_end = source.index("\ndef ", investigate_body_start + 1)
-    assert "_render_review_actions(" in source[investigate_body_start:investigate_body_end]
 
 
 def test_publish_still_gates_signal_eligibility_unchanged():

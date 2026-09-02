@@ -154,7 +154,7 @@ def test_postgres_backend_with_no_state_db_url_degrades_safely_no_crash_no_leak(
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No filings scanned yet" in all_text
+    assert "No filings captured yet" in all_text
     for leaked in ("EDGE_", "BackendConfigurationError", "postgres://", "password", "Traceback"):
         assert leaked not in all_text
 
@@ -168,7 +168,7 @@ def test_postgres_backend_unreachable_target_degrades_safely_no_crash_no_leak():
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No filings scanned yet" in all_text
+    assert "No filings captured yet" in all_text
     for leaked in ("127.0.0.1", "port=1", "REDACTED_TEST_ONLY", "OperationalError", "Traceback"):
         assert leaked not in all_text
 

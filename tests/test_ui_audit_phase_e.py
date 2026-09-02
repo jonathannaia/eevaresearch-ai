@@ -48,16 +48,18 @@ def _text(at) -> str:
 
 # ============================== MARKET MAP RENDERING ==============================
 
-def test_dashboard_renders_market_map_with_capability_state_wording():
+def test_dashboard_market_map_has_no_price_coverage_copy():
+    """Navigation/empty-state pass (design/DECISIONS.md): "Price coverage
+    not connected" was removed rather than kept as implementation-status
+    language — no price data exists, so cards simply omit price
+    entirely instead of naming its absence."""
     at = _run_dashboard()
     assert not at.exception
     all_text = _text(at)
     assert "Market Map" in all_text
-    assert "Company and theme map · price coverage is being connected" in all_text
-    assert "Price coverage not connected" in all_text
-    # Not a dash, not blank — the exact required wording, at least once
-    # per rendered tile.
-    assert all_text.count("Price coverage not connected") >= 1
+    assert "Company and theme map" in all_text
+    assert "Price coverage not connected" not in all_text
+    assert "price coverage" not in all_text.lower()
 
 
 def test_market_map_never_uses_live_today_or_heatmap_language():
