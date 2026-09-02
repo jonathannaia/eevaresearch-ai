@@ -1,5 +1,40 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "Security Sign-Off Is Coming For Chips — But Standards May Not Be Enough",
+    "summary": "As AI, post-quantum cryptography, chiplets, and custom silicon expand the attack surface, semiconductor security is shifting from isolated safeguards to full-stack verification and formal sign-off processes.",
+    "source_url": "https://semiengineering.com/security-sign-off-is-coming-for-chips-but-standards-may-not-be-enough/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 07:01:38 +0000",
+    "retrieved_at": "2026-09-02T08:15:08+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses semiconductor security verification standards and practices relevant to AI chip supply chain and custom silicon expansion.",
+    "url_hash": "db4d37e9cad7f92a",
+    "id": "db4d37e9cad7f92a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Sponsored: Driving efficient water usage through closed-loop cooling",
+    "summary": "Schneider Electric is working on advanced closed-loop cooling technologies to help data centers reduce water consumption as part of sustainable AI infrastructure development.",
+    "source_url": "https://www.datacenterdynamics.com/en/marketwatch/driving-efficient-water-usage-through-closed-loop-cooling/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Wed, 02 Sep 2026 07:00:38 +0000",
+    "retrieved_at": "2026-09-02T08:14:56+00:00",
+    "tickers": [
+      {
+        "ticker": "SNEC",
+        "company_name": "Schneider Electric",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "directly addresses cooling technologies for AI infrastructure sustainability",
+    "url_hash": "99abb7bb7d373225",
+    "id": "99abb7bb7d373225"
+  },
+  {
     "niche": "Space",
     "headline": "Nonprofit wants to launch 80,000-year mission to Alpha Centauri in 2029 (video)",
     "summary": "The Fermi Explorer Mission plans to launch a small, inexpensive probe to Alpha Centauri in the coming years as part of an 80,000-year mission intended to inspire exploration and expand humanity's perspective.",
