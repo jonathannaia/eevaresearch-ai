@@ -73,6 +73,68 @@ def test_foreign_keys_are_enforced_on_every_connection():
         conn.commit()
 
 
+# --- Translation reliability workstream: schema version 10 ---
+
+
+def test_fresh_database_migrates_straight_to_v10():
+    conn = connection.connect_in_memory()
+    assert schema.migrate(conn) == 10 == schema.CURRENT_SCHEMA_VERSION
+
+
+def test_v9_database_upgrades_to_v10():
+    """Simulates a database that was already at v9 before this workstream
+    — applies exactly migrations 1..9 (bypassing migrate()'s own
+    "run everything up to CURRENT" behavior), confirms it really is
+    recorded at v9, then calls migrate() and confirms it reaches v10
+    with the five new columns present and usable."""
+    conn = connection.connect_in_memory()
+    conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (0)")
+    conn.commit()
+    for target_version, statements in schema._MIGRATIONS:
+        if target_version > 9:
+            continue
+        for statement in statements:
+            conn.execute(statement)
+        conn.execute("UPDATE schema_version SET version = ?", (target_version,))
+    conn.commit()
+    assert schema.get_schema_version(conn) == 9
+
+    result = schema.migrate(conn)
+
+    assert result == 10 == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == 10
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
+    assert {
+        "translation_failure_category", "translation_failure_reason", "translation_failure_at",
+        "translation_retry_count", "translation_next_retry_at",
+    } <= columns
+
+
+def test_migrating_an_already_v10_database_is_idempotent():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    assert schema.get_schema_version(conn) == 10
+    # Reopening/migrating again must be a clean no-op, not an error from
+    # re-running "ALTER TABLE ... ADD COLUMN" against columns that already
+    # exist.
+    result = schema.migrate(conn)
+    assert result == 10
+    assert schema.get_schema_version(conn) == 10
+
+
+def test_v10_columns_have_correct_types_and_defaults():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
+    assert columns["translation_failure_category"]["notnull"] == 0
+    assert columns["translation_failure_reason"]["notnull"] == 0
+    assert columns["translation_failure_at"]["notnull"] == 0
+    assert columns["translation_next_retry_at"]["notnull"] == 0
+    assert columns["translation_retry_count"]["notnull"] == 1
+    assert columns["translation_retry_count"]["dflt_value"] == "0"
+
+
 def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():
     conn = connection.connect_in_memory()
     schema.migrate(conn)

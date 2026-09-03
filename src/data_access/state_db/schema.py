@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -433,8 +433,26 @@ _V9_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_theme_research_notes_theme_id_created_at ON theme_research_notes (theme_id, created_at)",
 )
 
+# Translation reliability workstream (design/DECISIONS.md; see
+# src/models/models.py's CandidateSignal docstring for the full field
+# rationale) — five additive, nullable columns persisting the translation
+# retry state introduced in commit a13ddd0 (previously JSON-backend-only).
+# translation_retry_count gets an explicit NOT NULL DEFAULT 0 to match
+# CandidateSignal.translation_retry_count's own dataclass default exactly
+# — every pre-existing row reads back as 0, not None. The four TEXT
+# columns are left with no DEFAULT clause, so a pre-existing row reads
+# back as NULL/None, matching CandidateSignal's own None defaults for
+# translation_failure_category/_reason/_at/translation_next_retry_at.
+_V10_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE candidates ADD COLUMN translation_failure_category TEXT",
+    "ALTER TABLE candidates ADD COLUMN translation_failure_reason TEXT",
+    "ALTER TABLE candidates ADD COLUMN translation_failure_at TEXT",
+    "ALTER TABLE candidates ADD COLUMN translation_retry_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE candidates ADD COLUMN translation_next_retry_at TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 10 later means appending a new (10, (...statements...))
+# Adding schema version 11 later means appending a new (11, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -446,6 +464,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (7, _V7_STATEMENTS),
     (8, _V8_STATEMENTS),
     (9, _V9_STATEMENTS),
+    (10, _V10_STATEMENTS),
 )
 
 

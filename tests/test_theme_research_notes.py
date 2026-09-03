@@ -151,8 +151,8 @@ def test_sqlite_bulk_empty_input_executes_no_sql():
 
 def test_sqlite_migration_reaches_version_9_with_new_table():
     conn = _sqlite_conn()
-    assert sqlite_schema.get_schema_version(conn) == 9
-    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 9
+    assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
+    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 10
     assert sqlite_themes.research_notes_for_theme_ids(conn, ["theme-does-not-exist"]) == {}
 
 

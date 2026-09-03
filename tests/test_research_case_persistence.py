@@ -406,9 +406,13 @@ def test_sqlite_bulk_evidence_query_construction_is_one_parameterized_call():
 
 
 def test_sqlite_migration_v5_to_v6_does_not_touch_existing_candidate_or_comparison_rows():
+    import json
+    from datetime import datetime, timezone
+
     from src.data_access.comparison_store import build_comparison_record
     from src.data_access.state_db import candidate_repository as sqlite_candidate_repository
     from src.data_access.state_db import comparison_repository as sqlite_comparison_repository
+    from src.data_access.state_db import filing_event_repository as sqlite_filing_event_repository
     from src.logic.prior_disclosure_comparison import ComparisonResult, ComparisonStatus
     from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
 
@@ -435,7 +439,39 @@ def test_sqlite_migration_v5_to_v6_does_not_touch_existing_candidate_or_comparis
         id="edgar-cand-1", filing=filing, matched_rules=["financing_or_debt:8-K item 2.03"],
         confidence="Moderate", status=CandidateStatus.CANDIDATE_DETECTED,
     )
-    sqlite_candidate_repository.upsert_new_candidates(conn, "SEC EDGAR", [candidate])
+    # Translation reliability workstream: candidate_repository.py's own
+    # insert/read functions now assume the fully-migrated (v10) column
+    # set — they are not, and must not be made, tolerant of an older
+    # schema (production always migrates before ever reading/writing).
+    # This fixture instead writes the row directly, using exactly the
+    # candidates-table column set that genuinely existed at v5 (the base
+    # v1 shape plus v3's excerpt_supplemental/excerpt_retrieved_at/
+    # flag_reason_json/evidence_location_json and v4's
+    # evidence_source_member — nothing from v6 onward), so this test
+    # keeps representing a real pre-Phase-4 database rather than
+    # asserting something the production code no longer supports.
+    sqlite_filing_event_repository.upsert_filing_event(conn, filing)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO candidates (
+            id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
+            extraction_state, translation_state, excerpt_quality, excerpt_original,
+            title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
+            materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
+            evidence_location_json, evidence_source_member, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
+            json.dumps(list(candidate.matched_rules)), candidate.confidence, candidate.status.value,
+            candidate.extraction_state.value, candidate.translation_state.value, candidate.excerpt_quality.value,
+            candidate.excerpt_original, None, None, candidate.reviewed_at, candidate.reviewed_note,
+            candidate.materiality_assessment, candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
+            None, None, candidate.evidence_source_member, now, now,
+        ),
+    )
+    conn.commit()
 
     comparison_result = ComparisonResult(
         comparison_status=ComparisonStatus.NOT_AVAILABLE.value, comparison_basis="matched_rules_set_diff:v1",
@@ -447,19 +483,23 @@ def test_sqlite_migration_v5_to_v6_does_not_touch_existing_candidate_or_comparis
     )
     sqlite_comparison_repository.insert_comparison_record(conn, comparison_record)
 
-    before_candidate = sqlite_candidate_repository.get_candidate(conn, "edgar-cand-1")
+    # comparison_results (created by v5 itself) is untouched by any
+    # migration from v6 onward, so reading it before migrating is still
+    # safe — unlike candidates, whose read path now assumes v10 columns.
     before_comparison = sqlite_comparison_repository.get_comparison_record(conn, comparison_record.id)
 
     result_version = sqlite_schema.migrate(conn)
-    # Tracks the current latest schema version (9, after the Citrini-
-    # style research-workspace vertical slice's V9 addition) — update
-    # alongside any future migration bump; the point of this test is
-    # migration safety, not this exact number.
-    assert result_version == 9
+    assert result_version == sqlite_schema.CURRENT_SCHEMA_VERSION
 
     after_candidate = sqlite_candidate_repository.get_candidate(conn, "edgar-cand-1")
     after_comparison = sqlite_comparison_repository.get_comparison_record(conn, comparison_record.id)
-    assert before_candidate == after_candidate
+    # The migrated read must reproduce exactly the candidate this test
+    # originally wrote — the same "migrating never corrupts a
+    # pre-existing row" guarantee, now proven by comparing against the
+    # known-intended domain object rather than a pre-migration read that
+    # the current repository code can no longer perform against a v5
+    # schema.
+    assert after_candidate == candidate
     assert before_comparison == after_comparison
 
     # The new tables exist and are usable, and start empty.

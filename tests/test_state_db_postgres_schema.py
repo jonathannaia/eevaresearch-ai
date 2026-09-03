@@ -51,6 +51,67 @@ def test_no_signals_table_exists(pg_isolated_connection):
     assert "signals" not in names
 
 
+# --- Translation reliability workstream: schema version 10 ---
+
+
+def test_fresh_schema_migrates_straight_to_v10(pg_isolated_connection):
+    assert postgres_schema.migrate(pg_isolated_connection) == 10 == postgres_schema.CURRENT_SCHEMA_VERSION
+
+
+def test_v9_schema_upgrades_to_v10(pg_isolated_connection):
+    """Simulates a schema that was already at v9 before this workstream —
+    applies exactly migrations 1..9 (bypassing migrate()'s own "run
+    everything up to CURRENT" behavior), confirms it really is recorded
+    at v9, then calls migrate() and confirms it reaches v10 with the five
+    new columns present and usable."""
+    conn = pg_isolated_connection
+    conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (0)")
+    conn.commit()
+    for target_version, statements in postgres_schema._MIGRATIONS:
+        if target_version > 9:
+            continue
+        for statement in statements:
+            conn.execute(statement)
+        conn.execute("UPDATE schema_version SET version = %s", (target_version,))
+    conn.commit()
+    assert postgres_schema.get_schema_version(conn) == 9
+
+    result = postgres_schema.migrate(conn)
+
+    assert result == 10 == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == 10
+    rows = conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'candidates'"
+    ).fetchall()
+    columns = {row["column_name"] for row in rows}
+    assert {
+        "translation_failure_category", "translation_failure_reason", "translation_failure_at",
+        "translation_retry_count", "translation_next_retry_at",
+    } <= columns
+
+
+def test_migrating_an_already_v10_schema_is_idempotent(pg_isolated_connection):
+    postgres_schema.migrate(pg_isolated_connection)
+    assert postgres_schema.get_schema_version(pg_isolated_connection) == 10
+    result = postgres_schema.migrate(pg_isolated_connection)
+    assert result == 10
+    assert postgres_schema.get_schema_version(pg_isolated_connection) == 10
+
+
+def test_v10_translation_retry_count_defaults_to_zero(pg_isolated_connection):
+    postgres_schema.migrate(pg_isolated_connection)
+    rows = pg_isolated_connection.execute(
+        "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'candidates' "
+        "AND column_name = 'translation_retry_count'"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["is_nullable"] == "NO"
+    assert rows[0]["column_default"] == "0"
+
+
 def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connection):
     """A no-hidden-state proof mirroring the SQLite suite's own
     discipline: after migrate() returns, ordinary reads on the same

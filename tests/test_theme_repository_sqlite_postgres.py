@@ -153,7 +153,7 @@ def test_sqlite_company_map_bulk_empty_input_executes_no_sql():
 
 def test_sqlite_migration_creates_theme_tables_starting_empty():
     conn = _sqlite_conn()
-    assert sqlite_schema.get_schema_version(conn) == 9
+    assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
     assert sqlite_themes.get_theme(conn, "theme-does-not-exist") is None
     assert sqlite_themes.list_published_themes(conn) == ()
 

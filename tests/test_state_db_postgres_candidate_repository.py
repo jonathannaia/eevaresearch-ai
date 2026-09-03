@@ -187,6 +187,135 @@ def test_evidence_source_member_stays_none_when_not_set(pg_conn):
     assert reloaded.evidence_source_member is None
 
 
+# --- Translation reliability workstream: schema v10 field round-trip ---
+
+
+def test_round_trips_translation_retry_state_populated(pg_conn):
+    filing = _filing(rcept_no="acc-translation-retry")
+    candidate = _candidate(
+        "cand-translation-retry", filing, status=CandidateStatus.NEEDS_REVIEW,
+        excerpt_original="Item 2.02 excerpt.",
+        translation_failure_category="rate_limit",
+        translation_failure_reason="Translation provider rate limit exceeded.",
+        translation_failure_at="2026-09-01T00:00:00+00:00",
+        translation_retry_count=2,
+        translation_next_retry_at="2026-09-01T01:00:00+00:00",
+    )
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate])
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-translation-retry")
+
+    assert reloaded.translation_failure_category == "rate_limit"
+    assert reloaded.translation_failure_reason == "Translation provider rate limit exceeded."
+    assert reloaded.translation_failure_at == "2026-09-01T00:00:00+00:00"
+    assert reloaded.translation_retry_count == 2
+    assert reloaded.translation_next_retry_at == "2026-09-01T01:00:00+00:00"
+
+
+def test_round_trips_translation_retry_state_through_update_candidate(pg_conn):
+    """update_candidate() (not just upsert_new_candidates()) must also
+    persist the five fields — this is the path radar_pipeline.py's own
+    automatic translation-retry step actually uses."""
+    filing = _filing(rcept_no="acc-translation-retry-update")
+    candidate = _candidate("cand-translation-retry-update", filing, excerpt_original="Body excerpt.")
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate])
+    stored = candidate_repository.get_candidate(pg_conn, "cand-translation-retry-update")
+
+    stored.translation_failure_category = "config_missing_key"
+    stored.translation_failure_reason = "Translation API key is not configured."
+    stored.translation_failure_at = "2026-09-01T00:00:00+00:00"
+    stored.translation_retry_count = 5
+    stored.translation_next_retry_at = None
+    outcome = candidate_repository.update_candidate(pg_conn, stored, expected_version=1)
+
+    assert outcome.status == "updated"
+    assert outcome.current.translation_failure_category == "config_missing_key"
+    assert outcome.current.translation_failure_reason == "Translation API key is not configured."
+    assert outcome.current.translation_retry_count == 5
+    assert outcome.current.translation_next_retry_at is None
+
+
+def test_translation_retry_fields_default_to_none_and_zero_when_never_set(pg_conn):
+    filing = _filing(rcept_no="acc-translation-retry-absent")
+    candidate = _candidate("cand-translation-retry-absent", filing, excerpt_original="Body excerpt.")
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate])
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-translation-retry-absent")
+
+    assert reloaded.translation_failure_category is None
+    assert reloaded.translation_failure_reason is None
+    assert reloaded.translation_failure_at is None
+    assert reloaded.translation_retry_count == 0
+    assert reloaded.translation_next_retry_at is None
+
+
+def test_translation_retry_state_round_trips_through_load_candidates_batched_path(pg_conn):
+    """load_candidates() uses _row_to_candidate_from_lookups() — a
+    separate mapping function from _row_to_candidate() (see
+    candidate_repository.py's own module docstring on why Postgres has
+    this batched counterpart) — so the five fields must be verified
+    through that path independently, not assumed from get_candidate()
+    alone."""
+    filing = _filing(rcept_no="acc-translation-retry-batched")
+    candidate = _candidate(
+        "cand-translation-retry-batched", filing, excerpt_original="Body excerpt.",
+        translation_failure_category="timeout", translation_failure_reason="Translation request timed out.",
+        translation_retry_count=1, translation_next_retry_at="2026-09-01T02:00:00+00:00",
+    )
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [candidate])
+
+    loaded = candidate_repository.load_candidates(pg_conn, "SEC EDGAR")
+
+    reloaded = loaded["cand-translation-retry-batched"]
+    assert reloaded.translation_failure_category == "timeout"
+    assert reloaded.translation_failure_reason == "Translation request timed out."
+    assert reloaded.translation_retry_count == 1
+    assert reloaded.translation_next_retry_at == "2026-09-01T02:00:00+00:00"
+
+
+def test_pre_v10_row_missing_translation_retry_columns_still_loads_with_safe_defaults(pg_conn):
+    """Simulates a candidate row written before schema v10 existed —
+    inserted with the exact pre-v10 column list (mirroring
+    test_pre_phase1_row_missing_new_columns_still_loads_with_none_defaults'
+    own established pattern) — then confirms the v10 ALTER TABLE
+    migration (already applied by pg_conn) makes the five new columns
+    readable as their CandidateSignal-matching safe defaults (None for
+    the four text fields, 0 for translation_retry_count) rather than
+    raising."""
+    from datetime import datetime, timezone
+
+    from src.data_access.postgres_state_db import filing_event_repository
+
+    filing = _filing(rcept_no="acc-pre-v10")
+    filing_event_repository.upsert_filing_event(pg_conn, filing)
+    now = datetime.now(timezone.utc).isoformat()
+    pg_conn.execute(
+        """
+        INSERT INTO candidates (
+            id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
+            extraction_state, translation_state, excerpt_quality, excerpt_original,
+            title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
+            materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
+            evidence_location_json, evidence_source_member, version, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+        """,
+        (
+            "cand-pre-v10", filing.source_name, filing.corp_code, filing.rcept_no,
+            "[]", "Moderate", "Needs review", "Extracted", "Not requested", "Unknown",
+            "Pre-existing excerpt.", None, None, None, "", "Not assessed", None, None, None,
+            None, None, now, now,
+        ),
+    )
+    pg_conn.commit()
+
+    reloaded = candidate_repository.get_candidate(pg_conn, "cand-pre-v10")
+    assert reloaded is not None
+    assert reloaded.excerpt_original == "Pre-existing excerpt."
+    assert reloaded.translation_failure_category is None
+    assert reloaded.translation_failure_reason is None
+    assert reloaded.translation_failure_at is None
+    assert reloaded.translation_retry_count == 0
+    assert reloaded.translation_next_retry_at is None
+
+
 # --- Optimistic version conflict ---
 
 

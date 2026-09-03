@@ -125,6 +125,11 @@ def _row_to_candidate(conn: sqlite3.Connection, row: sqlite3.Row) -> CandidateSi
         flag_reason=_flag_reason_from_json(row["flag_reason_json"]),
         evidence_location=_evidence_location_from_json(row["evidence_location_json"]),
         evidence_source_member=row["evidence_source_member"],
+        translation_failure_category=row["translation_failure_category"],
+        translation_failure_reason=row["translation_failure_reason"],
+        translation_failure_at=row["translation_failure_at"],
+        translation_retry_count=row["translation_retry_count"],
+        translation_next_retry_at=row["translation_next_retry_at"],
     )
 
 
@@ -152,8 +157,10 @@ def _insert_candidate(conn: sqlite3.Connection, candidate: CandidateSignal, now:
             extraction_state, translation_state, excerpt_quality, excerpt_original,
             title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
             materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
-            evidence_location_json, evidence_source_member, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            evidence_location_json, evidence_source_member, translation_failure_category,
+            translation_failure_reason, translation_failure_at, translation_retry_count,
+            translation_next_retry_at, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         """,
         (
             candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
@@ -163,7 +170,9 @@ def _insert_candidate(conn: sqlite3.Connection, candidate: CandidateSignal, now:
             _translation_to_json(candidate.excerpt_translation), candidate.reviewed_at, candidate.reviewed_note,
             candidate.materiality_assessment, candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
             _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
-            candidate.evidence_source_member,
+            candidate.evidence_source_member, candidate.translation_failure_category,
+            candidate.translation_failure_reason, candidate.translation_failure_at, candidate.translation_retry_count,
+            candidate.translation_next_retry_at,
             now, now,
         ),
     )
@@ -230,7 +239,9 @@ def update_candidate(
                 title_translation_json = ?, excerpt_translation_json = ?, reviewed_at = ?,
                 reviewed_note = ?, materiality_assessment = ?, excerpt_supplemental = ?,
                 excerpt_retrieved_at = ?, flag_reason_json = ?, evidence_location_json = ?,
-                evidence_source_member = ?, version = version + 1, updated_at = ?
+                evidence_source_member = ?, translation_failure_category = ?, translation_failure_reason = ?,
+                translation_failure_at = ?, translation_retry_count = ?, translation_next_retry_at = ?,
+                version = version + 1, updated_at = ?
             WHERE id = ? AND version = ?
             """,
             (
@@ -242,7 +253,9 @@ def update_candidate(
                 candidate.reviewed_note, candidate.materiality_assessment,
                 candidate.excerpt_supplemental, candidate.excerpt_retrieved_at,
                 _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
-                candidate.evidence_source_member,
+                candidate.evidence_source_member, candidate.translation_failure_category,
+                candidate.translation_failure_reason, candidate.translation_failure_at,
+                candidate.translation_retry_count, candidate.translation_next_retry_at,
                 now, candidate.id, expected_version,
             ),
         )

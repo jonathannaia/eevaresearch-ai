@@ -272,6 +272,111 @@ def test_evidence_source_member_stays_none_when_not_set():
     assert reloaded.evidence_source_member is None
 
 
+# --- Translation reliability workstream: schema v10 field round-trip ---
+
+
+def test_round_trips_translation_retry_state_populated():
+    conn = _conn()
+    filing = _dart_filing(rcept_no="20260901000001")
+    candidate = _candidate(
+        "cand-translation-retry", filing, status=CandidateStatus.NEEDS_REVIEW,
+        excerpt_original="실적 관련 원문.",
+        translation_failure_category="rate_limit",
+        translation_failure_reason="Translation provider rate limit exceeded.",
+        translation_failure_at="2026-09-01T00:00:00+00:00",
+        translation_retry_count=2,
+        translation_next_retry_at="2026-09-01T01:00:00+00:00",
+    )
+    candidate_repository.upsert_new_candidates(conn, "OpenDART / DART", [candidate])
+    reloaded = candidate_repository.get_candidate(conn, candidate.id)
+
+    assert reloaded.translation_failure_category == "rate_limit"
+    assert reloaded.translation_failure_reason == "Translation provider rate limit exceeded."
+    assert reloaded.translation_failure_at == "2026-09-01T00:00:00+00:00"
+    assert reloaded.translation_retry_count == 2
+    assert reloaded.translation_next_retry_at == "2026-09-01T01:00:00+00:00"
+
+
+def test_round_trips_translation_retry_state_through_update_candidate():
+    """update_candidate() (not just upsert_new_candidates()) must also
+    persist the five fields — this is the path radar_pipeline.py's own
+    automatic translation-retry step actually uses."""
+    conn = _conn()
+    filing = _dart_filing(rcept_no="20260901000002")
+    candidate = _candidate("cand-translation-retry-update", filing, excerpt_original="본문 발췌.")
+    candidate_repository.upsert_new_candidates(conn, "OpenDART / DART", [candidate])
+    stored = candidate_repository.get_candidate(conn, candidate.id)
+
+    stored.translation_failure_category = "config_missing_key"
+    stored.translation_failure_reason = "Translation API key is not configured."
+    stored.translation_failure_at = "2026-09-01T00:00:00+00:00"
+    stored.translation_retry_count = 5
+    stored.translation_next_retry_at = None
+    outcome = candidate_repository.update_candidate(conn, stored, expected_version=1)
+
+    assert outcome.status == "updated"
+    assert outcome.current.translation_failure_category == "config_missing_key"
+    assert outcome.current.translation_failure_reason == "Translation API key is not configured."
+    assert outcome.current.translation_retry_count == 5
+    assert outcome.current.translation_next_retry_at is None
+
+
+def test_translation_retry_fields_default_to_none_and_zero_when_never_set():
+    conn = _conn()
+    filing = _dart_filing(rcept_no="20260901000003")
+    candidate = _candidate("cand-translation-retry-absent", filing, excerpt_original="본문 발췌.")
+    candidate_repository.upsert_new_candidates(conn, "OpenDART / DART", [candidate])
+    reloaded = candidate_repository.get_candidate(conn, candidate.id)
+
+    assert reloaded.translation_failure_category is None
+    assert reloaded.translation_failure_reason is None
+    assert reloaded.translation_failure_at is None
+    assert reloaded.translation_retry_count == 0
+    assert reloaded.translation_next_retry_at is None
+
+
+def test_pre_v10_row_missing_translation_retry_columns_still_loads_with_safe_defaults():
+    """Simulates a candidate row written before schema v10 existed —
+    inserted with the exact pre-v10 column list (mirroring
+    test_pre_phase1_row_missing_new_columns_still_loads_with_none_defaults'
+    own established pattern) — then confirms the v10 ALTER TABLE
+    migration (already applied by _conn()) makes the five new columns
+    readable as their CandidateSignal-matching safe defaults (None for
+    the four text fields, 0 for translation_retry_count) rather than
+    raising."""
+    conn = _conn()
+    filing = _edgar_filing(rcept_no="pre-v10-1")
+    filing_event_repository.upsert_filing_event(conn, filing)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO candidates (
+            id, source, filing_corp_code, filing_rcept_no, matched_rules_json, confidence, status,
+            extraction_state, translation_state, excerpt_quality, excerpt_original,
+            title_translation_json, excerpt_translation_json, reviewed_at, reviewed_note,
+            materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
+            evidence_location_json, evidence_source_member, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            "cand-pre-v10", filing.source_name, filing.corp_code, filing.rcept_no,
+            "[]", "Moderate", "Needs review", "Extracted", "Translation unavailable", "Unknown",
+            "Pre-existing excerpt.", None, None, None, "", "Not assessed", None, None, None,
+            None, None, now, now,
+        ),
+    )
+    conn.commit()
+
+    reloaded = candidate_repository.get_candidate(conn, "cand-pre-v10")
+    assert reloaded is not None
+    assert reloaded.excerpt_original == "Pre-existing excerpt."
+    assert reloaded.translation_failure_category is None
+    assert reloaded.translation_failure_reason is None
+    assert reloaded.translation_failure_at is None
+    assert reloaded.translation_retry_count == 0
+    assert reloaded.translation_next_retry_at is None
+
+
 # --- 8. State transitions append and load in expected order ---
 
 def test_state_transitions_load_in_append_order():

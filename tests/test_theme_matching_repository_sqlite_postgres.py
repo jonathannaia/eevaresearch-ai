@@ -217,12 +217,12 @@ def test_sqlite_review_decision_round_trip_and_immutable_history():
 
 def test_sqlite_migration_reaches_version_8_with_new_tables_starting_empty():
     conn = _sqlite_conn()
-    # Tracks the current latest schema version (9, after the Citrini-
-    # style research-workspace vertical slice's V9 addition) — the
-    # point of this test is that the V8 matching tables exist and start
-    # empty, not this exact number.
-    assert sqlite_schema.get_schema_version(conn) == 9
-    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 9
+    # Tracks the current latest schema version (10, after the translation
+    # reliability workstream's own V10 addition) — the point of this test
+    # is that the V8 matching tables exist and start empty, not this
+    # exact number.
+    assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
+    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 10
     assert sqlite_matching.get_scope(conn, "theme-does-not-exist") is None
     assert sqlite_matching.list_active_scopes(conn) == ()
     assert sqlite_matching.list_pending_matches(conn) == ()
@@ -244,7 +244,7 @@ def test_sqlite_migration_v7_to_v8_preserves_existing_theme_data():
         sqlite_schema._MIGRATIONS = original_migrations
 
     version = sqlite_schema.migrate(conn)
-    assert version == 9
+    assert version == sqlite_schema.CURRENT_SCHEMA_VERSION
     assert sqlite_themes.get_theme(conn, "theme-x") == _theme()
     assert sqlite_matching.insert_scope(conn, _scope()) is True
 
