@@ -1,6 +1,34 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "What Can Go Wrong In 800VDC AI Data Centers",
+    "summary": "The article examines risks in 800VDC AI data center power systems, including fire and outage hazards from higher electrical currents and thermal management challenges from high-power chips.",
+    "source_url": "https://semiengineering.com/what-can-go-wrong-in-800vdc-ai-data-centers/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 07:01:33 +0000",
+    "retrieved_at": "2026-09-03T08:24:38+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses technical challenges in AI data center power infrastructure (800VDC systems), which is directly relevant to AI Buildout scope covering power/cooling for AI infrastructure.",
+    "url_hash": "7b028905492e7925",
+    "id": "7b028905492e7925"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "AI Is Forcing Data Centers To Rethink Trust",
+    "summary": "Exploding AI compute demand is exposing security gaps in the hardware supply chain, including concerns around chip identity, firmware integrity, and post-quantum readiness.",
+    "source_url": "https://semiengineering.com/ai-is-forcing-data-centers-to-rethink-trust/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 07:02:45 +0000",
+    "retrieved_at": "2026-09-03T08:24:35+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses how AI compute demand is creating supply chain security challenges in data center hardware and chips, directly relevant to AI Buildout scope.",
+    "url_hash": "1be4285dc27289df",
+    "id": "1be4285dc27289df"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "AWS Wires a New US AI Route Across the Pacific",
     "summary": "AWS is constructing a 420 Tbps subsea cable connecting Japan and Washington State, set to launch in 2029, to support AI workloads and increase trans-Pacific network capacity.",
     "source_url": "https://www.datacenterknowledge.com/cables/aws-wires-a-new-us-ai-route-across-the-pacific",
