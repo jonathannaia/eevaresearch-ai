@@ -21,6 +21,20 @@ selector (all companies with any persisted PUBLISHED story, not only
 currently-recent ones) narrows this further. Older stories stay in
 the underlying store untouched; this page only ever hides them, never
 deletes anything.
+
+Per-company stale-feed fallback (design/DECISIONS.md): the default "All
+companies" view stays strictly limited to the 7-day window — it never
+shows an older story. But selecting one specific company whose own
+persisted stories are all older than 7 days (e.g. right after a
+previously-broken feed's first successful ingestion) no longer shows an
+empty state indistinguishable from "this company has never published
+anything" — it shows a clear notice plus that company's own latest
+available official stories instead, each still carrying its real,
+publisher-provided `published_at` date (never `created_at`/
+`retrieved_at`/discovery time — those are never read for this decision,
+only ever `sources[0].published_at`, exactly as before this pass). A
+company with zero persisted PUBLISHED stories at all still gets the
+original, true empty state.
 """
 from __future__ import annotations
 
@@ -47,6 +61,10 @@ def _published_stories(settings: Settings) -> list[NewsStory]:
 
 def _company_options(stories: list[NewsStory]) -> list[str]:
     return [_ALL_COMPANIES_OPTION] + sorted({s.company_name for s in stories})
+
+
+def _stories_for_company(stories: list[NewsStory], company_name: str) -> list[NewsStory]:
+    return [s for s in stories if s.company_name == company_name]
 
 
 def _elapsed_seconds(published_at: str, now: datetime) -> float | None:
@@ -121,18 +139,43 @@ def render() -> None:
 
     section_header("Latest")
 
-    scoped_stories = all_stories
-    if selected_company != _ALL_COMPANIES_OPTION:
-        scoped_stories = [s for s in all_stories if s.company_name == selected_company]
-
-    recent = _recent_stories(scoped_stories)
-
-    if not recent:
-        if selected_company == _ALL_COMPANIES_OPTION:
+    if selected_company == _ALL_COMPANIES_OPTION:
+        # Strictly 7-day-recent, always — never falls back to an older
+        # story, regardless of any single company's own fallback below.
+        recent = _recent_stories(all_stories)
+        if not recent:
             empty_state("No recent company updates in the last 7 days.")
-        else:
-            empty_state(f"No recent updates for {selected_company} in the last 7 days.")
+            return
+        for story in recent:
+            _render_card(story)
         return
 
-    for story in recent:
+    company_stories = _stories_for_company(all_stories, selected_company)
+    recent = _recent_stories(company_stories)
+
+    if recent:
+        for story in recent:
+            _render_card(story)
+        return
+
+    if not company_stories:
+        # No persisted PUBLISHED story at all for this company — a true
+        # empty state, never implying older coverage exists.
+        empty_state(f"No recent updates for {selected_company} in the last 7 days.")
+        return
+
+    # This company has persisted PUBLISHED stories, just none within the
+    # 7-day window (e.g. right after a previously-broken feed's first
+    # successful ingestion) — show its latest available official
+    # stories instead of an indistinguishable empty state, with a clear
+    # neutral notice above them. company_stories is already newest-first
+    # (inherited from _published_stories()'s own sort), and every card
+    # below still renders its own real published_at date via the same
+    # _render_card() the "recent" path already uses.
+    st.markdown(
+        f'<div class="er-muted">No {selected_company} official updates were published in the last 7 days. '
+        "Showing the latest available official updates.</div>",
+        unsafe_allow_html=True,
+    )
+    for story in company_stories:
         _render_card(story)

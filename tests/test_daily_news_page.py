@@ -243,11 +243,18 @@ def test_selecting_a_company_shows_only_that_companys_stories(tmp_path):
     assert "NVIDIA Announces Financial Results" not in markdown_text
 
 
-def test_selected_company_with_no_recent_stories_shows_named_empty_state(tmp_path):
+def test_selected_company_with_only_stale_stories_shows_notice_and_fallback_stories(tmp_path):
     # Intel has only a stale story — appears in the selector (it has a
     # persisted PUBLISHED story) but has nothing recent once selected.
+    # Stale-feed fallback pass: this must no longer show an empty state
+    # indistinguishable from "Intel has never published anything" — it
+    # shows the neutral notice plus Intel's own latest available story,
+    # still carrying its real (stale) published date.
     daily_news_store.upsert_new_stories(tmp_path, [
-        _story(id="s-intel-stale", company_name="Intel Corp.", published_at_offset=timedelta(days=30)),
+        _story(
+            id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results",
+            published_at_offset=timedelta(days=30),
+        ),
         _story(id="s-nvidia-fresh", company_name="NVIDIA"),
     ])
 
@@ -257,7 +264,88 @@ def test_selected_company_with_no_recent_stories_shows_named_empty_state(tmp_pat
         at.selectbox[0].select("Intel Corp.").run()
 
     markdown_text = " ".join(m.value for m in at.markdown)
-    assert "No recent updates for Intel Corp. in the last 7 days." in markdown_text
+    assert "No recent updates for Intel Corp. in the last 7 days." not in markdown_text
+    assert (
+        "No Intel Corp. official updates were published in the last 7 days. "
+        "Showing the latest available official updates."
+    ) in markdown_text
+    assert "Intel Reports Quarterly Results" in markdown_text
+    assert "NVIDIA Announces Financial Results" not in markdown_text  # scoped to Intel only, not NVIDIA
+
+
+def test_selected_company_with_recent_stories_shows_no_fallback_notice(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(id="s-intel-fresh", company_name="Intel Corp.", headline="Intel Reports Quarterly Results"),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Intel Reports Quarterly Results" in markdown_text
+    assert "Showing the latest available official updates." not in markdown_text
+    assert "No recent updates for Intel Corp. in the last 7 days." not in markdown_text
+
+
+def test_stories_for_company_returns_empty_list_when_company_has_no_persisted_stories():
+    # The real dropdown can never actually offer a company with zero
+    # persisted stories (_company_options only lists companies that
+    # already have one) — this proves the pure input/output mapping
+    # render()'s own "true empty state" branch depends on directly,
+    # the same boundary-logic-as-pure-function pattern already used for
+    # _is_recent/_recent_stories above.
+    from src.ui.pages.daily_news import _stories_for_company
+
+    only_nvidia = [_story(id="s-nvidia", company_name="NVIDIA")]
+    assert _stories_for_company(only_nvidia, "Intel Corp.") == []
+
+
+def test_all_companies_never_shows_a_fallback_story_from_a_stale_company(tmp_path):
+    # A company with only stale stories must never leak into the global
+    # "All companies" feed via the per-company fallback path — that
+    # fallback is scoped strictly to a single selected company.
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results",
+            published_at_offset=timedelta(days=30),
+        ),
+        _story(id="s-nvidia-fresh", company_name="NVIDIA"),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "Intel Reports Quarterly Results" not in markdown_text
+    assert "Showing the latest available official updates." not in markdown_text
+
+
+def test_recency_is_controlled_by_published_at_never_retrieved_at_or_discovery_time(tmp_path):
+    # A story just discovered/retrieved "now" but whose publisher-claimed
+    # published_at is 30 days old must still be excluded from the 7-day
+    # window — recency is never inferred from retrieved_at, created_at,
+    # or discovery/state-transition time.
+    from src.ui.pages.daily_news import _is_recent
+
+    now = datetime.now(timezone.utc)
+    old_published_at = (now - timedelta(days=30)).isoformat()
+    fresh_retrieved_at = now.isoformat()
+    story = _story(
+        sources=(
+            NewsSourceReference(
+                publisher="Intel Corp.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://www.intc.com/news-events/press-releases/detail/old-release",
+                title="Old Release", published_at=old_published_at, retrieved_at=fresh_retrieved_at,
+                original_language="English",
+            ),
+        ),
+        state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=fresh_retrieved_at)],
+    )
+    assert not _is_recent(story, now)
 
 
 def test_only_stale_stories_shows_the_all_companies_empty_state(tmp_path):
