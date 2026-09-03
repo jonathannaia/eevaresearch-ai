@@ -199,6 +199,9 @@ def test_source_filter_preserves_newest_first_ordering(tmp_path):
     markdown_values = [m.value for m in at.markdown]
     assert not any("삼성전자" in v for v in markdown_values)  # DART filtered out entirely
 
-    newer_idx = next(i for i, v in enumerate(markdown_values) if "8-K filing newer" in v)
-    older_idx = next(i for i, v in enumerate(markdown_values) if "8-K filing older" in v)
+    # Both EDGAR items map to the identical clean title ("Current Report
+    # — Form 8-K"), so ordering is proven via each item's own distinct
+    # filed-date badge instead of its (no longer distinguishing) title.
+    newer_idx = next(i for i, v in enumerate(markdown_values) if "Filed Sep 2, 2026" in v)
+    older_idx = next(i for i, v in enumerate(markdown_values) if "Filed Aug 20, 2026" in v)
     assert newer_idx < older_idx

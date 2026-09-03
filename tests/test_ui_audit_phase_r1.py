@@ -198,6 +198,23 @@ def test_card_shows_original_and_english_translation(tmp_path):
     all_text = _text(at)
     assert "Why this matters:" not in all_text
     assert "Why flagged:" not in all_text
+    # No stored translation — Summary is the neutral metadata fallback;
+    # the native excerpt is reachable only behind its own toggle.
+    assert "삼성전자 filed 신규시설투자등 결정 on Aug 12, 2026." in all_text
+    assert "신규시설투자등 관련 원문" not in all_text
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
+
+    original_toggle[0].click()
+    # get_settings must still be patched for this second run — AppTest
+    # re-executes the harness script synchronously on `.run()`.
+    settings = Settings(
+        dart_api_key="dart-key", translation_api_key="deepl-key",
+        edgar_user_agent=None, edinet_subscription_key=None, cache_dir=tmp_path,
+    )
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at.run()
+    all_text = _text(at)
     assert "신규시설투자등 관련 원문" in all_text
 
 

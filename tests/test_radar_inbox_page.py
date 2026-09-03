@@ -496,14 +496,14 @@ def test_radar_inbox_source_filter_narrows_across_configured_sources(tmp_path):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
         both_text = " ".join(m.value for m in at.markdown)
-        assert "국문 공시" in both_text and "8-K filing two" in both_text
+        assert "국문 공시" in both_text and "Current Report — Form 8-K" in both_text
 
         at.multiselect(key="radar-filter-source").set_value(["SEC EDGAR"])
         at.run()
 
     assert not at.exception
     filtered_text = " ".join(m.value for m in at.markdown)
-    assert "8-K filing two" in filtered_text
+    assert "Current Report — Form 8-K" in filtered_text
     assert "국문 공시" not in filtered_text
 
 
@@ -659,11 +659,13 @@ def test_radar_inbox_renders_stably_when_evidence_packet_fields_are_present(tmp_
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "본문 발췌." in all_text
-    # Radar layout correction: the stored translation is behind a
-    # collapsed, display-only toggle by default now, not shown directly.
-    assert "Body excerpt." not in all_text
+    # Filing-quality pass: Summary is grounded in the stored English
+    # translation, shown directly; the native excerpt is collapsed
+    # behind its own quality-gated toggle by default now.
+    assert "Body excerpt." in all_text
+    assert "본문 발췌." not in all_text
     assert any(b.label == "Show English translation" for b in at.button)
+    assert any(b.label == "View original filing text" for b in at.button)
     assert "Matched a capital-increase financing keyword." not in all_text
     assert "Item 2.03" not in all_text
     assert "PublicDoc/0101.pdf" not in all_text

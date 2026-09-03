@@ -373,9 +373,9 @@ def test_existing_filtering_ordering_pagination_source_links_and_translation_unc
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    # Radar layout correction: the stored translation is behind a
-    # collapsed, display-only toggle by default now, not shown directly.
-    assert "Body excerpt." not in all_text
+    # Filing-quality pass: Summary is grounded in the stored English
+    # translation, shown directly (the toggle re-reveals it in full).
+    assert "Body excerpt." in all_text
     assert any(b.label == "Show English translation" for b in at.button)
     assert any(b.label == "Open original filing ↗" for b in at.get("link_button"))
 

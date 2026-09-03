@@ -257,5 +257,9 @@ def test_radar_card_shows_only_the_approved_public_fields(tmp_path):
     assert "Material · new facility investment" not in all_text
     assert candidate.filing.corp_name in all_text
     assert candidate.filing.stock_code in all_text
-    assert candidate.excerpt_original in all_text
+    # Filing-quality pass: no translation stored, so Summary is the
+    # neutral metadata fallback — the native excerpt is reachable only
+    # behind its own quality-gated "View original filing text" toggle.
+    assert candidate.excerpt_original not in all_text
+    assert any(b.label == "View original filing text" for b in at.button)
     assert "Filed Aug 12, 2026" in all_text  # candidate.filing.rcept_dt == "20260812"

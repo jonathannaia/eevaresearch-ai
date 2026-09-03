@@ -1,47 +1,58 @@
 """Radar Inbox's per-item card (Radar simplicity + translation reliability
-workstream; layout correction pass — design/DECISIONS.md) — a minimal,
-read-only research-feed card showing exactly:
+workstream; layout correction pass; filing-quality pass — design/
+DECISIONS.md) — a minimal, read-only research-feed card showing exactly:
 
-  a) company name and ticker/security code (when available), with the
+  1) company name and ticker/security code (when available), with the
      filing's own official filed date at the top-right, when known;
-  b) English filing title;
-  c) `Original` — the original-language filing title and/or a concise
-     extracted source excerpt;
-  d) a compact `Show English translation` / `Hide English translation`
-     toggle, shown only when a translation is already stored — expanding
-     it reveals `English translation` and the stored translated text;
-  e) `Open original filing ↗` — the card's sole action.
+  2) a clean, deterministic, source-safe display title (see
+     src/logic/filing_display.display_title — for EDGAR, a readable
+     mapping from the official SEC form type, e.g. "Quarterly Report —
+     Form 10-Q"; for DART/EDINET, unchanged: the stored title
+     translation when one exists, otherwise the native official title);
+  3) `Summary` — a concise extractive summary grounded only in stored,
+     quality-gated readable text, or (whenever no such text exists) a
+     neutral, factual "{Company} filed {title} on {date}." sentence —
+     see src/logic/filing_display for the exact quality gate and
+     fallback wording;
+  4) `View filing text` (English/EDGAR) or `Show English translation` /
+     `View original filing text` (Korean/Japanese) — compact,
+     display-only toggles, shown only when the corresponding stored text
+     exists and (for any original-language/extracted text) passes the
+     same quality gate Summary uses;
+  5) `Open original filing ↗` — the card's sole action.
 
-Removed entirely this pass: Why this matters, Memory/theme labels,
-detection confidence, Evidence status, Fact/Interpretation/Uncertainty
-analyst-view content (Filing overview), Potential materiality, status
-pills of any kind (Needs review, Processing deferred, etc.), the
-Comparison row, and every other technical/process/review label. None of
-the underlying CandidateSignal/FilingEvent fields these used to read are
-removed — src/logic/review_actions and src/ui/components/analyst_view
-still exist and are still independently unit-tested; they are simply
-never called from this public card any more.
+Filing-quality pass (design/DECISIONS.md): some EDGAR filings store an
+extraction dominated by raw XML/XBRL markup, taxonomy namespace prefixes,
+and machine identifiers instead of readable prose (e.g. a Marvell-style
+Form 10-Q) — that text must never reach a reader. Every place this card
+would have shown stored extracted text verbatim now goes through
+src.logic.filing_display.is_readable_extracted_text first; text that
+fails degrades to the neutral metadata-only Summary and no filing-text
+toggle, never a raw dump.
 
-For an English-native source (EDGAR), the title *is* the English title,
-so no separate Original/English translation pair is ever shown — that
-would just duplicate the same English text. For a Korean/Japanese source
-(DART/EDINET), the "Original" line always shows the extracted excerpt
-when one exists, otherwise the filing's own native title.
+Removed entirely (Radar simplicity workstream): Why this matters,
+Memory/theme labels, detection confidence, Evidence status, Fact/
+Interpretation/Uncertainty analyst-view content (Filing overview),
+Potential materiality, status pills of any kind (Needs review,
+Processing deferred, etc.), the Comparison row, and every other
+technical/process/review label. None of the underlying CandidateSignal/
+FilingEvent fields these used to read are removed — src/logic/
+review_actions and src/ui/components/analyst_view still exist and are
+still independently unit-tested; they are simply never called from this
+public card any more.
 
-Layout correction pass (design/DECISIONS.md): the translation toggle is
-purely a client-side visibility switch, keyed off `st.session_state`
-only — it never calls a translation provider, never writes to
-CandidateSignal/the database, and never queues or retries a translation.
-It is only ever rendered when a translation is already stored
-(`candidate.excerpt_translation`/`candidate.title_translation` is not
-None); when no translation is stored, this card renders no toggle and no
-messaging beyond the original text and the source link — no "Translation
-unavailable", no "being prepared", no retry/status/error wording of any
-kind, superseding this card's own earlier "being prepared" messaging
-(translation_retry_count/translation_failure_*/translation_next_retry_at
-remain read/written elsewhere — src/data_access/translation/
-translation_service.py — this card simply no longer surfaces any of that
-state to the reader).
+Layout correction pass (design/DECISIONS.md), extended by the filing-
+quality pass to a second toggle: every text-reveal toggle on this card
+is purely a client-side visibility switch, keyed off `st.session_state`
+only — none of them ever calls a translation provider, writes to
+CandidateSignal/the database, or queues/retries anything. `Show English
+translation` is only ever rendered when a translation is already stored
+(`candidate.excerpt_translation` is not None); `View filing text`/`View
+original filing text` are only ever rendered when the corresponding
+stored text exists AND passes the quality gate. When no such text/
+translation is stored, this card renders no toggle and no messaging
+beyond the Summary and the source link — no "Translation unavailable",
+no "being prepared", no retry/status/error wording of any kind.
 """
 from __future__ import annotations
 
@@ -50,12 +61,9 @@ from datetime import datetime
 
 import streamlit as st
 
-from src.models.models import CandidateSignal, FilingEvent
+from src.logic import filing_display
+from src.models.models import FilingEvent
 from src.ui.components.radar_status import RadarItem
-
-
-def _is_english_native(filing: FilingEvent) -> bool:
-    return filing.original_language == "English"
 
 
 def _parse_source_filed_date(raw: str):
@@ -78,7 +86,7 @@ def _filed_label(filing: FilingEvent) -> str | None:
     parsed = _parse_source_filed_date(filing.rcept_dt)
     if parsed is None:
         return None
-    return f"Filed {parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
 
 
 def _identity_line(filing: FilingEvent) -> str:
@@ -86,28 +94,6 @@ def _identity_line(filing: FilingEvent) -> str:
     if filing.stock_code:
         identity += f" · {html.escape(filing.stock_code)}"
     return identity
-
-
-def _english_title(filing: FilingEvent, candidate: CandidateSignal | None) -> str:
-    if _is_english_native(filing):
-        return filing.report_nm
-    if candidate is not None and candidate.title_translation is not None:
-        return candidate.title_translation.translated_text
-    return filing.report_nm
-
-
-def _native_text(filing: FilingEvent, candidate: CandidateSignal | None) -> str:
-    if candidate is not None and candidate.excerpt_original:
-        return candidate.excerpt_original
-    return filing.report_nm
-
-
-def _translation_for_native_text(candidate: CandidateSignal | None):
-    if candidate is None:
-        return None
-    if candidate.excerpt_original:
-        return candidate.excerpt_translation
-    return candidate.title_translation
 
 
 _EDGAR_SOURCE_NAME = "SEC EDGAR"
@@ -156,6 +142,31 @@ def _render_quiet_links(filing: FilingEvent) -> None:
             st.link_button("Open original filing ↗", _public_source_url(filing), use_container_width=True)
 
 
+def _render_expandable_text(*, toggle_key: str, show_label: str, hide_label: str, section_label: str, text: str) -> None:
+    """One compact, display-only show/hide toggle revealing `text` under
+    `section_label` when expanded. `st.session_state` here is purely
+    ephemeral client-side UI visibility state — never a write to
+    CandidateSignal/the database, never a trigger for a translation
+    provider or any other service. The toggle is flipped via an
+    on_click callback (not an inline check) so the button's own label
+    updates on the same rerun it's clicked, matching every other toggle
+    in this app."""
+    if toggle_key not in st.session_state:
+        st.session_state[toggle_key] = False
+
+    def _toggle() -> None:
+        st.session_state[toggle_key] = not st.session_state[toggle_key]
+
+    expanded = st.session_state[toggle_key]
+    label = hide_label if expanded else show_label
+    with st.container(key=f"cta-tertiary-{toggle_key}"):
+        st.button(label, key=f"{toggle_key}-btn", on_click=_toggle)
+
+    if expanded:
+        st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;"><strong>{html.escape(section_label)}</strong></div>', unsafe_allow_html=True)
+        st.markdown(f'<div>{html.escape(text)}</div>', unsafe_allow_html=True)
+
+
 def candidate_row(item: RadarItem, comparison_record=None) -> None:
     """`comparison_record` is accepted for call-site compatibility with
     radar_inbox.py (which still computes a per-page comparison-record bulk
@@ -170,54 +181,58 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             st.markdown(
                 '<div style="display:flex; justify-content:space-between; align-items:baseline;">'
                 f'<div class="er-muted">{_identity_line(filing)}</div>'
-                f'<div class="er-muted">{html.escape(filed_label)}</div>'
+                f'<div class="er-muted">Filed {html.escape(filed_label)}</div>'
                 "</div>",
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(f'<div class="er-muted">{_identity_line(filing)}</div>', unsafe_allow_html=True)
 
-        english_title = _english_title(filing, candidate)
-        st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(english_title)}</div>', unsafe_allow_html=True)
+        title = filing_display.display_title(filing, candidate)
+        st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(title)}</div>', unsafe_allow_html=True)
 
-        english_native = _is_english_native(filing)
-        if english_native:
-            excerpt = candidate.excerpt_original if candidate is not None else None
-            if excerpt:
-                st.markdown(f'<div style="margin-top:0.4rem;">{html.escape(excerpt)}</div>', unsafe_allow_html=True)
+        if filing_display.is_english_native(filing):
+            readable_text = candidate.excerpt_original if candidate is not None else None
+            passes_gate = bool(readable_text) and filing_display.is_readable_extracted_text(readable_text)
+            summary = (
+                filing_display.extractive_summary(readable_text) if passes_gate
+                else filing_display.metadata_only_summary(filing, title, filed_label)
+            )
         else:
-            native_text = _native_text(filing, candidate)
-            translation = _translation_for_native_text(candidate)
+            translation_text = (
+                candidate.excerpt_translation.translated_text
+                if candidate is not None and candidate.excerpt_translation is not None else None
+            )
+            summary_source = translation_text if translation_text and filing_display.is_readable_extracted_text(translation_text) else None
+            summary = (
+                filing_display.extractive_summary(summary_source) if summary_source
+                else filing_display.metadata_only_summary(filing, title, filed_label)
+            )
 
-            st.markdown('<div class="er-muted" style="margin-top:0.5rem;"><strong>Original</strong></div>', unsafe_allow_html=True)
-            st.markdown(f'<div>{html.escape(native_text)}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="er-muted" style="margin-top:0.5rem;"><strong>Summary</strong></div>', unsafe_allow_html=True)
+        st.markdown(f'<div>{html.escape(summary)}</div>', unsafe_allow_html=True)
 
-            if translation is not None:
-                # Display-only visibility switch: st.session_state here is
-                # purely ephemeral client-side UI state (which section of
-                # this one already-rendered card is visible), never a
-                # write to CandidateSignal or any repository, and never a
-                # trigger for translation_service — no provider call, no
-                # queue, no retry. See on_click below for why the toggle
-                # is flipped via a callback rather than an inline check.
-                toggle_key = f"radar-translation-expanded-{filing.rcept_no}"
-                if toggle_key not in st.session_state:
-                    st.session_state[toggle_key] = False
+        if filing_display.is_english_native(filing):
+            if passes_gate:
+                _render_expandable_text(
+                    toggle_key=f"radar-filingtext-{filing.rcept_no}",
+                    show_label="View filing text", hide_label="Hide filing text",
+                    section_label="Filing text", text=readable_text,
+                )
+        else:
+            if translation_text:
+                _render_expandable_text(
+                    toggle_key=f"radar-translation-expanded-{filing.rcept_no}",
+                    show_label="Show English translation", hide_label="Hide English translation",
+                    section_label="English translation", text=translation_text,
+                )
 
-                def _toggle_translation_visibility() -> None:
-                    st.session_state[toggle_key] = not st.session_state[toggle_key]
-
-                expanded = st.session_state[toggle_key]
-                toggle_label = "Hide English translation" if expanded else "Show English translation"
-                with st.container(key=f"cta-tertiary-radar-translation-toggle-{filing.rcept_no}"):
-                    st.button(toggle_label, key=f"{toggle_key}-btn", on_click=_toggle_translation_visibility)
-
-                if expanded:
-                    st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
-                    st.markdown(f'<div>{html.escape(translation.translated_text)}</div>', unsafe_allow_html=True)
-            # No stored translation: render nothing further beyond the
-            # original text above — no toggle, no "Translation
-            # unavailable", no "being prepared", no retry/status/error
-            # wording of any kind.
+            native_text = candidate.excerpt_original if candidate is not None else None
+            if native_text and filing_display.is_readable_extracted_text(native_text):
+                _render_expandable_text(
+                    toggle_key=f"radar-originaltext-{filing.rcept_no}",
+                    show_label="View original filing text", hide_label="Hide original filing text",
+                    section_label="Original filing text", text=native_text,
+                )
 
         _render_quiet_links(filing)

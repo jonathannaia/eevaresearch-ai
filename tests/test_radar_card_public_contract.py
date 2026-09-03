@@ -1,18 +1,25 @@
-"""Radar simplicity + translation reliability + layout correction
-workstreams — fixture-driven proofs of the exact public card contract:
+"""Radar simplicity + translation reliability + layout correction +
+filing-quality workstreams — fixture-driven proofs of the exact public
+card contract:
 
   a) company name and ticker/security code, with `Filed {date}` at the
      top-right when the filing's own official rcept_dt is parseable;
-  b) English filing title;
-  c) `Original` — original-language title and/or extracted excerpt;
-  d) a display-only `Show English translation`/`Hide English
-     translation` toggle, present only when a translation is already
-     stored — expanding it reveals `English translation` and the stored
-     translated text;
+  b) a clean, deterministic display title (src.logic.filing_display.
+     display_title — for EDGAR, a readable mapping from the official SEC
+     form type; for DART/EDINET, unchanged: translated when stored,
+     otherwise the native official title);
+  c) `Summary` — always shown: a concise extractive summary grounded in
+     stored, quality-gated readable text, or a neutral, factual
+     "{Company} filed {title} on {date}." fallback otherwise;
+  d) `View filing text` (EDGAR) or `Show English translation`/`View
+     original filing text` (DART/EDINET) — display-only toggles, shown
+     only when the corresponding stored text exists and (for any
+     original-language/extracted text) passes the quality gate;
   e) `Open original filing ↗` — the sole action.
 
 Covers a Korean (DART) fixture, a Japanese (EDINET) fixture, an English
-(EDGAR) fixture, and a page-wide sweep proving none of the removed
+(EDGAR) fixture, an EDGAR raw-XBRL-extraction fixture (the quality gate
+must reject it), and a page-wide sweep proving none of the removed
 public labels (Why this matters, Memory, detection confidence, Evidence
 status, Fact/Interpretation/Uncertainty, Potential materiality, Filing
 overview, Needs review, Translation unavailable, "being prepared", etc.)
@@ -48,6 +55,17 @@ _FORBIDDEN_PUBLIC_STRINGS = (
     "Potential materiality",
     "Needs review", "Processing deferred", "Retrieval failed",
     "Translation unavailable", "being prepared",
+    # Filing-quality pass (B): the Summary — generated or metadata-only —
+    # must never make an investment conclusion, infer a financial result,
+    # characterize importance, or use any of these words/phrases, and a
+    # fallback Summary must never be labeled as a fallback. "material"/
+    # "signal" are checked separately, against the card's own Summary
+    # text only (see test_summary_wording_never_uses_prohibited_language
+    # below) — the page's own pre-existing, unrelated subtitle ("...for
+    # material filings... high-confidence signals.") legitimately
+    # contains both words, so a whole-page sweep would false-positive.
+    "review", "detected", "potential", "analysis",
+    "metadata-only", "Phase 1", "pending", "unavailable",
 )
 
 
@@ -157,20 +175,31 @@ def test_korean_fixture_shows_only_the_approved_fields(tmp_path):
     assert "005930" in all_text
     assert "Filed Aug 12, 2026" in all_text  # rcept_dt == "20260812"
     assert "New facility investment decision" in all_text  # English filing title
-    assert "신규시설투자등 관련 원문 발췌." in all_text  # Original (native excerpt)
-    assert "New facility investment related excerpt." not in all_text  # stored, but collapsed by default
-    toggle_buttons = [b for b in at.button if b.label == "Show English translation"]
-    assert len(toggle_buttons) == 1
+    # Summary is grounded in the stored English translation, shown directly.
+    assert "New facility investment related excerpt." in all_text
+    assert "신규시설투자등 관련 원문 발췌." not in all_text  # native excerpt collapsed by default
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    assert len(translation_toggle) == 1
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
     link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
     assert len(link_buttons) == 1
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
 
-    toggle_buttons[0].click()
+    original_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
-    assert "New facility investment related excerpt." in all_text  # now expanded
+    assert "신규시설투자등 관련 원문 발췌." in all_text  # now expanded
+    assert any(b.label == "Hide original filing text" for b in at.button)
+
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "New facility investment related excerpt." in all_text  # still shown (Summary + expanded toggle)
     assert any(b.label == "Hide English translation" for b in at.button)
+    assert any(b.label == "Hide original filing text" for b in at.button)  # first toggle stays expanded too
 
 
 # ============================================================
@@ -203,10 +232,13 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert "SoftBank Group Corp." in all_text
     assert "99840" in all_text
     assert "Filed Jun 22, 2026" in all_text  # rcept_dt == "2026-06-22"
-    assert "有価証券報告書の記載内容の抜粋です。" in all_text  # Original (native excerpt)
-    assert "This is an excerpt from the annual securities report." not in all_text  # stored, but collapsed by default
-    toggle_buttons = [b for b in at.button if b.label == "Show English translation"]
-    assert len(toggle_buttons) == 1
+    # Summary is grounded in the stored English translation, shown directly.
+    assert "This is an excerpt from the annual securities report." in all_text
+    assert "有価証券報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed by default
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    assert len(translation_toggle) == 1
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
     link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
     assert len(link_buttons) == 1
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
@@ -217,11 +249,11 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert "Form code" not in all_text
     assert "Document type code" not in all_text
 
-    toggle_buttons[0].click()
+    original_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
-    assert "This is an excerpt from the annual securities report." in all_text  # now expanded
-    assert any(b.label == "Hide English translation" for b in at.button)
+    assert "有価証券報告書の記載内容の抜粋です。" in all_text  # now expanded
+    assert any(b.label == "Hide original filing text" for b in at.button)
 
 
 # ============================================================
@@ -253,11 +285,15 @@ def test_english_edgar_fixture_has_no_redundant_translation_block(tmp_path):
     assert "NVIDIA" in all_text
     assert "NVDA" in all_text
     assert "Filed Aug 12, 2026" in all_text  # rcept_dt == "2026-08-12"
-    assert "8-K filing" in all_text  # English filing title, shown directly (no translation needed)
-    assert "Item 2.02 Results of Operations. Revenue increased." in all_text  # English excerpt, shown directly
+    assert "Current Report — Form 8-K" in all_text  # clean, mapped EDGAR title — never the bare report_nm
+    assert "8-K filing" not in all_text  # the old non-title report_nm string itself is never shown
+    assert "Item 2.02 Results of Operations. Revenue increased." in all_text  # grounded Summary, shown directly
     assert "<strong>Original</strong>" not in all_text
     assert "<strong>English translation</strong>" not in all_text
     assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    assert not any(b.label in ("View original filing text", "Hide original filing text") for b in at.button)
+    view_filing_text_buttons = [b for b in at.button if b.label == "View filing text"]
+    assert len(view_filing_text_buttons) == 1  # readable excerpt passes the quality gate
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
 
@@ -415,8 +451,19 @@ def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_p
     assert "English translation is being prepared." not in all_text
     assert "Translation unavailable" not in all_text
     assert "rate_limit" not in all_text
-    assert "실적 관련 원문." in all_text
+    # No stored translation — Summary falls back to the neutral metadata
+    # sentence; the native excerpt is still reachable, but only behind
+    # its own quality-gated toggle.
+    assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text
+    assert "실적 관련 원문." not in all_text
     assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
+
+    original_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "실적 관련 원문." in all_text
 
 
 def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
@@ -444,13 +491,21 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "실적 관련 원문 종결." in all_text
+    assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text  # metadata-only Summary, no translation stored
+    assert "실적 관련 원문 종결." not in all_text  # native excerpt collapsed behind its own toggle
     assert "English translation is being prepared." not in all_text
     assert "English translation</strong>" not in all_text
     assert "Translation unavailable" not in all_text
     assert "config_missing_key" not in all_text
     assert "not configured" not in all_text
     assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
+
+    original_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "실적 관련 원문 종결." in all_text
 
 
 # ============================================================
@@ -551,3 +606,101 @@ def test_no_forbidden_labels_appear_across_needs_review_not_material_and_deferre
     all_text = _text(at)
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
+
+
+# ============================================================
+# Summary wording (B) — checked directly against the pure functions
+# rather than a whole-page sweep, since the page's own pre-existing,
+# unrelated subtitle legitimately contains "material" and "signals".
+# ============================================================
+
+
+def test_summary_wording_never_uses_prohibited_language():
+    from src.logic import filing_display
+
+    prohibited = ("material", "signal", "review", "detected", "potential", "analysis")
+
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000050", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="10-Q", rcept_dt="2026-08-28", flr_nm="NVIDIA", pblntf_ty="10-Q",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000050/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English",
+    )
+    title = filing_display.display_title(filing, None)
+    metadata_summary = filing_display.metadata_only_summary(filing, title, "Aug 28, 2026")
+    grounded_summary = filing_display.extractive_summary(
+        "Item 2.02 Results of Operations. Revenue increased for the quarter compared to the prior year period."
+    )
+
+    for text in (title, metadata_summary, grounded_summary):
+        for word in prohibited:
+            assert word not in text.lower(), (word, text)
+
+
+# ============================================================
+# Extraction quality gate (C) — a Marvell-style raw XBRL/XML extraction
+# must never reach the public card
+# ============================================================
+
+
+def test_mrvl_style_xbrl_extraction_is_rejected_and_never_shown(tmp_path):
+    """Realistic shape of the defect this pass fixes: a Form 10-Q whose
+    stored excerpt is dominated by XBRL context/namespace tags, a
+    fasb.org taxonomy URL, and long machine-style element identifiers —
+    exactly the kind of extraction leakage seen on a real MRVL 10-Q."""
+    _seed_edgar_ciks(tmp_path)
+    xbrl_extraction = (
+        '<xbrli:context id="FD2026Q3QTD_us-gaap_StatementClassOfStockAxis">'
+        '<xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001835632</xbrli:identifier></xbrli:entity>'
+        '<xbrli:period><xbrli:startDate>2026-07-04</xbrli:startDate><xbrli:endDate>2026-10-03</xbrli:endDate></xbrli:period>'
+        '</xbrli:context> us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="FD2026Q3QTD" '
+        'unitRef="USD" decimals="-6">1234000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax> '
+        'dei:EntityRegistrantName xmlns:dei="http://xbrl.sec.gov/dei/2026" xmlns:us-gaap="http://fasb.org/us-gaap/2026"'
+    )
+    filing = FilingEvent(
+        rcept_no="0001835632-26-000042", corp_code="0001835632", corp_name="MARVELL TECHNOLOGY, INC.", stock_code="MRVL",
+        report_nm="10-Q", rcept_dt="2026-08-28", flr_nm="MARVELL TECHNOLOGY, INC.", pblntf_ty="10-Q",
+        source_url="https://www.sec.gov/Archives/edgar/data/1835632/000183563226000042/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="mrvl-20261003.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+    candidate = CandidateSignal(
+        id="edgar-cand-mrvl-10q", filing=filing, matched_rules=["earnings_or_results:10-Q"], confidence="Moderate",
+        status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=xbrl_extraction,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "MARVELL TECHNOLOGY, INC." in all_text
+    assert "Quarterly Report — Form 10-Q" in all_text
+    # Not one byte of the raw extraction ever reaches the rendered page.
+    for fragment in ("xbrli:", "us-gaap:", "dei:", "fasb.org", "contextRef", "RevenueFromContractWithCustomer", "1234000000"):
+        assert fragment not in all_text, fragment
+    # The neutral, metadata-only Summary instead.
+    assert "MARVELL TECHNOLOGY, INC. filed Quarterly Report — Form 10-Q on Aug 28, 2026." in all_text
+    # No filing-text toggle — the rejected extraction has nothing to reveal.
+    assert not any(b.label in ("View filing text", "Hide filing text") for b in at.button)
+    for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
+        assert forbidden not in all_text, forbidden
+
+
+def test_edgar_10q_uses_quarterly_report_title(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000090", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="10-Q", rcept_dt="2026-08-28", flr_nm="NVIDIA", pblntf_ty="10-Q",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000090/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="nvda-10q.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+    assert "Quarterly Report — Form 10-Q" in all_text
+    assert "10-Q" not in all_text.replace("Form 10-Q", "")  # the bare, non-title form code never stands alone
