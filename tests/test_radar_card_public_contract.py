@@ -263,6 +263,121 @@ def test_english_edgar_fixture_has_no_redundant_translation_block(tmp_path):
 
 
 # ============================================================
+# "Open original filing" link — must open the primary EDGAR document,
+# never the bare accession-directory listing; DART/EDINET unaffected
+# ============================================================
+
+
+def test_public_source_url_uses_primary_document_metadata_for_edgar(tmp_path):
+    from src.ui.components.radar_card import _public_source_url
+
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000078", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English",
+        primary_document="nvda-20260902.htm",
+    )
+    assert _public_source_url(filing) == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/nvda-20260902.htm"
+    )
+
+
+def test_public_source_url_falls_back_to_official_index_page_when_primary_document_absent(tmp_path):
+    """No primary_document metadata — must never guess a filename from
+    the ticker/company name, and must never link to the bare
+    accession-directory listing either. Falls back to SEC's own uniform
+    `{accession-no-dashes}-index.htm` filing index page, built only from
+    the already-stored accession number (rcept_no)."""
+    from src.ui.components.radar_card import _public_source_url
+
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000078", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="",
+    )
+    assert _public_source_url(filing) == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/"
+        "0001045810-26-000078-index.htm"
+    )
+
+
+def test_public_source_url_leaves_edgar_url_unchanged_when_not_a_directory_link(tmp_path):
+    """Defensive: an EDGAR source_url that doesn't have the expected
+    trailing-slash directory shape (e.g. cik was unresolved at scan
+    time, leaving source_url empty) is never rewritten or guessed at."""
+    from src.ui.components.radar_card import _public_source_url
+
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000079", corp_code="", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="", retrieved_at=_now_iso(), source_name="SEC EDGAR",
+        original_language="English", primary_document="nvda-20260902.htm",
+    )
+    assert _public_source_url(filing) == ""
+
+
+def test_public_source_url_leaves_dart_and_edinet_links_unchanged(tmp_path):
+    from src.ui.components.radar_card import _public_source_url
+
+    dart_filing = FilingEvent(
+        rcept_no="20260812000010", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+        report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="삼성전자",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000010", retrieved_at=_now_iso(),
+    )
+    assert _public_source_url(dart_filing) == dart_filing.source_url
+
+    edinet_filing = FilingEvent(
+        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
+        report_nm="有価証券報告書", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100YGH5",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    assert _public_source_url(edinet_filing) == edinet_filing.source_url
+
+
+def test_open_original_filing_button_links_to_primary_document_end_to_end(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000078", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English",
+        primary_document="nvda-20260902.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    link_buttons = list(at.get("link_button"))
+    assert len(link_buttons) == 1
+    assert link_buttons[0].url == "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/nvda-20260902.htm"
+
+
+def test_open_original_filing_button_links_to_index_page_when_no_primary_document(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000078", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    link_buttons = list(at.get("link_button"))
+    assert len(link_buttons) == 1
+    assert link_buttons[0].url == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/"
+        "0001045810-26-000078-index.htm"
+    )
+    # Never the raw, unadorned accession-directory URL.
+    assert link_buttons[0].url != filing.source_url
+
+
+# ============================================================
 # Translation-being-prepared vs. terminal-failure display contract
 # ============================================================
 

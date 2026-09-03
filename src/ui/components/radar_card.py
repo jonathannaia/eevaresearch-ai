@@ -110,6 +110,39 @@ def _translation_for_native_text(candidate: CandidateSignal | None):
     return candidate.title_translation
 
 
+_EDGAR_SOURCE_NAME = "SEC EDGAR"
+
+
+def _public_source_url(filing: FilingEvent) -> str:
+    """EDGAR-only correction: `filing.source_url` is EdgarClient.
+    filing_index_url()'s bare accession-directory URL (e.g.
+    ".../000104581026000078/") — a raw directory listing, not a useful
+    link for a reader. Storage/ingestion (scan_service.py) is untouched;
+    this only changes what URL the public card links to.
+
+    Prefers a direct link to the primary filing document, built from
+    official EDGAR primary-document metadata (`filing.primary_document`,
+    sourced from the submissions API's own `primaryDocument` field — see
+    edgar_scan_service.py) — the exact same concatenation
+    EdgarClient.fetch_document() itself performs, never a filename
+    guessed from the ticker or company name.
+
+    When that metadata is absent, falls back to the official EDGAR
+    filing index page — `{accession-no-dashes}-index.htm`, SEC's own
+    uniform naming convention for the index page inside every accession
+    folder — built from `filing.rcept_no` (the canonical dashed
+    accession number every EDGAR FilingEvent already stores, never
+    guessed). Still never the bare directory listing.
+
+    DART/EDINET are untouched: neither source's `source_url` ends with
+    "/", so both fall through to the unmodified `filing.source_url`."""
+    if filing.source_name != _EDGAR_SOURCE_NAME or not filing.source_url.endswith("/"):
+        return filing.source_url
+    if filing.primary_document:
+        return filing.source_url + filing.primary_document
+    return f"{filing.source_url}{filing.rcept_no}-index.htm"
+
+
 def _render_quiet_links(filing: FilingEvent) -> None:
     """The card's one action: opening the official source URL in a new
     tab (st.link_button's native behavior) — de-emphasized (the same
@@ -120,7 +153,7 @@ def _render_quiet_links(filing: FilingEvent) -> None:
     link_cols = st.columns([2, 7])
     with link_cols[0]:
         with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
-            st.link_button("Open original filing ↗", filing.source_url, use_container_width=True)
+            st.link_button("Open original filing ↗", _public_source_url(filing), use_container_width=True)
 
 
 def candidate_row(item: RadarItem, comparison_record=None) -> None:
