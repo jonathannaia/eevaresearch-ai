@@ -383,6 +383,53 @@ def test_cisco_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investors.arista.com/Communications/Press-Releases-and-Events/some-release/", source.canonical_domains, source.feed_url)
 
 
+# --- Intel Corp. — feed-URL repair (Daily News feed audit, design/DECISIONS.md):
+# newsroom.intel.com/feed no longer serves RSS (confirmed live, 404s into an
+# Access-Denied redirector); replaced with Intel's own official investor-
+# relations RSS feed at www.intc.com, confirmed live. ---
+
+
+def _intel_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Intel Corp."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_intel_is_registered_with_the_repaired_investor_relations_feed():
+    source = _intel_source()
+    assert source.feed_url == "https://www.intc.com/news-events/press-releases/rss"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("www.intc.com",)
+
+
+def test_intel_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("Intel Corp.")
+    assert company is not None
+    assert company.krx_code == "INTC"
+    assert "ai-buildout" in company.themes
+
+
+def test_intel_item_url_validates_against_its_repaired_canonical_domain():
+    source = _intel_source()
+    url = "https://www.intc.com/news-events/press-releases/detail/1776/intel-reports-second-quarter-2026-financial-results"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_intel_rejects_the_old_retired_newsroom_domain_and_lookalike_hostnames():
+    source = _intel_source()
+    for other_url in (
+        "https://newsroom.intel.com/some-news-article",
+        "https://intc.com/news-events/press-releases/detail/1776/some-release",
+        "https://www.intc.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_intel_off_domain_url_is_rejected():
+    source = _intel_source()
+    assert not validate_canonical_url("https://investors.arista.com/Communications/Press-Releases-and-Events/some-release/", source.canonical_domains, source.feed_url)
+
+
 def test_pilot_feeds_now_has_exactly_twelve_sources():
     assert len(PILOT_FEEDS) == 12
     assert {s.company_name for s in PILOT_FEEDS} == {

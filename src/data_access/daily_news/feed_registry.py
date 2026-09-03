@@ -53,9 +53,15 @@ PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
     ),
     DailyNewsFeedSource(
         company_name="Intel Corp.",
-        feed_url="https://newsroom.intel.com/feed",
+        # Repaired (Daily News feed audit, design/DECISIONS.md) —
+        # newsroom.intel.com/feed no longer serves RSS at all (the path
+        # 404s into an Access-Denied redirector; confirmed live, both
+        # headless and via a real browser). Replaced with Intel's own
+        # official investor-relations RSS feed (www.intc.com), confirmed
+        # live and fetchable with this app's own worker User-Agent.
+        feed_url="https://www.intc.com/news-events/press-releases/rss",
         feed_format="rss",
-        canonical_domains=("newsroom.intel.com",),
+        canonical_domains=("www.intc.com",),
     ),
     DailyNewsFeedSource(
         company_name="Advanced Micro Devices",
