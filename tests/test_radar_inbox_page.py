@@ -29,14 +29,6 @@ from src.models.models import (
 )
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
-# Phase C (editorial-simplicity pass): renamed from "Signals & review
-# queue"/"All filing events" — same underlying view/filter/ordering logic.
-# Phase F1 (design/DECISIONS.md): "All filings" -> "Captured filings" —
-# label text only, same view/filter/ordering logic again.
-# Phase R1 (design/DECISIONS.md): "Needs your decision" -> "Latest" —
-# same supersession, same underlying `candidate is not None` filter.
-_SIGNALS_VIEW = "Latest"
-_ALL_FILINGS_VIEW = "Captured filings"
 
 
 @pytest.fixture(autouse=True)
@@ -137,12 +129,13 @@ def _seed_edinet_filing_events(cache_dir, filings: list[FilingEvent]) -> None:
     (cache_dir / "edinet_filing_events.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def test_radar_inbox_shows_a_candidate_less_edinet_filing_only_in_captured_filings_view(tmp_path):
+def test_radar_inbox_shows_a_candidate_less_edinet_filing_directly(tmp_path):
     # Radar simplicity workstream: the public card no longer shows
     # ordinance/form/docType codes at all (technical/process metadata,
-    # not one of the 5 approved fields) — this now only proves the
-    # "Latest" vs. "Captured filings" membership rule still holds for a
-    # candidate-less EDINET event.
+    # not one of the 5 approved fields). Unify-Radar-into-Latest-Filings
+    # pass: a filing is never hidden for lacking a CandidateSignal — this
+    # now only proves a candidate-less EDINET event renders on the one
+    # unified feed with no view switch needed.
     softbank_filing = FilingEvent(
         rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
         report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22",
@@ -160,25 +153,11 @@ def test_radar_inbox_shows_a_candidate_less_edinet_filing_only_in_captured_filin
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
-        assert not at.exception
-        # This filing has no CandidateSignal, so the default "Needs your
-        # decision" view must show the calm empty state instead — never
-        # fabricate a signal for it, never fall back to a raw-inventory dump.
-        default_text = " ".join(m.value for m in at.markdown)
-        assert "No candidate signals yet" in default_text
-        assert "no filing currently meets the configured candidate rules" in default_text.lower()
-        assert "有価証券報告書" not in default_text  # the bare filing's own title is not shown here
-        action_labels = {b.label for b in at.button}
-        assert "Show captured filings" in action_labels
-
-        # get_settings must still be patched for this second run — AppTest
-        # re-executes the harness script synchronously on `.run()`.
-        at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
-        at.run()
-
     assert not at.exception
+    # This filing has no CandidateSignal, but the unified feed renders it
+    # directly all the same — never hidden for lacking a classification.
     all_text = " ".join(m.value for m in at.markdown)
-    assert "有価証券報告書" in all_text  # the bare event's own title, now visible
+    assert "有価証券報告書" in all_text  # the bare event's own title
 
 
 def test_radar_inbox_missing_configuration_state_is_unaffected_by_local_env(tmp_path, monkeypatch):
@@ -238,30 +217,20 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
 
-        assert not at.exception
-        # Default view ("Latest"): the 3 candidates render, but
-        # `new_filing` — a bare FilingEvent with no CandidateSignal — is
-        # excluded. Radar simplicity workstream: the public card no longer
-        # shows any status pill or failure note in either view — this now
-        # only proves the "Latest" membership rule (`candidate is not
-        # None`) still holds.
-        default_text = " ".join(m.value for m in at.markdown)
-        assert "일반 공고" not in default_text
-        assert "New facility investment decision" in default_text  # English title translation
-        # Radar layout correction: the stored excerpt translation is
-        # behind a collapsed, display-only toggle by default — its own
-        # expand/collapse behavior is covered by test_radar_card_public_
-        # contract.py; this test only confirms one is offered here.
-        assert any(b.label == "Show English translation" for b in at.button)
-
-        at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
-        at.run()
-
     assert not at.exception
+    # Unify-Radar-into-Latest-Filings pass: the unified feed shows both
+    # the 3 candidates and `new_filing` — a bare FilingEvent with no
+    # CandidateSignal — together, in the one and only render. Radar
+    # simplicity workstream: the public card shows no status pill or
+    # failure note.
     all_text = " ".join(m.value for m in at.markdown)
-    assert "일반 공고" in all_text  # the bare event's own title, now visible
+    assert "일반 공고" in all_text  # the bare event's own title
     assert "New facility investment decision" in all_text  # English title translation
-    assert any(b.label == "Show English translation" for b in at.button)  # collapsed by default
+    # Radar layout correction: the stored excerpt translation is behind a
+    # collapsed, display-only toggle by default — its own expand/collapse
+    # behavior is covered by test_radar_card_public_contract.py; this
+    # test only confirms one is offered here.
+    assert any(b.label == "Show English translation" for b in at.button)
 
 
 def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_path):
@@ -389,10 +358,8 @@ def test_radar_inbox_bare_event_shows_native_title_only_no_fabricated_translatio
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
-        # No candidate anywhere in this fixture, so Signals view is empty —
-        # switch to All filings to reach the bare event's own card.
-        at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
-        at.run()
+        # No candidate anywhere in this fixture — the unified feed still
+        # renders the bare event's own card directly.
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
@@ -406,7 +373,7 @@ def test_radar_inbox_bare_event_shows_native_title_only_no_fabricated_translatio
     assert "English translation" not in all_text
 
 
-def test_radar_inbox_all_filings_view_paginates_at_twenty_cards(tmp_path):
+def test_radar_inbox_paginates_at_twenty_cards(tmp_path):
     _seed_corp_codes(tmp_path)
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)  # no candidates — all bare events
@@ -414,8 +381,6 @@ def test_radar_inbox_all_filings_view_paginates_at_twenty_cards(tmp_path):
     settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-        at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
 
         assert not at.exception
@@ -435,7 +400,7 @@ def test_radar_inbox_all_filings_view_paginates_at_twenty_cards(tmp_path):
         assert "Page 2 of 2" in all_text
 
 
-def test_radar_inbox_switching_view_or_filters_resets_pagination_to_page_one(tmp_path):
+def test_radar_inbox_filter_change_resets_pagination_to_page_one(tmp_path):
     _seed_corp_codes(tmp_path)
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)
@@ -443,8 +408,6 @@ def test_radar_inbox_switching_view_or_filters_resets_pagination_to_page_one(tmp
     settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.run()
-        at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
         [b for b in at.button if b.label == "Next →"][0].click()
         at.run()

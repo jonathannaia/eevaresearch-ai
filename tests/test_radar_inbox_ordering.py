@@ -192,8 +192,6 @@ def test_source_filter_preserves_newest_first_ordering(tmp_path):
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=15)
         at.run()
-        at.radio(key="radar-view-mode").set_value("Captured filings")
-        at.run()
         at.multiselect(key="radar-filter-source").set_value(["SEC EDGAR"])
         at.run()
 

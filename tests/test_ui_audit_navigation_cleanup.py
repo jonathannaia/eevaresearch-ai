@@ -32,21 +32,22 @@ def _sidebar_page_links(at: AppTest):
     return list(at.sidebar.get("page_link"))
 
 
-def test_workspace_shows_exactly_dashboard_radar_themes_daily_news():
+def test_workspace_shows_exactly_dashboard_filings_themes_daily_news():
     # Watchlists was removed entirely (reader-facing data-integrity
     # pass, design/DECISIONS.md) — session-only, seeded from illustrative
     # data, no live real data of its own.
     at = _run_to_dashboard()
     labels = [pl.label for pl in _sidebar_page_links(at)]
-    for expected in ("Dashboard", "Radar", "Themes", "Daily News"):
+    for expected in ("Dashboard", "Filings", "Themes", "Daily News"):
         assert expected in labels
     assert "Watchlists" not in labels
 
 
-def test_radar_label_is_radar_not_radar_inbox_in_the_sidebar():
+def test_filings_label_is_filings_not_radar_or_radar_inbox_in_the_sidebar():
     at = _run_to_dashboard()
     labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Radar" in labels
+    assert "Filings" in labels
+    assert "Radar" not in labels
     assert "Radar Inbox" not in labels
 
 
@@ -125,7 +126,7 @@ def test_no_empty_workspace_or_system_group_in_the_rendered_sidebar():
     # future edit leaving a bare heading with a real page dict that's
     # simply empty for that group.
     labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert labels & {"Dashboard", "Radar", "Daily News", "Watchlists"}
+    assert labels & {"Dashboard", "Filings", "Daily News", "Watchlists"}
     assert labels & {"Methodology & Coverage"}
 
 

@@ -123,12 +123,11 @@ def _render_quiet_links(filing: FilingEvent) -> None:
             st.link_button("Open original filing ↗", filing.source_url, use_container_width=True)
 
 
-def candidate_row(item: RadarItem, show_full_status: bool = False, comparison_record=None) -> None:
-    """`show_full_status`/`comparison_record` are accepted for call-site
-    compatibility with radar_inbox.py (which still computes a per-page
-    comparison-record bulk read and a view-mode flag for its own filtering
-    logic) but are no longer used by this card — the public card no longer
-    renders a status pill or a Comparison row in any view."""
+def candidate_row(item: RadarItem, comparison_record=None) -> None:
+    """`comparison_record` is accepted for call-site compatibility with
+    radar_inbox.py (which still computes a per-page comparison-record bulk
+    read) but is no longer used by this card — the public card no longer
+    renders a status pill or a Comparison row."""
     filing = item.filing
     candidate = item.candidate
 

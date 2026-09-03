@@ -433,14 +433,6 @@ def test_no_forbidden_labels_appear_across_needs_review_not_material_and_deferre
 
     at = _run_radar(tmp_path)
     assert not at.exception
-    at.radio(key="radar-view-mode").set_value("Captured filings")
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=Settings(
-        dart_api_key="dart-key", translation_api_key="deepl-key", edgar_user_agent="EevaResearch test@example.com",
-        edinet_subscription_key="test-key", cache_dir=tmp_path,
-    )):
-        at.run()
-
-    assert not at.exception
     all_text = _text(at)
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden

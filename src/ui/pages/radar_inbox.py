@@ -49,27 +49,16 @@ from src.ui.components.radar_status import RadarItem
 _DART_SCOPE_LINE = "OpenDART / DART · Samsung Electronics + SK Hynix · Memory + AI Buildout"
 _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation, Rocket Lab · AI Buildout, Memory, Photonics, Humanoids, Space"
 
-# View-mode + pagination (usability/navigation-stability follow-up — see
+# Pagination (usability/navigation-stability follow-up — see
 # design/DECISIONS.md): the raw "every FilingEvent, every source, no cap"
 # list could grow to hundreds of cards, each with several nested
 # containers/expanders/buttons — rendering all of them at once was found
-# live to make the app's own sidebar navigation unreliable. "Latest"
-# (candidates only — renamed from "Needs your decision" in Phase R1,
-# design/DECISIONS.md, itself renamed from "Signals & review queue" in
-# the Phase C editorial-simplicity pass — same underlying view/filter/
-# ordering logic every time: `candidate is not None`, never gated on
-# review status, so an already-Published or -Dismissed item still shows
-# here exactly as before) is the default, useful view; "Captured filings"
-# (temporarily relabeled from "All filings" in Phase F1, design/
-# DECISIONS.md — only candidate-linked filings are durably persisted
-# under Postgres/SQLite today, so "All filings" could read as a stronger
-# completeness claim than this view can back up; the underlying query/
-# filter/ordering logic is unchanged) is opt-in and always paginated,
-# same as the default view if it ever grows past one page. No page ever
-# renders more than PAGE_SIZE cards' worth of widgets, regardless of view
-# or filters.
-_SIGNALS_VIEW = "Latest"
-_ALL_FILINGS_VIEW = "Captured filings"
+# live to make the app's own sidebar navigation unreliable. Unify-Radar-
+# into-Latest-Filings pass: the earlier "Latest" (candidate-linked only)
+# vs. "Captured filings" (every captured filing) view selector is removed
+# — there is now exactly one public feed, always the full captured list,
+# always paginated. No page ever renders more than PAGE_SIZE cards' worth
+# of widgets, regardless of filters.
 PAGE_SIZE = 20
 
 _FILTER_KEYS = (
@@ -86,11 +75,6 @@ _FILTER_KEYS = (
 # view_items}`, so a source with zero currently-loaded filings (most
 # often EDINET) silently never appeared as a selectable option at all.
 _ALL_RADAR_SOURCES = ("OpenDART / DART", "SEC EDGAR", "EDINET")
-
-
-def _switch_to_all_filings() -> None:
-    st.session_state["radar-view-mode"] = _ALL_FILINGS_VIEW
-    st.session_state["radar-page"] = 1
 
 
 def _clear_filters() -> None:
@@ -175,7 +159,7 @@ def _render_missing_configuration(
     # collapsed expander below, unchanged in content. Readiness logic and
     # the `lines` construction above are untouched.
     empty_state(
-        "Radar Inbox is not configured",
+        "Latest Filings is not configured",
         "None of the live filing sources (DART, EDGAR, EDINET) are configured in this environment. "
         "See configuration details below for exactly what's missing.",
     )
@@ -544,7 +528,7 @@ def render() -> None:
     # (below, after the readiness gate) is the only default-view
     # statement about source status, and it already derives strictly
     # from durable provider_scan_status — untouched by this phase.
-    st.markdown('<div class="er-page-title">Radar Inbox</div>', unsafe_allow_html=True)
+    st.markdown('<div class="er-page-title">Latest Filings</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="er-muted">Radar watches tracked companies for material filings, theme developments, '
         'and high-confidence signals.</div>',
@@ -578,30 +562,14 @@ def render() -> None:
         )
         return
 
-    # View selector — the top-level content control (Requirement 1):
-    # "Latest" (candidate-only, the useful default) vs. "Captured filings"
-    # (the fuller inventory, opt-in) — a compact segmented control right
-    # beside the default view. Read-only: switching views never creates a
-    # signal, mutates a status, or invokes processing.
-    view_mode = st.radio(
-        "View", [_SIGNALS_VIEW, _ALL_FILINGS_VIEW], key="radar-view-mode", horizontal=True,
-    )
-
-    view_items = [i for i in items if i.candidate is not None] if view_mode == _SIGNALS_VIEW else items
-
-    if view_mode == _SIGNALS_VIEW and not view_items:
-        empty_state(
-            "No candidate signals yet",
-            "No filing currently meets the configured candidate rules.",
-            action_label="Show captured filings",
-            on_click=_switch_to_all_filings,
-            key="radar-no-signals",
-        )
-        return
-
-    sources = sorted(set(_ALL_RADAR_SOURCES) | {i.filing.source_name for i in view_items})
-    themes = sorted({i.filing.theme_slug for i in view_items if i.filing.theme_slug})
-    parsed_dates = sorted(d for d in (_parse_rcept_date(i.filing.rcept_dt) for i in view_items) if d is not None)
+    # Unify-Radar-into-Latest-Filings pass: one public feed only — every
+    # captured filing from every source, never gated on whether it has an
+    # internal candidate/signal/theme classification. The earlier "Latest"
+    # (candidate-linked only) vs. "Captured filings" (everything) view
+    # selector is removed entirely.
+    sources = sorted(set(_ALL_RADAR_SOURCES) | {i.filing.source_name for i in items})
+    themes = sorted({i.filing.theme_slug for i in items if i.filing.theme_slug})
+    parsed_dates = sorted(d for d in (_parse_rcept_date(i.filing.rcept_dt) for i in items) if d is not None)
     min_date = parsed_dates[0] if parsed_dates else date.today()
     max_date = parsed_dates[-1] if parsed_dates else date.today()
 
@@ -625,7 +593,7 @@ def render() -> None:
         with st.container(key="cta-tertiary-clear-radar-filters"):
             st.button("Clear all filters", key="radar-clear-filters-btn", on_click=_clear_filters)
 
-    filtered = view_items
+    filtered = items
     if search_query and search_query.strip():
         query = search_query.strip().lower()
         filtered = [i for i in filtered if query in i.filing.report_nm.lower() or query in i.filing.corp_name.lower()]
@@ -645,10 +613,10 @@ def render() -> None:
         return
 
     # Pagination — never render more than PAGE_SIZE cards' worth of
-    # containers/expanders/buttons in one script run, in either view.
-    # Reset to page 1 whenever the view mode or any filter value changes.
+    # containers/expanders/buttons in one script run. Reset to page 1
+    # whenever any filter value changes.
     filter_signature = (
-        view_mode, search_query, tuple(sorted(source_filter)), tuple(sorted(theme_filter)), date_range,
+        search_query, tuple(sorted(source_filter)), tuple(sorted(theme_filter)), date_range,
     )
     if st.session_state.get("radar-filter-signature") != filter_signature:
         st.session_state["radar-page"] = 1
@@ -688,12 +656,6 @@ def render() -> None:
     for item in page_items:
         candidate_row(
             item,
-            # Phase T1 (design/DECISIONS.md): "Latest" suppresses internal/
-            # non-actionable status pills (and shows a quiet note for a
-            # genuine retrieval/parse failure); "Captured filings" always
-            # shows the complete, real status — that view's whole purpose
-            # is truthful completeness.
-            show_full_status=(view_mode != _SIGNALS_VIEW),
             comparison_record=(latest_comparisons_by_candidate_id.get(item.candidate.id) if item.candidate is not None else None),
         )
 
@@ -712,7 +674,7 @@ def render() -> None:
             st.rerun()
     with summary_cols[2]:
         st.markdown(
-            f'<div class="er-muted" style="margin-top:0.5rem;">{total_items} of {len(view_items)} items · '
+            f'<div class="er-muted" style="margin-top:0.5rem;">{total_items} of {len(items)} items · '
             f'Page {current_page} of {total_pages} (showing {range_start}–{range_end})</div>',
             unsafe_allow_html=True,
         )

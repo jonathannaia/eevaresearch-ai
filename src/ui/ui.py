@@ -29,21 +29,21 @@ METHODOLOGY_STATEMENT = (
 # simply no longer linked from any visible sidebar group.
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
-    ("radar_inbox", "Radar"),
+    ("radar_inbox", "Filings"),
     # Themes (Evidence-First Themes MVP, design/DECISIONS.md) — the
     # public, curated cross-company research narrative surface. Placed
-    # directly beneath Radar: Radar surfaces individual detected
-    # company signals, Themes connects official evidence across
-    # companies into a testable thesis. The legacy demo ticker/theme/
-    # subtheme browser that previously occupied this url_path/nav slot
-    # was removed entirely (reader-facing data-integrity pass, design/
-    # DECISIONS.md) rather than kept as a hidden route — it had no live
-    # real data of its own.
+    # directly beneath Filings: Filings surfaces individual captured
+    # filings, Themes connects official evidence across companies into
+    # a testable thesis. The legacy demo ticker/theme/subtheme browser
+    # that previously occupied this url_path/nav slot was removed
+    # entirely (reader-facing data-integrity pass, design/DECISIONS.md)
+    # rather than kept as a hidden route — it had no live real data of
+    # its own.
     ("themes", "Themes"),
     # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
-    # scoped autonomous discovery surface, not a Radar view (see the
+    # scoped autonomous discovery surface, not a Filings view (see the
     # Radar-vs-Daily-News product clarification the same document records).
-    # Placed next to Radar for IA/UX grouping only ("what's new" feeds
+    # Placed next to Filings for IA/UX grouping only ("what's new" feeds
     # together) — this has no bearing on their code/data independence.
     ("daily_news", "Daily News"),
 ]

@@ -28,8 +28,6 @@ from src.models.models import CandidateSignal, CandidateStatus, ExtractionState,
 from src.ui.components.radar_status import comparison_status_label
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
-_SIGNALS_VIEW = "Latest"
-_ALL_FILINGS_VIEW = "Captured filings"
 _COMPARISON_CAVEAT = "Deterministic rule-category comparison — not a filing-text, financial, or materiality determination."
 
 
@@ -165,7 +163,7 @@ def test_bulk_request_contains_only_current_page_candidate_ids_not_other_pages(t
 
 
 def test_no_comparison_repository_call_when_page_has_no_candidate_ids(tmp_path):
-    # "Captured filings" view with filings that never became candidates —
+    # The unified feed renders filings that never became candidates too —
     # every item.candidate is None, so page_candidate_ids is empty.
     _seed_corp_codes(tmp_path)
     filings = [_filing("R-01"), _filing("R-02")]
@@ -177,9 +175,6 @@ def test_no_comparison_repository_call_when_page_has_no_candidate_ids(tmp_path):
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
-        all_filings_radio = next((r for r in at.radio if _ALL_FILINGS_VIEW in getattr(r, "options", [])), None)
-        if all_filings_radio is not None:
-            all_filings_radio.set_value(_ALL_FILINGS_VIEW).run()
 
     assert not at.exception
     assert call_log == []  # never called — no candidate ids existed on this page
@@ -253,7 +248,7 @@ def test_comparison_status_label_never_raises_on_malformed_input(malformed):
 # ============================================================
 
 
-def _render_single_candidate_page(tmp_path, candidate: CandidateSignal, records_by_candidate_id: dict, view: str = _SIGNALS_VIEW):
+def _render_single_candidate_page(tmp_path, candidate: CandidateSignal, records_by_candidate_id: dict):
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [candidate.filing])
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
@@ -310,8 +305,8 @@ def test_mismatched_candidate_id_renders_no_row_and_no_caveat(tmp_path):
 
 
 def test_candidate_absent_renders_no_comparison_row(tmp_path):
-    # "Captured filings" view renders a bare FilingEvent with no
-    # CandidateSignal at all — comparison never applies.
+    # The unified feed renders a bare FilingEvent with no CandidateSignal
+    # at all — comparison never applies.
     _seed_corp_codes(tmp_path)
     filing = _filing("R-01")
     _seed_filing_events(tmp_path, [filing])
@@ -322,9 +317,6 @@ def test_candidate_absent_renders_no_comparison_row(tmp_path):
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
-        all_filings_radio = next((r for r in at.radio if _ALL_FILINGS_VIEW in getattr(r, "options", [])), None)
-        if all_filings_radio is not None:
-            all_filings_radio.set_value(_ALL_FILINGS_VIEW).run()
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)

@@ -256,14 +256,12 @@ def test_retrieval_failure_note_is_not_color_reliant():
 
 # ============================== END-TO-END CARD RENDERING ==============================
 
-def test_needs_review_card_shows_no_pill_in_either_view(tmp_path):
+def test_needs_review_card_shows_no_pill(tmp_path):
     # Radar simplicity workstream: the public card no longer shows a
     # status pill, a failure note, "Why this matters", a theme label, or
-    # a confidence label in ANY view — "Latest" and "Captured filings"
-    # differ only in which items appear, never in what a shown card
-    # renders. default_card_status_html/status_pill_html themselves are
-    # untouched (see the direct-function tests above) — they are simply
-    # never called from the card any more.
+    # a confidence label. default_card_status_html/status_pill_html
+    # themselves are untouched (see the direct-function tests above) —
+    # they are simply never called from the card any more.
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000001", "신규시설투자등 결정")
     _seed_filing_events(tmp_path, [filing])
@@ -276,15 +274,6 @@ def test_needs_review_card_shows_no_pill_in_either_view(tmp_path):
     assert "신규시설투자등 결정" in all_text  # research content is untouched
     assert "Why this matters:" not in all_text
     assert "Detection confidence" not in all_text
-
-    at.radio(key="radar-view-mode").set_value("Captured filings")
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=Settings(
-        dart_api_key="dart-key", translation_api_key="deepl-key",
-        edgar_user_agent=None, edinet_subscription_key=None, cache_dir=tmp_path,
-    )):
-        at.run()
-    assert not at.exception
-    assert 'er-status-tag er-tag-mix">Needs review' not in _text(at)
 
 
 def test_retrieval_failed_card_shows_original_title_and_no_error_jargon(tmp_path):

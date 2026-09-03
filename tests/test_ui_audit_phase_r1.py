@@ -81,7 +81,7 @@ def test_default_header_has_only_the_approved_subtitle_and_no_live_chip(tmp_path
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "Radar Inbox" in all_text
+    assert "Latest Filings" in all_text
     assert "Radar watches tracked companies for material filings, theme developments, and high-confidence signals." in all_text
     # Genuinely deleted, not relocated — these exact strings exist nowhere
     # in the page, default view or not.
@@ -94,20 +94,21 @@ def test_default_header_has_only_the_approved_subtitle_and_no_live_chip(tmp_path
 
 # ============================== VIEWS AND FILTERS ==============================
 
-def test_default_view_is_latest_and_secondary_is_captured_filings(tmp_path):
+def test_view_selector_is_removed_one_unified_feed_only(tmp_path):
+    """Unify-Radar-into-Latest-Filings pass — the "Latest"/"Captured
+    filings" `st.radio` view selector is gone entirely; there is exactly
+    one public feed now, so no `radar-view-mode` widget exists at all."""
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000001", "일반 공고")])
     at = _run_radar(tmp_path)
     assert not at.exception
-    radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Latest", "Captured filings"]
-    assert radio.value == "Latest"
+    assert "radar-view-mode" not in {r.key for r in at.radio}
 
 
-def test_result_membership_is_unchanged_needs_review_candidate_visible_in_latest(tmp_path):
-    """Same underlying `candidate is not None` filter as before the
-    rename — a real candidate still appears in the default view, and a
-    bare filing with no candidate still doesn't."""
+def test_result_membership_includes_bare_filings_and_candidates_together(tmp_path):
+    """Unify-Radar-into-Latest-Filings pass — a filing is never hidden for
+    lacking a CandidateSignal any more: a bare filing and a real candidate
+    both render on the one unified feed in the same render."""
     _seed_corp_codes(tmp_path)
     bare_filing = _filing("20260812000001", "일반 공고")
     candidate_filing = _filing("20260812000002", "신규시설투자등 결정")
@@ -120,23 +121,7 @@ def test_result_membership_is_unchanged_needs_review_candidate_visible_in_latest
         state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
     )
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
-    settings = Settings(
-        dart_api_key="dart-key", translation_api_key="deepl-key",
-        edgar_user_agent=None, edinet_subscription_key=None, cache_dir=tmp_path,
-    )
-    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
-        at = AppTest.from_file(str(_HARNESS), default_timeout=15)
-        at.run()
-        assert not at.exception
-        default_text = _text(at)
-        assert "신규시설투자등 결정" in default_text
-        assert "일반 공고" not in default_text
-
-        # get_settings must still be patched for this second run — AppTest
-        # re-executes the harness script synchronously on `.run()`.
-        at.radio(key="radar-view-mode").set_value("Captured filings")
-        at.run()
-
+    at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
     assert "신규시설투자등 결정" in all_text

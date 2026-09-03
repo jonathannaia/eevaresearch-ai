@@ -179,30 +179,24 @@ def _run_radar(tmp_path, **settings_overrides):
     return at
 
 
-def test_radar_default_view_is_needs_your_decision_with_all_filings_beside_it(tmp_path):
-    """Phase F1 (design/DECISIONS.md): "All filings" -> "Captured
-    filings" — label text only, same default/secondary view order and
-    underlying logic. Phase R1: "Needs your decision" -> "Latest" — same
-    supersession, same underlying `candidate is not None` filter."""
+def test_radar_has_no_view_selector_one_unified_feed_only(tmp_path):
+    """Unify-Radar-into-Latest-Filings pass — the "Latest"/"Captured
+    filings" `st.radio` view selector is removed entirely; there is one
+    public feed now, so no `radar-view-mode` widget exists."""
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000001", "일반 공고")])
     at = _run_radar(tmp_path)
     assert not at.exception
-    radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Latest", "Captured filings"]
-    assert radio.value == "Latest"
+    assert "radar-view-mode" not in {r.key for r in at.radio}
 
 
 def test_radar_clear_all_filters_is_still_present_and_functional(tmp_path):
     _seed_corp_codes(tmp_path)
     _seed_filing_events(tmp_path, [_filing("20260812000003", "일반 공고")])
     at = _run_radar(tmp_path)
-    # This filing has no CandidateSignal, so the default "Needs your
-    # decision" view is empty — switch to "Captured filings" (Phase F1:
-    # renamed from "All filings", same view) to reach the filter row
-    # (same pattern as the existing Radar Inbox test suite).
-    at.radio(key="radar-view-mode").set_value("Captured filings")
-    at.run()
+    # Unify-Radar-into-Latest-Filings pass: this filing has no
+    # CandidateSignal but the one unified feed shows it directly now — no
+    # view switch needed to reach the filter row.
     assert not at.exception
     clear_buttons = [b for b in at.button if b.label == "Clear all filters"]
     assert len(clear_buttons) == 1
@@ -214,8 +208,6 @@ def test_radar_pagination_controls_render_after_results_not_above(tmp_path):
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)
     at = _run_radar(tmp_path)
-    at.radio(key="radar-view-mode").set_value("Captured filings")
-    at.run()
     assert not at.exception
 
     ordered = _ordered(at)

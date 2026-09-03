@@ -164,17 +164,17 @@ def test_freshness_line_does_not_show_provider_counts_or_operational_detail(tmp_
 
 # ============================== CAPTURED FILINGS LABEL ==============================
 
-def test_captured_filings_replaces_all_filings_and_latest_is_default(tmp_path):
-    """Phase R1: "Needs your decision" -> "Latest" — label text only,
-    same underlying `candidate is not None` view filter."""
+def test_view_selector_and_its_labels_are_gone(tmp_path):
+    """Unify-Radar-into-Latest-Filings pass — the "Latest"/"Captured
+    filings" view selector is removed entirely; there is one unified feed
+    now, with no view-mode radio and none of its old label text."""
     _seed_one_dart_filing(tmp_path)
     at = _run(_settings(cache_dir=tmp_path))
     assert not at.exception
-    radio = at.radio(key="radar-view-mode")
-    assert radio.options == ["Latest", "Captured filings"]
-    assert radio.value == "Latest"
+    assert "radar-view-mode" not in {r.key for r in at.radio}
     assert "All filings" not in _text(at)
     assert "Needs your decision" not in _text(at)
+    assert "Captured filings" not in _text(at)
 
 
 # ============================== EDINET STAYS NOT ENABLED BY DEFAULT ==============================
@@ -199,5 +199,5 @@ def test_edinet_is_not_enabled_by_default_even_though_its_worker_status_row_woul
     # No source is ready at all here -> the missing-configuration empty
     # state renders, and neither the freshness line nor Ingestion status
     # ever gets to the point of describing EDINET as anything but absent.
-    assert "Radar Inbox is not configured" in _text(at)
+    assert "Latest Filings is not configured" in _text(at)
     assert "EDGE_EDINET_SUBSCRIPTION_KEY is not configured." in _text(at)

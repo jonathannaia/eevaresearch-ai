@@ -98,7 +98,7 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     (just no longer linked from any visible sidebar group), and that
     every expected dict key exists post-registration."""
     assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "themes", "daily_news"]
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Radar", "Themes", "Daily News"]
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Themes", "Daily News"]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
     # Evidence-First Themes MVP (design/DECISIONS.md): "themes" moved

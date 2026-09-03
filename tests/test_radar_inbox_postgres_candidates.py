@@ -187,7 +187,7 @@ def test_postgres_backend_broken_with_no_source_ready_shows_not_configured_safel
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Radar Inbox is not configured" in all_text
+    assert "Latest Filings is not configured" in all_text
     assert "status unavailable" in all_text  # honest, non-leaking placeholder
     # Naming a *missing* env var as operator guidance is this page's own
     # pre-existing, legitimate behavior (unrelated to this phase) — the
@@ -243,14 +243,14 @@ def test_provider_label_and_canonical_source_url_render_for_postgres_candidate(p
     assert "SEC EDGAR" in all_text
 
 
-# --- Empty-but-healthy state ---
+# --- Bare filing (no matching candidate) still renders directly ---
 
-def test_no_candidates_qualify_shows_no_signals_yet_not_an_error(pg_isolated_dsn):
+def test_bare_filing_with_no_candidate_renders_directly_not_hidden(pg_isolated_dsn):
     settings = _postgres_settings(pg_isolated_dsn)
     filing = _edgar_filing("0001045810-26-000102", "NVIDIA", "2026-08-22", "https://example.invalid/no-candidate")
     # A bare filing event with no matching candidate — a real event the
-    # scan rules simply didn't flag, exactly like a JSON/SQLite "no
-    # candidate signals yet" state.
+    # scan rules simply didn't flag. Unify-Radar-into-Latest-Filings pass:
+    # the unified feed never hides a filing for lacking a classification.
     from src.data_access.postgres_state_db import filing_event_repository as pg_filing_events
 
     conn = backend_factory.get_candidate_repository(settings, "SEC EDGAR").conn
@@ -262,7 +262,8 @@ def test_no_candidates_qualify_shows_no_signals_yet_not_an_error(pg_isolated_dsn
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No candidate signals yet" in all_text
+    assert "NVIDIA" in all_text
+    assert "8-K filing" in all_text
 
 
 # --- No writes / no status mutation during bare render; Signals stays PUBLISHED-only ---

@@ -35,7 +35,7 @@ def test_radar_inbox_not_configured_state_collapses_detail_into_expander(tmp_pat
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     # Title preserved exactly (existing tests assert this literal string).
-    assert "Radar Inbox is not configured" in all_text
+    assert "Latest Filings is not configured" in all_text
     # Full diagnostic content is preserved, unchanged, somewhere on the page.
     assert "EDGE_DART_API_KEY is not configured." in all_text
     assert "EDGE_EDINET_SUBSCRIPTION_KEY is not configured." in all_text
