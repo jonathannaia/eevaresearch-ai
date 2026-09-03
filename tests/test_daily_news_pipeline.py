@@ -266,3 +266,82 @@ def test_unknown_tracked_company_source_is_skipped_with_a_warning(tmp_path, monk
 
     assert report.stories_published == 0
     assert any("not found in tracked_companies.py" in w for w in report.warnings)
+
+
+# --- Daily News durability workstream: additive, optional repository seam ---
+
+
+def test_run_discovery_omitted_repository_behaves_exactly_as_before(tmp_path, monkeypatch):
+    """The default, unchanged path — every existing caller (scripts/
+    run_daily_news_discovery.py's own default invocation) hits this."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    # Written to the JSON store, not any other backend.
+    assert len(daily_news_store.load_stories(tmp_path)) == 1
+
+
+def test_run_discovery_supplied_repository_routes_every_store_touch_through_it(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    from src.data_access.state_db import connection, daily_news_repository, schema
+
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+
+    class _SqliteRepoAdapter:
+        def load_stories(self):
+            return daily_news_repository.load_stories(conn)
+
+        def upsert_new_stories(self, new_stories):
+            return daily_news_repository.upsert_new_stories(conn, new_stories)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,), daily_news_repository=_SqliteRepoAdapter())
+
+    assert report.stories_published == 1
+    # Persisted through the supplied repository (SQLite), never touching
+    # the JSON file at all.
+    assert daily_news_repository.load_stories(conn) != {}
+    assert daily_news_store.load_stories(tmp_path) == {}
+    assert not (tmp_path / "daily_news_stories.json").exists()
+
+
+def test_run_discovery_supplied_repository_skips_already_seen_story_ids(tmp_path, monkeypatch):
+    from src.data_access.state_db import connection, daily_news_repository, schema
+
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+
+    class _SqliteRepoAdapter:
+        def load_stories(self):
+            return daily_news_repository.load_stories(conn)
+
+        def upsert_new_stories(self, new_stories):
+            return daily_news_repository.upsert_new_stories(conn, new_stories)
+
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    repo = _SqliteRepoAdapter()
+    first = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,), daily_news_repository=repo)
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,), daily_news_repository=repo)
+
+    assert first.stories_published == 1
+    assert second.stories_published == 0  # already-seen id — idempotent no-op
+    assert len(daily_news_repository.load_stories(conn)) == 1

@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -451,8 +451,81 @@ _V10_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN translation_next_retry_at TEXT",
 )
 
+# Daily News durability workstream (design/DECISIONS.md) — three new,
+# wholly additive tables giving Daily News's own NewsStory/
+# NewsSourceReference/NewsStateTransition model (src/models/
+# daily_news_models.py) the same durable SQLite/Postgres persistence
+# Radar already has, entirely separate from `candidates`/`filing_events`
+# and every other table above (no shared columns, no cross-references).
+#
+# - `daily_news_stories`: primary key is the existing deterministic id
+#   (`newsitem-{company-slug}-{hash(company|canonical_url)}` — see
+#   daily_news_pipeline._story_id()) — the same idempotency key
+#   daily_news_store.py's JSON store already uses. `version` is the
+#   optimistic-concurrency column, same convention as `candidates.version`.
+# - `daily_news_sources`: one row per NewsSourceReference (NewsStory.sources
+#   is a tuple, not a single value — today's pipeline only ever produces
+#   exactly one per story, but the model itself doesn't bound it), in
+#   append order, mirroring `state_transitions`'s own shape. `url` carries
+#   a UNIQUE index — the same canonical link can never be stored twice
+#   across any story, a stronger, DB-enforced guarantee than the id hash
+#   alone provides (that hash could theoretically differ across two rows
+#   referencing the identical URL only if `company_name` text differed).
+# - `daily_news_state_transitions`: one row per NewsStateTransition, in
+#   append order — identical shape/purpose to `state_transitions` above,
+#   just keyed to `daily_news_stories` instead of `candidates`.
+_V11_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE daily_news_stories (
+        id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        ticker TEXT,
+        theme_slug TEXT NOT NULL DEFAULT '',
+        headline TEXT NOT NULL,
+        eeva_summary TEXT,
+        is_fallback_summary INTEGER NOT NULL DEFAULT 0,
+        translation_unavailable INTEGER NOT NULL DEFAULT 0,
+        original_title TEXT,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_daily_news_stories_company ON daily_news_stories (company_name)",
+    "CREATE INDEX idx_daily_news_stories_status ON daily_news_stories (status)",
+    """
+    CREATE TABLE daily_news_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL REFERENCES daily_news_stories (id),
+        publisher TEXT NOT NULL,
+        source_class TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        original_language TEXT NOT NULL,
+        excerpt_original TEXT,
+        image_url TEXT,
+        image_alt TEXT
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_daily_news_sources_url ON daily_news_sources (url)",
+    "CREATE INDEX idx_daily_news_sources_story ON daily_news_sources (story_id, id)",
+    """
+    CREATE TABLE daily_news_state_transitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL REFERENCES daily_news_stories (id),
+        status TEXT NOT NULL,
+        at TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    "CREATE INDEX idx_daily_news_state_transitions_story ON daily_news_state_transitions (story_id, id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 11 later means appending a new (11, (...statements...))
+# Adding schema version 12 later means appending a new (12, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -465,6 +538,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (8, _V8_STATEMENTS),
     (9, _V9_STATEMENTS),
     (10, _V10_STATEMENTS),
+    (11, _V11_STATEMENTS),
 )
 
 

@@ -74,53 +74,60 @@ def test_foreign_keys_are_enforced_on_every_connection():
 
 
 # --- Translation reliability workstream: schema version 10 ---
+#
+# test_fresh_database_migrates_to_current_version and
+# test_migration_is_idempotent_on_an_already_migrated_database above
+# already cover "a fresh/already-migrated database reaches
+# CURRENT_SCHEMA_VERSION" generically (dynamic, never hardcoding a
+# version number) — the two v10-specific tests that used to duplicate
+# that generically here were removed rather than kept as dead weight.
+# What remains below are the genuinely version-specific historical-
+# transition proofs, which stay meaningful forever regardless of how
+# many later versions exist.
 
 
-def test_fresh_database_migrates_straight_to_v10():
-    conn = connection.connect_in_memory()
-    assert schema.migrate(conn) == 10 == schema.CURRENT_SCHEMA_VERSION
-
-
-def test_v9_database_upgrades_to_v10():
-    """Simulates a database that was already at v9 before this workstream
-    — applies exactly migrations 1..9 (bypassing migrate()'s own
-    "run everything up to CURRENT" behavior), confirms it really is
-    recorded at v9, then calls migrate() and confirms it reaches v10
-    with the five new columns present and usable."""
-    conn = connection.connect_in_memory()
-    conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+def _migrate_up_to(conn, target: int) -> None:
+    """Manually replays every migration step up to (and including)
+    `target`, bypassing migrate()'s own "run everything up to CURRENT"
+    behavior — for tests that need to freeze a database at a specific
+    historical version before exercising the next real upgrade step."""
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
     conn.execute("INSERT INTO schema_version (version) VALUES (0)")
     conn.commit()
-    for target_version, statements in schema._MIGRATIONS:
-        if target_version > 9:
+    for version, statements in schema._MIGRATIONS:
+        if version > target:
             continue
         for statement in statements:
             conn.execute(statement)
-        conn.execute("UPDATE schema_version SET version = ?", (target_version,))
+        conn.execute("UPDATE schema_version SET version = ?", (version,))
     conn.commit()
+
+
+def test_v9_database_upgrades_to_v10():
+    """Simulates a database that was already at v9 before the translation
+    reliability workstream — applies exactly migrations 1..9, confirms
+    it really is recorded at v9, then temporarily bounds migrate() to
+    stop at v10 (bypassing its own "run everything up to CURRENT"
+    behavior, since CURRENT is now v11 or later) and confirms it reaches
+    v10 with the five new columns present and usable."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 9)
     assert schema.get_schema_version(conn) == 9
 
-    result = schema.migrate(conn)
+    original_migrations = schema._MIGRATIONS
+    schema._MIGRATIONS = tuple(m for m in original_migrations if m[0] <= 10)
+    try:
+        result = schema.migrate(conn)
+    finally:
+        schema._MIGRATIONS = original_migrations
 
-    assert result == 10 == schema.CURRENT_SCHEMA_VERSION
+    assert result == 10
     assert schema.get_schema_version(conn) == 10
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
     assert {
         "translation_failure_category", "translation_failure_reason", "translation_failure_at",
         "translation_retry_count", "translation_next_retry_at",
     } <= columns
-
-
-def test_migrating_an_already_v10_database_is_idempotent():
-    conn = connection.connect_in_memory()
-    schema.migrate(conn)
-    assert schema.get_schema_version(conn) == 10
-    # Reopening/migrating again must be a clean no-op, not an error from
-    # re-running "ALTER TABLE ... ADD COLUMN" against columns that already
-    # exist.
-    result = schema.migrate(conn)
-    assert result == 10
-    assert schema.get_schema_version(conn) == 10
 
 
 def test_v10_columns_have_correct_types_and_defaults():
@@ -133,6 +140,69 @@ def test_v10_columns_have_correct_types_and_defaults():
     assert columns["translation_next_retry_at"]["notnull"] == 0
     assert columns["translation_retry_count"]["notnull"] == 1
     assert columns["translation_retry_count"]["dflt_value"] == "0"
+
+
+# --- Daily News durability workstream: schema version 11 ---
+
+
+def test_v10_database_upgrades_to_v11():
+    """Simulates a database that was already at v10 before this
+    workstream — applies exactly migrations 1..10, confirms it really is
+    recorded at v10, then calls migrate() (CURRENT_SCHEMA_VERSION is
+    exactly 11 as of this workstream) and confirms it reaches v11 with
+    the three new Daily News tables present and usable."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 10)
+    assert schema.get_schema_version(conn) == 10
+
+    result = schema.migrate(conn)
+
+    assert result == 11 == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == 11
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    assert {"daily_news_stories", "daily_news_sources", "daily_news_state_transitions"} <= tables
+
+
+def test_v11_daily_news_tables_start_empty_and_are_usable():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_stories").fetchone()["n"] == 0
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_sources").fetchone()["n"] == 0
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_state_transitions").fetchone()["n"] == 0
+
+
+def test_v11_daily_news_stories_column_shape():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(daily_news_stories)").fetchall()}
+    assert columns["id"]["pk"] == 1
+    assert columns["company_name"]["notnull"] == 1
+    assert columns["ticker"]["notnull"] == 0
+    assert columns["version"]["dflt_value"] == "1"
+
+
+def test_v11_daily_news_sources_url_is_unique():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s1', 'NVIDIA', 'Headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, retrieved_at, original_language) "
+        "VALUES ('s1', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+            "VALUES ('s2', 'NVIDIA', 'Headline 2', 'Published', 'now', 'now')"
+        )
+        conn.execute(
+            "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, retrieved_at, original_language) "
+            "VALUES ('s2', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T2', 'now', 'now', 'English')"
+        )
+        conn.commit()
 
 
 def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():

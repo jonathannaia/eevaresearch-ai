@@ -22,7 +22,9 @@ _DAILY_NEWS_SOURCE_FILES = (
     REPO_ROOT / "src" / "data_access" / "daily_news" / "dedup.py",
     REPO_ROOT / "src" / "data_access" / "daily_news" / "daily_news_store.py",
     REPO_ROOT / "src" / "data_access" / "daily_news" / "daily_news_pipeline.py",
+    REPO_ROOT / "src" / "data_access" / "daily_news" / "daily_news_backend.py",
     REPO_ROOT / "scripts" / "run_daily_news_discovery.py",
+    REPO_ROOT / "scripts" / "import_daily_news_json_to_db.py",
     REPO_ROOT / "src" / "ui" / "pages" / "daily_news.py",
     REPO_ROOT / "src" / "ui" / "pages" / "daily_news_admin.py",
 )

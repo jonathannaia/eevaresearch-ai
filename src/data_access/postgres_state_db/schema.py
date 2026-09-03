@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -349,8 +349,63 @@ _V10_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN translation_next_retry_at TEXT",
 )
 
+# Daily News durability workstream — isolated Postgres counterpart to
+# state_db/schema.py's own _V11_STATEMENTS (see that module's comment for
+# the full per-table design rationale). Only genuine Postgres difference:
+# `BIGINT GENERATED ALWAYS AS IDENTITY` in place of SQLite's `INTEGER
+# PRIMARY KEY AUTOINCREMENT` for the two child tables' own surrogate keys.
+_V11_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE daily_news_stories (
+        id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        ticker TEXT,
+        theme_slug TEXT NOT NULL DEFAULT '',
+        headline TEXT NOT NULL,
+        eeva_summary TEXT,
+        is_fallback_summary INTEGER NOT NULL DEFAULT 0,
+        translation_unavailable INTEGER NOT NULL DEFAULT 0,
+        original_title TEXT,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_daily_news_stories_company ON daily_news_stories (company_name)",
+    "CREATE INDEX idx_daily_news_stories_status ON daily_news_stories (status)",
+    """
+    CREATE TABLE daily_news_sources (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        story_id TEXT NOT NULL REFERENCES daily_news_stories (id),
+        publisher TEXT NOT NULL,
+        source_class TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        original_language TEXT NOT NULL,
+        excerpt_original TEXT,
+        image_url TEXT,
+        image_alt TEXT
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_daily_news_sources_url ON daily_news_sources (url)",
+    "CREATE INDEX idx_daily_news_sources_story ON daily_news_sources (story_id, id)",
+    """
+    CREATE TABLE daily_news_state_transitions (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        story_id TEXT NOT NULL REFERENCES daily_news_stories (id),
+        status TEXT NOT NULL,
+        at TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    "CREATE INDEX idx_daily_news_state_transitions_story ON daily_news_state_transitions (story_id, id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 11 later means appending a new (11, (...statements...))
+# Adding schema version 12 later means appending a new (12, (...statements...))
 # entry here — existing entries are never edited or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
@@ -363,6 +418,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (8, _V8_STATEMENTS),
     (9, _V9_STATEMENTS),
     (10, _V10_STATEMENTS),
+    (11, _V11_STATEMENTS),
 )
 
 

@@ -222,7 +222,7 @@ def test_sqlite_migration_reaches_version_8_with_new_tables_starting_empty():
     # is that the V8 matching tables exist and start empty, not this
     # exact number.
     assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
-    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 10
+    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 11
     assert sqlite_matching.get_scope(conn, "theme-does-not-exist") is None
     assert sqlite_matching.list_active_scopes(conn) == ()
     assert sqlite_matching.list_pending_matches(conn) == ()
@@ -349,8 +349,7 @@ def test_postgres_migration_reaches_version_8_with_new_tables(pg_isolated_connec
 
     conn = pg_isolated_connection
     version = postgres_schema.migrate(conn)
-    assert version == 9
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 9
+    assert version == postgres_schema.CURRENT_SCHEMA_VERSION
     assert postgres_matching.get_scope(conn, "theme-does-not-exist") is None
     assert postgres_matching.list_active_scopes(conn) == ()
     assert postgres_matching.list_pending_matches(conn) == ()

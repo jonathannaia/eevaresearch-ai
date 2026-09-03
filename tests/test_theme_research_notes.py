@@ -152,7 +152,7 @@ def test_sqlite_bulk_empty_input_executes_no_sql():
 def test_sqlite_migration_reaches_version_9_with_new_table():
     conn = _sqlite_conn()
     assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
-    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 10
+    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 11
     assert sqlite_themes.research_notes_for_theme_ids(conn, ["theme-does-not-exist"]) == {}
 
 
@@ -193,8 +193,7 @@ def test_postgres_migration_reaches_version_9(pg_isolated_connection):
 
     conn = pg_isolated_connection
     version = postgres_schema.migrate(conn)
-    assert version == 9
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 9
+    assert version == postgres_schema.CURRENT_SCHEMA_VERSION
 
 
 # ============================================================

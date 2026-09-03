@@ -11,7 +11,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.config.settings import get_settings
-from src.data_access.daily_news import daily_news_pipeline
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
 from src.ui.components.section import section_header
 
 
@@ -30,7 +30,14 @@ def render() -> None:
 
     if st.button("Run discovery now"):
         with st.spinner("Polling pilot feeds..."):
-            report = daily_news_pipeline.run_discovery(settings.cache_dir)
+            # Daily News durability workstream: storage only — this button
+            # still does exactly one on-demand discovery pass, reporting
+            # the same DailyNewsScanReport shape as before. Which backend
+            # it reads/writes against now follows the same EDGE_DB_BACKEND
+            # setting every other repository in this app already honors,
+            # instead of being hardcoded to the JSON file.
+            repository = daily_news_backend.get_daily_news_repository(settings)
+            report = daily_news_pipeline.run_discovery(settings.cache_dir, daily_news_repository=repository)
         st.session_state["_daily_news_last_report"] = report
 
     report = st.session_state.get("_daily_news_last_report")

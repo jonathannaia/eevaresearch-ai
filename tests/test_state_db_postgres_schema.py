@@ -52,34 +52,46 @@ def test_no_signals_table_exists(pg_isolated_connection):
 
 
 # --- Translation reliability workstream: schema version 10 ---
+#
+# test_fresh_schema_migrates_to_current_version and
+# test_migration_is_idempotent_on_an_already_migrated_schema above
+# already cover "a fresh/already-migrated schema reaches
+# CURRENT_SCHEMA_VERSION" generically — the two v10-specific duplicates
+# of that were removed. What remains are the genuinely version-specific
+# historical-transition proofs.
 
 
-def test_fresh_schema_migrates_straight_to_v10(pg_isolated_connection):
-    assert postgres_schema.migrate(pg_isolated_connection) == 10 == postgres_schema.CURRENT_SCHEMA_VERSION
-
-
-def test_v9_schema_upgrades_to_v10(pg_isolated_connection):
-    """Simulates a schema that was already at v9 before this workstream —
-    applies exactly migrations 1..9 (bypassing migrate()'s own "run
-    everything up to CURRENT" behavior), confirms it really is recorded
-    at v9, then calls migrate() and confirms it reaches v10 with the five
-    new columns present and usable."""
-    conn = pg_isolated_connection
+def _migrate_up_to(conn, target: int) -> None:
     conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
     conn.execute("INSERT INTO schema_version (version) VALUES (0)")
     conn.commit()
-    for target_version, statements in postgres_schema._MIGRATIONS:
-        if target_version > 9:
+    for version, statements in postgres_schema._MIGRATIONS:
+        if version > target:
             continue
         for statement in statements:
             conn.execute(statement)
-        conn.execute("UPDATE schema_version SET version = %s", (target_version,))
+        conn.execute("UPDATE schema_version SET version = %s", (version,))
     conn.commit()
+
+
+def test_v9_schema_upgrades_to_v10(pg_isolated_connection):
+    """Simulates a schema that was already at v9 before the translation
+    reliability workstream — applies exactly migrations 1..9, confirms it
+    really is recorded at v9, then temporarily bounds migrate() to stop
+    at v10 (CURRENT is now v11 or later) and confirms it reaches v10 with
+    the five new columns present and usable."""
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 9)
     assert postgres_schema.get_schema_version(conn) == 9
 
-    result = postgres_schema.migrate(conn)
+    original_migrations = postgres_schema._MIGRATIONS
+    postgres_schema._MIGRATIONS = tuple(m for m in original_migrations if m[0] <= 10)
+    try:
+        result = postgres_schema.migrate(conn)
+    finally:
+        postgres_schema._MIGRATIONS = original_migrations
 
-    assert result == 10 == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert result == 10
     assert postgres_schema.get_schema_version(conn) == 10
     rows = conn.execute(
         "SELECT column_name FROM information_schema.columns "
@@ -92,14 +104,6 @@ def test_v9_schema_upgrades_to_v10(pg_isolated_connection):
     } <= columns
 
 
-def test_migrating_an_already_v10_schema_is_idempotent(pg_isolated_connection):
-    postgres_schema.migrate(pg_isolated_connection)
-    assert postgres_schema.get_schema_version(pg_isolated_connection) == 10
-    result = postgres_schema.migrate(pg_isolated_connection)
-    assert result == 10
-    assert postgres_schema.get_schema_version(pg_isolated_connection) == 10
-
-
 def test_v10_translation_retry_count_defaults_to_zero(pg_isolated_connection):
     postgres_schema.migrate(pg_isolated_connection)
     rows = pg_isolated_connection.execute(
@@ -110,6 +114,60 @@ def test_v10_translation_retry_count_defaults_to_zero(pg_isolated_connection):
     assert len(rows) == 1
     assert rows[0]["is_nullable"] == "NO"
     assert rows[0]["column_default"] == "0"
+
+
+# --- Daily News durability workstream: schema version 11 ---
+
+
+def test_v10_schema_upgrades_to_v11(pg_isolated_connection):
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 10)
+    assert postgres_schema.get_schema_version(conn) == 10
+
+    result = postgres_schema.migrate(conn)
+
+    assert result == 11 == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == 11
+    rows = conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+    ).fetchall()
+    names = {row["table_name"] for row in rows}
+    assert {"daily_news_stories", "daily_news_sources", "daily_news_state_transitions"} <= names
+
+
+def test_v11_daily_news_tables_start_empty_and_are_usable(pg_isolated_connection):
+    postgres_schema.migrate(pg_isolated_connection)
+    for table in ("daily_news_stories", "daily_news_sources", "daily_news_state_transitions"):
+        row = pg_isolated_connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()
+        assert row["n"] == 0
+
+
+def test_v11_daily_news_sources_url_is_unique(pg_isolated_connection):
+    import psycopg
+    import pytest
+
+    conn = pg_isolated_connection
+    postgres_schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s1', 'NVIDIA', 'Headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, retrieved_at, original_language) "
+        "VALUES ('s1', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(
+            "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+            "VALUES ('s2', 'NVIDIA', 'Headline 2', 'Published', 'now', 'now')"
+        )
+        conn.execute(
+            "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, retrieved_at, original_language) "
+            "VALUES ('s2', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T2', 'now', 'now', 'English')"
+        )
+        conn.commit()
+    conn.rollback()
 
 
 def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connection):

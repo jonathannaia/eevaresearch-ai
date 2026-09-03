@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import canonical_url, daily_news_store, dedup, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_FEEDS, tracked_company_for
@@ -30,6 +31,9 @@ from src.models.daily_news_models import (
     NewsStoryStatus,
     SourceClass,
 )
+
+if TYPE_CHECKING:  # avoids a hard import-time dependency on daily_news_backend.py's own connection-acquisition chain
+    from src.data_access.daily_news.daily_news_backend import DailyNewsRepositoryProtocol
 
 
 @dataclass(frozen=True)
@@ -63,16 +67,33 @@ def _transition(story: NewsStory, status: NewsStoryStatus, detail: str = "") -> 
     return story
 
 
-def run_discovery(cache_dir: Path, feed_sources: tuple[DailyNewsFeedSource, ...] = PILOT_FEEDS) -> DailyNewsScanReport:
+def run_discovery(
+    cache_dir: Path,
+    feed_sources: tuple[DailyNewsFeedSource, ...] = PILOT_FEEDS,
+    daily_news_repository: DailyNewsRepositoryProtocol | None = None,
+) -> DailyNewsScanReport:
     """One bounded discovery run across every configured pilot feed.
     Never loops, never sleeps, never retries on its own — a single pass,
     same "one explicit call, one bounded amount of work" discipline as
     radar_pipeline.run_pipeline. One source's fetch failure is isolated
-    (recorded in source_failures) and never blocks the others."""
+    (recorded in source_failures) and never blocks the others.
+
+    `daily_news_repository` (Daily News durability workstream) is
+    additive and optional, mirroring radar_pipeline.run_pipeline's own
+    `candidate_repository` seam exactly. Omitted (every existing caller
+    this workstream — scripts/run_daily_news_discovery.py's own default
+    invocation and any test that doesn't pass one), every store touch
+    below is exactly today's JSON behavior via daily_news_store.py.
+    Supplied, every store touch in this one call routes through the
+    given collaborator instead — see
+    src.data_access.daily_news.daily_news_backend.get_daily_news_repository."""
     scan_id = f"daily-news-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
 
-    store = daily_news_store.load_stories(cache_dir)
+    if daily_news_repository is None:
+        store = daily_news_store.load_stories(cache_dir)
+    else:
+        store = daily_news_repository.load_stories()
     existing_headlines = [(s.company_name, s.headline) for s in store.values()]
 
     items_discovered = 0
@@ -144,7 +165,10 @@ def run_discovery(cache_dir: Path, feed_sources: tuple[DailyNewsFeedSource, ...]
             existing_headlines.append((source.company_name, entry.title))
 
     if newly_published:
-        daily_news_store.upsert_new_stories(cache_dir, newly_published)
+        if daily_news_repository is None:
+            daily_news_store.upsert_new_stories(cache_dir, newly_published)
+        else:
+            daily_news_repository.upsert_new_stories(newly_published)
 
     completed_at = datetime.now(timezone.utc).isoformat()
     return DailyNewsScanReport(

@@ -1,8 +1,10 @@
 """Daily News — an independent, autonomous discovery surface, entirely
 separate from Radar Inbox (see design/DECISIONS.md for the product
-clarification this follows). Reads only from
-src/data_access/daily_news/daily_news_store.py's own JSON store, never
-CandidateSignal/FilingEvent or any Radar-owned file.
+clarification this follows). Reads only NewsStory records, via
+src.data_access.daily_news.daily_news_backend.get_daily_news_repository()
+(JSON by default, unless EDGE_DB_BACKEND selects sqlite/postgres — see
+the Daily News durability workstream) — never CandidateSignal/
+FilingEvent or any Radar-owned file.
 
 The default card shows exactly five fields, per the approved scope:
 company name; official source/publisher and local publication time;
@@ -17,8 +19,8 @@ The public page shows only stories published within a rolling, inclusive
 matching src.logic.formatting.days_ago()'s own convention) — a company
 selector (all companies with any persisted PUBLISHED story, not only
 currently-recent ones) narrows this further. Older stories stay in
-daily_news_store.py's JSON file untouched; this page only ever hides
-them, never deletes anything.
+the underlying store untouched; this page only ever hides them, never
+deletes anything.
 """
 from __future__ import annotations
 
@@ -26,8 +28,8 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
-from src.config.settings import get_settings
-from src.data_access.daily_news import daily_news_store
+from src.config.settings import Settings, get_settings
+from src.data_access.daily_news import daily_news_backend
 from src.logic.formatting import fmt_datetime_local
 from src.models.daily_news_models import NewsStory, NewsStoryStatus
 from src.ui.components.empty_state import empty_state
@@ -37,8 +39,8 @@ _FRESHNESS_WINDOW_DAYS = 7
 _ALL_COMPANIES_OPTION = "All companies"
 
 
-def _published_stories(cache_dir) -> list[NewsStory]:
-    stories = daily_news_store.load_stories(cache_dir).values()
+def _published_stories(settings: Settings) -> list[NewsStory]:
+    stories = daily_news_backend.get_daily_news_repository(settings).load_stories().values()
     published = [s for s in stories if s.status == NewsStoryStatus.PUBLISHED]
     return sorted(published, key=lambda s: s.sources[0].published_at if s.sources else "", reverse=True)
 
@@ -108,7 +110,7 @@ def render() -> None:
     )
 
     settings = get_settings()
-    all_stories = _published_stories(settings.cache_dir)
+    all_stories = _published_stories(settings)
 
     selected_company = st.selectbox("Companies", options=_company_options(all_stories), index=0)
 
