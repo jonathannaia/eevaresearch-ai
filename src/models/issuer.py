@@ -29,14 +29,32 @@ class CoverageState(str, Enum):
     SEED: part of the curated, actively-scanned universe (today, that
     means it round-trips through the existing TrackedCompany-based
     pipelines via the compatibility adapter). DISCOVERED: surfaced as a
-    candidate for coverage (in this phase, only via the static portfolio-
-    map stubs) but never yet reviewed/promoted — must never reach an
-    existing scanner. REJECTED: considered and explicitly excluded (no
-    entries at Phase A; reserved for future human review outcomes)."""
+    candidate for coverage (at Phase A, only via the static portfolio-
+    map stubs; from the Company Discovery Phase 2 workstream onward,
+    also the live Candidate Ledger's own tier — see
+    src.data_access.company_discovery) but never yet reviewed/promoted
+    — must never reach an existing scanner or any live-monitoring
+    configuration. REJECTED: considered and explicitly excluded —
+    invalid, duplicate, non-corporate, or not relevant (no entries at
+    Phase A; populated by Company Discovery Phase 2's deterministic
+    reject rules).
+
+    Company Discovery Phase 2 additions (both purely additive, no
+    existing member's value or meaning changed):
+    ARCHIVED: a Candidate whose evidence has gone stale (no new evidence
+    within the configured staleness window) — retained, never deleted,
+    never scored, never promotable without new evidence. QUARANTINED: an
+    ambiguous identity match — ARCHIVED and QUARANTINED are both terminal
+    with respect to scoring (a candidate in either state is never scored
+    and never a promotion input) but not deletion; see
+    src.data_access.company_discovery.entity_resolution for the exact
+    classification rules that produce each."""
 
     SEED = "Seed"
     DISCOVERED = "Discovered"
     REJECTED = "Rejected"
+    ARCHIVED = "Archived"
+    QUARANTINED = "Quarantined"
 
 
 class LifecycleState(str, Enum):
@@ -92,3 +110,10 @@ class Issuer:
     # already-verified TrackedCompany registry. See issuer_registry.py.
     normalization_status: str = ""
     notes: str = ""
+    # Company Discovery Phase 2 additions — both purely additive, default
+    # values chosen so every existing SEED_ISSUERS/DISCOVERY_STUBS
+    # construction call (which never passes either) remains correct
+    # unchanged: every one of those is a real, independently-known
+    # corporate issuer with no parent-subsidiary relationship recorded.
+    parent_issuer_id: str | None = None  # another Issuer's issuer_id, when this issuer is a known subsidiary
+    entity_kind: str = "corporate"  # "corporate" | "subsidiary" | "fund" | "agency" | "government" | "unknown"

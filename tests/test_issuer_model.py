@@ -36,8 +36,28 @@ def test_issuer_identifiers_default_is_not_shared_across_instances():
 
 
 def test_coverage_state_values():
-    assert {s.value for s in CoverageState} == {"Seed", "Discovered", "Rejected"}
+    # Company Discovery Phase 2 additively extended this enum with
+    # ARCHIVED/QUARANTINED — SEED/DISCOVERED/REJECTED are unchanged.
+    assert {s.value for s in CoverageState} == {"Seed", "Discovered", "Rejected", "Archived", "Quarantined"}
 
 
 def test_lifecycle_state_values():
     assert {s.value for s in LifecycleState} == {"Active", "Monitoring", "Delisted", "Merged"}
+
+
+# --- Company Discovery Phase 2 additions to Issuer — additive only ---
+
+
+def test_issuer_parent_and_entity_kind_default_safely():
+    issuer = Issuer(issuer_id="a", legal_name="A", country_or_jurisdiction="X", coverage_state=CoverageState.SEED)
+    assert issuer.parent_issuer_id is None
+    assert issuer.entity_kind == "corporate"
+
+
+def test_issuer_parent_and_entity_kind_can_be_set():
+    issuer = Issuer(
+        issuer_id="candidate:abc123", legal_name="Example Subsidiary Ltd.", country_or_jurisdiction="Unconfirmed",
+        coverage_state=CoverageState.DISCOVERED, parent_issuer_id="edgar:NVDA", entity_kind="subsidiary",
+    )
+    assert issuer.parent_issuer_id == "edgar:NVDA"
+    assert issuer.entity_kind == "subsidiary"

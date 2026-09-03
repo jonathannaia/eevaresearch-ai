@@ -43,7 +43,7 @@ from src.ui.ui import HIDDEN_FROM_NAV, PRIMARY_NAV, SYSTEM_NAV
 APP_PATH = Path(__file__).parent.parent / "app.py"
 
 _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + [
-    "disclaimer", "daily_news_admin", "research_cases", "theme_workspace",
+    "disclaimer", "daily_news_admin", "research_cases", "theme_workspace", "company_discovery_admin",
 ]
 
 

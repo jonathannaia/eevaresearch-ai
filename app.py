@@ -28,6 +28,7 @@ from src.logic.unread import seed_initial_last_seen
 from src.ui.beta_gate import evaluate_beta_gate
 from src.ui.pages import (
     about,
+    company_discovery_admin,
     coverage,
     daily_news,
     daily_news_admin,
@@ -139,6 +140,17 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages["theme_workspace"] = st.Page(
         with_chrome(theme_workspace.render, "theme_workspace"),
         title="Constraint Research Workspace", url_path="theme-workspace", visibility="hidden",
+    )
+    # Company Discovery — Phase 2 admin/status (design/DECISIONS.md) —
+    # same hidden-but-reachable pattern as disclaimer/daily_news_admin/
+    # research_cases/theme_workspace above: never linked in the sidebar,
+    # any nav group, or the command palette. Internal-only, strictly
+    # read-only (no promotion action exists in Phase 2); also gated a
+    # second way by settings.company_discovery_admin_enabled (checked
+    # inside the page itself, default disabled).
+    pages["company_discovery_admin"] = st.Page(
+        with_chrome(company_discovery_admin.render, "company_discovery_admin"),
+        title="Company Discovery — Admin", url_path="company-discovery-admin", visibility="hidden",
     )
     return pages
 

@@ -236,6 +236,51 @@ class Settings:
     daily_news_reconciliation_staleness_hours: int = field(
         default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_RECONCILIATION_STALENESS_HOURS") or "72")
     )
+    # Company Discovery Phase 2 (design/DECISIONS.md) — the master switch
+    # for the standalone worker (scripts/company_discovery_worker.py)
+    # only, mirroring daily_news_live_scan_enabled's own convention
+    # exactly. Disabled by default; no dashboard page reads this to
+    # decide anything — Phase 2 has no promotion path and no live-
+    # monitoring write path of any kind.
+    company_discovery_live_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_COMPANY_DISCOVERY_LIVE_ENABLED")
+    )
+    # Deliberately separate from db_backend/state_db_url above, and read
+    # only by scripts/company_discovery_worker.py and scripts/backfill_
+    # company_discovery.py — never by get_settings()'s own ambient use
+    # elsewhere. None means unconfigured; the worker fails closed. Live-
+    # mode startup validation accepts "postgres" only, same stricter-
+    # than-Radar posture as the Daily News worker.
+    company_discovery_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    company_discovery_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_URL") or None
+    )
+    # SQLite counterpart, local/test-only — same convention as
+    # daily_news_worker_state_db_path: never accepted by the worker's own
+    # live-mode gate (_build_worker_settings requires "postgres" exactly),
+    # exists only so a direct, local test or the admin page's own SQLite-
+    # backed read path can construct Settings without a real Postgres DSN.
+    company_discovery_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_PATH"))
+            if os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_PATH") else None
+        )
+    )
+    company_discovery_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_COMPANY_DISCOVERY_SCAN_INTERVAL_MINUTES") or "240")
+    )
+    company_discovery_stale_days: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_COMPANY_DISCOVERY_STALE_DAYS") or "180")
+    )
+    # Gates the hidden, read-only company_discovery_admin.py page —
+    # separate from company_discovery_live_enabled (the worker's own
+    # switch), same "admin visibility is its own flag" convention as
+    # daily_news_admin_enabled above.
+    company_discovery_admin_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_COMPANY_DISCOVERY_ADMIN_ENABLED")
+    )
     # Private-beta access foundation, Phase 1 — disabled by default so every
     # existing page keeps working with no configuration at all. The
     # allowlist alone is authorization, not authentication (see

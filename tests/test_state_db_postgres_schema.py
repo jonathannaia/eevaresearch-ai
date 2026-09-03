@@ -182,14 +182,17 @@ def test_v11_daily_news_sources_url_is_unique(pg_isolated_connection):
 
 
 def test_v11_schema_upgrades_to_v12(pg_isolated_connection):
+    """Compares against postgres_schema.CURRENT_SCHEMA_VERSION
+    dynamically (never a hardcoded 12) — see state_db/test_state_db_
+    schema.py's own test_v11_database_upgrades_to_v12 for why."""
     conn = pg_isolated_connection
     _migrate_up_to(conn, 11)
     assert postgres_schema.get_schema_version(conn) == 11
 
     result = postgres_schema.migrate(conn)
 
-    assert result == 12 == postgres_schema.CURRENT_SCHEMA_VERSION
-    assert postgres_schema.get_schema_version(conn) == 12
+    assert result == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
     rows = conn.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
     ).fetchall()

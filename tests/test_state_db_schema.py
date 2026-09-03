@@ -218,19 +218,24 @@ def test_v11_daily_news_sources_url_is_unique():
 
 
 def test_v11_database_upgrades_to_v12():
-    """Simulates a database that was already at v11 before this
-    workstream — applies exactly migrations 1..11, confirms it really is
-    recorded at v11, then calls migrate() (CURRENT_SCHEMA_VERSION is
-    exactly 12 as of this workstream) and confirms it reaches v12 with
-    the two new worker-status tables present and usable."""
+    """Simulates a database that was already at v11 before the Daily
+    News autonomous worker workstream — applies exactly migrations
+    1..11, confirms it really is recorded at v11, then calls migrate()
+    and confirms v12's own two new worker-status tables are present and
+    usable along the way. Compares against schema.CURRENT_SCHEMA_VERSION
+    dynamically (never a hardcoded 12) since migrate() naturally
+    continues on to whatever later version now exists on top (e.g.
+    Company Discovery's v13) — this test's own genuinely version-
+    specific claim (the v11->v12 transition itself) stays meaningful
+    regardless of how many later versions exist."""
     conn = connection.connect_in_memory()
     _migrate_up_to(conn, 11)
     assert schema.get_schema_version(conn) == 11
 
     result = schema.migrate(conn)
 
-    assert result == 12 == schema.CURRENT_SCHEMA_VERSION
-    assert schema.get_schema_version(conn) == 12
+    assert result == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION
     tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
     assert {"daily_news_scan_status", "daily_news_worker_status"} <= tables
 

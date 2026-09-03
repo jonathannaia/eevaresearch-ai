@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -574,6 +574,144 @@ _V12_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Company Discovery — Phase 2, passive Candidate Ledger only (design/
+# DECISIONS.md). Seven wholly additive tables — no existing table is
+# touched, no existing pipeline reads or writes any of them.
+# `candidate_issuers.coverage_state` deliberately excludes 'Seed': a row
+# in this table can never represent a Core company — Core stays
+# exclusively in TrackedCompany/SEED_ISSUERS, untouched by this
+# workstream. No promotion path exists in Phase 2; there is no write
+# path from these tables into any live-monitoring configuration.
+#
+# - `candidate_issuers`: one row per Candidate entity. `issuer_id` is
+#   `candidate:{sha256(normalized_legal_name|country_or_jurisdiction)[:16]}`
+#   — deterministic, stable even once a real ticker/exchange is later
+#   confirmed (see candidate_issuer_identifiers, which never changes
+#   issuer_id). `composite_score` is a cache, recomputed from
+#   candidate_evidence every worker tick — never hand-edited.
+# - `candidate_issuer_identifiers`: confirmed source identifiers only,
+#   normalized child table (never a JSON blob) — a public-company
+#   identifier is never guessed; this table only ever holds one already
+#   independently confirmed from source text.
+# - `candidate_aliases`: mention-text -> known-Candidate lookup,
+#   accumulated as more evidence names the same entity differently.
+# - `candidate_evidence`: append-only, one row per extracted mention. A
+#   `candidate_issuers` row is only ever created together with its first
+#   evidence row, in the same repository call — see
+#   candidate_issuer_repository.py's create_candidate_with_evidence(),
+#   the only function that can insert a new candidate_issuers row.
+#   `UNIQUE(dedup_key)` is the idempotency guarantee that makes the
+#   worker's rolling ingestion-overlap window (candidate_pipeline.py)
+#   safe to reprocess every tick.
+# - `candidate_score_history`: one row per rescore, audit trail only.
+# - `candidate_worker_status` / `candidate_state_transitions`: mirror
+#   daily_news_worker_status / daily_news_state_transitions exactly.
+_V13_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE candidate_issuers (
+        issuer_id TEXT PRIMARY KEY,
+        legal_name TEXT NOT NULL,
+        native_name TEXT NOT NULL DEFAULT '',
+        country_or_jurisdiction TEXT NOT NULL DEFAULT 'Unconfirmed',
+        entity_kind TEXT NOT NULL DEFAULT 'unknown'
+            CHECK (entity_kind IN ('corporate','subsidiary','fund','agency','government','unknown')),
+        parent_issuer_id TEXT REFERENCES candidate_issuers (issuer_id),
+        coverage_state TEXT NOT NULL
+            CHECK (coverage_state IN ('Discovered','Rejected','Archived','Quarantined')),
+        resolution_confidence TEXT NOT NULL DEFAULT 'Low'
+            CHECK (resolution_confidence IN ('High','Medium','Low')),
+        composite_score REAL NOT NULL DEFAULT 0.0,
+        discovered_via TEXT NOT NULL,
+        first_evidence_at TEXT NOT NULL,
+        last_evidence_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_candidate_issuers_state ON candidate_issuers (coverage_state)",
+    "CREATE INDEX idx_candidate_issuers_last_evidence ON candidate_issuers (last_evidence_at)",
+    """
+    CREATE TABLE candidate_issuer_identifiers (
+        issuer_id TEXT NOT NULL REFERENCES candidate_issuers (issuer_id),
+        source TEXT NOT NULL,
+        native_id TEXT NOT NULL,
+        confirmed_via TEXT NOT NULL,
+        confirmed_at TEXT NOT NULL,
+        PRIMARY KEY (issuer_id, source)
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_candidate_issuer_identifiers_native ON candidate_issuer_identifiers (source, native_id)",
+    """
+    CREATE TABLE candidate_aliases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issuer_id TEXT NOT NULL REFERENCES candidate_issuers (issuer_id),
+        alias_text TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_candidate_aliases_issuer_alias ON candidate_aliases (issuer_id, alias_text)",
+    "CREATE INDEX idx_candidate_aliases_text ON candidate_aliases (alias_text)",
+    """
+    CREATE TABLE candidate_evidence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issuer_id TEXT NOT NULL REFERENCES candidate_issuers (issuer_id),
+        source_type TEXT NOT NULL CHECK (source_type IN ('Filing','DailyNews')),
+        source_name TEXT NOT NULL,
+        source_record_id TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        source_snippet TEXT NOT NULL,
+        relationship_type TEXT NOT NULL
+            CHECK (relationship_type IN ('supplier','customer','partner','competitor','thematic_mention')),
+        matched_pattern_category TEXT NOT NULL,
+        related_core_issuer_id TEXT,
+        theme_slug TEXT,
+        supply_chain_layer TEXT,
+        extraction_timestamp TEXT NOT NULL,
+        source_published_at TEXT,
+        dedup_key TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_candidate_evidence_dedup ON candidate_evidence (dedup_key)",
+    "CREATE INDEX idx_candidate_evidence_issuer ON candidate_evidence (issuer_id)",
+    "CREATE INDEX idx_candidate_evidence_source_record ON candidate_evidence (source_record_id)",
+    """
+    CREATE TABLE candidate_score_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issuer_id TEXT NOT NULL REFERENCES candidate_issuers (issuer_id),
+        computed_at TEXT NOT NULL,
+        composite_score REAL NOT NULL,
+        evidence_count INTEGER NOT NULL,
+        independent_source_count INTEGER NOT NULL,
+        score_breakdown TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_candidate_score_history_issuer ON candidate_score_history (issuer_id, computed_at)",
+    """
+    CREATE TABLE candidate_worker_status (
+        worker_key TEXT PRIMARY KEY,
+        last_tick_started_at TEXT,
+        last_tick_completed_at TEXT,
+        last_failure_code TEXT,
+        evidence_created_last_run INTEGER NOT NULL DEFAULT 0,
+        candidates_created_last_run INTEGER NOT NULL DEFAULT 0,
+        candidates_quarantined_last_run INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE candidate_state_transitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issuer_id TEXT NOT NULL REFERENCES candidate_issuers (issuer_id),
+        from_state TEXT,
+        to_state TEXT NOT NULL,
+        at TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        triggered_by TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_candidate_state_transitions_issuer ON candidate_state_transitions (issuer_id, at)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -591,6 +729,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (10, _V10_STATEMENTS),
     (11, _V11_STATEMENTS),
     (12, _V12_STATEMENTS),
+    (13, _V13_STATEMENTS),
 )
 
 
