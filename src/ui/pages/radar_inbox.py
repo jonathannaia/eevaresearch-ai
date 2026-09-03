@@ -201,6 +201,56 @@ def _parse_rcept_date(raw: str) -> date | None:
         return None
 
 
+def _official_filed_at(filing) -> datetime | None:
+    """Radar ordering correction (design/DECISIONS.md): the best-available
+    *official* filed moment — never FilingEvent.retrieved_at (a wholly
+    separate capture/retrieval timestamp). Prefers `filing.filed_at` (a
+    full date+time, populated today only for EDINET) when it parses;
+    otherwise falls back to `filing.rcept_dt` (date-only, all three
+    sources — see `_parse_rcept_date`) treated as midnight that day.
+    Always returns a naive datetime (any offset on `filed_at` is
+    stripped) so every filing's value is mutually comparable regardless
+    of source — this module never needs true cross-timezone precision,
+    only a single global newest-first ordering. None when neither field
+    yields a parseable value — never a fabricated or capture-time
+    substitute."""
+    if filing.filed_at:
+        try:
+            parsed = datetime.fromisoformat(filing.filed_at)
+        except ValueError:
+            parsed = None
+        else:
+            return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    parsed_date = _parse_rcept_date(filing.rcept_dt)
+    if parsed_date is not None:
+        return datetime(parsed_date.year, parsed_date.month, parsed_date.day)
+    return None
+
+
+def _radar_sort_key(item: RadarItem):
+    """Global newest-first ordering across every source (Radar ordering
+    correction, design/DECISIONS.md) — replaces the earlier per-source-
+    string comparison (`rcept_dt` sorted as raw text), which silently
+    broke cross-source ordering: DART's dash-free "20260828" sorted above
+    EDGAR's dashed "2026-09-02" as plain strings even though the EDGAR
+    filing is chronologically later. A single ascending sort (no
+    `reverse=True`) on this tuple achieves every required property in one
+    pass: filings with a parseable official filed moment (rank 0) always
+    sort before those without one (rank 1) — never the reverse; within
+    rank 0, negating the seconds-since-datetime.min value turns ascending
+    order into newest-first; and `(source_name, rcept_no)` is a
+    deterministic, always-present tie-breaker for equal timestamps or for
+    every rank-1 (undated) item alike, so ordering never depends on
+    source/repository iteration order and never jumps around on refresh
+    (Python's sort is stable, but this tuple makes the order fully
+    deterministic even before stability would matter)."""
+    filed_at = _official_filed_at(item.filing)
+    if filed_at is not None:
+        negated_seconds = -(filed_at - datetime.min).total_seconds()
+        return (0, negated_seconds, item.filing.source_name, item.filing.rcept_no)
+    return (1, 0.0, item.filing.source_name, item.filing.rcept_no)
+
+
 def _load_source_items(source: str, cache_dir, settings: Settings | None, json_filings, json_candidates):
     """Durable-State Phase 2B (sqlite) / 4M-1 (postgres) — the one place
     `_build_items` decides, per source, whether to read through a
@@ -268,17 +318,7 @@ def _build_items(cache_dir, settings: Settings | None = None) -> list[RadarItem]
     edinet_by_doc_id = {c.filing.rcept_no: c for c in edinet_candidates.values()}
     items += [RadarItem(filing=f, candidate=edinet_by_doc_id.get(f.rcept_no)) for f in edinet_filings]
 
-    # Deterministic newest-first ordering with a stable secondary
-    # tie-break (Durable-State Phase 4M-1): a Postgres read has no
-    # guaranteed row order of its own (no ORDER BY in load_filing_events),
-    # so two same-date filings could otherwise render in a different
-    # relative order on different page loads. Sorting ascending by
-    # (source_name, rcept_no) first, then stably by rcept_dt descending,
-    # produces the same order on every render — Python's sort is stable,
-    # so equal-date items retain their relative order from the first pass
-    # rather than depending on repository/dict iteration order.
-    items = sorted(items, key=lambda i: (i.filing.source_name, i.filing.rcept_no))
-    return sorted(items, key=lambda i: i.filing.rcept_dt, reverse=True)
+    return sorted(items, key=_radar_sort_key)
 
 
 def _worker_scan_status_snapshot(settings: Settings):
