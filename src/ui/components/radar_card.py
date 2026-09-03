@@ -1,12 +1,15 @@
 """Radar Inbox's per-item card (Radar simplicity + translation reliability
-workstream) — a minimal, read-only research-feed card showing exactly:
+workstream; layout correction pass — design/DECISIONS.md) — a minimal,
+read-only research-feed card showing exactly:
 
-  a) company name and ticker/security code (when available);
+  a) company name and ticker/security code (when available), with the
+     filing's own official filed date at the top-right, when known;
   b) English filing title;
   c) `Original` — the original-language filing title and/or a concise
      extracted source excerpt;
-  d) `English translation` — the stored translation of that exact
-     displayed original-language content;
+  d) a compact `Show English translation` / `Hide English translation`
+     toggle, shown only when a translation is already stored — expanding
+     it reveals `English translation` and the stored translated text;
   e) `Open original filing ↗` — the card's sole action.
 
 Removed entirely this pass: Why this matters, Memory/theme labels,
@@ -22,33 +25,60 @@ never called from this public card any more.
 For an English-native source (EDGAR), the title *is* the English title,
 so no separate Original/English translation pair is ever shown — that
 would just duplicate the same English text. For a Korean/Japanese source
-(DART/EDINET), the "Original" line and the "English translation" line
-always describe the exact same underlying text: the extracted excerpt
+(DART/EDINET), the "Original" line always shows the extracted excerpt
 when one exists, otherwise the filing's own native title.
 
-Translation-reliability display contract (see
-src/data_access/translation/translation_service.py for the retry state
-machine this reads): "English translation is being prepared." is shown
-if and only if `candidate.translation_next_retry_at` is set — i.e. a
-bounded, persisted automatic retry is genuinely still scheduled. A
-terminally failed translation (no retry scheduled, whether because the
-failure was non-retryable or because the retry cap was reached) shows no
-translation section at all — just the original text above it, with no
-error jargon or false assurance. The legacy "Translation unavailable"
-wording never appears anywhere on this card.
+Layout correction pass (design/DECISIONS.md): the translation toggle is
+purely a client-side visibility switch, keyed off `st.session_state`
+only — it never calls a translation provider, never writes to
+CandidateSignal/the database, and never queues or retries a translation.
+It is only ever rendered when a translation is already stored
+(`candidate.excerpt_translation`/`candidate.title_translation` is not
+None); when no translation is stored, this card renders no toggle and no
+messaging beyond the original text and the source link — no "Translation
+unavailable", no "being prepared", no retry/status/error wording of any
+kind, superseding this card's own earlier "being prepared" messaging
+(translation_retry_count/translation_failure_*/translation_next_retry_at
+remain read/written elsewhere — src/data_access/translation/
+translation_service.py — this card simply no longer surfaces any of that
+state to the reader).
 """
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 import streamlit as st
 
-from src.models.models import CandidateSignal, FilingEvent, TranslationState
+from src.models.models import CandidateSignal, FilingEvent
 from src.ui.components.radar_status import RadarItem
 
 
 def _is_english_native(filing: FilingEvent) -> bool:
     return filing.original_language == "English"
+
+
+def _parse_source_filed_date(raw: str):
+    """FilingEvent.rcept_dt is each source's own raw *official filing*
+    date (DART's unconverted "YYYYMMDD", EDGAR/EDINET's dashed
+    "YYYY-MM-DD") — the same field radar_inbox.py's own "Filed between"
+    filter and sort order already treat as the filing's official date.
+    Never FilingEvent.retrieved_at, a wholly separate capture/retrieval
+    timestamp this function never reads. None on any parse failure or
+    empty input — never guessed or substituted."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw.replace("-", ""), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def _filed_label(filing: FilingEvent) -> str | None:
+    parsed = _parse_source_filed_date(filing.rcept_dt)
+    if parsed is None:
+        return None
+    return f"Filed {parsed.strftime('%b')} {parsed.day}, {parsed.year}"
 
 
 def _identity_line(filing: FilingEvent) -> str:
@@ -103,7 +133,17 @@ def candidate_row(item: RadarItem, show_full_status: bool = False, comparison_re
     candidate = item.candidate
 
     with st.container(border=True, key=f"radar-item-{filing.rcept_no}"):
-        st.markdown(f'<div class="er-muted">{_identity_line(filing)}</div>', unsafe_allow_html=True)
+        filed_label = _filed_label(filing)
+        if filed_label:
+            st.markdown(
+                '<div style="display:flex; justify-content:space-between; align-items:baseline;">'
+                f'<div class="er-muted">{_identity_line(filing)}</div>'
+                f'<div class="er-muted">{html.escape(filed_label)}</div>'
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f'<div class="er-muted">{_identity_line(filing)}</div>', unsafe_allow_html=True)
 
         english_title = _english_title(filing, candidate)
         st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(english_title)}</div>', unsafe_allow_html=True)
@@ -121,24 +161,31 @@ def candidate_row(item: RadarItem, show_full_status: bool = False, comparison_re
             st.markdown(f'<div>{html.escape(native_text)}</div>', unsafe_allow_html=True)
 
             if translation is not None:
-                st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
-                st.markdown(f'<div>{html.escape(translation.translated_text)}</div>', unsafe_allow_html=True)
-            elif (
-                candidate is not None
-                and candidate.translation_state == TranslationState.UNAVAILABLE
-                and candidate.translation_next_retry_at
-            ):
-                # A persisted automatic retry is genuinely still scheduled
-                # (translation_service.translation_retry_eligible's own
-                # data) — never shown for a terminal failure or a candidate
-                # that was never attempted at all.
-                st.markdown(
-                    '<div class="er-muted" style="margin-top:0.4rem;">English translation is being prepared.</div>',
-                    unsafe_allow_html=True,
-                )
-                # Terminal failure (translation_state is UNAVAILABLE and no
-                # retry is scheduled): render nothing further — the
-                # original text above already stands alone, with no error
-                # jargon or false assurance.
+                # Display-only visibility switch: st.session_state here is
+                # purely ephemeral client-side UI state (which section of
+                # this one already-rendered card is visible), never a
+                # write to CandidateSignal or any repository, and never a
+                # trigger for translation_service — no provider call, no
+                # queue, no retry. See on_click below for why the toggle
+                # is flipped via a callback rather than an inline check.
+                toggle_key = f"radar-translation-expanded-{filing.rcept_no}"
+                if toggle_key not in st.session_state:
+                    st.session_state[toggle_key] = False
+
+                def _toggle_translation_visibility() -> None:
+                    st.session_state[toggle_key] = not st.session_state[toggle_key]
+
+                expanded = st.session_state[toggle_key]
+                toggle_label = "Hide English translation" if expanded else "Show English translation"
+                with st.container(key=f"cta-tertiary-radar-translation-toggle-{filing.rcept_no}"):
+                    st.button(toggle_label, key=f"{toggle_key}-btn", on_click=_toggle_translation_visibility)
+
+                if expanded:
+                    st.markdown('<div class="er-muted" style="margin-top:0.4rem;"><strong>English translation</strong></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div>{html.escape(translation.translated_text)}</div>', unsafe_allow_html=True)
+            # No stored translation: render nothing further beyond the
+            # original text above — no toggle, no "Translation
+            # unavailable", no "being prepared", no retry/status/error
+            # wording of any kind.
 
         _render_quiet_links(filing)

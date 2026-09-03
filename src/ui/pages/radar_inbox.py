@@ -44,7 +44,7 @@ from src.data_access.edinet import scan_service as edinet_scan_service
 from src.logic.radar_freshness import compute_radar_freshness
 from src.ui.components.empty_state import empty_state
 from src.ui.components.radar_card import candidate_row
-from src.ui.components.radar_status import RadarItem, status_label
+from src.ui.components.radar_status import RadarItem
 
 _DART_SCOPE_LINE = "OpenDART / DART · Samsung Electronics + SK Hynix · Memory + AI Buildout"
 _EDGAR_SCOPE_LINE = "SEC EDGAR · NVIDIA, Micron, Coherent, Rockwell Automation, Rocket Lab · AI Buildout, Memory, Photonics, Humanoids, Space"
@@ -75,13 +75,17 @@ PAGE_SIZE = 20
 _FILTER_KEYS = (
     "radar-filter-search",
     "radar-filter-source",
-    "radar-filter-company",
     "radar-filter-theme",
-    "radar-filter-status",
     "radar-filter-dates",
-    "radar-filter-language",
-    "radar-filter-confidence",
 )
+
+# Radar layout correction (design/DECISIONS.md): the Source multiselect
+# must always offer every canonical source as an option, even when no
+# filing from that source has been loaded yet in the current session —
+# previously it was derived purely from `{i.filing.source_name for i in
+# view_items}`, so a source with zero currently-loaded filings (most
+# often EDINET) silently never appeared as a selectable option at all.
+_ALL_RADAR_SOURCES = ("OpenDART / DART", "SEC EDGAR", "EDINET")
 
 
 def _switch_to_all_filings() -> None:
@@ -555,20 +559,12 @@ def render() -> None:
         )
         return
 
-    companies = sorted({i.filing.corp_name for i in view_items})
-    sources = sorted({i.filing.source_name for i in view_items})
+    sources = sorted(set(_ALL_RADAR_SOURCES) | {i.filing.source_name for i in view_items})
     themes = sorted({i.filing.theme_slug for i in view_items if i.filing.theme_slug})
-    statuses = sorted({status_label(i) for i in view_items})
     parsed_dates = sorted(d for d in (_parse_rcept_date(i.filing.rcept_dt) for i in view_items) if d is not None)
     min_date = parsed_dates[0] if parsed_dates else date.today()
     max_date = parsed_dates[-1] if parsed_dates else date.today()
 
-    # Phase R1 (design/DECISIONS.md): Status moved into Advanced filters
-    # — a research feed's default viewport doesn't need a human-review-
-    # workflow filter front and center. Same key ("radar-filter-status"),
-    # same options computation, same filtering logic below — only the
-    # widget's container moved; _clear_filters()'s own _FILTER_KEYS tuple
-    # is untouched, since it clears by session-state key, not position.
     search_col, source_col, theme_col, date_col = st.columns([2, 2, 2, 3])
     search_query = search_col.text_input("Search", key="radar-filter-search", placeholder="Company or filing title…")
     source_filter = source_col.multiselect("Source", sources, key="radar-filter-source")
@@ -577,23 +573,14 @@ def render() -> None:
         "Filed between", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="radar-filter-dates",
     )
 
-    adv_col, clear_col = st.columns([6, 2])
-    with adv_col:
-        with st.expander("Advanced filters"):
-            adv_cols = st.columns(4)
-            status_filter = adv_cols[0].multiselect("Status", statuses, key="radar-filter-status")
-            company_filter = adv_cols[1].multiselect("Company", companies, key="radar-filter-company")
-            language_filter = adv_cols[2].selectbox(
-                "Language", ["All", "Korean original", "Korean + English translation", "Translation unavailable"],
-                key="radar-filter-language",
-            )
-            confidence_filter = adv_cols[3].multiselect("Detection confidence", ["Moderate", "High"], key="radar-filter-confidence")
+    # Radar layout correction (design/DECISIONS.md): the Advanced filters
+    # expander (Status/Company/Language/Detection confidence) is removed
+    # entirely, not relocated — Search/Source/Theme/Filed between above
+    # are the complete filter set now. "Clear all filters" is preserved
+    # (it still clears every remaining filter via _FILTER_KEYS) in the
+    # same trailing-column position it already occupied.
+    clear_col = st.columns([6, 2])[1]
     with clear_col:
-        # Phase C: a quiet inline text action rather than a separate
-        # full-width button — same cta-tertiary-* ghost-link treatment
-        # used for every other low-emphasis action in the app. Same key,
-        # on_click, and behavior as before; only the surrounding
-        # container/width changed.
         st.markdown('<div style="margin-top:1.6rem;"></div>', unsafe_allow_html=True)
         with st.container(key="cta-tertiary-clear-radar-filters"):
             st.button("Clear all filters", key="radar-clear-filters-btn", on_click=_clear_filters)
@@ -604,23 +591,11 @@ def render() -> None:
         filtered = [i for i in filtered if query in i.filing.report_nm.lower() or query in i.filing.corp_name.lower()]
     if source_filter:
         filtered = [i for i in filtered if i.filing.source_name in source_filter]
-    if company_filter:
-        filtered = [i for i in filtered if i.filing.corp_name in company_filter]
     if theme_filter:
         filtered = [i for i in filtered if i.filing.theme_slug in theme_filter]
-    if status_filter:
-        filtered = [i for i in filtered if status_label(i) in status_filter]
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start, end = date_range
         filtered = [i for i in filtered if (d := _parse_rcept_date(i.filing.rcept_dt)) is not None and start <= d <= end]
-    if language_filter == "Korean + English translation":
-        filtered = [i for i in filtered if i.candidate is not None and i.candidate.excerpt_translation is not None]
-    elif language_filter == "Translation unavailable":
-        filtered = [i for i in filtered if i.candidate is not None and i.candidate.translation_state.value == "Translation unavailable"]
-    elif language_filter == "Korean original":
-        filtered = [i for i in filtered if i.candidate is None or i.candidate.excerpt_translation is None]
-    if confidence_filter:
-        filtered = [i for i in filtered if i.candidate is not None and i.candidate.confidence in confidence_filter]
 
     if not filtered:
         empty_state(
@@ -633,9 +608,7 @@ def render() -> None:
     # containers/expanders/buttons in one script run, in either view.
     # Reset to page 1 whenever the view mode or any filter value changes.
     filter_signature = (
-        view_mode, search_query, tuple(sorted(source_filter)), tuple(sorted(company_filter)),
-        tuple(sorted(theme_filter)), tuple(sorted(status_filter)), date_range, language_filter,
-        tuple(sorted(confidence_filter)),
+        view_mode, search_query, tuple(sorted(source_filter)), tuple(sorted(theme_filter)), date_range,
     )
     if st.session_state.get("radar-filter-signature") != filter_signature:
         st.session_state["radar-page"] = 1

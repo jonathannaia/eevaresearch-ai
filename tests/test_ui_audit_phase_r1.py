@@ -143,7 +143,12 @@ def test_result_membership_is_unchanged_needs_review_candidate_visible_in_latest
     assert "일반 공고" in all_text
 
 
-def test_status_filter_lives_inside_advanced_filters_not_the_default_row(tmp_path):
+def test_advanced_filters_and_its_controls_are_removed_entirely(tmp_path):
+    """Radar layout correction (design/DECISIONS.md) superseded Phase R1's
+    "Status moved into Advanced filters" — the whole expander (Status,
+    Company, Language, Detection confidence) is removed outright, not
+    relocated anywhere else. Search/Source/Theme/Filed between remain the
+    complete, only filter set."""
     _seed_corp_codes(tmp_path)
     filing = _filing("20260812000001", "일반 공고")
     _seed_filing_events(tmp_path, [filing])
@@ -156,18 +161,16 @@ def test_status_filter_lives_inside_advanced_filters_not_the_default_row(tmp_pat
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
     at = _run_radar(tmp_path)
     assert not at.exception
-    # Still present and functional — just relocated.
-    status_widget = at.multiselect(key="radar-filter-status")
-    assert status_widget is not None
-    # Structural proof it's inside "Advanced filters": Status's own
-    # column assignment appears after the expander opens, in source.
+    multiselect_keys = {m.key for m in at.multiselect}
+    selectbox_keys = {s.key for s in at.selectbox}
+    assert "radar-filter-status" not in multiselect_keys
+    assert "radar-filter-company" not in multiselect_keys
+    assert "radar-filter-language" not in selectbox_keys
+    assert "radar-filter-confidence" not in multiselect_keys
+    assert {e.label for e in at.expander} == set()
     source = (REPO_ROOT / "src" / "ui" / "pages" / "radar_inbox.py").read_text(encoding="utf-8")
-    advanced_idx = source.index('st.expander("Advanced filters")')
-    status_idx = source.index('adv_cols[0].multiselect("Status"', advanced_idx)
-    assert status_idx > advanced_idx
-    # The default (non-advanced) row no longer builds a Status column.
-    default_row_idx = source.index("search_col, source_col, theme_col, date_col = st.columns")
-    assert default_row_idx < advanced_idx
+    assert 'st.expander("Advanced filters")' not in source
+    assert "adv_cols" not in source
 
 
 def test_default_filter_row_is_search_source_theme_date_only(tmp_path):

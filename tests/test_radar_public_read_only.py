@@ -232,23 +232,21 @@ def test_radar_cards_only_action_is_the_original_source_link(tmp_path):
 
 
 def test_radar_page_has_no_card_level_expanders(tmp_path):
-    """"Advanced filters" is a legitimate, unrelated filter-UI disclosure
-    and stays — the removed expanders are specifically the per-card
-    "Investigate"/"Technical details" and the page-level "Ingestion
-    status", none of which may appear anywhere."""
+    """Radar layout correction (design/DECISIONS.md): "Advanced filters"
+    — the one previously-permitted expander — is now removed entirely, so
+    no expander of any kind may appear anywhere on the page."""
     _seed_one_candidate(tmp_path, materiality_assessment="Material · new facility investment")
     at = _run_radar(tmp_path)
     assert not at.exception
-    expander_labels = {e.label for e in at.expander}
-    assert expander_labels <= {"Advanced filters"}
+    assert {e.label for e in at.expander} == set()
 
 
-def test_radar_card_shows_only_the_five_approved_public_fields(tmp_path):
+def test_radar_card_shows_only_the_approved_public_fields(tmp_path):
     # Radar simplicity workstream: Evidence status, jurisdiction,
     # captured timestamp, and materiality are all removed from the
-    # public card — replaced by this direct test of the 5-field contract
-    # (company+ticker, English title, Original, English translation,
-    # Open original filing link) that superseded them.
+    # public card — replaced by this direct test of the approved contract
+    # (company+ticker, filed date, English title, Original, a display-only
+    # translation toggle, Open original filing link) that superseded them.
     candidate = _seed_one_candidate(tmp_path, materiality_assessment="Material · new facility investment")
     at = _run_radar(tmp_path)
     assert not at.exception
@@ -260,3 +258,4 @@ def test_radar_card_shows_only_the_five_approved_public_fields(tmp_path):
     assert candidate.filing.corp_name in all_text
     assert candidate.filing.stock_code in all_text
     assert candidate.excerpt_original in all_text
+    assert "Filed Aug 12, 2026" in all_text  # candidate.filing.rcept_dt == "20260812"

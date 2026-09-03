@@ -1,17 +1,22 @@
-"""Radar simplicity + translation reliability workstream — fixture-driven
-proofs of the exact 5-field public card contract:
+"""Radar simplicity + translation reliability + layout correction
+workstreams — fixture-driven proofs of the exact public card contract:
 
-  a) company name and ticker/security code;
+  a) company name and ticker/security code, with `Filed {date}` at the
+     top-right when the filing's own official rcept_dt is parseable;
   b) English filing title;
   c) `Original` — original-language title and/or extracted excerpt;
-  d) `English translation` — the translation of that exact content;
+  d) a display-only `Show English translation`/`Hide English
+     translation` toggle, present only when a translation is already
+     stored — expanding it reveals `English translation` and the stored
+     translated text;
   e) `Open original filing ↗` — the sole action.
 
 Covers a Korean (DART) fixture, a Japanese (EDINET) fixture, an English
 (EDGAR) fixture, and a page-wide sweep proving none of the removed
 public labels (Why this matters, Memory, detection confidence, Evidence
 status, Fact/Interpretation/Uncertainty, Potential materiality, Filing
-overview, Needs review, Translation unavailable, etc.) ever appear.
+overview, Needs review, Translation unavailable, "being prepared", etc.)
+ever appear.
 
 Zero network calls, no real API key, and the real data/cache/ (gitignored
 live pilot cache) is never touched — same discipline as
@@ -42,7 +47,7 @@ _FORBIDDEN_PUBLIC_STRINGS = (
     "Filing overview", "What happened", "What remains uncertain", "Watch for:",
     "Potential materiality",
     "Needs review", "Processing deferred", "Retrieval failed",
-    "Translation unavailable",
+    "Translation unavailable", "being prepared",
 )
 
 
@@ -50,15 +55,29 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _run_radar(tmp_path, **settings_overrides) -> AppTest:
-    settings = Settings(
+def _radar_settings(tmp_path, **settings_overrides) -> Settings:
+    return Settings(
         dart_api_key="dart-key", translation_api_key="deepl-key", edgar_user_agent="EevaResearch test@example.com",
         edinet_subscription_key="test-key", cache_dir=tmp_path, **settings_overrides,
     )
+
+
+def _run_radar(tmp_path, **settings_overrides) -> AppTest:
+    settings = _radar_settings(tmp_path, **settings_overrides)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=15)
         at.run()
     return at
+
+
+def _rerun(at: AppTest, tmp_path, **settings_overrides) -> None:
+    """get_settings is only patched for the duration of _run_radar's own
+    `with` block — any later interaction (a widget click followed by
+    at.run()) must re-establish the same patch, or radar_inbox.py falls
+    back to real, unpatched ambient settings on that rerun."""
+    settings = _radar_settings(tmp_path, **settings_overrides)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at.run()
 
 
 def _text(at: AppTest) -> str:
@@ -136,13 +155,22 @@ def test_korean_fixture_shows_only_the_approved_fields(tmp_path):
 
     assert "삼성전자" in all_text
     assert "005930" in all_text
+    assert "Filed Aug 12, 2026" in all_text  # rcept_dt == "20260812"
     assert "New facility investment decision" in all_text  # English filing title
     assert "신규시설투자등 관련 원문 발췌." in all_text  # Original (native excerpt)
-    assert "New facility investment related excerpt." in all_text  # English translation
+    assert "New facility investment related excerpt." not in all_text  # stored, but collapsed by default
+    toggle_buttons = [b for b in at.button if b.label == "Show English translation"]
+    assert len(toggle_buttons) == 1
     link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
     assert len(link_buttons) == 1
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
+
+    toggle_buttons[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "New facility investment related excerpt." in all_text  # now expanded
+    assert any(b.label == "Hide English translation" for b in at.button)
 
 
 # ============================================================
@@ -174,8 +202,11 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
 
     assert "SoftBank Group Corp." in all_text
     assert "99840" in all_text
+    assert "Filed Jun 22, 2026" in all_text  # rcept_dt == "2026-06-22"
     assert "有価証券報告書の記載内容の抜粋です。" in all_text  # Original (native excerpt)
-    assert "This is an excerpt from the annual securities report." in all_text  # English translation
+    assert "This is an excerpt from the annual securities report." not in all_text  # stored, but collapsed by default
+    toggle_buttons = [b for b in at.button if b.label == "Show English translation"]
+    assert len(toggle_buttons) == 1
     link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
     assert len(link_buttons) == 1
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
@@ -185,6 +216,12 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert "Ordinance code" not in all_text
     assert "Form code" not in all_text
     assert "Document type code" not in all_text
+
+    toggle_buttons[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "This is an excerpt from the annual securities report." in all_text  # now expanded
+    assert any(b.label == "Hide English translation" for b in at.button)
 
 
 # ============================================================
@@ -215,10 +252,12 @@ def test_english_edgar_fixture_has_no_redundant_translation_block(tmp_path):
 
     assert "NVIDIA" in all_text
     assert "NVDA" in all_text
+    assert "Filed Aug 12, 2026" in all_text  # rcept_dt == "2026-08-12"
     assert "8-K filing" in all_text  # English filing title, shown directly (no translation needed)
     assert "Item 2.02 Results of Operations. Revenue increased." in all_text  # English excerpt, shown directly
     assert "<strong>Original</strong>" not in all_text
     assert "<strong>English translation</strong>" not in all_text
+    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
 
@@ -228,7 +267,12 @@ def test_english_edgar_fixture_has_no_redundant_translation_block(tmp_path):
 # ============================================================
 
 
-def test_scheduled_retry_shows_being_prepared_not_translation_unavailable(tmp_path):
+def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_path):
+    """Layout correction pass (design/DECISIONS.md): the toggle only ever
+    appears when a translation is already stored — a scheduled automatic
+    retry (translation_next_retry_at set) is worker-internal state this
+    public card no longer surfaces at all, superseding the earlier
+    "English translation is being prepared." messaging entirely."""
     _seed_corp_codes(tmp_path)
     filing = FilingEvent(
         rcept_no="20260812000002", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
@@ -253,10 +297,11 @@ def test_scheduled_retry_shows_being_prepared_not_translation_unavailable(tmp_pa
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "English translation is being prepared." in all_text
+    assert "English translation is being prepared." not in all_text
     assert "Translation unavailable" not in all_text
     assert "rate_limit" not in all_text
     assert "실적 관련 원문." in all_text
+    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
 
 
 def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
@@ -290,6 +335,57 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     assert "Translation unavailable" not in all_text
     assert "config_missing_key" not in all_text
     assert "not configured" not in all_text
+    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+
+
+# ============================================================
+# Filed date: present (uses the source's official filed date) vs.
+# genuinely absent (renders nothing, never a fake/capture-time substitute)
+# ============================================================
+
+
+def test_filed_date_uses_source_filed_date_not_capture_timestamp(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000003", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing three", rcept_dt="2026-09-03", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000003/",
+        # Deliberately far apart from rcept_dt — proves the card uses the
+        # official filed date, never this capture/retrieval timestamp.
+        retrieved_at="2099-01-01T00:00:00+00:00",
+        source_name="SEC EDGAR", original_language="English", primary_document="nvda-8k-3.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+    candidate = CandidateSignal(
+        id="edgar-cand-en-3", filing=filing, matched_rules=["earnings_or_results:8-K item 2.02"], confidence="Moderate",
+        status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="Item 2.02 Results of Operations. Third filing.",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+    assert "Filed Sep 3, 2026" in all_text
+    assert "2099" not in all_text
+
+
+def test_filed_date_renders_nothing_when_genuinely_absent():
+    """Direct unit-level check of radar_card._filed_label: the full Radar
+    Inbox page's own pre-existing "Filed between" filter would otherwise
+    exclude any filing with no parseable rcept_dt from the results
+    entirely before a card is ever rendered, which would make this
+    behavior untestable through the full AppTest page route."""
+    from src.ui.components import radar_card
+
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000004", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing four", rcept_dt="", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000004/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="nvda-8k-4.htm",
+    )
+    assert radar_card._filed_label(filing) is None
 
 
 # ============================================================

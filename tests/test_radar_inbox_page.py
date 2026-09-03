@@ -248,7 +248,11 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
         default_text = " ".join(m.value for m in at.markdown)
         assert "일반 공고" not in default_text
         assert "New facility investment decision" in default_text  # English title translation
-        assert "New facility investment original text" in default_text  # English excerpt translation
+        # Radar layout correction: the stored excerpt translation is
+        # behind a collapsed, display-only toggle by default — its own
+        # expand/collapse behavior is covered by test_radar_card_public_
+        # contract.py; this test only confirms one is offered here.
+        assert any(b.label == "Show English translation" for b in at.button)
 
         at.radio(key="radar-view-mode").set_value(_ALL_FILINGS_VIEW)
         at.run()
@@ -257,7 +261,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     all_text = " ".join(m.value for m in at.markdown)
     assert "일반 공고" in all_text  # the bare event's own title, now visible
     assert "New facility investment decision" in all_text  # English title translation
-    assert "New facility investment original text" in all_text  # English excerpt translation
+    assert any(b.label == "Show English translation" for b in at.button)  # collapsed by default
 
 
 def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_path):
@@ -540,6 +544,34 @@ def test_radar_inbox_source_filter_narrows_across_configured_sources(tmp_path):
     assert "국문 공시" not in filtered_text
 
 
+def test_radar_inbox_source_filter_always_offers_edinet_even_when_absent(tmp_path):
+    """Radar layout correction (design/DECISIONS.md): EDINET must be a
+    first-class Source option regardless of whether any EDINET filing has
+    actually been loaded this session — only DART is seeded here."""
+    _seed_corp_codes(tmp_path)
+    dart_filing = _filing("20260812000031", "국문 공시 둘")
+    _seed_filing_events(tmp_path, [dart_filing])
+    dart_candidate = CandidateSignal(
+        id="cand-dart-src-2", filing=dart_filing, matched_rules=["x:y:z"], confidence="Moderate",
+        status=CandidateStatus.NEEDS_REVIEW, state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {dart_candidate.id: dart_candidate})
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    source_widget = at.multiselect(key="radar-filter-source")
+    assert set(source_widget.options) == {"OpenDART / DART", "SEC EDGAR", "EDINET"}
+
+    source_widget.set_value(["EDINET"])
+    at.run()
+    filtered_text = " ".join(m.value for m in at.markdown)
+    assert "국문 공시 둘" not in filtered_text
+
+
 def test_radar_inbox_clear_all_filters_restores_full_view(tmp_path):
     _seed_corp_codes(tmp_path)
     match_filing = _filing("20260812000040", "특별한 제목 둘")
@@ -665,7 +697,10 @@ def test_radar_inbox_renders_stably_when_evidence_packet_fields_are_present(tmp_
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "본문 발췌." in all_text
-    assert "Body excerpt." in all_text
+    # Radar layout correction: the stored translation is behind a
+    # collapsed, display-only toggle by default now, not shown directly.
+    assert "Body excerpt." not in all_text
+    assert any(b.label == "Show English translation" for b in at.button)
     assert "Matched a capital-increase financing keyword." not in all_text
     assert "Item 2.03" not in all_text
     assert "PublicDoc/0101.pdf" not in all_text
