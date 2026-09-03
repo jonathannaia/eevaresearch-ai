@@ -1,6 +1,158 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Sparks Fly: NVIDIA Accelerates Local AI at IFA 2026",
+    "summary": "NVIDIA is launching compact RTX Spark Windows PCs in October and partnering with Microsoft to provide faster local inference and tools for running AI agents on NVIDIA hardware, announced at IFA 2026.",
+    "source_url": "https://blogs.nvidia.com/blog/local-ai-ifa-next-gen-agents-nv-pair-rtx-spark/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Thu, 03 Sep 2026 16:00:59 GMT",
+    "retrieved_at": "2026-09-03T18:59:56+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "MSFT",
+        "company_name": "Microsoft Corporation",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Substantively concerns NVIDIA's new AI hardware accelerators and local inference capabilities, directly relevant to AI Buildout scope.",
+    "url_hash": "9509bbf8b01c98fe",
+    "id": "9509bbf8b01c98fe"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Former cryptomining startup Velaura AI raises $110m for its ultra-low power offerings",
+    "summary": "Velaura AI, a company focused on ultra-low power offerings, raised $110 million in its latest funding round, bringing its valuation to over $1 billion. The company transitioned from cryptomining to focus on AI infrastructure.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/former-cryptomining-startup-velaura-ai-raises-110m-for-its-ultra-low-power-offerings/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 15:44:39 +0000",
+    "retrieved_at": "2026-09-03T18:59:44+00:00",
+    "tickers": [],
+    "relevance_reason": "Company is raising capital for ultra-low power AI infrastructure offerings, directly relevant to AI Buildout power/cooling infrastructure.",
+    "url_hash": "0a3456f6f7091099",
+    "id": "0a3456f6f7091099"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Bull selected to deliver AMD-powered Lumi-AI supercomputer",
+    "summary": "Bull has been selected to deliver an AI supercomputer powered by AMD processors, with deployment scheduled for the second half of 2027.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/bull-selected-to-deliver-amd-powered-lumi-ai-supercomputer/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 15:49:58 +0000",
+    "retrieved_at": "2026-09-03T18:59:42+00:00",
+    "tickers": [
+      {
+        "ticker": "AMD",
+        "company_name": "Advanced Micro Devices",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Concerns AI infrastructure buildout with GPU/accelerator procurement and deployment for a supercomputer",
+    "url_hash": "df544b86e53405f9",
+    "id": "df544b86e53405f9"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "DataVita files for third data center at campus in North Lanarkshire, Scotland",
+    "summary": "DataVita has filed for a third data center at its North Lanarkshire, Scotland campus following revised plans after consultation with residents.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/datavita-files-for-third-data-center-at-campus-in-north-lanarkshire-scotland/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 16:14:34 +0000",
+    "retrieved_at": "2026-09-03T18:59:38+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center development is directly relevant to AI infrastructure buildout scope.",
+    "url_hash": "c168084676db7948",
+    "id": "c168084676db7948"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Equinix, Together AI, Nvidia partner on Inference Exchange",
+    "summary": "Equinix, Together AI, and Nvidia have partnered to create an Inference Exchange that provides enterprises with secure, low-latency AI inferencing capabilities.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/equinix-together-ai-nvidia-partner-on-inference-exchange/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 16:24:38 +0000",
+    "retrieved_at": "2026-09-03T18:59:36+00:00",
+    "tickers": [
+      {
+        "ticker": "EQIX",
+        "company_name": "Equinix",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "NVDA",
+        "company_name": "Nvidia",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Partnership focused on AI infrastructure for inferencing, directly relevant to AI Buildout scope.",
+    "url_hash": "5cd3745247d80241",
+    "id": "5cd3745247d80241"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Firmus proposes third data center project in Tasmania",
+    "summary": "Firmus is proposing a 52MW data center project in Wesley Vale, Tasmania.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/firmus-proposes-third-data-center-project-in-tasmania/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 16:30:25 +0000",
+    "retrieved_at": "2026-09-03T18:59:34+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center development is directly within AI Buildout scope.",
+    "url_hash": "83265599e6b1a29f",
+    "id": "83265599e6b1a29f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "California lawmakers pass data center ratepayer protection bills, send to governor for approval",
+    "summary": "California lawmakers have passed bills that would create separate electricity tariffs for large data centers, sending them to the governor for approval.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/california-lawmakers-pass-data-center-ratepayer-protection-bills-send-to-governor-for-approval/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 17:40:29 +0000",
+    "retrieved_at": "2026-09-03T18:59:32+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center power/electricity infrastructure directly relates to AI buildout scope.",
+    "url_hash": "d1c839c579e9596f",
+    "id": "d1c839c579e9596f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "GoPro to enter AI data center market via merger with optical photonics company",
+    "summary": "GoPro has entered into a merger agreement with Action Acquisitions and Starman Optical to enter the AI data center market.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/gopro-to-enter-ai-data-center-market-via-merger-with-optical-photonics-company/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 17:50:24 +0000",
+    "retrieved_at": "2026-09-03T18:59:30+00:00",
+    "tickers": [
+      {
+        "ticker": "GPRO",
+        "company_name": "GoPro Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "GoPro's entry into AI data center market via merger with optical photonics company directly relates to AI infrastructure buildout.",
+    "url_hash": "896840ba62c6da63",
+    "id": "896840ba62c6da63"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "Could Fiber Be the Next Big Bottleneck in Data Center Growth?",
     "summary": "Fiber access and diversity have become key constraints determining data center location and scaling speed, alongside traditional limitations like power and water.",
     "source_url": "https://www.datacenterknowledge.com/networking/could-fiber-be-the-next-big-bottleneck-in-data-center-growth-",
