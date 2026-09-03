@@ -1,6 +1,152 @@
 [
   {
     "niche": "AI Buildout",
+    "headline": "Could Fiber Be the Next Big Bottleneck in Data Center Growth?",
+    "summary": "Fiber access and diversity have become key constraints determining data center location and scaling speed, alongside traditional limitations like power and water.",
+    "source_url": "https://www.datacenterknowledge.com/networking/could-fiber-be-the-next-big-bottleneck-in-data-center-growth-",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 09:00:00 GMT",
+    "retrieved_at": "2026-09-03T14:01:43+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses infrastructure constraints for data center expansion, a core component of AI buildout.",
+    "url_hash": "12f223418fd5bb56",
+    "id": "12f223418fd5bb56"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "NVIDIA to Acquire Hugging Face",
+    "summary": "NVIDIA has agreed to acquire Hugging Face for approximately $12.9 billion, with plans to scale Hugging Face's platform and infrastructure while expanding AI access to developers and institutions.",
+    "source_url": "https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/",
+    "source_name": "NVIDIA Newsroom",
+    "source_type": "Press Release",
+    "published_at": "Thu, 03 Sep 2026 11:59:49 GMT",
+    "retrieved_at": "2026-09-03T14:01:41+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Acquisition directly impacts AI infrastructure and developer platform consolidation in the AI buildout ecosystem.",
+    "url_hash": "ea981681c9e20cb5",
+    "id": "ea981681c9e20cb5"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Vertiv acquires microgrid company UtilityInnovation",
+    "summary": "Vertiv, a data center infrastructure supplier, has acquired UtilityInnovation to expand into the behind-the-meter microgrid space, enabling more sophisticated power management for data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/vertiv-acquires-microgrid-company-utilityinnovation/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 08:49:07 +0000",
+    "retrieved_at": "2026-09-03T14:01:15+00:00",
+    "tickers": [
+      {
+        "ticker": "VRT",
+        "company_name": "Vertiv Holdings Co.",
+        "jurisdiction": "United States",
+        "verified": true
+      },
+      {
+        "ticker": "UTIL",
+        "company_name": "UtilityInnovation",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Vertiv's expansion into microgrid solutions directly supports AI infrastructure power and cooling resilience.",
+    "url_hash": "29b5431a8c1a3c5f",
+    "id": "29b5431a8c1a3c5f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Ada Infrastructure breaks ground on latest Tokyo data center",
+    "summary": "Ada Infrastructure has broken ground on a new data center facility in Tokyo as part of its continued expansion in Japan.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ada-infrastructure-breaks-ground-on-latest-tokyo-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 08:51:51 +0000",
+    "retrieved_at": "2026-09-03T14:01:12+00:00",
+    "tickers": [
+      {
+        "ticker": "ADAI",
+        "company_name": "Ada Infrastructure",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly concerns data center infrastructure expansion for AI buildout",
+    "url_hash": "dcaee81d1d44dabd",
+    "id": "dcaee81d1d44dabd"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Keppel acquires majority stake in two Tokyo data centers",
+    "summary": "Keppel acquired a majority stake in two Tokyo data centers, expanding its data center portfolio in Japan.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/keppel-acquires-majority-stake-in-two-tokyo-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 08:57:52 +0000",
+    "retrieved_at": "2026-09-03T14:01:10+00:00",
+    "tickers": [
+      {
+        "ticker": "BN4.SG",
+        "company_name": "Keppel Corporation",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Direct acquisition of data center assets, central to AI infrastructure buildout scope.",
+    "url_hash": "3a385bf784eab7b2",
+    "id": "3a385bf784eab7b2"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "New 400MW AI data center planned for Algoma in Ontario, Canada",
+    "summary": "Algoma Steel and Red Jar Energy Partners are collaborating on a proposal for a 400MW AI data center in Algoma, Ontario.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/new-400mw-ai-data-center-planned-for-algoma-in-ontario-canada/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 13:01:14 +0000",
+    "retrieved_at": "2026-09-03T14:01:02+00:00",
+    "tickers": [],
+    "relevance_reason": "Concrete proposal for a major AI data center facility directly relevant to AI infrastructure buildout",
+    "url_hash": "c27ee3291d27af5c",
+    "id": "c27ee3291d27af5c"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Yamna signs land reservation agreement at Brazil's Port of Açu",
+    "summary": "Yamna has signed a land reservation agreement at Brazil's Port of Açu to develop hyperscale data centers in Brazil.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/yamna-signs-land-reservation-agreement-in-the-port-of-acu/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 13:20:26 +0000",
+    "retrieved_at": "2026-09-03T14:01:00+00:00",
+    "tickers": [],
+    "relevance_reason": "Company is planning development of hyperscale data centers, which is directly within the AI Buildout scope.",
+    "url_hash": "33d6266bdc2ec396",
+    "id": "33d6266bdc2ec396"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Cuasar Capital plans 300MW data center campus in Durango, Mexico",
+    "summary": "Cuasar Capital and KA URBE IT are developing a 300MW data center campus in Durango, Mexico designed for high-density artificial intelligence workloads.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/quasar-launches-a-300-mw-data-center-campus-in-durango-mexico/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 13:30:30 +0000",
+    "retrieved_at": "2026-09-03T14:00:54+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns AI data center infrastructure buildout with significant power capacity.",
+    "url_hash": "632e6b16163d6173",
+    "id": "632e6b16163d6173"
+  },
+  {
+    "niche": "AI Buildout",
     "headline": "What Can Go Wrong In 800VDC AI Data Centers",
     "summary": "The article examines risks in 800VDC AI data center power systems, including fire and outage hazards from higher electrical currents and thermal management challenges from high-power chips.",
     "source_url": "https://semiengineering.com/what-can-go-wrong-in-800vdc-ai-data-centers/",
