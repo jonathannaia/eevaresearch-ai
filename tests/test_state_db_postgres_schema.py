@@ -120,13 +120,22 @@ def test_v10_translation_retry_count_defaults_to_zero(pg_isolated_connection):
 
 
 def test_v10_schema_upgrades_to_v11(pg_isolated_connection):
+    """Purely historical version-to-version transition proof — bounded to
+    stop at v11 rather than asserting equality with CURRENT_SCHEMA_VERSION,
+    matching test_v10_database_upgrades_to_v11's own SQLite-side fix
+    (CURRENT is now v12 or later)."""
     conn = pg_isolated_connection
     _migrate_up_to(conn, 10)
     assert postgres_schema.get_schema_version(conn) == 10
 
-    result = postgres_schema.migrate(conn)
+    original_migrations = postgres_schema._MIGRATIONS
+    postgres_schema._MIGRATIONS = tuple(m for m in original_migrations if m[0] <= 11)
+    try:
+        result = postgres_schema.migrate(conn)
+    finally:
+        postgres_schema._MIGRATIONS = original_migrations
 
-    assert result == 11 == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert result == 11
     assert postgres_schema.get_schema_version(conn) == 11
     rows = conn.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
@@ -167,6 +176,54 @@ def test_v11_daily_news_sources_url_is_unique(pg_isolated_connection):
             "VALUES ('s2', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T2', 'now', 'now', 'English')"
         )
         conn.commit()
+
+
+# --- Daily News autonomous worker: schema version 12 ---
+
+
+def test_v11_schema_upgrades_to_v12(pg_isolated_connection):
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 11)
+    assert postgres_schema.get_schema_version(conn) == 11
+
+    result = postgres_schema.migrate(conn)
+
+    assert result == 12 == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == 12
+    rows = conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+    ).fetchall()
+    names = {row["table_name"] for row in rows}
+    assert {"daily_news_scan_status", "daily_news_worker_status"} <= names
+
+
+def test_v12_daily_news_worker_status_tables_start_empty_and_are_usable(pg_isolated_connection):
+    postgres_schema.migrate(pg_isolated_connection)
+    for table in ("daily_news_scan_status", "daily_news_worker_status"):
+        row = pg_isolated_connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()
+        assert row["n"] == 0
+
+
+def test_v12_daily_news_scan_status_round_trips_and_upserts(pg_isolated_connection):
+    conn = pg_isolated_connection
+    postgres_schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_scan_status (company_name, last_attempt_at, updated_at) "
+        "VALUES ('NVIDIA', 'now', 'now')"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["items_discovered_last_run"] == 0
+
+    conn.execute(
+        "INSERT INTO daily_news_scan_status (company_name, last_attempt_at, updated_at) "
+        "VALUES ('NVIDIA', 'later', 'later') "
+        "ON CONFLICT (company_name) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, "
+        "updated_at = excluded.updated_at"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["last_attempt_at"] == "later"
     conn.rollback()
 
 

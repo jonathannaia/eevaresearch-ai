@@ -146,18 +146,27 @@ def test_v10_columns_have_correct_types_and_defaults():
 
 
 def test_v10_database_upgrades_to_v11():
-    """Simulates a database that was already at v10 before this
-    workstream — applies exactly migrations 1..10, confirms it really is
-    recorded at v10, then calls migrate() (CURRENT_SCHEMA_VERSION is
-    exactly 11 as of this workstream) and confirms it reaches v11 with
-    the three new Daily News tables present and usable."""
+    """Simulates a database that was already at v10 before the Daily News
+    durability workstream — applies exactly migrations 1..10, confirms it
+    really is recorded at v10, then temporarily bounds migrate() to stop
+    at v11 (bypassing its own "run everything up to CURRENT" behavior,
+    since CURRENT is now v12 or later) and confirms it reaches v11 with
+    the three new Daily News tables present and usable. A purely
+    historical version-to-version transition proof — see the module
+    comment above test_v9_database_upgrades_to_v10 for why this stays a
+    literal, never a dynamic CURRENT_SCHEMA_VERSION comparison."""
     conn = connection.connect_in_memory()
     _migrate_up_to(conn, 10)
     assert schema.get_schema_version(conn) == 10
 
-    result = schema.migrate(conn)
+    original_migrations = schema._MIGRATIONS
+    schema._MIGRATIONS = tuple(m for m in original_migrations if m[0] <= 11)
+    try:
+        result = schema.migrate(conn)
+    finally:
+        schema._MIGRATIONS = original_migrations
 
-    assert result == 11 == schema.CURRENT_SCHEMA_VERSION
+    assert result == 11
     assert schema.get_schema_version(conn) == 11
     tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
     assert {"daily_news_stories", "daily_news_sources", "daily_news_state_transitions"} <= tables
@@ -203,6 +212,70 @@ def test_v11_daily_news_sources_url_is_unique():
             "VALUES ('s2', 'NVIDIA', 'Official company source', 'https://example.com/dup', 'T2', 'now', 'now', 'English')"
         )
         conn.commit()
+
+
+# --- Daily News autonomous worker: schema version 12 ---
+
+
+def test_v11_database_upgrades_to_v12():
+    """Simulates a database that was already at v11 before this
+    workstream — applies exactly migrations 1..11, confirms it really is
+    recorded at v11, then calls migrate() (CURRENT_SCHEMA_VERSION is
+    exactly 12 as of this workstream) and confirms it reaches v12 with
+    the two new worker-status tables present and usable."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 11)
+    assert schema.get_schema_version(conn) == 11
+
+    result = schema.migrate(conn)
+
+    assert result == 12 == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == 12
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    assert {"daily_news_scan_status", "daily_news_worker_status"} <= tables
+
+
+def test_v12_daily_news_worker_status_tables_start_empty_and_are_usable():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_scan_status").fetchone()["n"] == 0
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_worker_status").fetchone()["n"] == 0
+
+
+def test_v12_daily_news_scan_status_round_trips_and_upserts():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_scan_status (company_name, last_attempt_at, updated_at) "
+        "VALUES ('NVIDIA', 'now', 'now')"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["items_discovered_last_run"] == 0
+    assert row["stories_published_last_run"] == 0
+
+    conn.execute(
+        "INSERT INTO daily_news_scan_status (company_name, last_attempt_at, updated_at) "
+        "VALUES ('NVIDIA', 'later', 'later') "
+        "ON CONFLICT (company_name) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, "
+        "updated_at = excluded.updated_at"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["last_attempt_at"] == "later"
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_scan_status").fetchone()["n"] == 1
+
+
+def test_v12_daily_news_worker_status_single_row_by_worker_key():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_worker_status (worker_key, updated_at) VALUES ('daily_news', 'now')"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_worker_status WHERE worker_key = 'daily_news'").fetchone()
+    assert row["last_tick_started_at"] is None
+    assert row["last_reconciliation_at"] is None
 
 
 def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():

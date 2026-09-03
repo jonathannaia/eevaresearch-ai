@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -524,9 +524,60 @@ _V11_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_daily_news_state_transitions_story ON daily_news_state_transitions (story_id, id)",
 )
 
+# Daily News autonomous worker (design/DECISIONS.md) — two new, wholly
+# additive tables giving scripts/daily_news_worker.py somewhere to
+# persist its own internal health/status bookkeeping, entirely separate
+# from daily_news_stories/daily_news_sources/daily_news_state_transitions
+# (V11) — those hold the durable NewsStory data the pipeline itself
+# produces; these hold the worker process's own operational state, read
+# and written only by the worker (never by any pipeline call, page, or
+# component), mirroring provider_scan_status's (V2) own
+# worker-only-table convention exactly.
+#
+# - `daily_news_scan_status`: one row per registered feed, keyed by
+#   `company_name` (the same string feed_registry.DailyNewsFeedSource.
+#   company_name / DailyNewsScanReport.source_failures already key by).
+#   `last_fetch_success_at` updates on every tick where that feed's own
+#   fetch+parse succeeded, regardless of whether a new story resulted;
+#   `last_story_published_at` only updates when a new story was actually
+#   persisted that tick. This distinction is deliberate: the daily
+#   reconciliation health check flags staleness using
+#   `last_fetch_success_at` only, so a feed that is fetching successfully
+#   but simply has nothing new to report is never mistaken for a broken
+#   one.
+# - `daily_news_worker_status`: a single row (keyed by a fixed
+#   `worker_key` constant, since there is exactly one Daily News
+#   pipeline, unlike Radar's per-provider granularity) tracking the
+#   worker process's own tick/reconciliation bookkeeping.
+_V12_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE daily_news_scan_status (
+        company_name TEXT PRIMARY KEY,
+        last_attempt_at TEXT,
+        last_fetch_success_at TEXT,
+        last_story_published_at TEXT,
+        last_failure_code TEXT,
+        items_discovered_last_run INTEGER NOT NULL DEFAULT 0,
+        stories_published_last_run INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE daily_news_worker_status (
+        worker_key TEXT PRIMARY KEY,
+        last_tick_started_at TEXT,
+        last_tick_completed_at TEXT,
+        last_reconciliation_at TEXT,
+        last_failure_code TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 12 later means appending a new (12, (...statements...))
-# entry here — existing entries are never edited or removed.
+# Adding a new schema version later means appending a new
+# (N, (...statements...)) entry here — existing entries are never edited
+# or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -539,6 +590,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (9, _V9_STATEMENTS),
     (10, _V10_STATEMENTS),
     (11, _V11_STATEMENTS),
+    (12, _V12_STATEMENTS),
 )
 
 

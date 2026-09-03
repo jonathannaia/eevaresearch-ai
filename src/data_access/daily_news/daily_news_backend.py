@@ -40,10 +40,13 @@ from src.data_access.backend_factory import BackendConfigurationError
 from src.data_access.daily_news import daily_news_store
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import daily_news_repository as postgres_daily_news
+from src.data_access.postgres_state_db import daily_news_scan_status_repository as postgres_daily_news_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import daily_news_repository as sqlite_daily_news
+from src.data_access.state_db import daily_news_scan_status_repository as sqlite_daily_news_scan_status
 from src.data_access.state_db import schema as state_db_schema
+from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsFeedScanStatus, DailyNewsWorkerStatus
 from src.models.daily_news_models import NewsStory
 
 
@@ -183,12 +186,92 @@ def get_daily_news_repository(settings: Settings) -> DailyNewsRepositoryProtocol
     module's own get_X_repository functions. No real Daily News service
     entry point selects "sqlite"/"postgres" by default — "json" is what
     `settings.db_backend` resolves to unless an operator explicitly sets
-    EDGE_DB_BACKEND — no autonomous worker exists yet to make a live
-    choice either way (a future Daily News worker is a separate,
-    not-yet-approved phase)."""
+    EDGE_DB_BACKEND — the standalone scripts/daily_news_worker.py is the
+    one caller that constructs its own explicit worker Settings
+    (db_backend="postgres" only, in live mode) before calling this."""
     backend = _normalized_backend(settings)
     if backend == "sqlite":
         return SqliteDailyNewsRepository(conn=_require_sqlite_connection(settings))
     if backend == "postgres":
         return PostgresDailyNewsRepository(conn=_require_postgres_connection(settings))
     return JsonDailyNewsRepository(cache_dir=settings.cache_dir)
+
+
+# --- Daily News worker scan-status/health repository — sqlite/postgres
+# only (design/DECISIONS.md, Daily News autonomous worker workstream) ---
+#
+# Deliberately no JSON implementation and no JSON fallback, mirroring
+# backend_factory.get_scan_status_repository's own "no JSON branch"
+# discipline exactly: JSON is not safe shared persistence for a separate
+# dashboard + continuous-worker process pair, and no existing manual/
+# on-demand Daily News entry point (scripts/run_daily_news_discovery.py,
+# the hidden admin page) needs this status table at all — only
+# scripts/daily_news_worker.py ever calls
+# get_daily_news_scan_status_repository().
+
+
+class DailyNewsScanStatusRepositoryProtocol(Protocol):
+    def get_feed_status(self, company_name: str) -> DailyNewsFeedScanStatus | None: ...
+    def get_all_feed_statuses(self) -> dict[str, DailyNewsFeedScanStatus]: ...
+    def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None: ...
+    def get_worker_status(self) -> DailyNewsWorkerStatus | None: ...
+    def upsert_worker_status(self, status: DailyNewsWorkerStatus) -> None: ...
+
+
+@dataclass(frozen=True)
+class SqliteDailyNewsScanStatusRepository:
+    conn: sqlite3.Connection
+
+    def get_feed_status(self, company_name: str) -> DailyNewsFeedScanStatus | None:
+        return sqlite_daily_news_scan_status.get_feed_status(self.conn, company_name)
+
+    def get_all_feed_statuses(self) -> dict[str, DailyNewsFeedScanStatus]:
+        return sqlite_daily_news_scan_status.get_all_feed_statuses(self.conn)
+
+    def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None:
+        sqlite_daily_news_scan_status.upsert_feed_status(self.conn, status)
+
+    def get_worker_status(self) -> DailyNewsWorkerStatus | None:
+        return sqlite_daily_news_scan_status.get_worker_status(self.conn)
+
+    def upsert_worker_status(self, status: DailyNewsWorkerStatus) -> None:
+        sqlite_daily_news_scan_status.upsert_worker_status(self.conn, status)
+
+
+@dataclass(frozen=True)
+class PostgresDailyNewsScanStatusRepository:
+    conn: psycopg.Connection
+
+    def get_feed_status(self, company_name: str) -> DailyNewsFeedScanStatus | None:
+        return postgres_daily_news_scan_status.get_feed_status(self.conn, company_name)
+
+    def get_all_feed_statuses(self) -> dict[str, DailyNewsFeedScanStatus]:
+        return postgres_daily_news_scan_status.get_all_feed_statuses(self.conn)
+
+    def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None:
+        postgres_daily_news_scan_status.upsert_feed_status(self.conn, status)
+
+    def get_worker_status(self) -> DailyNewsWorkerStatus | None:
+        return postgres_daily_news_scan_status.get_worker_status(self.conn)
+
+    def upsert_worker_status(self, status: DailyNewsWorkerStatus) -> None:
+        postgres_daily_news_scan_status.upsert_worker_status(self.conn, status)
+
+
+def get_daily_news_scan_status_repository(settings: Settings) -> DailyNewsScanStatusRepositoryProtocol:
+    """No JSON branch — mirrors backend_factory.get_scan_status_repository
+    exactly. The caller (scripts/daily_news_worker.py) is expected to
+    construct its own explicit worker Settings from its dedicated
+    EDGE_DAILY_NEWS_WORKER_DB_BACKEND/EDGE_DAILY_NEWS_WORKER_STATE_DB_URL
+    configuration before calling this — never the ambient
+    EDGE_DB_BACKEND/EDGE_STATE_DB_URL pair the dashboard uses."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteDailyNewsScanStatusRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresDailyNewsScanStatusRepository(conn=_require_postgres_connection(settings))
+    raise BackendConfigurationError(
+        "Daily News worker scan-status persistence requires an explicit "
+        f'db_backend of "sqlite" or "postgres" (got {backend!r}). JSON is not supported here — '
+        "this table is only ever read/written by scripts/daily_news_worker.py."
+    )

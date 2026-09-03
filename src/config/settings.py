@@ -196,6 +196,46 @@ class Settings:
             Path(os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH")) if os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH") else None
         )
     )
+    # Daily News autonomous worker (design/DECISIONS.md) — the master
+    # switch for the standalone continuous worker (scripts/
+    # daily_news_worker.py) only, mirroring radar_live_scan_enabled's own
+    # convention exactly. Disabled by default; the Streamlit dashboard
+    # never reads this to decide anything.
+    daily_news_live_scan_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED")
+    )
+    # Deliberately separate from db_backend/state_db_url above, and read
+    # only by scripts/daily_news_worker.py, never by get_settings()'s own
+    # ambient use elsewhere — same isolation rationale as
+    # radar_worker_db_backend/radar_worker_state_db_url. None means
+    # unconfigured; the worker fails closed. Live-mode startup validation
+    # (daily_news_worker._build_worker_settings) accepts "postgres" only —
+    # stricter than the Radar worker, which also permits "sqlite" for a
+    # deployed worker. daily_news_worker_state_db_path below exists only
+    # for direct, local unit/integration-style tick tests that construct
+    # their own Settings and call the tick logic without going through
+    # main()'s live-mode gate at all; it is never accepted by that gate.
+    daily_news_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_DAILY_NEWS_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    daily_news_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_URL") or None
+    )
+    daily_news_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_PATH"))
+            if os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_PATH") else None
+        )
+    )
+    daily_news_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_SCAN_INTERVAL_MINUTES") or "30")
+    )
+    daily_news_reconciliation_interval_hours: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_RECONCILIATION_INTERVAL_HOURS") or "24")
+    )
+    daily_news_reconciliation_staleness_hours: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_RECONCILIATION_STALENESS_HOURS") or "72")
+    )
     # Private-beta access foundation, Phase 1 — disabled by default so every
     # existing page keeps working with no configuration at all. The
     # allowlist alone is authorization, not authentication (see

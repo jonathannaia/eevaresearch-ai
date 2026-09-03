@@ -217,12 +217,10 @@ def test_sqlite_review_decision_round_trip_and_immutable_history():
 
 def test_sqlite_migration_reaches_version_8_with_new_tables_starting_empty():
     conn = _sqlite_conn()
-    # Tracks the current latest schema version (10, after the translation
-    # reliability workstream's own V10 addition) — the point of this test
-    # is that the V8 matching tables exist and start empty, not this
-    # exact number.
+    # The point of this test is that the V8 matching tables exist and
+    # start empty regardless of how many later versions now exist — never
+    # a hardcoded exact CURRENT_SCHEMA_VERSION literal here.
     assert sqlite_schema.get_schema_version(conn) == sqlite_schema.CURRENT_SCHEMA_VERSION
-    assert sqlite_schema.CURRENT_SCHEMA_VERSION == 11
     assert sqlite_matching.get_scope(conn, "theme-does-not-exist") is None
     assert sqlite_matching.list_active_scopes(conn) == ()
     assert sqlite_matching.list_pending_matches(conn) == ()

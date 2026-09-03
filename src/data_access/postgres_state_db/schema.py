@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -404,9 +404,40 @@ _V11_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_daily_news_state_transitions_story ON daily_news_state_transitions (story_id, id)",
 )
 
+# Daily News autonomous worker — isolated Postgres counterpart to
+# state_db/schema.py's own _V12_STATEMENTS (see that module's comment for
+# the full per-table design rationale, including the
+# last_fetch_success_at vs. last_story_published_at distinction). No
+# Postgres-specific column type is needed for either table.
+_V12_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE daily_news_scan_status (
+        company_name TEXT PRIMARY KEY,
+        last_attempt_at TEXT,
+        last_fetch_success_at TEXT,
+        last_story_published_at TEXT,
+        last_failure_code TEXT,
+        items_discovered_last_run INTEGER NOT NULL DEFAULT 0,
+        stories_published_last_run INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE daily_news_worker_status (
+        worker_key TEXT PRIMARY KEY,
+        last_tick_started_at TEXT,
+        last_tick_completed_at TEXT,
+        last_reconciliation_at TEXT,
+        last_failure_code TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
-# Adding schema version 12 later means appending a new (12, (...statements...))
-# entry here — existing entries are never edited or removed.
+# Adding a new schema version later means appending a new
+# (N, (...statements...)) entry here — existing entries are never edited
+# or removed.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -419,6 +450,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (9, _V9_STATEMENTS),
     (10, _V10_STATEMENTS),
     (11, _V11_STATEMENTS),
+    (12, _V12_STATEMENTS),
 )
 
 

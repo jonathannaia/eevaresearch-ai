@@ -183,3 +183,64 @@ def test_postgres_repository_update_story_omitted_version_re_reads_current(pg_co
     outcome = repo.update_story(stored)
     assert outcome.status == "updated"
     assert outcome.current.status == NewsStoryStatus.SUPPRESSED
+
+
+# --- Daily News autonomous worker: scan-status repository factory ---
+# No JSON branch — mirrors backend_factory.get_scan_status_repository's
+# own deliberate JSON-rejection discipline exactly.
+
+
+def test_scan_status_json_or_unrecognized_backend_raises_configuration_error(tmp_path):
+    from src.data_access.daily_news.daily_news_backend import get_daily_news_scan_status_repository
+
+    for backend_value in ("json", "not-a-real-backend"):
+        settings = _settings(backend_value, cache_dir=tmp_path)
+        with pytest.raises(BackendConfigurationError):
+            get_daily_news_scan_status_repository(settings)
+
+
+def test_scan_status_sqlite_requires_configured_path():
+    from src.data_access.daily_news.daily_news_backend import get_daily_news_scan_status_repository
+
+    settings = _settings("sqlite")
+    with pytest.raises(BackendConfigurationError):
+        get_daily_news_scan_status_repository(settings)
+
+
+def test_scan_status_sqlite_repository_round_trips_through_protocol_methods(tmp_path):
+    from src.data_access.daily_news.daily_news_backend import (
+        SqliteDailyNewsScanStatusRepository,
+        get_daily_news_scan_status_repository,
+    )
+    from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsFeedScanStatus
+
+    settings = _settings("sqlite", state_db_path=str(tmp_path / "state.db"))
+    repo = get_daily_news_scan_status_repository(settings)
+    assert isinstance(repo, SqliteDailyNewsScanStatusRepository)
+    assert repo.get_feed_status("NVIDIA") is None
+
+    status = DailyNewsFeedScanStatus(
+        company_name="NVIDIA", last_attempt_at="2026-01-01T00:00:00+00:00",
+        last_fetch_success_at="2026-01-01T00:00:05+00:00", last_story_published_at=None,
+        last_failure_code=None, items_discovered_last_run=1, stories_published_last_run=0,
+        updated_at="2026-01-01T00:00:05+00:00",
+    )
+    repo.upsert_feed_status(status)
+    assert repo.get_feed_status("NVIDIA") == status
+    assert repo.get_all_feed_statuses() == {"NVIDIA": status}
+
+
+def test_scan_status_postgres_repository_round_trips_through_protocol_methods(pg_conn):
+    from src.data_access.daily_news.daily_news_backend import PostgresDailyNewsScanStatusRepository
+    from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsWorkerStatus
+
+    repo = PostgresDailyNewsScanStatusRepository(conn=pg_conn)
+    assert repo.get_worker_status() is None
+
+    status = DailyNewsWorkerStatus(
+        worker_key="daily_news", last_tick_started_at="2026-01-01T00:00:00+00:00",
+        last_tick_completed_at="2026-01-01T00:00:10+00:00", last_reconciliation_at=None,
+        last_failure_code=None, updated_at="2026-01-01T00:00:10+00:00",
+    )
+    repo.upsert_worker_status(status)
+    assert repo.get_worker_status() == status
