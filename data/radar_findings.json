@@ -1,5 +1,61 @@
 [
   {
+    "niche": "Humanoids",
+    "headline": "JAKA hits Teradyne Robotics back over patent dispute",
+    "summary": "JAKA is taking legal action against Teradyne Robotics over statements it claims are false, misleading, and damaging, as part of an ongoing patent dispute.",
+    "source_url": "https://www.therobotreport.com/jaka-hits-teradyne-robotics-back-over-patent-dispute/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 17:44:20 +0000",
+    "retrieved_at": "2026-09-03T22:02:04+00:00",
+    "tickers": [
+      {
+        "ticker": "TER",
+        "company_name": "Teradyne Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct conflict between two robotics companies over patent dispute and public statements",
+    "url_hash": "7e4f8ccfbe0c6f32",
+    "id": "7e4f8ccfbe0c6f32"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Medtronic invests $700M in surgical partner Cornerstone Robotics",
+    "summary": "Medtronic has invested $700M in Cornerstone Robotics to develop a multi-port surgical robotics portfolio centered on the Hugo surgical system and expanded by the Sentire platform.",
+    "source_url": "https://www.therobotreport.com/medtronic-invests-700m-in-surgical-partner-cornerstone-robotics/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 18:53:54 +0000",
+    "retrieved_at": "2026-09-03T22:02:02+00:00",
+    "tickers": [
+      {
+        "ticker": "MDT",
+        "company_name": "Medtronic",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Medtronic's substantial investment in surgical robotics company with concrete development of robotic surgical systems (Hugo and Sentire).",
+    "url_hash": "6c72dced7a30fe86",
+    "id": "6c72dced7a30fe86"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Sponsored: New nanofluid delivers measurable improvements in data center cooling tests",
+    "summary": "A nanofluid has demonstrated measurable improvements in data center cooling tests as rack power densities increase across hyperscale and enterprise data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/opinions/new-nanofluid-delivers-measurable-improvements-in-data-center-cooling-tests/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 15:00:24 +0000",
+    "retrieved_at": "2026-09-03T22:01:37+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI data center cooling infrastructure, a core component of AI Buildout scope.",
+    "url_hash": "f6b86a6e64ba4ee6",
+    "id": "f6b86a6e64ba4ee6"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "Sparks Fly: NVIDIA Accelerates Local AI at IFA 2026",
     "summary": "NVIDIA is launching compact RTX Spark Windows PCs in October and partnering with Microsoft to provide faster local inference and tools for running AI agents on NVIDIA hardware, announced at IFA 2026.",
