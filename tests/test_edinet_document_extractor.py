@@ -322,15 +322,141 @@ def test_zip_with_pdf_plus_irrelevant_members_reads_only_the_pdf():
     assert result.evidence_source_member == "PublicDoc/0101.pdf"
 
 
-def test_zip_with_no_pdf_member_is_unsupported_format():
+def test_zip_with_no_pdf_and_no_html_member_is_unsupported_format():
+    # XBRL/XSD/XML-only package (no .pdf, no .htm/.html at all) — the
+    # HTML fallback must never treat these as candidates; genuinely
+    # nothing usable remains.
     zip_bytes = _build_zip([
         ("manifest.xml", b"<manifest/>"),
-        ("PublicDoc/0101.htm", b"<html><body>no pdf here</body></html>"),
+        ("XBRL/PublicDoc/jpcrp170000-sbr-001.xbrl", b"<xbrl>irrelevant</xbrl>"),
+        ("XBRL/PublicDoc/jpcrp170000-sbr-001.xsd", b"<xsd/>"),
     ])
     result = extract_excerpt(zip_bytes)
     assert result.state == ExtractionState.UNSUPPORTED_FORMAT
     assert "PDF" in result.detail
+    assert "HTML" in result.detail
     assert result.evidence_source_member is None
+
+
+# ============================================================
+# HTML-in-ZIP fallback (narrow extension) — only ever considered when no
+# safe .pdf member exists at all. Fixture shape mirrors the real,
+# live-verified EDINET ZIP found for docID S100Z0ID (Shin-Etsu Chemical's
+# 自己株券買付状況報告書, 010:170000:220): a header .htm and a "honbun"
+# .htm, no .pdf member.
+# ============================================================
+
+
+def test_zip_with_safe_pdf_plus_html_still_selects_pdf():
+    pdf_bytes = _build_minimal_pdf("PDF must win even though HTML is also present.")
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/0000000_header_...htm", b"<html><body>header, never read</body></html>"),
+        ("XBRL/PublicDoc/0100010_honbun_...htm", b"<html><body>honbun body, never read</body></html>"),
+        ("PublicDoc/0101.pdf", pdf_bytes),
+    ])
+    with patch(
+        "src.data_access.edinet.document_extractor._select_safe_html_member",
+        side_effect=AssertionError("HTML selection must never run when a safe PDF member exists"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "PDF must win" in result.excerpt_original
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
+
+
+def test_zip_with_no_pdf_prefers_honbun_html_over_header_html():
+    header_html = "<html><body>Header/cover text, must not be selected.</body></html>".encode("utf-8")
+    honbun_html = "<html><body>自己株券買付状況報告書の本文テキストです。</body></html>".encode("utf-8")
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/0000000_header_jpcrp170000-sbr-001_E00776-000_2026-09-04_01_2026-09-04_ixbrl.htm", header_html),
+        ("XBRL/PublicDoc/0100010_honbun_jpcrp170000-sbr-001_E00776-000_2026-09-04_01_2026-09-04_ixbrl.htm", honbun_html),
+        ("XBRL/PublicDoc/jpcrp170000-sbr-001_E00776-000_2026-09-04_01_2026-09-04.xbrl", b"<xbrl>irrelevant</xbrl>"),
+        ("XBRL/PublicDoc/jpcrp170000-sbr-001_E00776-000_2026-09-04_01_2026-09-04.xsd", b"<xsd/>"),
+    ])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "自己株券買付状況報告書の本文テキストです" in result.excerpt_original
+    assert "Header/cover text" not in result.excerpt_original
+    assert result.evidence_source_member == "XBRL/PublicDoc/0100010_honbun_jpcrp170000-sbr-001_E00776-000_2026-09-04_01_2026-09-04_ixbrl.htm"
+
+
+def test_zip_with_no_pdf_and_no_honbun_selects_largest_safe_html():
+    small_html = "<html><body>Small member.</body></html>".encode("utf-8")
+    large_html = ("<html><body>Large member with much more disclosure text content padding it out well beyond the small one.</body></html>").encode("utf-8")
+    zip_bytes = _build_zip([
+        ("PublicDoc/0000000_cover.htm", small_html),
+        ("PublicDoc/0100010_body.htm", large_html),
+    ])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "Large member with much more disclosure" in result.excerpt_original
+    assert "Small member" not in result.excerpt_original
+    assert result.evidence_source_member == "PublicDoc/0100010_body.htm"
+
+
+def test_zip_with_unsafe_path_traversal_html_member_fails_closed_before_reading():
+    zip_bytes = _build_zip([("../../evil.htm", b"<html><body>should never be read</body></html>")])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_zip_html_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "unsafe" in result.detail.lower()
+
+
+def test_zip_html_member_with_no_extractable_text_returns_parse_failed():
+    zip_bytes = _build_zip([("PublicDoc/0100010_honbun.htm", b"<html><body><div></div></body></html>")])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.PARSE_FAILED
+    assert result.evidence_source_member is None
+
+
+def test_zip_html_fallback_never_reads_xbrl_or_xml_members():
+    honbun_html = "<html><body>Only this member may ever be read.</body></html>".encode("utf-8")
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/report.xbrl", b"<xbrl>must never be read as text</xbrl>"),
+        ("XBRL/PublicDoc/report.xsd", b"<xsd>must never be read as text</xsd>"),
+        ("XBRL/PublicDoc/report_pre.xml", b"<pre>must never be read as text</pre>"),
+        ("XBRL/PublicDoc/0100010_honbun.htm", honbun_html),
+    ])
+    result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.EXTRACTED
+    assert "Only this member may ever be read" in result.excerpt_original
+    for forbidden in ("must never be read as text",):
+        assert forbidden not in result.excerpt_original
+
+
+def test_zip_html_fallback_archive_bomb_safeguards_still_enforced():
+    # Same ratio-bomb shape as the existing PDF-path test, but with no
+    # .pdf member at all — proves the HTML selector's own independently
+    # duplicated safety scan (not just the PDF selector's) enforces the
+    # compression-ratio limit before any member is read.
+    ratio_bomb = b"0" * (1024 * 1024)
+    zip_bytes = _build_zip([("PublicDoc/0100010_honbun.htm", ratio_bomb)], compress_type=zipfile.ZIP_DEFLATED)
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as check:
+        info = check.infolist()[0]
+        assert info.file_size / max(info.compress_size, 1) > MAX_ZIP_COMPRESSION_RATIO  # sanity
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_zip_html_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "compression ratio" in result.detail.lower()
+
+
+def test_zip_html_fallback_too_many_members_fails_closed_before_reading():
+    members = [(f"file_{i}.xml", b"<x/>") for i in range(MAX_ZIP_MEMBERS)]
+    members.append(("PublicDoc/0100010_honbun.htm", b"<html><body>should never be read</body></html>"))
+    zip_bytes = _build_zip(members)
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_zip_html_text",
+        side_effect=AssertionError("member content must not be read"),
+    ):
+        result = extract_excerpt(zip_bytes)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "member" in result.detail.lower()
 
 
 def test_zip_with_absolute_path_pdf_member_fails_closed_before_reading():

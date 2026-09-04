@@ -31,19 +31,52 @@ _TEST_MAP = {
     "999:888:002": "fictional_category_beta",
 }
 
-# The one real, live-verified mapping (Gate 10) — used only by tests that
-# specifically exercise it, never implicitly via the fictional _TEST_MAP.
+# The two real, live-verified mappings — used only by tests that
+# specifically exercise them, never implicitly via the fictional _TEST_MAP.
 _REAL_ANNUAL_REPORT_KEY = "010:030000:120"
+_REAL_SHARE_BUYBACK_STATUS_KEY = "010:170000:220"
+
+# Real, confirmed look-alike triplets that must never match the base
+# share-buyback rule — see edinet_rules.py's own DEFAULT_CODE_CATEGORY_MAP
+# docstring for the full evidence chain (384 filings / 239 independent
+# issuers sampled 2026-06-03 through 2026-09-04).
+_REAL_CORRECTED_BUYBACK_KEY = "010:170001:230"  # 訂正自己株券買付状況報告書
+_REAL_SPECIFIED_SECURITIES_BUYBACK_KEY = "030:253000:220"  # fund/REIT variant
 
 
-def test_default_code_category_map_has_exactly_one_real_entry():
-    assert DEFAULT_CODE_CATEGORY_MAP == {_REAL_ANNUAL_REPORT_KEY: "annual_securities_report"}
+def test_default_code_category_map_has_exactly_two_real_entries():
+    assert DEFAULT_CODE_CATEGORY_MAP == {
+        _REAL_ANNUAL_REPORT_KEY: "annual_securities_report",
+        _REAL_SHARE_BUYBACK_STATUS_KEY: "share_buyback_status",
+    }
 
 
 def test_evaluate_document_default_map_matches_only_the_real_annual_report_tuple():
     result = evaluate_document("010", "030000", "120")
     assert result.confidence == "Moderate"
     assert result.matched_rules == ("annual_securities_report:010:030000:120",)
+
+
+def test_evaluate_document_default_map_matches_the_real_share_buyback_status_tuple():
+    result = evaluate_document("010", "170000", "220")
+    assert result.confidence == "Moderate"
+    assert result.matched_rules == ("share_buyback_status:010:170000:220",)
+
+
+def test_evaluate_document_default_map_does_not_match_corrected_buyback_variant():
+    # 訂正自己株券買付状況報告書 (corrected/amended) — a different
+    # docTypeCode from the base rule; must remain unmapped.
+    result = evaluate_document("010", "170001", "230")
+    assert result.confidence is None
+    assert result.matched_rules == ()
+
+
+def test_evaluate_document_default_map_does_not_match_specified_securities_buyback_variant():
+    # The fund/REIT variant, filed under a different ordinance despite an
+    # identical title string; must remain unmapped.
+    result = evaluate_document("030", "253000", "220")
+    assert result.confidence is None
+    assert result.matched_rules == ()
 
 
 def test_evaluate_document_default_map_does_not_match_fictional_codes():

@@ -52,7 +52,26 @@ already-fetched bytes, exactly as before. Real EDINET ZIP internal
 structure beyond "ZIP is one of three response formats" remains
 unconfirmed in this repository (see client.py's module docstring), so
 every limit below is a safety bound, not a claim about typical package
-composition."""
+composition.
+
+HTML-in-ZIP fallback (narrow, later extension) — a real, live-verified
+EDINET ZIP package (docID S100Z0ID, Shin-Etsu Chemical's 自己株券買付状
+況報告書, a 010:170000:220-triplet share-buyback status report) was
+found to contain no `.pdf` member at all — only inline-XBRL `.htm` files
+(a header member and a "honbun"/body member). ONLY when
+`_select_safe_pdf_member` returns a genuine "no .pdf member" result (the
+archive's own metadata having already passed every safety check above)
+does `_select_safe_html_member` run: it applies the identical metadata
+scan, then selects a safe `.htm`/`.html` member preferring one whose
+basename contains "honbun" (EDINET's own real body-document naming
+convention) over the largest safe candidate otherwise, and hands its
+bytes to `_LenientHtmlTextExtractor` — the same tag-stripping parser the
+bare/non-ZIP plain-text/HTML path already uses. PDF remains the
+unconditional first choice whenever a safe `.pdf` member exists; no
+`.xbrl`, `.xsd`, or `.xml` member is ever read by either selector; no
+nested archive is followed. This remains a pure function over
+already-fetched bytes — no document fetching, translation, candidate
+creation, or persistence of any kind is added here."""
 from __future__ import annotations
 
 import io
@@ -114,6 +133,21 @@ _ZIP_UNSAFE_PATH_DETAIL = "ZIP package rejected — contains an unsafe (absolute
 _ZIP_NESTED_DETAIL = "ZIP package rejected — selected member is itself an archive; nested archives are not processed."
 _ZIP_NO_PDF_DETAIL = "ZIP package contained no safe, allowlisted PDF document."
 _ZIP_INVALID_PDF_DETAIL = "ZIP package's selected member did not contain valid PDF content."
+
+# HTML-in-ZIP fallback (narrow extension of Phase 2, Step 1) — used ONLY
+# when no safe .pdf member exists at all; see _select_safe_html_member
+# and _extract_from_zip's own call-ordering docstring for exactly when
+# this path is even reached. Never XBRL/XML-aware — the selected member
+# is parsed with the same _LenientHtmlTextExtractor the bare/non-ZIP
+# HTML path already uses, so a `.xbrl`/`.xsd`/`.xml` member is still
+# never read, regardless of how "close" its name looks to a report body.
+_HTML_EXTENSIONS = (".htm", ".html")
+_HONBUN_MARKER = "honbun"
+_ZIP_NO_HTML_DETAIL = "ZIP package contained no safe, allowlisted HTML document."
+_ZIP_NO_SAFE_MEMBER_DETAIL = "ZIP package contained no safe, allowlisted PDF or HTML document."
+_ZIP_HTML_UNDECODABLE_DETAIL = "ZIP package's selected HTML member is not valid UTF-8 text."
+_ZIP_HTML_PARSE_FAILED_DETAIL = "ZIP package's selected HTML member could not be parsed."
+_ZIP_HTML_NO_TEXT_DETAIL = "ZIP package's selected HTML member contained no extractable text."
 
 # Failure reasons meaning the archive itself could not be safely opened or
 # trusted at all (corrupt structure at open time, or an encrypted member
@@ -236,21 +270,113 @@ def _select_safe_pdf_member(archive: "zipfile.ZipFile") -> tuple["zipfile.ZipInf
     return None, _ZIP_NO_PDF_DETAIL
 
 
+def _select_safe_html_member(archive: "zipfile.ZipFile") -> tuple["zipfile.ZipInfo | None", str | None]:
+    """HTML-in-ZIP fallback — only ever called by _extract_from_zip after
+    _select_safe_pdf_member has already returned exactly `_ZIP_NO_PDF_
+    DETAIL` (a genuine "no .pdf member" result, with the archive's own
+    metadata already having passed every safety check below during that
+    call) — never called after an unsafe-path or safety-limit rejection,
+    which fail the whole extraction closed immediately instead. Repeats
+    the same metadata-only scan (member count, size, ratio, encryption)
+    _select_safe_pdf_member already performed — deliberately duplicated,
+    not shared, so this function's own safety is independently verifiable
+    and this narrow addition never has to touch the pre-existing PDF
+    selector's tested code path.
+
+    Every `.htm`/`.html`-suffixed member's path is safety-checked (never
+    only the ultimately-selected one) — any unsafe path among them fails
+    the whole selection closed, matching the same fail-closed discipline
+    an unsafe `.pdf` member already gets.
+
+    Selection preference, among safe candidates only: a member whose
+    basename (last `/`-separated path segment) contains "honbun" case-
+    insensitively — EDINET's own real "body" document naming convention,
+    confirmed live for docID S100Z0ID — wins over any other; otherwise
+    the largest safe eligible member by declared uncompressed size (a
+    real header/cover member is reliably much smaller than the actual
+    report body). No `.xbrl`, `.xsd`, `.xml`, or any other extension is
+    ever a candidate here."""
+    infos = archive.infolist()
+    if len(infos) > MAX_ZIP_MEMBERS:
+        return None, _ZIP_TOO_MANY_MEMBERS_DETAIL
+
+    total_uncompressed = 0
+    for info in infos:
+        if info.flag_bits & 0x1:
+            return None, _ZIP_ENCRYPTED_DETAIL
+        if info.file_size > MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES:
+            return None, _ZIP_MEMBER_SIZE_DETAIL
+        if info.file_size > 0 and (info.file_size / max(info.compress_size, 1)) > MAX_ZIP_COMPRESSION_RATIO:
+            return None, _ZIP_RATIO_DETAIL
+        total_uncompressed += info.file_size
+    if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES:
+        return None, _ZIP_TOTAL_SIZE_DETAIL
+
+    candidates = []
+    for info in infos:
+        if not info.filename.lower().endswith(_HTML_EXTENSIONS):
+            continue
+        if not _is_safe_member_name(info.filename):
+            return None, _ZIP_UNSAFE_PATH_DETAIL
+        candidates.append(info)
+
+    if not candidates:
+        return None, _ZIP_NO_HTML_DETAIL
+
+    honbun_candidates = [c for c in candidates if _HONBUN_MARKER in c.filename.rsplit("/", 1)[-1].lower()]
+    pool = honbun_candidates or candidates
+    return max(pool, key=lambda c: c.file_size), None
+
+
+def _extract_zip_html_text(member_bytes: bytes) -> ExtractionResult:
+    """Parses one already-selected, already-safety-checked ZIP HTML
+    member with the exact same _LenientHtmlTextExtractor the bare/non-ZIP
+    plain-text/HTML path (extract_excerpt's own final branch) already
+    uses — never XBRL/XML-aware, purely tag-stripping text extraction.
+    UTF-8 only, matching _decode_if_plain_text's own "no guessed encoding
+    chain" discipline. Text is normalized (collapsed whitespace) but
+    never translated, summarized, or interpreted."""
+    try:
+        text = member_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return ExtractionResult(state=ExtractionState.UNSUPPORTED_FORMAT, detail=_ZIP_HTML_UNDECODABLE_DETAIL)
+
+    parser = _LenientHtmlTextExtractor()
+    try:
+        parser.feed(text)
+    except Exception:
+        return ExtractionResult(state=ExtractionState.PARSE_FAILED, detail=_ZIP_HTML_PARSE_FAILED_DETAIL)
+
+    excerpt = re.sub(r"\s+", " ", " ".join(parser.text_parts)).strip()
+    if not excerpt:
+        return ExtractionResult(state=ExtractionState.PARSE_FAILED, detail=_ZIP_HTML_NO_TEXT_DETAIL)
+    return ExtractionResult(state=ExtractionState.EXTRACTED, excerpt_original=excerpt[:MAX_EXCERPT_CHARS])
+
+
 def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
     """Bounded ZIP-package extraction (Phase 2, Step 1; provenance added
-    Step 2). Opens the archive in memory only (`io.BytesIO` — never
-    written to disk), validates `archive.infolist()` metadata before
-    reading any member content, selects at most one safe, allowlisted
-    `.pdf` member, and hands its bytes to the existing, unmodified
-    `_extract_pdf_text()`. No other member is ever read. No nested
-    archive is followed. Never raises.
+    Step 2; HTML fallback added as a narrow, later extension). Opens the
+    archive in memory only (`io.BytesIO` — never written to disk),
+    validates `archive.infolist()` metadata before reading any member
+    content, and selects at most one safe member. No nested archive is
+    followed. Never raises.
 
-    `evidence_source_member` (Step 2) is stamped onto the result ONLY
-    when `_extract_pdf_text()` itself reports EXTRACTED — every other
-    outcome (encrypted/corrupt/no-text PDF) returns `_extract_pdf_text`'s
-    own result unchanged, with `evidence_source_member` left at its
-    default of None, so provenance is never recorded for a member whose
-    content didn't actually yield a usable excerpt."""
+    Selection order — PDF remains the unconditional first choice: only
+    when `_select_safe_pdf_member` returns exactly `_ZIP_NO_PDF_DETAIL`
+    (a genuine "no .pdf member, and the archive's own metadata already
+    passed every safety check" result) does `_select_safe_html_member`
+    ever run. Every other PDF-selection outcome — a safety-limit breach
+    (member count/size/ratio/encryption) or an unsafe `.pdf` path — fails
+    the whole extraction closed immediately, exactly as before this
+    fallback existed; HTML is never considered in that case. No `.xbrl`,
+    `.xsd`, or `.xml` member is ever read by either selector.
+
+    `evidence_source_member` is stamped onto the result ONLY when the
+    selected member's own extraction reports EXTRACTED — every other
+    outcome returns that inner result unchanged, with
+    `evidence_source_member` left at its default of None, so provenance
+    is never recorded for a member whose content didn't actually yield a
+    usable excerpt."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(document_bytes))
     except zipfile.BadZipFile:
@@ -258,9 +384,14 @@ def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
 
     with archive:
         selected, failure_detail = _select_safe_pdf_member(archive)
+        member_kind = "pdf"
+        if selected is None and failure_detail == _ZIP_NO_PDF_DETAIL:
+            selected, failure_detail = _select_safe_html_member(archive)
+            member_kind = "html"
         if selected is None:
             state = ExtractionState.PARSE_FAILED if failure_detail in _ZIP_PARSE_FAILED_DETAILS else ExtractionState.UNSUPPORTED_FORMAT
-            return ExtractionResult(state=state, detail=failure_detail)
+            detail = _ZIP_NO_SAFE_MEMBER_DETAIL if failure_detail == _ZIP_NO_HTML_DETAIL else failure_detail
+            return ExtractionResult(state=state, detail=detail)
         try:
             member_bytes = archive.read(selected)
         except (zipfile.BadZipFile, RuntimeError, KeyError):
@@ -268,16 +399,20 @@ def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
 
     if member_bytes.startswith(_ZIP_MAGIC):
         return ExtractionResult(state=ExtractionState.UNSUPPORTED_FORMAT, detail=_ZIP_NESTED_DETAIL)
-    if not member_bytes.startswith(_PDF_MAGIC):
-        return ExtractionResult(state=ExtractionState.UNSUPPORTED_FORMAT, detail=_ZIP_INVALID_PDF_DETAIL)
 
-    pdf_result = _extract_pdf_text(member_bytes)
-    if pdf_result.state != ExtractionState.EXTRACTED:
-        return pdf_result
+    if member_kind == "pdf":
+        if not member_bytes.startswith(_PDF_MAGIC):
+            return ExtractionResult(state=ExtractionState.UNSUPPORTED_FORMAT, detail=_ZIP_INVALID_PDF_DETAIL)
+        inner_result = _extract_pdf_text(member_bytes)
+    else:
+        inner_result = _extract_zip_html_text(member_bytes)
+
+    if inner_result.state != ExtractionState.EXTRACTED:
+        return inner_result
     return ExtractionResult(
-        state=pdf_result.state,
-        excerpt_original=pdf_result.excerpt_original,
-        detail=pdf_result.detail,
+        state=inner_result.state,
+        excerpt_original=inner_result.excerpt_original,
+        detail=inner_result.detail,
         evidence_source_member=selected.filename,
     )
 

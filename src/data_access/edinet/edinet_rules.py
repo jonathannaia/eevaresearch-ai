@@ -64,8 +64,38 @@ EDINET_CATEGORIES: tuple[str, ...] = (
 # Report) — are deliberately NOT mapped here; they remain FilingEvent-
 # only. Do not add another entry to this map without the same
 # live-verification discipline these three tuples went through.
+#
+# Second real entry (share-buyback status reports) — ordinanceCode=010,
+# formCode=170000, docTypeCode=220 → "share_buyback_status". Live-
+# verified via an authenticated EDINET document-list sample spanning
+# 2026-06-03 through 2026-09-04 (8 dates): 384 filings carried the exact
+# title 自己株券買付状況報告書（法２４条の６第１項に基づくもの）
+# ("Status Report of Purchase of Own Shares"), of which 239 independent
+# issuers (anchored by Shin-Etsu Chemical Co., Ltd., docID S100Z0ID,
+# EDINET code E00776, filed 2026-09-04) used this exact triplet — the
+# project's own established minimum-evidence bar for a real mapping
+# (Gate 10 required 9 independent filers; this is a wide margin beyond
+# that). Two real, confirmed look-alikes are deliberately excluded, on
+# the same title-plus-triplet discipline the Extraordinary Report shadow
+# evaluator (material_event_shadow.py) already established, and must
+# never be added to this map without independent re-verification:
+#   - 010:170001:230 — 訂正自己株券買付状況報告書 (corrected/amended
+#     buyback report; 6 independent instances observed, one consistent
+#     triplet, always distinct from the base 220 docTypeCode).
+#   - 030:253000:220 — the specified-securities/fund/REIT variant (e.g.
+#     KDX Real Estate Investment Corporation, EDINET code E14109,
+#     secCode None), filed under a different ordinance (特定有価証券の
+#     内容等の開示に関する内閣府令) despite an identical title string —
+#     title-text matching alone would wrongly capture it; the triplet
+#     correctly excludes it.
+# A real post-patch fetch/extraction validation (docID S100Z0ID) confirms
+# this category's documents are extractable by the existing pipeline: the
+# ZIP package's safe "honbun" inline-XBRL HTML body yielded 600 real
+# extracted Japanese characters via document_extractor.py's HTML-in-ZIP
+# fallback — no further extraction work was needed for this category.
 DEFAULT_CODE_CATEGORY_MAP: dict[str, str] = {
     "010:030000:120": "annual_securities_report",
+    "010:170000:220": "share_buyback_status",
 }
 
 
