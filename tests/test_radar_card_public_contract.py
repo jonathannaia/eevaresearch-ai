@@ -239,8 +239,18 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert len(translation_toggle) == 1
     original_toggle = [b for b in at.button if b.label == "View original filing text"]
     assert len(original_toggle) == 1
-    link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
-    assert len(link_buttons) == 1
+    # EDINET original-source-link fallback: no working direct document
+    # link exists (verified live), so the card links to the official
+    # search portal root instead of the old, now-broken "Open original
+    # filing" action.
+    assert not any(b.label == "Open original filing ↗" for b in at.get("link_button"))
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+    assert edinet_link_buttons[0].url == "https://disclosure2.edinet-fsa.go.jp/"
+    assert "api.edinet-fsa.go.jp" not in all_text
+    assert "Official EDINET search:" in all_text
+    assert "EDINET code E02778" in all_text
+    assert "Securities code 99840" in all_text
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
     # EDINET-specific technical metadata (ordinance/form/docType codes)
@@ -411,6 +421,118 @@ def test_open_original_filing_button_links_to_index_page_when_no_primary_documen
     )
     # Never the raw, unadorned accession-directory URL.
     assert link_buttons[0].url != filing.source_url
+
+
+# ============================================================
+# EDINET original-source-link fallback — no working direct document
+# link exists (verified live against disclosure2.edinet-fsa.go.jp: the
+# per-row "PDF表示" action is a session-bound JS postback keyed to an
+# opaque per-render token, not a URL derivable from stored metadata).
+# The card links to the official search portal root instead of the
+# broken authenticated-API link, plus a non-clickable locator line.
+# ============================================================
+
+
+def test_edinet_render_quiet_links_uses_new_label_and_portal_root_never_old_label_or_api_url():
+    from src.ui.components.radar_card import _render_quiet_links  # noqa: F401  (imported for AppTest script below)
+
+    script = """
+from src.models.models import FilingEvent
+from src.ui.components.radar_card import _render_quiet_links
+
+filing = FilingEvent(
+    rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
+    report_nm="raw report_nm", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
+    source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100YGH5",
+    retrieved_at="2026-06-22T00:00:00+00:00", source_name="EDINET", original_language="Japanese",
+)
+_render_quiet_links(filing, "有価証券報告書－第46期(2025/04/01－2026/03/31)", "Jun 22, 2026")
+"""
+    at = AppTest.from_string(script, default_timeout=10)
+    at.run()
+    assert not at.exception
+
+    link_buttons = list(at.get("link_button"))
+    assert len(link_buttons) == 1
+    assert link_buttons[0].label == "Search original EDINET filing ↗"
+    assert link_buttons[0].url == "https://disclosure2.edinet-fsa.go.jp/"
+
+    all_text = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+    assert "Open original filing ↗" not in all_text
+    assert "api.edinet-fsa.go.jp" not in all_text
+    assert "S100YGH5" not in all_text  # docID/private token never leaked into the locator line either
+    assert "Official EDINET search: EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026 · 有価証券報告書－第46期(2025/04/01－2026/03/31)" in all_text
+
+
+def test_edinet_locator_line_omits_missing_fields_cleanly_never_a_placeholder():
+    from src.ui.components.radar_card import _edinet_locator_line
+
+    full = FilingEvent(
+        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
+        report_nm="raw", rcept_dt="2026-06-22", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    assert _edinet_locator_line(full, "有価証券報告書", "Jun 22, 2026") == (
+        "Official EDINET search: EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026 · 有価証券報告書"
+    )
+
+    # Securities code and filed date both absent — omitted cleanly, no
+    # placeholder, no invented value, and never the private API URL.
+    partial = FilingEvent(
+        rcept_no="S100YGH6", corp_code="E09999", corp_name="No Sec Code Corp.", stock_code="",
+        report_nm="raw", rcept_dt="", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    assert _edinet_locator_line(partial, "有価証券報告書", None) == (
+        "Official EDINET search: EDINET code E09999 · 有価証券報告書"
+    )
+
+    # Nothing at all present — no line rendered, not an empty placeholder.
+    empty = FilingEvent(
+        rcept_no="S100YGH7", corp_code="", corp_name="No Codes Corp.", stock_code="",
+        report_nm="raw", rcept_dt="", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    assert _edinet_locator_line(empty, "", None) is None
+
+
+def test_edgar_and_dart_render_quiet_links_unchanged_by_edinet_fallback():
+    """The EDINET-specific branch in `_render_quiet_links` must never
+    affect EDGAR or DART — both still render the original "Open original
+    filing ↗" action pointing at `_public_source_url`, exactly as before
+    this fallback existed."""
+    script = """
+from src.models.models import FilingEvent
+from src.ui.components.radar_card import _render_quiet_links
+
+edgar_filing = FilingEvent(
+    rcept_no="0001045810-26-000078", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+    report_nm="8-K filing", rcept_dt="2026-09-02", flr_nm="NVIDIA", pblntf_ty="8-K",
+    source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/",
+    retrieved_at="2026-09-02T00:00:00+00:00", source_name="SEC EDGAR", original_language="English",
+    primary_document="nvda-20260902.htm",
+)
+_render_quiet_links(edgar_filing, "Current Report — Form 8-K", "Sep 2, 2026")
+
+dart_filing = FilingEvent(
+    rcept_no="20260812000010", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+    report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="삼성전자",
+    source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000010",
+    retrieved_at="2026-08-12T00:00:00+00:00",
+)
+_render_quiet_links(dart_filing, "신규시설투자등 결정", "Aug 12, 2026")
+"""
+    at = AppTest.from_string(script, default_timeout=10)
+    at.run()
+    assert not at.exception
+
+    link_buttons = list(at.get("link_button"))
+    assert len(link_buttons) == 2
+    assert {b.label for b in link_buttons} == {"Open original filing ↗"}
+    assert {b.url for b in link_buttons} == {
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000078/nvda-20260902.htm",
+        "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000010",
+    }
+    all_text = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+    assert "Search original EDINET filing ↗" not in all_text
+    assert "Official EDINET search:" not in all_text
 
 
 # ============================================================
