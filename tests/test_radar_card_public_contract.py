@@ -442,11 +442,11 @@ from src.ui.components.radar_card import _render_quiet_links
 
 filing = FilingEvent(
     rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
-    report_nm="raw report_nm", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
+    report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
     source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100YGH5",
     retrieved_at="2026-06-22T00:00:00+00:00", source_name="EDINET", original_language="Japanese",
 )
-_render_quiet_links(filing, "有価証券報告書－第46期(2025/04/01－2026/03/31)", "Jun 22, 2026")
+_render_quiet_links(filing, "Jun 22, 2026")
 """
     at = AppTest.from_string(script, default_timeout=10)
     at.run()
@@ -461,36 +461,66 @@ _render_quiet_links(filing, "有価証券報告書－第46期(2025/04/01－2026/
     assert "Open original filing ↗" not in all_text
     assert "api.edinet-fsa.go.jp" not in all_text
     assert "S100YGH5" not in all_text  # docID/private token never leaked into the locator line either
-    assert "Official EDINET search: EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026 · 有価証券報告書－第46期(2025/04/01－2026/03/31)" in all_text
+    assert (
+        "Official EDINET search: ソフトバンクグループ株式会社 · 有価証券報告書－第46期(2025/04/01－2026/03/31) "
+        "· EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026"
+    ) in all_text
+
+
+def test_edinet_locator_line_never_uses_the_shared_display_title_only_native_report_nm():
+    """`_edinet_locator_line` no longer takes a `title` argument at all —
+    it can only ever read `filing.report_nm`/`filing.flr_nm` directly,
+    structurally guaranteeing it can never echo a stored English
+    title_translation, regardless of what the rest of the card is
+    displaying for this same filing."""
+    from src.ui.components.radar_card import _edinet_locator_line
+
+    filing = FilingEvent(
+        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
+        report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22",
+        flr_nm="ソフトバンクグループ株式会社", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    locator = _edinet_locator_line(filing, "Jun 22, 2026")
+    assert "有価証券報告書－第46期(2025/04/01－2026/03/31)" in locator
+    assert "ソフトバンクグループ株式会社" in locator
+    # Nothing resembling an English translated title/label ever appears.
+    assert "Annual Securities Report" not in locator
+    assert "annual securities report" not in locator.lower()
+
+
+def test_edinet_locator_line_field_order_is_filer_title_code_seccode_date():
+    from src.ui.components.radar_card import _edinet_locator_line
+
+    full = FilingEvent(
+        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
+        report_nm="有価証券報告書", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
+        retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    assert _edinet_locator_line(full, "Jun 22, 2026") == (
+        "Official EDINET search: ソフトバンクグループ株式会社 · 有価証券報告書 · "
+        "EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026"
+    )
 
 
 def test_edinet_locator_line_omits_missing_fields_cleanly_never_a_placeholder():
     from src.ui.components.radar_card import _edinet_locator_line
 
-    full = FilingEvent(
-        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
-        report_nm="raw", rcept_dt="2026-06-22", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
-    )
-    assert _edinet_locator_line(full, "有価証券報告書", "Jun 22, 2026") == (
-        "Official EDINET search: EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026 · 有価証券報告書"
-    )
-
     # Securities code and filed date both absent — omitted cleanly, no
     # placeholder, no invented value, and never the private API URL.
     partial = FilingEvent(
         rcept_no="S100YGH6", corp_code="E09999", corp_name="No Sec Code Corp.", stock_code="",
-        report_nm="raw", rcept_dt="", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
+        report_nm="有価証券報告書", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
     )
-    assert _edinet_locator_line(partial, "有価証券報告書", None) == (
-        "Official EDINET search: EDINET code E09999 · 有価証券報告書"
+    assert _edinet_locator_line(partial, None) == (
+        "Official EDINET search: 有価証券報告書 · EDINET code E09999"
     )
 
     # Nothing at all present — no line rendered, not an empty placeholder.
     empty = FilingEvent(
         rcept_no="S100YGH7", corp_code="", corp_name="No Codes Corp.", stock_code="",
-        report_nm="raw", rcept_dt="", flr_nm="x", retrieved_at=_now_iso(), source_name="EDINET",
+        report_nm="", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
     )
-    assert _edinet_locator_line(empty, "", None) is None
+    assert _edinet_locator_line(empty, None) is None
 
 
 def test_edgar_and_dart_render_quiet_links_unchanged_by_edinet_fallback():
@@ -509,7 +539,7 @@ edgar_filing = FilingEvent(
     retrieved_at="2026-09-02T00:00:00+00:00", source_name="SEC EDGAR", original_language="English",
     primary_document="nvda-20260902.htm",
 )
-_render_quiet_links(edgar_filing, "Current Report — Form 8-K", "Sep 2, 2026")
+_render_quiet_links(edgar_filing, "Sep 2, 2026")
 
 dart_filing = FilingEvent(
     rcept_no="20260812000010", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
@@ -517,7 +547,7 @@ dart_filing = FilingEvent(
     source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000010",
     retrieved_at="2026-08-12T00:00:00+00:00",
 )
-_render_quiet_links(dart_filing, "신규시설투자등 결정", "Aug 12, 2026")
+_render_quiet_links(dart_filing, "Aug 12, 2026")
 """
     at = AppTest.from_string(script, default_timeout=10)
     at.run()
@@ -533,6 +563,120 @@ _render_quiet_links(dart_filing, "신규시설투자등 결정", "Aug 12, 2026")
     all_text = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
     assert "Search original EDINET filing ↗" not in all_text
     assert "Official EDINET search:" not in all_text
+
+
+# ============================================================
+# EDINET shares DART's exact title/Summary/translation-toggle mechanism
+# — no EDINET-only translation control, label, or card mode. Confirms
+# byte-for-byte parity with test_korean_fixture_shows_only_the_approved_
+# fields above: same toggle labels, same default-shows-translation-when-
+# stored / original-behind-a-toggle contract, and (this section's own
+# addition) the same title_translation-by-default behavior, which the
+# pre-existing Japanese fixture test above never exercised (it left
+# title_translation unset).
+# ============================================================
+
+
+def test_edinet_with_stored_title_and_excerpt_translation_matches_dart_default_and_toggle_contract(tmp_path):
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="edinet-cand-buyback-1", filing=filing, matched_rules=["share_buyback_status:010:170000:220"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="自己株券買付状況報告書の記載内容の抜粋です。",
+        title_translation=Translation(translated_text="Status Report of Purchase of Own Shares", provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso()),
+        excerpt_translation=Translation(translated_text="This is an excerpt from the status report of purchase of own shares.", provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso()),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    # Default state: translated title + translated excerpt shown, exactly
+    # like DART's own default (test_korean_fixture_shows_only_the_
+    # approved_fields) — no EDINET-only "default to original" behavior.
+    # The card's own title element specifically (er-card-title) must be
+    # the translated title — not just "present somewhere on the page",
+    # since the native title legitimately also appears in the locator
+    # line below (checked separately further down).
+    card_title = next(m.value for m in at.markdown if 'class="er-card-title"' in m.value)
+    assert "Status Report of Purchase of Own Shares" in card_title
+    assert "自己株券買付状況報告書" not in card_title
+    assert "This is an excerpt from the status report of purchase of own shares." in all_text
+    assert "自己株券買付状況報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed by default
+
+    # Same two toggle labels DART uses — no EDINET-only "Translate"/"Show
+    # original" control was introduced.
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    assert len(translation_toggle) == 1
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
+
+    # The locator, however, stays original-Japanese-only regardless of
+    # the translated title/excerpt shown above — it must never echo the
+    # translated title.
+    assert "Official EDINET search:" in all_text
+    assert "信越化学工業株式会社" in all_text
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title, in the locator only
+    assert "Status Report of Purchase of Own Shares" not in _locator_line_text(all_text)
+
+    original_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text  # native excerpt now revealed
+    assert any(b.label == "Hide original filing text" for b in at.button)
+
+
+def _locator_line_text(all_text: str) -> str:
+    """Isolates just the "Official EDINET search: ..." locator line from
+    a page's full flattened text, so an assertion about what it does/
+    doesn't contain can't be satisfied by different text elsewhere on
+    the same page."""
+    marker = "Official EDINET search:"
+    idx = all_text.index(marker)
+    return all_text[idx : idx + 400]
+
+
+def test_edinet_with_no_stored_translation_shows_native_title_and_excerpt_matching_dart_untranslated_contract(tmp_path):
+    """No title_translation/excerpt_translation stored at all — matches
+    DART's own no-translation contract exactly (test_no_stored_
+    translation_shows_no_toggle_even_with_a_retry_scheduled below): the
+    native title/report_nm is shown (display_title's own fallback), the
+    Summary falls back to the neutral metadata sentence, and only the
+    original-text toggle appears — no "Show English translation" toggle
+    at all, since there is nothing translated to show."""
+    filing = FilingEvent(
+        rcept_no="S100Z0ID2", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID2",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="edinet-cand-buyback-2", filing=filing, matched_rules=["share_buyback_status:010:170000:220"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="自己株券買付状況報告書の記載内容の抜粋です。",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title (no translation stored)
+    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert len(original_toggle) == 1
 
 
 # ============================================================

@@ -25,9 +25,19 @@ DECISIONS.md) — a minimal, read-only research-feed card showing exactly:
      session-bound JS postback, not a derivable URL), so EDINET cards
      instead render `Search original EDINET filing ↗` linking to the
      official search portal root, plus a non-clickable locator line
-     naming the fields (EDINET code, securities code, filed date,
-     title) needed to re-find the filing there. See
-     `_render_quiet_links`.
+     naming the fields (Japanese filer/submitter name, the native
+     Japanese report title, EDINET code, securities code, filed date)
+     needed to re-find the filing there. Built from `filing.flr_nm`/
+     `filing.report_nm` directly — never the shared display title above,
+     which may be a stored English translation; the locator never shows
+     translated text. See `_render_quiet_links`/`_edinet_locator_line`.
+
+EDINET's title/Summary/toggle mechanism (items 2-4 above) is entirely
+shared with DART — no EDINET-specific branch exists in `display_title`,
+the Summary logic, or the toggles below; both sources already go through
+the exact same `is_english_native(filing)`-gated code path in
+`candidate_row`. The only EDINET-specific rendering is item 5's
+original-source-link fallback.
 
 Filing-quality pass (design/DECISIONS.md): some EDGAR filings store an
 extraction dominated by raw XML/XBRL markup, taxonomy namespace prefixes,
@@ -139,31 +149,42 @@ def _public_source_url(filing: FilingEvent) -> str:
     return f"{filing.source_url}{filing.rcept_no}-index.htm"
 
 
-def _edinet_locator_line(filing: FilingEvent, title: str, filed_label: str | None) -> str | None:
+def _edinet_locator_line(filing: FilingEvent, filed_label: str | None) -> str | None:
     """EDINET has no working direct document link (disclosure2.edinet-
     fsa.go.jp's per-row "PDF表示" action is a session-bound JS postback
     keyed to an opaque per-render token, not a derivable URL — verified
     live, see the EDINET original-source-link investigation). This line
     gives a reader the exact fields to re-find the filing themselves on
-    the official search portal. Built only from fields already present
-    on `filing`/the already-computed display `title` — never queries an
-    API, never infers a code, and omits any item that's simply absent
-    rather than showing a placeholder or the private API URL."""
+    the official search portal.
+
+    Deliberately reads `filing.flr_nm` (EDINET's own real, Japanese
+    filerName) and `filing.report_nm` (the native Japanese docDescription/
+    title) directly — NEVER the shared card's own display title (see
+    filing_display.display_title), which may be a stored English
+    title_translation. The locator must stay original-Japanese-only even
+    when the rest of the card is showing a translated title/excerpt, so
+    it is never built from a value that could be a translation. Every
+    other field (EDINET code, securities code) comes straight off
+    `filing` too — never queries an API, never infers a code, and omits
+    any item that's simply absent rather than showing a placeholder or
+    the private API URL."""
     parts = []
+    if filing.flr_nm:
+        parts.append(html.escape(filing.flr_nm))
+    if filing.report_nm:
+        parts.append(html.escape(filing.report_nm))
     if filing.corp_code:
         parts.append(f"EDINET code {html.escape(filing.corp_code)}")
     if filing.stock_code:
         parts.append(f"Securities code {html.escape(filing.stock_code)}")
     if filed_label:
         parts.append(f"Filed {html.escape(filed_label)}")
-    if title:
-        parts.append(html.escape(title))
     if not parts:
         return None
     return "Official EDINET search: " + " · ".join(parts)
 
 
-def _render_quiet_links(filing: FilingEvent, title: str = "", filed_label: str | None = None) -> None:
+def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> None:
     """The card's one action: opening the official source URL in a new
     tab (st.link_button's native behavior) — de-emphasized (the same
     cta-tertiary-* ghost treatment used everywhere else in the app for a
@@ -183,7 +204,7 @@ def _render_quiet_links(filing: FilingEvent, title: str = "", filed_label: str |
         with link_cols[0]:
             with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
                 st.link_button("Search original EDINET filing ↗", _EDINET_SEARCH_URL, use_container_width=True)
-        locator = _edinet_locator_line(filing, title, filed_label)
+        locator = _edinet_locator_line(filing, filed_label)
         if locator:
             st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{locator}</div>', unsafe_allow_html=True)
         return
@@ -287,4 +308,4 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     section_label="Original filing text", text=native_text,
                 )
 
-        _render_quiet_links(filing, title, filed_label)
+        _render_quiet_links(filing, filed_label)
