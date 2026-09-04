@@ -7,7 +7,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+from src.config.settings import Settings
 from src.config.tracked_companies import TrackedCompany
+from src.data_access import backend_factory
 from src.data_access.dart import candidate_store
 from src.data_access.edinet import edinet_pipeline
 from src.data_access.edinet.errors import EdinetNotFoundError
@@ -187,6 +189,91 @@ def test_run_pipeline_processes_detected_candidates_within_budget(tmp_path):
     assert report.new_filing_events == 1
     assert report.candidates_detected == 0
     assert report.candidates_processed == 0
+
+
+# ---------------------------------------------------------------------------
+# Durable-State Phase 4M-2 (Stage 0) — filing-event persistence wiring.
+# Persists every scanned filing as its own FilingEvent row when an
+# injected candidate_repository is supplied (the sqlite/postgres path),
+# independent of whether it also matched a rule. The JSON default path
+# above (test_run_pipeline_processes_detected_candidates_within_budget)
+# needs no equivalent proof — it already persisted every filing via
+# scan_service.scan()'s own on-disk cache before this phase existed.
+# ---------------------------------------------------------------------------
+
+def _sqlite_settings(tmp_path):
+    return Settings(db_backend="sqlite", state_db_path=tmp_path / "state.db")
+
+
+def test_run_pipeline_persists_a_non_matching_filing_via_injected_repository(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100A", "E00001", "1234", ordinance="010", form="030")])},
+    )
+    settings = _sqlite_settings(tmp_path)
+    repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, candidate_repository=repo)
+
+    assert report.new_filing_events == 1
+    assert report.candidates_detected == 0
+    filing_events = filing_repo.load_filing_events()
+    assert len(filing_events) == 1
+    assert filing_events[0].rcept_no == "S100A"
+    assert repo.load_candidates() == {}
+
+
+def test_run_pipeline_still_creates_both_filing_event_and_candidate_when_rule_matches(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100REAL", "E00001", "1234", ordinance="010", form="030000")])},
+        {"S100REAL": b"<html><body><p>Annual report content.</p></body></html>"},
+    )
+    settings = _sqlite_settings(tmp_path)
+    repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, candidate_repository=repo)
+
+    assert report.candidates_detected == 1
+    assert len(filing_repo.load_filing_events()) == 1
+    candidates = repo.load_candidates()
+    assert len(candidates) == 1
+    candidate = next(iter(candidates.values()))
+    assert candidate.filing.rcept_no == "S100REAL"
+    assert candidate.matched_rules == ["annual_securities_report:010:030000:120"]
+
+
+def test_run_pipeline_repeat_call_does_not_duplicate_the_filing_event_via_repository(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100A", "E00001", "1234", ordinance="010", form="030")])},
+    )
+    settings = _sqlite_settings(tmp_path)
+    repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+
+    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, candidate_repository=repo)
+    edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, candidate_repository=repo)  # repeat scan
+
+    assert len(filing_repo.load_filing_events()) == 1
+
+
+def test_run_pipeline_does_not_persist_a_filing_for_an_untracked_edinet_code(tmp_path):
+    """A row whose edinetCode matches no tracked company is filtered out
+    by scan_service.scan() itself before it ever becomes a FilingEvent
+    (see that module's own company-matching discipline) — Stage 0 adds no
+    new filtering of its own; it only persists what scan() already
+    decided belongs to a tracked issuer."""
+    client = _make_client(
+        {_today(): _envelope([_result("S100X", "E99999", "0000")])},  # E99999 is not in [_ACME]
+    )
+    settings = _sqlite_settings(tmp_path)
+    repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, candidate_repository=repo)
+
+    assert report.new_filing_events == 0
+    assert len(filing_repo.load_filing_events()) == 0
 
 
 def test_pipeline_is_idempotent_across_repeated_process_single_candidate_calls(tmp_path):

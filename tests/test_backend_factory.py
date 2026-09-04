@@ -217,6 +217,67 @@ def test_filing_event_dedup_sqlite_backend(tmp_path):
     assert len(filing_repo.load_filing_events()) == 1
 
 
+# --- Durable-State Phase 4M-2 (Stage 0) — upsert_filing_events_only ---
+
+
+def test_sqlite_upsert_filing_events_only_persists_a_filing_with_no_candidate(tmp_path):
+    settings = _sqlite_settings(tmp_path)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5", corp_code="E02778"), source_name="EDINET")
+
+    candidate_repo.upsert_filing_events_only([filing])
+
+    assert filing_repo.exists(filing.corp_code, filing.rcept_no) is True
+    assert len(filing_repo.load_filing_events()) == 1
+    # No candidate was created — this method never touches candidates.
+    assert candidate_repo.load_candidates() == {}
+
+
+def test_sqlite_upsert_filing_events_only_is_idempotent_no_duplicate_on_repeat_call(tmp_path):
+    settings = _sqlite_settings(tmp_path)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5", corp_code="E02778"), source_name="EDINET")
+
+    candidate_repo.upsert_filing_events_only([filing])
+    candidate_repo.upsert_filing_events_only([filing])  # repeat — must not duplicate
+
+    assert len(filing_repo.load_filing_events()) == 1
+
+
+def test_sqlite_upsert_filing_events_only_does_not_duplicate_a_filing_already_written_by_a_candidate(tmp_path):
+    """The same FilingEvent row a matching candidate already wrote (as
+    upsert_new_candidates()'s own side effect) must not be duplicated
+    when upsert_filing_events_only() is called afterward for the same
+    filing — the exact sequence edinet_pipeline.run_pipeline() now
+    performs every tick."""
+    settings = _sqlite_settings(tmp_path)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5", corp_code="E02778"), source_name="EDINET")
+
+    candidate_repo.upsert_new_candidates([_candidate(filing)])
+    candidate_repo.upsert_filing_events_only([filing])
+
+    assert len(filing_repo.load_filing_events()) == 1
+
+
+def test_json_upsert_filing_events_only_is_a_no_op(tmp_path):
+    """The JSON backend needs no equivalent write path — scan_service.
+    scan() (for every source) already persists every scanned FilingEvent
+    into its own on-disk cache unconditionally. This proves the method
+    exists (Protocol-satisfying) and does not raise or write anything of
+    its own — never a second, competing JSON write path."""
+    settings = _json_settings(tmp_path)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5", corp_code="E02778"), source_name="EDINET")
+
+    candidate_repo.upsert_filing_events_only([filing])  # must not raise
+
+    assert not (tmp_path / "cache").exists()
+
+
 @pytest.mark.parametrize("settings_factory", [_json_settings, _sqlite_settings])
 def test_published_candidate_derives_the_same_signal_identity_across_backends(tmp_path, settings_factory):
     settings = settings_factory(tmp_path)

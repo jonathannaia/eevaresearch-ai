@@ -15,6 +15,7 @@ new risk surface those earlier guards never needed to cover."""
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,31 @@ def test_candidate_survives_postgres_upsert_and_readback_via_selected_path(pg_is
     loaded = repo.get_candidate("cand-1")
     assert loaded is not None
     assert loaded.status == CandidateStatus.CANDIDATE_DETECTED
+
+
+def test_postgres_upsert_filing_events_only_persists_a_filing_with_no_candidate(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5"), corp_code="E02778", source_name="EDINET")
+
+    candidate_repo.upsert_filing_events_only([filing])
+
+    assert filing_repo.exists(filing.corp_code, filing.rcept_no) is True
+    assert len(filing_repo.load_filing_events()) == 1
+    assert candidate_repo.load_candidates() == {}
+
+
+def test_postgres_upsert_filing_events_only_is_idempotent_no_duplicate_on_repeat_call(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    candidate_repo = backend_factory.get_candidate_repository(settings, "EDINET")
+    filing_repo = backend_factory.get_filing_event_repository(settings, "EDINET")
+    filing = replace(_filing(rcept_no="S100YGH5"), corp_code="E02778", source_name="EDINET")
+
+    candidate_repo.upsert_filing_events_only([filing])
+    candidate_repo.upsert_filing_events_only([filing])  # repeat — must not duplicate
+
+    assert len(filing_repo.load_filing_events()) == 1
 
 
 def test_published_candidate_derives_the_same_signal_identity_via_postgres_backend(pg_isolated_dsn):

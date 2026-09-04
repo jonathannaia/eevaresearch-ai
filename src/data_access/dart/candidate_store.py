@@ -73,6 +73,13 @@ class CandidatePersistence(Protocol):
     def load_candidates(self) -> dict[str, CandidateSignal]: ...
     def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]: ...
     def update_candidate(self, candidate: CandidateSignal, expected_version: int | None = None) -> object: ...
+    # Durable-State Phase 4M-2 (Stage 0) — persists a FilingEvent as
+    # itself, independent of whether it produced a CandidateSignal. Never
+    # reads, creates, or mutates a CandidateSignal; never mutates an
+    # already-persisted FilingEvent row (see filing_event_repository.
+    # upsert_filing_event's own insert-if-absent contract, which every
+    # implementation of this method routes through unchanged).
+    def upsert_filing_events_only(self, filings: list[FilingEvent]) -> None: ...
 
 
 def _cache_path(cache_dir: Path, filename: str = _CACHE_FILENAME) -> Path:

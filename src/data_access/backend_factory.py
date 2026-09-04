@@ -210,6 +210,11 @@ class CandidateRepositoryProtocol(Protocol):
     def get_candidate_version(self, candidate_id: str) -> int | None: ...
     def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]: ...
     def update_candidate(self, candidate: CandidateSignal, expected_version: int | None = None) -> UpdateOutcome: ...
+    # Durable-State Phase 4M-2 (Stage 0) — see CandidatePersistence's own
+    # copy of this method in src/data_access/dart/candidate_store.py for
+    # the full contract; declared identically here so this Protocol's own
+    # structural shape stays a superset of that one.
+    def upsert_filing_events_only(self, filings: list[FilingEvent]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -243,6 +248,13 @@ class JsonCandidateRepository:
     def update_candidate(self, candidate: CandidateSignal, expected_version: int | None = None) -> UpdateOutcome:
         candidate_store.update_candidate(self.cache_dir, candidate, self.filename)
         return UpdateOutcome(status="updated", current=candidate)
+
+    def upsert_filing_events_only(self, filings: list[FilingEvent]) -> None:
+        # No-op: scan_service.scan() (for every source) already writes
+        # every scanned FilingEvent into its own on-disk JSON cache
+        # unconditionally, matched or not, before this method could ever
+        # be called — the JSON backend has no equivalent gap to close.
+        return None
 
 
 @dataclass(frozen=True)
@@ -281,6 +293,10 @@ class SqliteCandidateRepository:
         outcome = sqlite_candidates.update_candidate(self.conn, candidate, expected_version)
         return UpdateOutcome(status=outcome.status, current=outcome.current)
 
+    def upsert_filing_events_only(self, filings: list[FilingEvent]) -> None:
+        for filing in filings:
+            sqlite_filing_events.upsert_filing_event(self.conn, filing)
+
 
 @dataclass(frozen=True)
 class PostgresCandidateRepository:
@@ -311,6 +327,10 @@ class PostgresCandidateRepository:
             expected_version = postgres_candidates.get_candidate_version(self.conn, candidate.id) or 1
         outcome = postgres_candidates.update_candidate(self.conn, candidate, expected_version)
         return UpdateOutcome(status=outcome.status, current=outcome.current)
+
+    def upsert_filing_events_only(self, filings: list[FilingEvent]) -> None:
+        for filing in filings:
+            postgres_filing_events.upsert_filing_event(self.conn, filing)
 
 
 def get_candidate_repository(settings: Settings, source: str) -> CandidateRepositoryProtocol:

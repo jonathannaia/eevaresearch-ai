@@ -395,6 +395,10 @@ class _SpyCandidateRepository:
         self.calls.append("update_candidate")
         return self._wrapped.update_candidate(candidate, expected_version=expected_version)
 
+    def upsert_filing_events_only(self, filings):
+        self.calls.append("upsert_filing_events_only")
+        return self._wrapped.upsert_filing_events_only(filings)
+
 
 def test_edgar_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_path):
     settings = _sqlite_settings(tmp_path)
@@ -406,6 +410,9 @@ def test_edgar_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_pa
     assert "load_candidates" in spy.calls
     assert "update_candidate" in spy.calls
     assert spy.calls.count("update_candidate") == 1  # the one detected+processed candidate
+    # Durable-State Phase 4M-2 (Stage 0) is EDINET-only — edgar_pipeline.py
+    # is untouched and must never call the new method.
+    assert "upsert_filing_events_only" not in spy.calls
 
 
 def test_dart_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_path):
@@ -417,6 +424,9 @@ def test_dart_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_pat
     assert "upsert_new_candidates" in spy.calls
     assert "load_candidates" in spy.calls
     assert "update_candidate" in spy.calls
+    # Durable-State Phase 4M-2 (Stage 0) is EDINET-only — radar_pipeline.py
+    # (DART) is untouched and must never call the new method.
+    assert "upsert_filing_events_only" not in spy.calls
 
 
 def test_edinet_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_path):
@@ -428,6 +438,9 @@ def test_edinet_run_pipeline_uses_exactly_the_supplied_repository_instance(tmp_p
     assert "upsert_new_candidates" in spy.calls
     assert "load_candidates" in spy.calls
     assert "update_candidate" in spy.calls
+    # Durable-State Phase 4M-2 (Stage 0) — the new filing-event-only
+    # persistence call, exercised through this exact injected instance.
+    assert "upsert_filing_events_only" in spy.calls
 
 
 def test_edinet_backfill_uses_exactly_the_supplied_repository_instance(tmp_path):

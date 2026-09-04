@@ -345,6 +345,18 @@ def run_pipeline(
         store = candidate_store.load_candidates(cache_dir, CANDIDATE_STORE_FILENAME)
     else:
         candidate_repository.upsert_new_candidates(detected_now)
+        # Durable-State Phase 4M-2 (Stage 0) — persists every filing this
+        # scan discovered as its own FilingEvent row, independent of
+        # whether it also matched a rule above. upsert_new_candidates
+        # already wrote the parent FilingEvent row for a matching filing
+        # as its own side effect; upsert_filing_events_only's own
+        # insert-if-absent contract makes calling it again for those rows
+        # a no-op, so every filing in new_filing_events converges to
+        # exactly one persisted row either way. The JSON path above needs
+        # no equivalent call — scan_service.scan() already wrote every
+        # filing in scan_result.new_filing_events into its own on-disk
+        # cache unconditionally before this function ran.
+        candidate_repository.upsert_filing_events_only(list(scan_result.new_filing_events))
         store = candidate_repository.load_candidates()
 
     eligible = sorted(
