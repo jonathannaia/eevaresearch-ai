@@ -1022,6 +1022,213 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "AI Buildout coverage with an actual chipmaker."
         ),
     ),
+    # ============================================================
+    # Filings Radar issuer-expansion batch (2026-09-04) — 19 new SEC
+    # EDGAR issuers, all AI Buildout. corp_code deliberately left at its
+    # default (None) for every entry below, per this module's own
+    # "never hardcode a CIK" discipline — each awaits the existing,
+    # separately-approved post-addition resolver/cross-check
+    # (scripts/resolve_tracked_identifiers.py --source edgar), never a
+    # guessed value. See design/DECISIONS.md for the full evidence/
+    # rationale record this batch was approved against.
+    # ============================================================
+    TrackedCompany(
+        name="Alphabet Inc.", exchange="NASDAQ", krx_code="GOOGL", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Hyperscaler; AI/TPU infrastructure capex is a "
+            "primary demand-side driver for this theme."
+        ),
+    ),
+    TrackedCompany(
+        name="Amazon.com, Inc.", exchange="NASDAQ", krx_code="AMZN", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Hyperscaler (AWS); same capex-driver role as the "
+            "other hyperscalers added this batch."
+        ),
+    ),
+    TrackedCompany(
+        name="Microsoft Corporation", exchange="NASDAQ", krx_code="MSFT", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Hyperscaler (Azure); same capex-driver role as "
+            "the other hyperscalers added this batch."
+        ),
+    ),
+    TrackedCompany(
+        name="Meta Platforms, Inc.", exchange="NASDAQ", krx_code="META", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Hyperscaler-scale AI infrastructure capex; same "
+            "capex-driver role as the other hyperscalers added this "
+            "batch."
+        ),
+    ),
+    TrackedCompany(
+        name="Oracle Corporation", exchange="NYSE", krx_code="ORCL", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Cloud/AI infrastructure (OCI) capex driver."
+        ),
+    ),
+    TrackedCompany(
+        name="Broadcom Inc.", exchange="NASDAQ", krx_code="AVGO", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Custom AI ASICs and networking silicon; direct "
+            "peer of already-tracked MRVL/NVDA. Taxonomy-consistency "
+            "correction (2026-09-04): the `interconnect` subtheme "
+            "originally applied here was removed — that subtheme's "
+            "established usage elsewhere in this registry (Coherent "
+            "Corp) specifically means optical/photonic interconnect "
+            "fabric, and its explicit non-use for Astera Labs' "
+            "electrical PCIe/CXL connectivity is the closer precedent "
+            "for Broadcom's own networking/ASIC silicon; left unset "
+            "rather than reused."
+        ),
+    ),
+    TrackedCompany(
+        name="Qualcomm Incorporated", exchange="NASDAQ", krx_code="QCOM", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Edge/mobile AI silicon; adjacent to the existing "
+            "tracked semiconductor cohort."
+        ),
+    ),
+    TrackedCompany(
+        name="Dell Technologies Inc.", exchange="NYSE", krx_code="DELL", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. AI server/infrastructure systems vendor."
+        ),
+    ),
+    TrackedCompany(
+        name="Super Micro Computer, Inc.", exchange="NASDAQ", krx_code="SMCI", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. AI server systems vendor. Single registry entry "
+            "only, per this batch's explicit instruction. Note: this "
+            "issuer had a public governance/audit-timeliness episode in "
+            "2024 — included as a real, currently-listed EDGAR filer; "
+            "the identifier resolver's own cross-check (never a "
+            "guessed CIK) is unaffected by this history either way."
+        ),
+    ),
+    TrackedCompany(
+        name="Credo Technology Group Holding Ltd", exchange="NASDAQ", krx_code="CRDO", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("interconnect",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. AI data-center interconnect (AEC cables, SerDes "
+            "IP, optical DSPs); direct peer of already-tracked ALAB/"
+            "MRVL. Tagged `interconnect` per this batch's explicit "
+            "approval; this subtheme's established usage elsewhere in "
+            "this registry (Coherent Corp) means optical/photonic "
+            "interconnect fabric specifically — Credo's own optical-"
+            "DSP and AEC connectivity lines support the tag here, "
+            "distinct from Astera Labs' electrical-only PCIe/CXL "
+            "connectivity, which the tag deliberately excludes."
+        ),
+    ),
+    TrackedCompany(
+        name="Eaton Corporation plc", exchange="NYSE", krx_code="ETN", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Data-center power infrastructure; direct peer "
+            "of already-tracked NVT/VRT, same `power-cooling` subtheme."
+        ),
+    ),
+    TrackedCompany(
+        name="Cadence Design Systems, Inc.", exchange="NASDAQ", krx_code="CDNS", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. EDA tooling enabling AI chip design — an "
+            "enabling, not hardware, layer of the same theme."
+        ),
+    ),
+    TrackedCompany(
+        name="Synopsys, Inc.", exchange="NASDAQ", krx_code="SNPS", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. EDA tooling enabling AI chip design — same "
+            "enabling-layer rationale as Cadence, added this same "
+            "batch."
+        ),
+    ),
+    TrackedCompany(
+        name="FormFactor, Inc.", exchange="NASDAQ", krx_code="FORM", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("semiconductor-test",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Probe-card semiconductor test equipment; direct "
+            "peer of already-tracked AEHR/TER, same `semiconductor-"
+            "test` subtheme."
+        ),
+    ),
+    TrackedCompany(
+        name="Cohu, Inc.", exchange="NASDAQ", krx_code="COHU", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("semiconductor-test",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Semiconductor test equipment; direct peer of "
+            "already-tracked AEHR/TER, same `semiconductor-test` "
+            "subtheme."
+        ),
+    ),
+    TrackedCompany(
+        name="Axcelis Technologies, Inc.", exchange="NASDAQ", krx_code="ACLS", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Semiconductor process equipment (ion implant); "
+            "peer of already-tracked AMAT/LRCX/KLAC."
+        ),
+    ),
+    TrackedCompany(
+        name="Onto Innovation Inc.", exchange="NYSE", krx_code="ONTO", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Process-control/inspection equipment; same peer "
+            "group as Axcelis, added this same batch."
+        ),
+    ),
+    TrackedCompany(
+        name="Photronics, Inc.", exchange="NASDAQ", krx_code="PLAB", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. Photomask manufacturer for semiconductor fabs; "
+            "same peer group as the other equipment/test issuers added "
+            "this batch."
+        ),
+    ),
+    TrackedCompany(
+        name="CoreWeave, Inc.", exchange="NASDAQ", krx_code="CRWV", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch (2026-09-04) — AI "
+            "Buildout. AI/GPU cloud infrastructure provider. Note: a "
+            "recent (2025) IPO with a shorter public EDGAR filing "
+            "history than the rest of this batch — included as a real, "
+            "currently-listed filer; the identifier resolver's own "
+            "cross-check (never a guessed CIK) applies the same way "
+            "regardless of filing history length."
+        ),
+    ),
 )
 
 

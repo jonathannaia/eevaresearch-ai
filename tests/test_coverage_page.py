@@ -34,12 +34,14 @@ def test_coverage_page_shows_title_and_static_view_note():
 def test_coverage_page_summary_metrics_match_registry_counts():
     # Was 32 active seed issuers through the INDI/AIP/CEVA batch; the
     # Core Issuer Expansion batch (2026-09-04) added 30 more (32 + 30 =
-    # 62). DISCOVERY_STUBS itself is untouched by that batch (still 25).
+    # 62). The Filings Radar issuer-expansion batch (2026-09-04) then
+    # added 19 more SEC EDGAR issuers (62 + 19 = 81). DISCOVERY_STUBS
+    # itself is untouched by either batch (still 25).
     at = _run()
     metrics = {m.label: m.value for m in at.metric}
-    assert metrics["Active seed issuers"] == "62"
+    assert metrics["Active seed issuers"] == "81"
     assert metrics["Discovery proposals"] == "25"
-    assert metrics["Scan-eligible"] == "62"
+    assert metrics["Scan-eligible"] == "81"
     assert metrics["Unverified / excluded"] == "25"
 
 
@@ -47,7 +49,7 @@ def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_co
     at = _run()
     assert len(at.dataframe) == 2
     seed_table, discovery_table = at.dataframe[0].value, at.dataframe[1].value
-    assert len(seed_table) == 62
+    assert len(seed_table) == 81
     assert len(discovery_table) == 25
 
 

@@ -256,11 +256,13 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_62():
+def test_active_tracked_company_count_is_exactly_81():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
-    # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62).
-    assert len(get_tracked_companies(active_only=True)) == 62
+    # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
+    # issuer-expansion batch (2026-09-04) then added 19 more SEC EDGAR
+    # issuers (62 + 19 = 81).
+    assert len(get_tracked_companies(active_only=True)) == 81
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
