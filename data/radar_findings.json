@@ -1,6 +1,41 @@
 [
   {
     "niche": "Space",
+    "headline": "NASA Hosts Virtual Artemis Webinar for Blind, Low-Vision Community",
+    "summary": "NASA is hosting a virtual webinar on the RS-25 Engine and future Artemis missions, designed to be accessible to blind and low-vision audiences.",
+    "source_url": "https://www.nasa.gov/general/nasa-hosts-virtual-artemis-webinar-for-blind-low-vision-community/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Fri, 04 Sep 2026 16:48:59 +0000",
+    "retrieved_at": "2026-09-04T20:04:07+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly discusses NASA's Artemis program and RS-25 engine technology for space launch missions.",
+    "url_hash": "3724daf1d350a43c",
+    "id": "3724daf1d350a43c"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "How FPGAs become the gatekeepers of physical AI security",
+    "summary": "Lattice Semiconductor's Eric Sivertson discusses how FPGAs can serve as deterministic guardrails for robotic systems, acting as security gatekeepers for physical AI applications.",
+    "source_url": "https://www.therobotreport.com/how-fpgas-become-the-gatekeepers-of-physical-ai-security/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 18:09:54 +0000",
+    "retrieved_at": "2026-09-04T20:03:59+00:00",
+    "tickers": [
+      {
+        "ticker": "LSCC",
+        "company_name": "Lattice Semiconductor",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article discusses FPGAs as security infrastructure for robotic systems, directly relevant to humanoids and robotics automation.",
+    "url_hash": "13bae45f979cee3a",
+    "id": "13bae45f979cee3a"
+  },
+  {
+    "niche": "Space",
     "headline": "On this day in space! Sept. 4, 1962: NASA's Mariner 2 spacecrafts performs the 1st-ever maneuver in deep space so it could reach Venus",
     "summary": "On September 4, 1962, NASA's Mariner 2 spacecraft performed the first-ever rocket maneuver in deep space, executing a mid-course correction during its journey to Venus.",
     "source_url": "https://www.space.com/space-exploration/on-this-day-in-space-sept-4-1962-nasas-mariner-2-spacecrafts-performs-the-1st-ever-maneuver-in-deep-space-so-it-could-reach-venus",
