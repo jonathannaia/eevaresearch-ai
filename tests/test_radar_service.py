@@ -36,17 +36,28 @@ def _seed_corp_codes(cache_dir, krx_codes: list[str]) -> None:
     (cache_dir / "dart_corp_codes.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
+_CORE_EXPANSION_DART_KRX_CODES = ["011070", "012450", "047810", "454910", "240810", "056190", "036540", "067310"]
+_CORE_EXPANSION_DART_NAMES = {
+    "LG Innotek Co., Ltd.", "Hanwha Aerospace Co., Ltd.", "Korea Aerospace Industries, Ltd.",
+    "Doosan Robotics Inc.", "Wonik IPS Co., Ltd.", "SFA Engineering Corporation",
+    "SFA Semicon Co., Ltd", "Hana Micron Inc.",
+}
+
+
 def test_readiness_reports_missing_keys_and_unresolved_companies(tmp_path):
     readiness = radar_service.radar_readiness(_settings(tmp_path))
 
     assert not readiness.dart_key_configured
     assert not readiness.translation_key_configured
-    assert set(readiness.unresolved_companies) == {"Samsung Electronics", "SK Hynix"}
+    # Core Issuer Expansion batch (2026-09-04) added 8 more DART
+    # companies, all correctly unresolved (corp_code left unset per that
+    # batch's own scope — see tracked_companies.py's own comment).
+    assert set(readiness.unresolved_companies) == {"Samsung Electronics", "SK Hynix"} | _CORE_EXPANSION_DART_NAMES
     assert not readiness.ready
 
 
 def test_readiness_ready_when_keys_present_and_all_companies_resolved(tmp_path):
-    _seed_corp_codes(tmp_path, ["005930", "000660"])
+    _seed_corp_codes(tmp_path, ["005930", "000660"] + _CORE_EXPANSION_DART_KRX_CODES)
 
     readiness = radar_service.radar_readiness(_settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"))
 
@@ -57,7 +68,7 @@ def test_readiness_ready_when_keys_present_and_all_companies_resolved(tmp_path):
 
 
 def test_readiness_flags_partially_resolved_companies(tmp_path):
-    _seed_corp_codes(tmp_path, ["005930"])  # SK Hynix (000660) left unresolved
+    _seed_corp_codes(tmp_path, ["005930"] + _CORE_EXPANSION_DART_KRX_CODES)  # SK Hynix (000660) left unresolved
 
     readiness = radar_service.radar_readiness(_settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"))
 

@@ -22,7 +22,13 @@ def test_registry_contains_all_three_pilot_cohorts():
 def test_get_tracked_companies_for_source_filters_dart_only():
     dart_companies = get_tracked_companies_for_source("OpenDART / DART")
     names = {c.name for c in dart_companies}
-    assert names == {"Samsung Electronics", "SK Hynix"}
+    assert names == {
+        "Samsung Electronics", "SK Hynix",
+        # Core Issuer Expansion batch (2026-09-04)
+        "LG Innotek Co., Ltd.", "Hanwha Aerospace Co., Ltd.", "Korea Aerospace Industries, Ltd.",
+        "Doosan Robotics Inc.", "Wonik IPS Co., Ltd.", "SFA Engineering Corporation",
+        "SFA Semicon Co., Ltd", "Hana Micron Inc.",
+    }
 
 
 def test_get_tracked_companies_for_source_filters_edgar_only():
@@ -115,11 +121,18 @@ def test_get_tracked_companies_for_source_filters_edinet_only():
     assert names == {
         "SoftBank Group Corp.", "Kioxia Holdings Corporation", "Furukawa Electric Co., Ltd.",
         "FANUC CORPORATION", "ispace, inc.",
+        # Core Issuer Expansion batch (2026-09-04)
+        "Tokyo Electron Limited", "Advantest Corporation", "Disco Corporation",
+        "Shin-Etsu Chemical Co., Ltd.", "SUMCO Corporation", "Ibiden Co., Ltd.",
+        "Mitsubishi Electric Corporation", "Renesas Electronics Corporation",
     }
 
 
-def test_edinet_cohort_has_exactly_five_entries():
-    assert len(get_tracked_companies_for_source("EDINET")) == 5
+def test_edinet_cohort_has_exactly_thirteen_entries():
+    # Was "exactly five" through Gate 7; the Core Issuer Expansion batch
+    # (2026-09-04) added 8 more (5 + 8 = 13) — renamed rather than left
+    # stale, same discipline Gate 7.1 already established for this file.
+    assert len(get_tracked_companies_for_source("EDINET")) == 13
 
 
 def test_edinet_cohort_direct_edinet_code_mapping():
@@ -151,8 +164,13 @@ def test_edinet_cohort_theme_mapping():
     assert companies["Furukawa Electric Co., Ltd."].themes[0] == "photonics"
     assert companies["FANUC CORPORATION"].themes[0] == "humanoids"
     assert companies["ispace, inc."].themes[0] == "space"
-    for c in companies.values():
-        assert c.subthemes == ()  # no secondary themes added, per Gate 7 scope
+    # "no secondary themes added" held for exactly the five Gate 7
+    # entries; the Core Issuer Expansion batch (2026-09-04) deliberately
+    # does add subthemes for a few of its own entries (e.g. Advantest,
+    # Mitsubishi Electric) — scoped to only the original five here rather
+    # than asserted across the whole, now-larger EDINET cohort.
+    for name in ("SoftBank Group Corp.", "Kioxia Holdings Corporation", "Furukawa Electric Co., Ltd.", "FANUC CORPORATION", "ispace, inc."):
+        assert companies[name].subthemes == ()
 
 
 def test_edinet_cohort_preserves_japanese_legal_names_exactly():
@@ -238,8 +256,11 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_32():
-    assert len(get_tracked_companies(active_only=True)) == 32
+def test_active_tracked_company_count_is_exactly_62():
+    # Was "exactly 32" before the Core Issuer Expansion batch
+    # (2026-09-04), which added 30 net-new active issuers
+    # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62).
+    assert len(get_tracked_companies(active_only=True)) == 62
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
@@ -267,3 +288,134 @@ def test_indi_aip_ceva_resolve_via_with_resolved_ciks_using_cached_mapping():
     assert by_ticker["INDI"].corp_code == "0001841925"
     assert by_ticker["AIP"].corp_code == "0001667011"
     assert by_ticker["CEVA"].corp_code == "0001173489"
+
+
+# --- Core Issuer Expansion batch (weekend beta, 2026-09-04) ---
+# 30 net-new active issuers (14 SEC EDGAR, 8 OpenDART / DART, 8 EDINET),
+# added after a bounded, read-only, live official-source identifier
+# verification pass. See tracked_companies.py's own batch comment and
+# design/DECISIONS.md's matching Gate entry for the full evidence record.
+
+_EDGAR_BATCH_TICKERS = (
+    "CSCO", "ANET", "PWR", "NVT", "AMAT", "LRCX", "KLAC", "ENTG", "AMKR", "MKSI", "VRT", "TER", "ALAB", "RDW",
+)
+_DART_BATCH_TICKERS = ("011070", "012450", "047810", "454910", "240810", "056190", "036540", "067310")
+_EDINET_BATCH_TICKERS_TO_CODES = {
+    "80350": "E02652", "68570": "E01950", "61460": "E01506", "40630": "E00776",
+    "34360": "E02103", "40620": "E00775", "65030": "E01739", "67230": "E02081",
+}
+
+
+def test_core_expansion_batch_present_exactly_once_each_and_active():
+    companies = get_tracked_companies(active_only=True)
+    by_ticker = {c.krx_code: c for c in companies}
+    all_tickers = _EDGAR_BATCH_TICKERS + _DART_BATCH_TICKERS + tuple(_EDINET_BATCH_TICKERS_TO_CODES)
+    assert len(all_tickers) == 30
+    for ticker in all_tickers:
+        matches = [c for c in companies if c.krx_code == ticker]
+        assert len(matches) == 1, f"{ticker} must appear exactly once"
+        assert by_ticker[ticker].active is True
+
+
+def test_core_expansion_batch_edgar_source_and_corp_code_not_hardcoded():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _EDGAR_BATCH_TICKERS:
+        assert by_ticker[ticker].source == "SEC EDGAR"
+        # Unlike INDI/AIP/CEVA, this batch's live verification ran
+        # against a scratchpad-only cache, never data/cache/edgar_ciks.json
+        # — corp_code is correctly still unresolved; a separate,
+        # explicitly-approved resolver gate against the real cache is
+        # required before these companies are scan-ready.
+        assert by_ticker[ticker].corp_code is None
+
+
+def test_core_expansion_batch_dart_source_and_corp_code_not_hardcoded():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _DART_BATCH_TICKERS:
+        assert by_ticker[ticker].source == "OpenDART / DART"
+        assert by_ticker[ticker].corp_code is None
+
+
+def test_core_expansion_batch_edinet_source_and_corp_code_hardcoded():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for krx_code, edinet_code in _EDINET_BATCH_TICKERS_TO_CODES.items():
+        assert by_ticker[krx_code].source == "EDINET"
+        # EDINET is the one source where hardcoding is the established
+        # convention (see module docstring) — these 8 codes were
+        # independently live-verified this session against the real
+        # official EDINET code-list artifact.
+        assert by_ticker[krx_code].corp_code == edinet_code
+
+
+def test_core_expansion_batch_legal_names():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    expected_names = {
+        "CSCO": "Cisco Systems, Inc.", "ANET": "Arista Networks, Inc.", "PWR": "Quanta Services, Inc.",
+        "NVT": "nVent Electric plc", "AMAT": "Applied Materials, Inc.", "LRCX": "Lam Research Corp",
+        "KLAC": "KLA Corp", "ENTG": "Entegris, Inc.", "AMKR": "Amkor Technology, Inc.", "MKSI": "MKS Inc",
+        "VRT": "Vertiv Holdings Co", "TER": "Teradyne, Inc", "ALAB": "Astera Labs, Inc.", "RDW": "Redwire Corp",
+        "011070": "LG Innotek Co., Ltd.", "012450": "Hanwha Aerospace Co., Ltd.",
+        "047810": "Korea Aerospace Industries, Ltd.", "454910": "Doosan Robotics Inc.",
+        "240810": "Wonik IPS Co., Ltd.", "056190": "SFA Engineering Corporation",
+        "036540": "SFA Semicon Co., Ltd", "067310": "Hana Micron Inc.",
+        "80350": "Tokyo Electron Limited", "68570": "Advantest Corporation", "61460": "Disco Corporation",
+        "40630": "Shin-Etsu Chemical Co., Ltd.", "34360": "SUMCO Corporation", "40620": "Ibiden Co., Ltd.",
+        "65030": "Mitsubishi Electric Corporation", "67230": "Renesas Electronics Corporation",
+    }
+    for ticker, expected_name in expected_names.items():
+        assert by_ticker[ticker].name == expected_name
+
+
+def test_core_expansion_batch_themes_use_only_existing_primary_themes():
+    from src.config.tracked_companies import TRACKED_COMPANIES
+
+    all_tickers = _EDGAR_BATCH_TICKERS + _DART_BATCH_TICKERS + tuple(_EDINET_BATCH_TICKERS_TO_CODES)
+    valid_themes = {"ai-buildout", "humanoids", "space", "memory", "photonics"}
+    batch = [c for c in TRACKED_COMPANIES if c.krx_code in all_tickers]
+    assert len(batch) == 30
+    for c in batch:
+        assert c.themes, f"{c.name} has no theme"
+        assert set(c.themes) <= valid_themes, f"{c.name} uses an unrecognized theme: {c.themes}"
+
+
+def test_core_expansion_batch_subthemes_only_reuse_existing_vocabulary_or_stay_unset():
+    from src.config.tracked_companies import TRACKED_COMPANIES
+
+    all_tickers = _EDGAR_BATCH_TICKERS + _DART_BATCH_TICKERS + tuple(_EDINET_BATCH_TICKERS_TO_CODES)
+    # Every subtheme string already in use anywhere in the registry
+    # before this batch (i.e. no new subtheme string was invented).
+    pre_existing_subthemes = {
+        "dram", "hbm", "compute-accelerators", "industrial-automation", "interconnect",
+        "interconnect-switching", "launch", "optical-components", "power-cooling", "semiconductor-test",
+    }
+    batch = [c for c in TRACKED_COMPANIES if c.krx_code in all_tickers]
+    for c in batch:
+        assert set(c.subthemes) <= pre_existing_subthemes, f"{c.name} uses an invented subtheme: {c.subthemes}"
+
+
+def test_core_expansion_batch_no_duplicate_identifiers_within_batch_or_against_existing_registry():
+    companies = get_tracked_companies(active_only=False)
+    # No duplicate krx_code within any single source.
+    by_source: dict[str, list[str]] = {}
+    for c in companies:
+        by_source.setdefault(c.source, []).append(c.krx_code)
+    for source, codes in by_source.items():
+        assert len(codes) == len(set(codes)), f"{source} has a duplicate krx_code"
+    # No duplicate corp_code among entries that have one set (EDINET only, today).
+    corp_codes = [c.corp_code for c in companies if c.corp_code is not None]
+    assert len(corp_codes) == len(set(corp_codes))
+    # No duplicate company names anywhere in the registry.
+    names = [c.name for c in companies]
+    assert len(names) == len(set(names))
+
+
+def test_core_expansion_batch_no_simmtech_entry_was_added():
+    # Explicit guard: Simmtech was found to be a real parent/holding/
+    # subsidiary split across three distinct DART entities during
+    # verification and was deliberately excluded pending a separate
+    # decision — must never appear anywhere in the registry.
+    companies = get_tracked_companies(active_only=False)
+    simmtech_tickers = {"222800", "036710"}  # Simmtech Co., Ltd. / Simmtech Holdings Co., Ltd.
+    for c in companies:
+        assert "simmtech" not in c.name.lower()
+        assert c.krx_code not in simmtech_tickers

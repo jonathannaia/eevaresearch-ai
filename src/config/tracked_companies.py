@@ -578,6 +578,450 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "semiconductor design."
         ),
     ),
+    # Core Issuer Expansion batch (weekend beta, 2026-09-04) — 30 net-new
+    # active issuers (14 SEC EDGAR, 8 OpenDART / DART, 8 EDINET), added
+    # after a bounded, read-only, live official-source identifier
+    # verification pass (see design/DECISIONS.md's own Gate entry and
+    # verified_core_expansion_candidates.md for the full evidence record
+    # of every ID below). Simmtech was deliberately excluded from this
+    # batch — a real parent/holding-company/subsidiary split was found
+    # across three distinct DART entities and needs a separate decision,
+    # not a guess.
+    #
+    # EDGAR (14): corp_code left unset for every entry here, same
+    # convention as every other EDGAR entry above. Unlike the INDI/AIP/
+    # CEVA batch, this verification pass ran against a scratchpad-only
+    # cache directory (per this batch's own explicit no-resolver-call
+    # constraint), so data/cache/edgar_ciks.json does NOT yet contain
+    # these CIKs — a separate, later, explicitly-approved cik_resolver.
+    # resolve_and_cache() run against the real cache is still required
+    # before the worker can scan these companies. The CIK recorded in
+    # each entry's own notes below is this session's own live-verified
+    # value (SEC company_tickers.json + submissions cross-check,
+    # 2026-09-04), kept for audit traceability only — never read by any
+    # pipeline from `notes`.
+    TrackedCompany(
+        name="Cisco Systems, Inc.", exchange="NASDAQ", krx_code="CSCO", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("interconnect-switching",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live (SEC company_tickers.json + submissions "
+            "cross-check): 0000858877. `interconnect-switching` reused "
+            "from the existing Nokia entry's own subtheme — same product "
+            "category (networking/switching hardware), not a stretch. "
+            "Already present as issuer_registry.DISCOVERY_STUBS's "
+            "'stub:CSCO' (Daily-News-verified, no CIK) — that stub entry "
+            "is now redundant but was left untouched per this batch's "
+            "strict scope; flagged for a future cleanup decision."
+        ),
+    ),
+    TrackedCompany(
+        name="Arista Networks, Inc.", exchange="NASDAQ", krx_code="ANET", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("interconnect-switching",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001596532. `interconnect-switching` reused "
+            "for the same reason as the Cisco entry above — AI-datacenter "
+            "switching hardware. Already present as DISCOVERY_STUBS's "
+            "'stub:ANET' (Daily-News-verified, no CIK) — now redundant, "
+            "left untouched per this batch's strict scope."
+        ),
+    ),
+    TrackedCompany(
+        name="Quanta Services, Inc.", exchange="NYSE", krx_code="PWR", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001050915. `power-cooling` reused from the "
+            "existing Navitas/Bloom Energy entries — grid/power "
+            "infrastructure for AI datacenter buildout. Already present "
+            "as DISCOVERY_STUBS's 'stub:PWR' (Daily-News-verified, no "
+            "CIK) — now redundant, left untouched per this batch's "
+            "strict scope."
+        ),
+    ),
+    TrackedCompany(
+        name="nVent Electric plc", exchange="NYSE", krx_code="NVT", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001720635. `power-cooling` matches the "
+            "subtheme already recorded on this same company's own "
+            "DISCOVERY_STUBS 'stub:NVT' entry (Daily-News-verified, no "
+            "CIK) — that stub is now redundant, left untouched per this "
+            "batch's strict scope. Informal supply-chain-layer "
+            "classification (not a structured field): power-infrastructure, "
+            "thermal-management."
+        ),
+    ),
+    TrackedCompany(
+        name="Applied Materials, Inc.", exchange="NASDAQ", krx_code="AMAT", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0000006951. No existing subtheme accurately "
+            "represents general semiconductor deposition/etch equipment "
+            "(the existing `semiconductor-test` subtheme is specifically "
+            "about post-fabrication device test, a different step) — "
+            "left unset rather than misapplied. Informal supply-chain-"
+            "layer classification (not a structured field): "
+            "semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="Lam Research Corp", exchange="NASDAQ", krx_code="LRCX", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0000707549. Same subtheme reasoning as the "
+            "Applied Materials entry above — left unset. Informal "
+            "supply-chain-layer classification (not a structured field): "
+            "semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="KLA Corp", exchange="NASDAQ", krx_code="KLAC", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0000319201. Process-control/inspection "
+            "(metrology) equipment — deliberately NOT tagged "
+            "`semiconductor-test` despite the superficial similarity; "
+            "that existing subtheme (Aehr/Trio-Tech) specifically means "
+            "post-fabrication device test, not wafer metrology, and "
+            "reusing it here would misrepresent the company. Left unset. "
+            "Informal supply-chain-layer classification (not a "
+            "structured field): semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="Entegris, Inc.", exchange="NASDAQ", krx_code="ENTG", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001101302. Specialty materials/filtration "
+            "for chip manufacturing — no existing subtheme fits; left "
+            "unset. Informal supply-chain-layer classification (not a "
+            "structured field): semiconductor-materials."
+        ),
+    ),
+    TrackedCompany(
+        name="Amkor Technology, Inc.", exchange="NASDAQ", krx_code="AMKR", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001047127. Largest US-listed OSAT/advanced-"
+            "packaging provider — no existing subtheme fits; left unset. "
+            "Informal supply-chain-layer classification (not a "
+            "structured field): advanced-packaging."
+        ),
+    ),
+    TrackedCompany(
+        name="MKS Inc", exchange="NASDAQ", krx_code="MKSI", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "Legal name confirmed live as 'MKS INC' (formerly MKS "
+            "Instruments) via SEC's own company_tickers.json entry. CIK "
+            "verified live: 0001049502. Process-control instrumentation/"
+            "specialty gases — no existing subtheme fits; left unset. "
+            "Informal supply-chain-layer classification (not a "
+            "structured field): semiconductor-equipment, "
+            "semiconductor-materials."
+        ),
+    ),
+    TrackedCompany(
+        name="Vertiv Holdings Co", exchange="NYSE", krx_code="VRT", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001674101. Datacenter power/cooling systems "
+            "integrator — `power-cooling` reused, same as Navitas/Bloom "
+            "Energy/Quanta/nVent above. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "power-infrastructure, thermal-management."
+        ),
+    ),
+    TrackedCompany(
+        name="Teradyne, Inc", exchange="NASDAQ", krx_code="TER", source="SEC EDGAR",
+        themes=("ai-buildout", "humanoids"), subthemes=("semiconductor-test", "industrial-automation"),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout and "
+            "Humanoids (two themes, mirroring Samsung's own existing "
+            "combined-theme entry). CIK verified live: 0000097210. "
+            "`semiconductor-test` is a direct, accurate fit (Teradyne is "
+            "a major ATE/semiconductor-test-equipment maker); "
+            "`industrial-automation` reused from Rockwell Automation's "
+            "own entry — Teradyne owns Universal Robots and MiR "
+            "(collaborative/mobile robots). Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-equipment, edge-physical-ai."
+        ),
+    ),
+    TrackedCompany(
+        name="Astera Labs, Inc.", exchange="NASDAQ", krx_code="ALAB", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. CIK "
+            "verified live: 0001736297. PCIe/CXL connectivity "
+            "semiconductors for AI-datacenter fabric — deliberately NOT "
+            "tagged `interconnect` despite the superficial match; that "
+            "existing subtheme (Coherent Corp) specifically means "
+            "optical/photonic interconnect fabric elsewhere in this "
+            "registry (same caution the Arteris entry above already "
+            "documents for its own on-chip NoC IP), and Astera Labs is "
+            "electrical/protocol-layer connectivity, a different "
+            "technology. Left unset. Informal supply-chain-layer "
+            "classification (not a structured field): interconnect."
+        ),
+    ),
+    TrackedCompany(
+        name="Redwire Corp", exchange="NYSE", krx_code="RDW", source="SEC EDGAR",
+        themes=("space",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — Space. CIK "
+            "verified live: 0001819810. Space-hardware manufacturer "
+            "(distinct from Rocket Lab's own launch-provider focus) — "
+            "Rocket Lab's only subtheme, `launch`, does not fit; left "
+            "unset. No dedicated ontology supply-chain layer exists for "
+            "space manufacturing."
+        ),
+    ),
+    # OpenDART / DART, Korea (8): corp_code left unset, same convention
+    # as Samsung/SK Hynix above — same scratchpad-only-cache caveat as
+    # the EDGAR batch; a separate, later corp_code_resolver.
+    # resolve_and_cache() run against the real cache is still required.
+    TrackedCompany(
+        name="LG Innotek Co., Ltd.", exchange="KRX", krx_code="011070", source="OpenDART / DART",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "corp_code verified live (DART corpCode.xml bulk fetch, "
+            "single clean match): 00105961. Camera modules/optics and IC "
+            "substrates — theme assignment is a judgment call (this "
+            "company's own pre-existing issuer_registry.DISCOVERY_STUBS "
+            "'011070.KS' entry explicitly left `theme=None` for the same "
+            "reason, calling the fit unclear); AI Buildout chosen since "
+            "substrates directly feed AI-chip packaging. That stub entry "
+            "is now redundant but was left untouched per this batch's "
+            "strict scope; flagged for a future cleanup decision. No "
+            "existing subtheme fits; left unset. Informal supply-chain-"
+            "layer classification (not a structured field): "
+            "advanced-packaging."
+        ),
+    ),
+    TrackedCompany(
+        name="Hanwha Aerospace Co., Ltd.", exchange="KRX", krx_code="012450", source="OpenDART / DART",
+        themes=("space",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — Space. corp_code "
+            "verified live: 00126566. Fills Korea's zero-space gap. No "
+            "existing subtheme fits (`launch` is Rocket Lab-specific to "
+            "launch vehicles; Hanwha Aerospace is broader — space, "
+            "defense, gas turbines); left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Korea Aerospace Industries, Ltd.", exchange="KRX", krx_code="047810", source="OpenDART / DART",
+        themes=("space",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — Space. corp_code "
+            "verified live: 00309503. DART's bulk file returned two raw "
+            "matches for 'Korea Aerospace' — 'Korea Aerospace University "
+            "Industry-Cooperation Foundation' (a university research "
+            "foundation, no stock_code, not a company) was excluded; "
+            "this entry is the genuine, separately-listed manufacturer "
+            "(stock_code 047810). Second, independent Korean space name "
+            "alongside Hanwha Aerospace. No existing subtheme fits; left "
+            "unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Doosan Robotics Inc.", exchange="KRX", krx_code="454910", source="OpenDART / DART",
+        themes=("humanoids",), subthemes=("industrial-automation",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — Humanoids. "
+            "corp_code verified live: 01105153. Fills Korea's zero-"
+            "humanoids gap. `industrial-automation` reused directly from "
+            "Rockwell Automation's own entry — collaborative robotics is "
+            "the same product category. Recently listed (high stock-code "
+            "number consistent with a 2023 IPO) — verify current listing "
+            "status before the first live scan."
+        ),
+    ),
+    TrackedCompany(
+        name="Wonik IPS Co., Ltd.", exchange="KRX", krx_code="240810", source="OpenDART / DART",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "corp_code verified live: 01135941. Fills Korea's zero-"
+            "semiconductor-equipment gap (deposition/etch equipment). No "
+            "existing subtheme fits; left unset. Informal supply-chain-"
+            "layer classification (not a structured field): "
+            "semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="SFA Engineering Corporation", exchange="KRX", krx_code="056190", source="OpenDART / DART",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "corp_code verified live: 00358271. Display/secondary-"
+            "battery/semiconductor process equipment group. Confirmed a "
+            "genuinely separate legal entity from 'SFA Semicon Co., Ltd' "
+            "below (different corp_code and stock_code; same corporate-"
+            "group name prefix only) — not a duplicate. No existing "
+            "subtheme fits; left unset. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="SFA Semicon Co., Ltd", exchange="KRX", krx_code="036540", source="OpenDART / DART",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "corp_code verified live: 00301246. Semiconductor packaging/"
+            "test (OSAT) — see the SFA Engineering entry above for the "
+            "confirmed-not-a-duplicate note. `semiconductor-test` was "
+            "deliberately NOT applied despite this company doing test "
+            "services alongside packaging — kept consistent with the "
+            "conservative choice made for KLA above, to avoid a mixed "
+            "judgment call across this batch; left unset. Informal "
+            "supply-chain-layer classification (not a structured field): "
+            "advanced-packaging."
+        ),
+    ),
+    TrackedCompany(
+        name="Hana Micron Inc.", exchange="KRX", krx_code="067310", source="OpenDART / DART",
+        themes=("ai-buildout",),
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "corp_code verified live: 00445054. The real listed entity's "
+            "registered English name has no space ('HanaMicronInc.') — "
+            "an initial space-separated name search missed it and "
+            "returned only two unrelated, unlisted shell entities ('Hana "
+            "micron 2nd Co.,Ltd', 'Hanamicron 3rd Co.,Ltd', both "
+            "stock_code empty), correctly excluded; a corrected search "
+            "found the real, listed parent. No existing subtheme fits; "
+            "left unset. Informal supply-chain-layer classification (not "
+            "a structured field): advanced-packaging."
+        ),
+    ),
+    # EDINET, Japan (8): corp_code hardcoded directly, matching the
+    # existing five-entry EDINET exception to the "never hardcode" rule
+    # (see module docstring) — each value was independently live-verified
+    # this session against the real, official EDINET code-list artifact
+    # (bulk fetch, 2026-09-04; 11,392 real records). krx_code holds
+    # EDINET's own 5-character source-native securities code, same
+    # convention as the five existing EDINET entries.
+    TrackedCompany(
+        name="Tokyo Electron Limited", exchange="TSE", krx_code="80350", source="EDINET",
+        themes=("ai-buildout",), corp_code="E02652",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "EDINET code and securities code verified live against the "
+            "official EDINET code-list CSV (single clean match after "
+            "excluding a separately-listed subsidiary, 'Tokyo Electron "
+            "Device Limited', EDINET code E02955, securities code 27600 "
+            "— a distinct legal entity, not this company). Japan's "
+            "largest semiconductor equipment maker. No existing subtheme "
+            "fits; left unset. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="Advantest Corporation", exchange="TSE", krx_code="68570", source="EDINET",
+        themes=("ai-buildout",), subthemes=("semiconductor-test",), corp_code="E01950",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "EDINET code/securities code verified live, single clean "
+            "match. Major ATE/semiconductor-test-equipment maker — "
+            "`semiconductor-test` is a direct, accurate fit."
+        ),
+    ),
+    TrackedCompany(
+        name="Disco Corporation", exchange="TSE", krx_code="61460", source="EDINET",
+        themes=("ai-buildout",), corp_code="E01506",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "EDINET code/securities code verified live, single clean "
+            "match. Dicing/grinding equipment critical to advanced "
+            "packaging. No existing subtheme fits; left unset. Informal "
+            "supply-chain-layer classification (not a structured field): "
+            "semiconductor-equipment, advanced-packaging."
+        ),
+    ),
+    TrackedCompany(
+        name="Shin-Etsu Chemical Co., Ltd.", exchange="TSE", krx_code="40630", source="EDINET",
+        themes=("ai-buildout", "memory"), corp_code="E00776",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout and "
+            "Memory. EDINET code/securities code verified live, single "
+            "clean match. Major silicon-wafer/specialty-materials maker "
+            "— fills Japan's zero-materials-layer gap. No existing "
+            "subtheme fits; left unset. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-materials."
+        ),
+    ),
+    TrackedCompany(
+        name="SUMCO Corporation", exchange="TSE", krx_code="34360", source="EDINET",
+        themes=("ai-buildout", "memory"), corp_code="E02103",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout and "
+            "Memory. EDINET code/securities code verified live, single "
+            "clean match. Second Japanese silicon-wafer name alongside "
+            "Shin-Etsu Chemical — depth, not just breadth. No existing "
+            "subtheme fits; left unset. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-materials."
+        ),
+    ),
+    TrackedCompany(
+        name="Ibiden Co., Ltd.", exchange="TSE", krx_code="40620", source="EDINET",
+        themes=("ai-buildout",), corp_code="E00775",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "EDINET code/securities code verified live, single clean "
+            "match. IC-substrate maker — fills Japan's zero-packaging-"
+            "layer gap. No existing subtheme fits; left unset. Informal "
+            "supply-chain-layer classification (not a structured field): "
+            "advanced-packaging."
+        ),
+    ),
+    TrackedCompany(
+        name="Mitsubishi Electric Corporation", exchange="TSE", krx_code="65030", source="EDINET",
+        themes=("humanoids",), subthemes=("industrial-automation",), corp_code="E01739",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — Humanoids. "
+            "EDINET code/securities code verified live, single clean "
+            "match. `industrial-automation` reused directly from "
+            "Rockwell Automation/Doosan Robotics — factory automation/"
+            "robotics is the same product category. Deepens Japan's "
+            "previously single-issuer (FANUC) humanoids coverage."
+        ),
+    ),
+    TrackedCompany(
+        name="Renesas Electronics Corporation", exchange="TSE", krx_code="67230", source="EDINET",
+        themes=("ai-buildout",), corp_code="E02081",
+        notes=(
+            "Core Issuer Expansion batch (2026-09-04) — AI Buildout. "
+            "EDINET code/securities code verified live, single clean "
+            "match. Deliberately NOT tagged `compute-accelerators` "
+            "despite being a chipmaker — that existing subtheme (NVIDIA/"
+            "AMD/Samsung/SK Hynix/Intel/Arm/Tower Semiconductor) "
+            "specifically means AI/GPU-style accelerator silicon "
+            "elsewhere in this registry; Renesas makes general-purpose "
+            "embedded/automotive/industrial MCUs, a different product "
+            "category, and reusing the tag would misrepresent it. Left "
+            "unset. Informal supply-chain-layer classification (not a "
+            "structured field): compute-hardware. Deepens Japan's "
+            "previously single-issuer (SoftBank, a holding company) "
+            "AI Buildout coverage with an actual chipmaker."
+        ),
+    ),
 )
 
 

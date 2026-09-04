@@ -606,7 +606,18 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
 
     id_repo = backend_factory.get_identifier_repository(settings, "OpenDART / DART")
-    for krx_code, corp_code, name in [("005930", "00126380", "삼성전자"), ("000660", "00164779", "SK 하이닉스")]:
+    # Core Issuer Expansion batch (2026-09-04) added 8 more DART
+    # companies — dart_readiness requires every tracked DART company
+    # resolved, not just Samsung/SK Hynix, so all ten need an identifier
+    # here for this test to still reach _build_items() rather than the
+    # page's "not configured" state.
+    for krx_code, corp_code, name in [
+        ("005930", "00126380", "삼성전자"), ("000660", "00164779", "SK 하이닉스"),
+        ("011070", "00105961", "LG이노텍"), ("012450", "00126566", "한화에어로스페이스"),
+        ("047810", "00309503", "한국항공우주"), ("454910", "01105153", "두산로보틱스"),
+        ("240810", "01135941", "원익IPS"), ("056190", "00358271", "SFA"),
+        ("036540", "00301246", "SFA반도체"), ("067310", "00445054", "하나마이크론"),
+    ]:
         upsert_resolved_identifier(
             id_repo.conn, "OpenDART / DART", krx_code,
             ResolvedIdentifierRecord(identifier=corp_code, display_name=name, resolution_method="synthetic-test-fixture", retrieved_at=_now_iso()),

@@ -107,14 +107,19 @@ def test_layer_filter_returns_expected_subset():
 
 
 def test_source_filter_returns_expected_subset():
+    # Was 2 (Samsung + SK Hynix) through the INDI/AIP/CEVA batch; the
+    # Core Issuer Expansion batch (2026-09-04) added 8 more DART issuers
+    # (2 + 8 = 10).
     dart_only = filter_seed_issuers(sources=("OpenDART / DART",))
-    assert len(dart_only) == 2
+    assert len(dart_only) == 10
     assert all(i.country_or_jurisdiction.startswith("South Korea") for i in dart_only)
 
 
 def test_country_filter_returns_expected_subset():
+    # Was 5 through Gate 7; the Core Issuer Expansion batch (2026-09-04)
+    # added 8 more EDINET issuers (5 + 8 = 13).
     japan_only = filter_seed_issuers(countries=("Japan (listing exchange)",))
-    assert len(japan_only) == 5
+    assert len(japan_only) == 13
 
 
 def test_combined_filters_are_intersected_not_unioned():

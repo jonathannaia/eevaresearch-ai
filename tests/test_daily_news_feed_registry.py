@@ -215,13 +215,20 @@ def test_quanta_is_registered_with_the_exact_approved_fields():
 
 
 def test_quanta_resolves_to_the_discovered_issuer_with_ticker_pwr():
-    # Quanta is not in tracked_companies.py at all — this proves
-    # tracked_company_for()'s DISCOVERY_STUBS fallback path resolves it.
+    # Was resolved only via tracked_company_for()'s DISCOVERY_STUBS
+    # fallback path (Quanta absent from tracked_companies.py). The Core
+    # Issuer Expansion batch (2026-09-04) — a separate, later,
+    # explicitly-approved action — added Quanta Services as a real,
+    # verified TrackedCompany/SEED_ISSUERS entry too, so
+    # tracked_company_for() (unmodified — see feed_registry.py's own
+    # "checks two sources in order" docstring) now correctly matches the
+    # real tracked-company path first, returning its real Radar source
+    # and active status instead of the synthesized stub placeholder.
     company = tracked_company_for("Quanta Services, Inc.")
     assert company is not None
     assert company.krx_code == "PWR"
-    assert company.source == ""  # never a real Radar source value
-    assert company.active is False
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
     assert "ai-buildout" in company.themes
 
 
@@ -261,14 +268,15 @@ def test_nvent_is_registered_with_the_exact_approved_fields():
 
 
 def test_nvent_resolves_to_the_discovered_issuer_with_ticker_nvt():
-    # nVent is not in tracked_companies.py at all — proves
-    # tracked_company_for()'s DISCOVERY_STUBS fallback resolves it, same
-    # path already introduced for Quanta.
+    # Was resolved only via the DISCOVERY_STUBS fallback path — see the
+    # matching Quanta test above for why this now asserts the real
+    # tracked-company path instead, after the Core Issuer Expansion
+    # batch (2026-09-04).
     company = tracked_company_for("nVent Electric plc")
     assert company is not None
     assert company.krx_code == "NVT"
-    assert company.source == ""  # never a real Radar source value
-    assert company.active is False
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
     assert "ai-buildout" in company.themes
     assert "power-cooling" in company.subthemes
 
@@ -315,11 +323,15 @@ def test_arista_is_registered_with_the_exact_approved_fields():
 
 
 def test_arista_resolves_to_the_discovered_issuer_with_ticker_anet():
+    # Was resolved only via the DISCOVERY_STUBS fallback path — see
+    # test_quanta_resolves_to_the_discovered_issuer_with_ticker_pwr's own
+    # comment for why this now asserts the real tracked-company path
+    # instead, after the Core Issuer Expansion batch (2026-09-04).
     company = tracked_company_for("Arista Networks, Inc.")
     assert company is not None
     assert company.krx_code == "ANET"
-    assert company.source == ""
-    assert company.active is False
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
     assert "ai-buildout" in company.themes
 
 
@@ -353,11 +365,15 @@ def test_cisco_is_registered_with_the_exact_approved_fields():
 
 
 def test_cisco_resolves_to_the_discovered_issuer_with_ticker_csco():
+    # Was resolved only via the DISCOVERY_STUBS fallback path — see
+    # test_quanta_resolves_to_the_discovered_issuer_with_ticker_pwr's own
+    # comment for why this now asserts the real tracked-company path
+    # instead, after the Core Issuer Expansion batch (2026-09-04).
     company = tracked_company_for("Cisco Systems, Inc.")
     assert company is not None
     assert company.krx_code == "CSCO"
-    assert company.source == ""
-    assert company.active is False
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
     assert "ai-buildout" in company.themes
 
 

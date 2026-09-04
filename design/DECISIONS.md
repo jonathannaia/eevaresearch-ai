@@ -4891,3 +4891,104 @@ committed (now showing `feedparser==6.0.14` instead of `tzdata` in its
 mismatch, same underlying pre-existing cause). Zero regressions: no
 previously-passing test failed because of this phase's changes.
 
+## Core Issuer Expansion batch — weekend beta (2026-09-04)
+
+- **Scope**: registry-only. Added 30 net-new active issuers to
+  `src/config/tracked_companies.py` — 14 SEC EDGAR, 8 OpenDART / DART, 8
+  EDINET — after a separate, prior, bounded, read-only, live
+  official-source identifier verification pass (own session; full
+  evidence record for every ID below in that session's own
+  `verified_core_expansion_candidates.md` report). No source client,
+  pipeline, rule, worker, schedule, flag, secret, Render configuration,
+  database schema/migration, Daily News, Company Discovery, Themes, or
+  public UI file was modified — only `tracked_companies.py` and its own
+  and adjacent tests. `src/config/issuer_registry.py`
+  (`DISCOVERY_STUBS`/`SEED_ISSUERS`) was not touched — `SEED_ISSUERS`
+  grows automatically (generated losslessly from `TRACKED_COMPANIES` at
+  import time).
+- **Simmtech deliberately excluded**: the verification pass found a real
+  parent/holding-company/subsidiary split across three distinct DART
+  entities ("Simmtech Co., Ltd.", "Simmtech Holdings Co., Ltd.", "Global
+  Simmtech Co., Ltd.") — left out of this batch entirely, pending a
+  separate decision on which entity is the intended scan target. No
+  Simmtech entry exists anywhere in the registry.
+- **EDGAR (14)** — `corp_code` left unset for every entry, same
+  convention as every other EDGAR entry (never hardcoded — see
+  `tracked_companies.py`'s own module docstring). CIKs (SEC
+  `company_tickers.json` + submissions cross-check, live-verified this
+  batch): Cisco Systems 0000858877, Arista Networks 0001596532, Quanta
+  Services 0001050915, nVent Electric 0001720635, Applied Materials
+  0000006951, Lam Research 0000707549, KLA 0000319201, Entegris
+  0001101302, Amkor Technology 0001047127, MKS Inc 0001049502, Vertiv
+  Holdings 0001674101, Teradyne 0000097210, Astera Labs 0001736297,
+  Redwire 0001819810. Unlike the INDI/AIP/CEVA batch, this verification
+  ran against a scratchpad-only cache directory (per that session's own
+  no-resolver-call constraint) — `data/cache/edgar_ciks.json` does **not**
+  yet contain these CIKs; a separate, later, explicitly-approved
+  `cik_resolver.resolve_and_cache()` run against the real cache is still
+  required before the worker can scan these companies.
+- **DART (8)** — `corp_code` left unset, same convention as Samsung/SK
+  Hynix. corp_codes (DART `corpCode.xml` bulk fetch, live-verified):
+  LG Innotek 00105961, Hanwha Aerospace 00126566, Korea Aerospace
+  Industries 00309503, Doosan Robotics 01105153, Wonik IPS 01135941, SFA
+  Engineering 00358271, SFA Semicon 00301246, Hana Micron 00445054. Same
+  scratchpad-cache caveat as EDGAR above — `data/cache/dart_corp_codes.json`
+  does not yet contain these; a separate `corp_code_resolver.
+  resolve_and_cache()` run against the real cache is still required.
+- **EDINET (8)** — `corp_code` hardcoded directly, matching the existing
+  five-entry EDINET exception (independently live-verified, no runtime
+  resolver needed for this source). EDINET codes (official EDINET
+  code-list CSV, 11,392 real records, live-verified): Tokyo Electron
+  E02652, Advantest E01950, Disco E01506, Shin-Etsu Chemical E00776,
+  SUMCO E02103, Ibiden E00775, Mitsubishi Electric E01739, Renesas
+  Electronics E02081. These 8 are immediately scan-ready.
+- **Known, reported, deliberately-not-fixed overlap**: Cisco (CSCO),
+  Arista (ANET), Quanta Services (PWR), and nVent Electric (NVT) already
+  existed as Daily-News-verified `issuer_registry.DISCOVERY_STUBS`
+  entries (`coverage_state=DISCOVERED`, no identifier). Those four stub
+  entries are now redundant (the same companies are real, active,
+  verified `TrackedCompany`/`SEED_ISSUERS` entries) but were left
+  untouched, per this batch's strict scope — flagged for a future,
+  separately-approved cleanup. LG Innotek's own existing stub
+  (`"011070.KS"`) never collided by exact ticker string with this
+  batch's DART `krx_code` (`"011070"`, no `.KS` suffix), so it produced
+  no test-visible overlap, but is the same kind of now-redundant entry.
+- **Subtheme discipline**: reused only strings already present anywhere
+  in the registry before this batch (`interconnect-switching`,
+  `power-cooling`, `semiconductor-test`, `industrial-automation`) where a
+  genuine, accurate fit existed; left unset everywhere else rather than
+  invent a new subtheme string or misapply an existing one to a
+  different technology layer. Two considered-and-rejected reuses,
+  recorded explicitly in the affected entries' own `notes`: Astera Labs
+  (`interconnect` already means optical/photonic fabric elsewhere in
+  this registry — Astera is electrical/protocol-layer) and Renesas
+  Electronics (`compute-accelerators` already means AI/GPU-style
+  accelerator silicon elsewhere — Renesas is general-purpose
+  embedded/automotive). Informal supply-chain-layer classifications
+  (not a structured field — same convention the INDI/AIP/CEVA batch
+  established) recorded in every entry's own `notes`.
+- **Test plan executed**: `tests/test_tracked_companies.py` (36, 9 new —
+  presence/active/source, legal names, theme-vocabulary validity,
+  subtheme-vocabulary validity, no duplicate identifiers, explicit
+  no-Simmtech guard), `tests/test_issuer_registry.py` (33, updated counts
+  and the four now-superseded stub-exclusion claims), plus collateral
+  fixes required by the exact same approved change: `tests/
+  test_radar_service.py` (DART readiness unresolved-company sets),
+  `tests/test_edinet_service.py` (EDINET cohort count), `tests/
+  test_radar_inbox_page.py`, `tests/test_ui_audit_phase_c.py`, `tests/
+  test_ui_audit_phase_r1.py`, `tests/test_ui_audit_phase_t1.py` (each
+  seeds a fixed DART corp-code set for `dart_readiness.ready` — extended
+  to include the 8 new companies), `tests/test_daily_news_feed_registry.py`
+  (Quanta/nVent/Arista/Cisco now resolve via the real tracked-company
+  path, not the DISCOVERY_STUBS fallback — `tracked_company_for()` itself
+  unmodified, its documented "checks two sources in order" behavior
+  unchanged), `tests/test_coverage_page.py`/`tests/test_issuer_coverage.py`
+  (registry-count assertions).
+- **Full suite after this batch**: 3093 passed, 178 skipped, 25 failed —
+  every failure the same pre-existing `git diff --name-only HEAD`
+  transient scope-guard pattern documented throughout this project's own
+  history (resolves once committed), confirmed by name pattern and spot
+  checks; zero behavioral regressions.
+- **Not committed as of this entry** — awaiting explicit approval of the
+  complete diff before any commit.
+
