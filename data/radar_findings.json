@@ -1,5 +1,110 @@
 [
   {
+    "niche": "Space",
+    "headline": "On this day in space! Sept. 4, 1962: NASA's Mariner 2 spacecrafts performs the 1st-ever maneuver in deep space so it could reach Venus",
+    "summary": "On September 4, 1962, NASA's Mariner 2 spacecraft performed the first-ever rocket maneuver in deep space, executing a mid-course correction during its journey to Venus.",
+    "source_url": "https://www.space.com/space-exploration/on-this-day-in-space-sept-4-1962-nasas-mariner-2-spacecrafts-performs-the-1st-ever-maneuver-in-deep-space-so-it-could-reach-venus",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 14:00:00 +0000",
+    "retrieved_at": "2026-09-04T17:17:45+00:00",
+    "tickers": [],
+    "relevance_reason": "Historical space mission event involving spacecraft maneuvers and planetary exploration.",
+    "url_hash": "4c0ebb2196c41292",
+    "id": "4c0ebb2196c41292"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Lyte raises $165M to help robots better sense their surroundings",
+    "summary": "Lyte AI raised $165 million in its second funding round this year to scale production of its AI and perception capabilities for robots.",
+    "source_url": "https://www.therobotreport.com/lyte-raises-165m-help-robots-better-sense-their-surroundings/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 14:32:52 +0000",
+    "retrieved_at": "2026-09-04T17:17:37+00:00",
+    "tickers": [],
+    "relevance_reason": "Lyte AI is raising capital to develop AI and perception capabilities for robots, directly addressing humanoid and robotics automation technology.",
+    "url_hash": "1f755080270f983a",
+    "id": "1f755080270f983a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Flex Pays $4.4B for EPC Power as AI Data Centers Push 800V Architecture",
+    "summary": "Flex announced a $4.4B acquisition of EPC Power to add 800V DC and grid-forming technology capabilities as AI data center operators increase rack densities and redesign power delivery systems.",
+    "source_url": "https://www.datacenterknowledge.com/energy-power-supply/flex-pays-4-4b-for-epc-power-as-ai-data-centers-push-800v-architecture",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 14:51:29 GMT",
+    "retrieved_at": "2026-09-04T17:17:20+00:00",
+    "tickers": [
+      {
+        "ticker": "FLEX",
+        "company_name": "Flex Ltd.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Directly addresses AI data center infrastructure and power delivery technology.",
+    "url_hash": "bbd18eb69d26f229",
+    "id": "bbd18eb69d26f229"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Firmus to invest $300m in SubCo's upcoming Australia-US subsea cable",
+    "summary": "Firmus is investing $300 million in SubCo's Australia-US subsea cable project, which will serve an AI firm as an anchor customer for the infrastructure.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/firmus-to-invest-300m-in-subcos-upcoming-australia-us-subsea-cable/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 13:00:34 +0000",
+    "retrieved_at": "2026-09-04T17:17:18+00:00",
+    "tickers": [],
+    "relevance_reason": "Subsea cable infrastructure project with AI firm as anchor customer directly supports AI buildout connectivity and data center interconnection needs.",
+    "url_hash": "6d3870829ed3655a",
+    "id": "6d3870829ed3655a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Meta's $1.2bn data center in Kuna, Idaho, goes live",
+    "summary": "Meta's $1.2 billion AI-optimized data center in Kuna, Idaho has begun operations, marking the company's second such facility.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/metas-12bn-data-center-in-kuna-idaho-goes-live/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 15:39:01 +0000",
+    "retrieved_at": "2026-09-04T17:17:11+00:00",
+    "tickers": [
+      {
+        "ticker": "META",
+        "company_name": "Meta Platforms, Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Article describes Meta's new AI-optimized data center facility, directly on-topic for AI infrastructure buildout.",
+    "url_hash": "7b590bd705f18958",
+    "id": "7b590bd705f18958"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Flex acquires data center power conversion manufacturer EPC Power in $4.4bn deal",
+    "summary": "Flex acquired EPC Power, a developer of 800V data center power architectures, in a $4.4 billion deal.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/flex-acquires-data-center-power-conversion-manufacturer-epc-power-in-44bn-deal/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 15:50:27 +0000",
+    "retrieved_at": "2026-09-04T17:17:09+00:00",
+    "tickers": [
+      {
+        "ticker": "FLEX",
+        "company_name": "Flex Ltd.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Data center power conversion infrastructure directly supports AI data center buildout and power delivery architecture.",
+    "url_hash": "ef1d03f8237684e2",
+    "id": "ef1d03f8237684e2"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "DCD Talks: How data center batteries are driving new market value with Carlos Pérez Linkenheil, AFRY",
     "summary": "Carlos Pérez Linkenheil from AFRY discusses how batteries are creating new market value for data centers in an interview with DCD.",
