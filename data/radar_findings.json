@@ -1,5 +1,89 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "DCD Talks: How data center batteries are driving new market value with Carlos Pérez Linkenheil, AFRY",
+    "summary": "Carlos Pérez Linkenheil from AFRY discusses how batteries are creating new market value for data centers in an interview with DCD.",
+    "source_url": "https://www.datacenterdynamics.com/en/videos/dcd-talks-how-data-center-batteries-are-driving-new-market-value-with-carlos-p%C3%A9rez-linkenheil-afry/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 09:17:52 +0000",
+    "retrieved_at": "2026-09-04T13:53:36+00:00",
+    "tickers": [],
+    "relevance_reason": "Discusses data center infrastructure, specifically battery technology for data centers, which is relevant to AI Buildout infrastructure development.",
+    "url_hash": "43d20551bd4fbf8b",
+    "id": "43d20551bd4fbf8b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Bitdeer buys 200 acres in Milam County, Texas, to expand AI and HPC data center",
+    "summary": "Bitdeer has purchased 200 acres in Milam County, Texas to expand its AI and high-performance computing (HPC) data center operations.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/bitdeer-buys-200-acres-in-milam-county-texas-to-expand-ai-and-hpc-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 09:25:08 +0000",
+    "retrieved_at": "2026-09-04T13:53:34+00:00",
+    "tickers": [
+      {
+        "ticker": "BDRY",
+        "company_name": "Bitdeer Technologies Limited",
+        "jurisdiction": "Hong Kong",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Concrete expansion of data center infrastructure for AI workloads, directly within AI Buildout scope.",
+    "url_hash": "15e54ea37f7b1ac4",
+    "id": "15e54ea37f7b1ac4"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Taiwan-based Liteon purchases 25 percent stake in Polish liquid cooling firm, DCX",
+    "summary": "Taiwan-based Liteon has purchased a 25 percent stake in Polish liquid cooling firm DCX in a deal valued at approximately $176 million.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/taiwan-based-liteon-purchases-25-percent-stake-in-polish-liquid-cooling-firm-dcx/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 11:30:31 +0000",
+    "retrieved_at": "2026-09-04T13:53:31+00:00",
+    "tickers": [
+      {
+        "ticker": "2301.TW",
+        "company_name": "Liteon",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Liquid cooling technology is critical infrastructure for AI data center buildout and GPU-dense environments.",
+    "url_hash": "423810b185be8ce4",
+    "id": "423810b185be8ce4"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Telxius to build Edge data center in Cancún, Mexico",
+    "summary": "Telxius will build an edge data center in Cancún, Mexico that will serve as a landing point for the Tikal submarine cable connecting Puerto Barrios, Guatemala to Boca Raton, United States.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/telxius-strengthens-caribbean-connectivity-with-a-new-edge-data-center-in-cancun/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 11:50:31 +0000",
+    "retrieved_at": "2026-09-04T13:53:29+00:00",
+    "tickers": [],
+    "relevance_reason": "Article describes construction of edge data center infrastructure for AI/cloud serving, directly relevant to AI Buildout scope.",
+    "url_hash": "9fb9611f8f76e86f",
+    "id": "9fb9611f8f76e86f"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Evolution DC signs pre-lease for first phase of Bangkok data center to unnamed hyperscaler",
+    "summary": "Evolution DC has signed a pre-lease for the first phase of a data center facility in Bangkok with an unnamed hyperscaler client, with the facility expected to come online later this year.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/evolution-dc-signs-pre-lease-for-first-phase-of-bangkok-data-center-to-unnamed-hyperscaler/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 12:30:29 +0000",
+    "retrieved_at": "2026-09-04T13:53:28+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center development for hyperscalers is directly within AI Buildout scope",
+    "url_hash": "5a2bc839e011e2c7",
+    "id": "5a2bc839e011e2c7"
+  },
+  {
     "niche": "Space",
     "headline": "'A new mission starting today': 8 years after launch, BepiColombo begins Mercury arrival",
     "summary": "The BepiColombo spacecraft, launched nearly eight years ago, has begun its arrival sequence at Mercury. The mission marks a significant milestone in planetary exploration of the inner solar system.",
