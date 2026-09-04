@@ -205,6 +205,11 @@ _SERVICE_MODULES = {"edgar": edgar_service, "dart": dart_radar_service, "edinet"
 _LOCK_DIR = Path(tempfile.gettempdir()) / "eevaresearch-radar-worker-locks"
 _MIN_INTERVAL_SECONDS = 60  # defense-in-depth floor, regardless of a misconfigured tiny interval value
 
+# EDINET Extraordinary Report shadow-observation workstream (design/
+# DECISIONS.md) — small, fixed cap on the per-tick shadow-match log
+# list, independent of _MIN_INTERVAL_SECONDS above.
+_SHADOW_MATERIAL_EVENT_LOG_CAP = 5
+
 
 class WorkerConfigurationError(Exception):
     """Raised at startup for a sanitized, fatal configuration problem —
@@ -849,6 +854,25 @@ def _run_provider_tick(
             f"{provider_key.upper()}: ok — candidates_detected={report.candidates_detected} "
             f"candidates_processed={report.candidates_processed} skipped_unresolved={skipped_unresolved}"
         )
+
+        # EDINET Extraordinary Report shadow-observation workstream
+        # (design/DECISIONS.md) — bounded, EDINET-only, flag-gated log
+        # line. `worker_settings.edinet_material_event_lexicon_enabled`
+        # is the sole gate (disabled by default): when False, this block
+        # never executes and prints nothing at all — silence is itself
+        # the flag-off proof. `getattr(..., ())` mirrors this same
+        # function's own existing cross-provider-safe attribute access
+        # (see `cursor_value`/`skipped_unresolved` above) — EDGAR/DART's
+        # own ScanReport classes never carry this field, and a fake
+        # `report` object in a test may not either.
+        if provider_key == "edinet" and worker_settings.edinet_material_event_lexicon_enabled:
+            shadow_matches = getattr(report, "shadow_material_event_matches", ())
+            print(f"EDINET: edinet_material_event_shadow_matches={len(shadow_matches)}")
+            for match in shadow_matches[:_SHADOW_MATERIAL_EVENT_LOG_CAP]:
+                print(
+                    f"EDINET:   shadow match — docID={match.doc_id} issuer={match.issuer_name} "
+                    f"title={match.title} triplet={match.triplet}"
+                )
 
         if provider_key == "edgar":
             try:

@@ -32,10 +32,13 @@ def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
-def _result(doc_id, edinet_code, sec_code, ordinance="010", form="030", submit_date_time="2026-08-17 09:00"):
+def _result(
+    doc_id, edinet_code, sec_code, ordinance="010", form="030", submit_date_time="2026-08-17 09:00",
+    doc_type="120", description="Test Filing",
+):
     return {
-        "docID": doc_id, "docTypeCode": "120", "ordinanceCode": ordinance, "formCode": form,
-        "filerName": "Test Filer", "docDescription": "Test Filing", "edinetCode": edinet_code, "secCode": sec_code,
+        "docID": doc_id, "docTypeCode": doc_type, "ordinanceCode": ordinance, "formCode": form,
+        "filerName": "Test Filer", "docDescription": description, "edinetCode": edinet_code, "secCode": sec_code,
         "submitDateTime": submit_date_time,
     }
 
@@ -623,3 +626,86 @@ def test_title_translation_is_skipped_exactly_like_excerpt_translation_when_no_p
     assert result.title_translation is None
     assert result.excerpt_translation is None
     assert result.translation_state == TranslationState.PENDING
+
+
+# ---------------------------------------------------------------------------
+# EDINET Extraordinary Report shadow-observation workstream (design/
+# DECISIONS.md) — run_pipeline's own additive, optional
+# material_event_lexicon_enabled parameter. Structurally isolated: never
+# touches candidate creation, persistence, or translation regardless of
+# flag state — every assertion below proves that isolation explicitly.
+# ---------------------------------------------------------------------------
+
+def test_run_pipeline_flag_omitted_produces_no_shadow_matches(tmp_path):
+    # Flag entirely omitted (today's exact call shape) against a filing
+    # that WOULD match the shadow pattern if the flag were enabled.
+    client = _make_client(
+        {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
+    )
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path)
+
+    assert report.shadow_material_event_matches == ()
+
+
+def test_run_pipeline_flag_false_produces_no_shadow_matches(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
+    )
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, material_event_lexicon_enabled=False)
+
+    assert report.shadow_material_event_matches == ()
+
+
+def test_run_pipeline_flag_true_populates_shadow_matches_for_eligible_filing(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
+    )
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, material_event_lexicon_enabled=True)
+
+    assert len(report.shadow_material_event_matches) == 1
+    match = report.shadow_material_event_matches[0]
+    assert match.doc_id == "S100SHADOW"
+    assert match.title == "臨時報告書"
+    assert match.triplet == "010:053000:180"
+
+
+def test_run_pipeline_flag_true_never_creates_a_candidate_signal_for_the_shadow_match(tmp_path):
+    # The central isolation guarantee: a shadow-eligible filing (matched
+    # by material_event_shadow, not by edinet_rules.DEFAULT_CODE_
+    # CATEGORY_MAP, which has no entry for this triplet) must still
+    # produce zero CandidateSignals — the shadow evaluator never feeds
+    # into candidate creation regardless of flag state.
+    client = _make_client(
+        {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
+    )
+    report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, material_event_lexicon_enabled=True)
+
+    assert len(report.shadow_material_event_matches) == 1  # the shadow evaluator did match it
+    assert report.candidates_detected == 0  # but no CandidateSignal was created
+    assert candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME) == {}
+
+
+def test_run_pipeline_flag_true_excludes_known_non_eligible_shadow_patterns(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([
+            _result("S100EXCL1", "E00001", "1234", ordinance="030", form="995000", doc_type="180", description="臨時報告書（内国特定有価証券）"),
+            _result("S100EXCL2", "E00002", "5678", ordinance="010", form="053001", doc_type="190", description="訂正臨時報告書"),
+        ])},
+    )
+    report = edinet_pipeline.run_pipeline(client, [_ACME, _SAMPLE], tmp_path, material_event_lexicon_enabled=True)
+
+    assert report.shadow_material_event_matches == ()
+
+
+def test_run_pipeline_flag_true_shadow_evaluation_never_invokes_translation(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
+    )
+    provider = _FakeTranslationProvider(result="should never be called")
+
+    report = edinet_pipeline.run_pipeline(
+        client, [_ACME], tmp_path, material_event_lexicon_enabled=True, translation_provider=provider,
+    )
+
+    assert len(report.shadow_material_event_matches) == 1
+    assert provider.calls == []  # the shadow filing never became a candidate, so it was never processed/translated

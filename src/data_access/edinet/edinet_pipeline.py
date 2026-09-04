@@ -34,7 +34,7 @@ from pathlib import Path
 from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
-from src.data_access.edinet import document_service, edinet_rules, scan_service
+from src.data_access.edinet import document_service, edinet_rules, material_event_shadow, scan_service
 from src.data_access.edinet.client import EdinetClient
 from src.data_access.translation import translation_service
 from src.data_access.translation.interfaces import TranslationProvider
@@ -89,6 +89,16 @@ class ScanReport:
     # same "counts cache hits too" convention as DART's own ScanReport
     # field of the same name.
     translations_completed: int = 0
+    # EDINET Extraordinary Report shadow-observation workstream (design/
+    # DECISIONS.md) — additive, defaults to () so every existing
+    # construction of this dataclass (positional or keyword) is
+    # unaffected. Populated only when run_pipeline's own
+    # material_event_lexicon_enabled parameter is True; empty otherwise,
+    # including for every existing caller/test that omits the parameter.
+    # Never derived from or written into any CandidateSignal/FilingEvent
+    # — see material_event_shadow.py's own docstring for the full,
+    # structural read-only guarantee.
+    shadow_material_event_matches: tuple = ()
 
 
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
@@ -336,6 +346,7 @@ def run_pipeline(
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
     translation_provider: TranslationProvider | None = None,
+    material_event_lexicon_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -357,12 +368,29 @@ def run_pipeline(
     processing-loop writes) routes through the same collaborator, so
     candidates this call just detected are visible to its own
     eligibility selection and processing loops. scan_service.scan()'s own
-    filing-event read/write is never affected by this parameter."""
+    filing-event read/write is never affected by this parameter.
+
+    `material_event_lexicon_enabled` (EDINET Extraordinary Report shadow-
+    observation workstream) is additive and optional, defaulting to
+    False — every existing call site that omits it is completely
+    unaffected, and this whole branch never executes when it's False.
+    When True, material_event_shadow.find_matches() is evaluated against
+    `scan_result.new_filing_events` (this tick's own already-tracked-
+    issuer filings, already in memory from the scan_service.scan() call
+    above — no new fetch) purely to populate the returned ScanReport's
+    own `shadow_material_event_matches` field. This is a read-only
+    observation only: it never touches `detected_now`, `store`, the
+    candidate_repository, process_candidate, or translation_provider in
+    any way, and never creates or persists a CandidateSignal."""
     scan_id = f"edinet-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
     max_candidates_to_process = clamp_max_candidates(max_candidates_to_process)
 
     scan_result = scan_service.scan(client, companies, cache_dir, lookback_days=lookback_days)
+
+    shadow_matches: tuple = ()
+    if material_event_lexicon_enabled:
+        shadow_matches = material_event_shadow.find_matches(scan_result.new_filing_events)
 
     detected_now = list(scan_result.new_candidate_signals)
     if candidate_repository is None:
@@ -449,4 +477,5 @@ def run_pipeline(
         cache_hits=counters["cache_hits"],
         warnings=tuple(warnings),
         translations_completed=counters["translations_completed"],
+        shadow_material_event_matches=shadow_matches,
     )

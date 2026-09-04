@@ -115,12 +115,20 @@ def run_scan(
     successfully extracted excerpt is translated exactly the way DART's
     own radar_service.run_scan already does — see
     edinet_pipeline.process_candidate's own docstring for the non-fatal
-    failure handling this relies on."""
+    failure handling this relies on.
+
+    EDINET Extraordinary Report shadow-observation workstream: also
+    threads `settings.edinet_material_event_lexicon_enabled` straight
+    through to edinet_pipeline.run_pipeline's own
+    `material_event_lexicon_enabled` parameter — disabled by default, so
+    every real caller today behaves exactly as before unless that flag
+    is explicitly set."""
     companies = get_edinet_companies(settings.cache_dir)
     return edinet_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository, translation_provider=_translation_provider(settings),
+        material_event_lexicon_enabled=settings.edinet_material_event_lexicon_enabled,
     )
 
 

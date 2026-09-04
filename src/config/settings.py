@@ -62,6 +62,19 @@ class Settings:
     # (see edinet_service.edinet_readiness); no live request uses it yet.
     # Exactly one env var, no competing aliases, per the Gate 1 brief.
     edinet_subscription_key: str | None = field(default_factory=lambda: os.getenv("EDGE_EDINET_SUBSCRIPTION_KEY") or None)
+    # EDINET Extraordinary Report shadow-observation workstream (design/
+    # DECISIONS.md) — the master switch for src/data_access/edinet/
+    # material_event_shadow.py's own evaluator, threaded through
+    # edinet_service.run_scan()/edinet_pipeline.run_pipeline(). Disabled
+    # by default, same "unset/blank/unrecognized -> disabled" parsing as
+    # every other flag on this class. Even when enabled, this flag can
+    # never create, persist, or display a CandidateSignal — the shadow
+    # evaluator it gates is structurally read-only (see that module's own
+    # docstring); it only adds a bounded, capped log line to the Radar
+    # worker's own stdout.
+    edinet_material_event_lexicon_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDINET_MATERIAL_EVENT_LEXICON_ENABLED")
+    )
     # EDGAR issuer-discovery preview harness (Phase B — dormant, design/
     # DECISIONS.md). Disabled by default, same "unset/blank/unrecognized ->
     # disabled" parsing as private_beta_auth_enabled/remote_cache_enabled
