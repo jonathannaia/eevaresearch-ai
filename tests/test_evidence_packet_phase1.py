@@ -275,11 +275,16 @@ def test_edinet_translates_excerpt_when_provider_given(tmp_path, monkeypatch):
     counters = {"documents_retrieved": 0, "documents_extracted": 0, "cache_hits": 0, "translations_completed": 0}
     edinet_pipeline.process_candidate(MagicMock(), candidate, tmp_path, counters, {}, translation_provider=provider)
 
-    assert seen_calls == ["JA"]  # smallest language-code extension — reuses the same function
+    # Stage A (design/DECISIONS.md): title translation now also routes
+    # through this exact same function, using the exact same "JA"
+    # language code — title, then excerpt, mirroring DART's own
+    # radar_pipeline.process_candidate call order.
+    assert seen_calls == ["JA", "JA"]  # smallest language-code extension — reuses the same function
     assert candidate.translation_state == TranslationState.TRANSLATED
+    assert candidate.title_translation.translated_text == "Japanese excerpt."
     assert candidate.excerpt_translation.translated_text == "Japanese excerpt."
     assert candidate.excerpt_original == "日本語の抜粋。"  # original never overwritten by translation
-    assert counters["translations_completed"] == 1
+    assert counters["translations_completed"] == 2
 
 
 @pytest.mark.parametrize(

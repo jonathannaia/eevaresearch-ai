@@ -13,6 +13,7 @@ from src.data_access import backend_factory
 from src.data_access.dart import candidate_store
 from src.data_access.edinet import edinet_pipeline
 from src.data_access.edinet.errors import EdinetNotFoundError
+from src.data_access.translation.interfaces import TranslationApiError
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, TranslationState
 
 _TEST_MAP = {"010:030:120": "fictional_category_alpha"}  # fictional key/category, not real EDINET data
@@ -459,8 +460,10 @@ class _FakeTranslationProvider:
     def __init__(self, result: str | None = None, error: Exception | None = None):
         self._result = result
         self._error = error
+        self.calls: list[str] = []  # every text this provider was actually asked to translate
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        self.calls.append(text)
         if self._error:
             raise self._error
         return self._result
@@ -526,3 +529,97 @@ def test_no_automatic_translation_retry_when_no_provider_configured(tmp_path):
     updated = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate.id]
     assert updated.translation_state == TranslationState.UNAVAILABLE
     assert updated.translation_retry_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Stage A (design/DECISIONS.md) — title translation, mirroring DART's own
+# radar_pipeline.process_candidate title-translation call exactly: same
+# translate_cached_with_outcome(), same cache, same title_translation field.
+# ---------------------------------------------------------------------------
+
+def test_process_candidate_translates_the_title_via_the_same_field_dart_uses(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100TITLE", "E00001", "1234")])},
+        {"S100TITLE": b"<html><body><p>Disclosure content.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+    provider = _FakeTranslationProvider(result="Test Filing (English)")
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path, translation_provider=provider)
+
+    # The native Japanese/original title is preserved unchanged.
+    assert result.filing.report_nm == "Test Filing"
+    # The translated title lands in the exact same field DART's own
+    # candidates use — the public card reads this field generically,
+    # with no EDINET-specific branch.
+    assert result.title_translation is not None
+    assert result.title_translation.translated_text == "Test Filing (English)"
+    assert result.title_translation.provider == "DeepL"
+    assert result.title_translation.source_lang == "ja"
+    assert result.title_translation.target_lang == "en"
+    # Excerpt translation (already-existing behavior) is unaffected.
+    assert result.excerpt_translation is not None
+    assert result.excerpt_translation.translated_text == "Test Filing (English)"
+    # Both texts were sent to the same shared provider.
+    assert provider.calls == ["Test Filing", "Disclosure content."]
+
+
+def test_title_translation_reuses_the_shared_cache_no_duplicate_provider_call(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100CACHE", "E00001", "1234")])},
+        {"S100CACHE": b"<html><body><p>Disclosure content.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+    provider = _FakeTranslationProvider(result="Test Filing (English)")
+
+    first = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path, translation_provider=provider)
+    calls_after_first = list(provider.calls)
+    second = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path, translation_provider=provider)
+
+    assert first.title_translation.translated_text == second.title_translation.translated_text == "Test Filing (English)"
+    # The second process_single_candidate call (e.g. Radar Inbox's own
+    # "Retry processing" action) hits translate_cached_with_outcome's own
+    # on-disk cache for both title and excerpt — the underlying provider
+    # is never invoked again.
+    assert provider.calls == calls_after_first
+
+
+def test_title_translation_failure_falls_back_to_the_native_title_no_exception(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100FAILT", "E00001", "1234")])},
+        {"S100FAILT": b"<html><body><p>Disclosure content.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+    provider = _FakeTranslationProvider(error=TranslationApiError("network", "simulated failure"))
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path, translation_provider=provider)
+
+    assert result.title_translation is None
+    assert result.excerpt_translation is None
+    assert result.translation_state == TranslationState.UNAVAILABLE
+    # The native Japanese title and excerpt are retained unchanged either way.
+    assert result.filing.report_nm == "Test Filing"
+    assert result.excerpt_original == "Disclosure content."
+    assert result.status == CandidateStatus.NEEDS_REVIEW  # a translation failure never fails the candidate
+
+
+def test_title_translation_is_skipped_exactly_like_excerpt_translation_when_no_provider(tmp_path):
+    # No candidate_repository/translation_provider at all — identical to
+    # today's pre-Stage-A behavior for every field this touches. Mirrors
+    # test_successful_extraction_sets_translation_state_to_pending_not_
+    # translated above, restated here for locality with the new tests.
+    client = _make_client(
+        {_today(): _envelope([_result("S100NOPROV", "E00001", "1234")])},
+        {"S100NOPROV": b"<html><body><p>Disclosure content.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)  # translation_provider omitted
+
+    assert result.title_translation is None
+    assert result.excerpt_translation is None
+    assert result.translation_state == TranslationState.PENDING

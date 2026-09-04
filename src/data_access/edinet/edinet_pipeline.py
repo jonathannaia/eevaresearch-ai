@@ -124,7 +124,16 @@ def process_candidate(
     Japanese original is always retained unchanged, matching DART's own
     "collapse every failure mode uniformly, never raise into the
     pipeline" behavior exactly (translate_cached itself already
-    guarantees this; nothing new is added here)."""
+    guarantees this; nothing new is added here).
+
+    Stage A (design/DECISIONS.md): the filing's native `report_nm` title
+    is now also translated through the exact same call/cache/field DART's
+    own radar_pipeline.process_candidate uses for its own title, whenever
+    the excerpt is also being translated. `title_translation` failure is
+    independent of and never blocks excerpt translation or extraction; a
+    failed title translation simply leaves `title_translation` at its
+    default None, and the public card already falls back to the native
+    title in that case (src/logic/filing_display.display_title)."""
     candidate = _transition(candidate, CandidateStatus.QUEUED_FOR_PROCESSING)
     candidate = _transition(candidate, CandidateStatus.RETRIEVAL_IN_PROGRESS)
 
@@ -153,6 +162,22 @@ def process_candidate(
             evidence_source_member=doc_result.evidence_source_member,
         )
         if translation_provider is not None and candidate.excerpt_original:
+            # Stage A (design/DECISIONS.md) — mirrors DART's own title-
+            # translation call (radar_pipeline.process_candidate) exactly:
+            # same translate_cached_with_outcome(), same cache, same
+            # title_translation field. Deliberately narrower than DART's
+            # own gate (DART translates the title regardless of extraction
+            # outcome, since the title comes from FilingEvent, not the
+            # document body) — here it runs only alongside the excerpt
+            # translation this block already performs, so no other
+            # branch/condition in this function changes.
+            title_attempt = translate_cached_with_outcome(
+                translation_provider, doc_id, candidate.filing.report_nm, cache_dir, source_lang="JA",
+            )
+            candidate.title_translation = title_attempt.translation
+            if title_attempt.translation is not None:
+                counters["translations_completed"] = counters.get("translations_completed", 0) + 1
+
             excerpt_attempt = translate_cached_with_outcome(
                 translation_provider, doc_id, candidate.excerpt_original, cache_dir, source_lang="JA",
             )
