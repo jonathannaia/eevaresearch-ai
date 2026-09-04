@@ -4992,3 +4992,58 @@ previously-passing test failed because of this phase's changes.
 - **Not committed as of this entry** — awaiting explicit approval of the
   complete diff before any commit.
 
+## Daily News operational fix — worker deployment doc + manual refresh (2026-09-04)
+
+- **Root cause of "no current items today"**: purely operational, not a
+  code defect. `scripts/daily_news_worker.py` (the autonomous worker,
+  added 2026-09-02) is gated by `EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED`
+  (default false) and was never wired into any scheduler in this repo —
+  no cron, systemd timer, or Render config exists for it anywhere. The
+  local `data/cache/daily_news_stories.json` store had last been
+  refreshed 2026-08-30 by a one-off manual trigger, so by 2026-09-04
+  every stored item had aged past the Daily News page's own strict,
+  no-fallback 7-day recency window (`src/ui/pages/daily_news.py`,
+  `_FRESHNESS_WINDOW_DAYS = 7`). The registry (12/12 sources), UI query
+  logic, and persistence path were all confirmed working correctly —
+  the store was simply stale.
+- **Immediate mitigation applied**: ran the existing, credential-free,
+  one-shot manual trigger — `.venv/bin/python -m
+  scripts.run_daily_news_discovery` — exactly as documented in that
+  script's own module docstring. No source/ranking/freshness-window/
+  eligibility logic was touched; this is the same manual path an
+  operator or the hidden admin page's "Run discovery now" button already
+  used to produce the previous (now-stale) batch. Result: sources
+  polled 12, items discovered 152, stories published 114, suppressed
+  (no URL) 0, deduplicated 14. Store now holds 154 published stories;
+  newest `published_at` is 2026-09-04T00:52:54+00:00 (~18.5 hours before
+  this entry, well inside the 7-day window) — 12 items now fall within
+  the window, confirmed directly against `_published_stories()`/
+  `_recent_stories()` (the exact functions the page itself calls), not
+  inferred. The default "All companies" view renders non-empty again as
+  of this entry. This mitigation does not prevent recurrence — without a
+  running worker, the store will go stale again once every item ages
+  past 7 days.
+- **Documentation added, no deployment performed**: `design/
+  DAILY_NEWS_WORKER_DEPLOYMENT.md`, modeled directly on `design/
+  RADAR_WORKER_DEPLOYMENT.md`'s structure, documenting: the worker
+  requires Postgres in live mode (stricter than the Radar worker — SQLite
+  is rejected outright, not merely local/test-only), needs no third-party
+  API credential at all (unlike Radar's EDGAR/DART/EDINET/translation
+  keys), defaults to a 30-minute scan interval
+  (`EDGE_DAILY_NEWS_SCAN_INTERVAL_MINUTES`), and has no dashboard-facing
+  status surface today (unlike Radar Inbox's "Continuous worker status
+  only" expander). Every environment-variable name is documented; no
+  value was written, read aloud, or exposed. A "Proposed deployment
+  plan" section lists the concrete later steps (provision Postgres +
+  compute, set `EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED`/
+  `EDGE_DAILY_NEWS_WORKER_DB_BACKEND`/`EDGE_DAILY_NEWS_WORKER_STATE_DB_URL`,
+  start the worker process) explicitly as a plan only — none of it was
+  executed. No Render access, no `.env` change, no live-scan enablement,
+  and no persistent worker process were started as part of this change.
+- **Test plan**: `tests/test_daily_news_worker.py` and `tests/
+  test_daily_news_page.py` (the worker/page behavior this investigation
+  and fix touch) re-run after the documentation change — no test file
+  was modified, since no source/pipeline/UI code changed.
+- **Not committed as of this entry** — awaiting explicit approval before
+  any commit.
+

@@ -47,6 +47,7 @@ def test_full_discovery_run_publishes_valid_entries(tmp_path, monkeypatch):
     assert report.items_discovered == 1
     assert report.stories_published == 1
     assert report.items_suppressed_no_url == 0
+    assert report.items_already_seen == 0
     stories = daily_news_store.load_stories(tmp_path)
     assert len(stories) == 1
     story = next(iter(stories.values()))
@@ -164,7 +165,16 @@ def test_idempotent_rerun_creates_no_duplicate_stories(tmp_path, monkeypatch):
     second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
 
     assert first.stories_published == 1
+    assert first.items_already_seen == 0
     assert second.stories_published == 0
+    # Observability fix (design/DECISIONS.md, Daily News operational-fix
+    # workstream): the rerun's item is now counted, not silently dropped
+    # with no trace anywhere in the report — this is the ordinary,
+    # expected steady-state outcome once a feed's items have already been
+    # published, not a dedup/suppression case.
+    assert second.items_already_seen == 1
+    assert second.items_deduplicated == 0
+    assert second.suppressed_items == ()
     assert len(daily_news_store.load_stories(tmp_path)) == 1
 
 
@@ -344,4 +354,5 @@ def test_run_discovery_supplied_repository_skips_already_seen_story_ids(tmp_path
 
     assert first.stories_published == 1
     assert second.stories_published == 0  # already-seen id — idempotent no-op
+    assert second.items_already_seen == 1  # counted, not silently dropped — same repository-backed path
     assert len(daily_news_repository.load_stories(conn)) == 1

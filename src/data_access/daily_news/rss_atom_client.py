@@ -3,9 +3,12 @@ feedparser handles both formats transparently, so this module never
 branches on feed_format itself (feed_registry.py's own field is
 informational/documentation only). Never raises: any network or parse
 failure returns an empty result plus a sanitized failure_code
-(`type(exc).__name__` only — never a raw exception message, matching
-this codebase's existing radar_worker.py discipline), so one feed's
-failure can be isolated by the caller without special-casing exceptions.
+(`type(exc).__name__` — never a raw exception message, matching this
+codebase's existing radar_worker.py discipline — except `requests.
+HTTPError`, whose failure_code also includes the real HTTP status code,
+e.g. "HTTPError:403", when available; see `_failure_code()`), so one
+feed's failure can be isolated by the caller without special-casing
+exceptions.
 
 Only ever reads the feed document itself — never follows an item's own
 link to fetch the linked page (see summary_grounding.py's own docstring
@@ -131,6 +134,29 @@ def _to_raw_entry(entry: dict) -> RawFeedEntry:
     )
 
 
+def _failure_code(exc: requests.RequestException) -> str:
+    """Sanitized failure identifier — the exception class name only
+    (`type(exc).__name__`), except for `requests.HTTPError`, where the
+    real HTTP status code is additionally included when available (e.g.
+    "HTTPError:403") — the bare class name alone conflates a 403 (bot-
+    blocked), 404 (moved/gone), 429 (rate-limited), and a 5xx (origin
+    outage) into one indistinguishable string, which is exactly what
+    made a real production diagnosis (design/DECISIONS.md, Daily News
+    operational-fix workstream) unable to tell those cases apart.
+    `HTTPError.response` is the `requests.Response` object
+    `raise_for_status()` raised from — `status_code` is read from it
+    only; never the response body, headers, cookies, the exception's own
+    message/str(), or anything else. Every other `RequestException`
+    subclass (ConnectionError, Timeout, TooManyRedirects, etc.) is
+    completely unaffected — returns exactly `type(exc).__name__`, same
+    as before this change."""
+    if isinstance(exc, requests.HTTPError):
+        status_code = getattr(exc.response, "status_code", None)
+        if isinstance(status_code, int):
+            return f"HTTPError:{status_code}"
+    return type(exc).__name__
+
+
 def fetch_entries(feed_url: str) -> FeedFetchResult:
     """One bounded fetch of one feed. Never a loop over many feeds — a
     caller wanting several calls this once per feed, deliberately."""
@@ -138,7 +164,7 @@ def fetch_entries(feed_url: str) -> FeedFetchResult:
         response = requests.get(feed_url, timeout=_TIMEOUT_SECONDS, headers={"User-Agent": _USER_AGENT})
         response.raise_for_status()
     except requests.RequestException as exc:
-        return FeedFetchResult(entries=(), failure_code=type(exc).__name__)
+        return FeedFetchResult(entries=(), failure_code=_failure_code(exc))
 
     parsed = feedparser.parse(response.content)
     if parsed.bozo and not parsed.entries:

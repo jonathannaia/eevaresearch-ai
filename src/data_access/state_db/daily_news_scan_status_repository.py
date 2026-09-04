@@ -5,10 +5,14 @@ feed_registry.DailyNewsFeedSource.company_name /
 daily_news_pipeline.DailyNewsScanReport.source_failures already key by)
 tracking per-feed fetch/publish/failure health, and one single row
 (`daily_news_worker_status`, keyed by a fixed WORKER_STATUS_KEY constant)
-tracking the worker process's own tick/reconciliation bookkeeping. Read
-and written only by scripts/daily_news_worker.py — no existing pipeline,
-page, or component reads or writes either table; not exposed on
-daily_news.py or daily_news_admin.py in this workstream.
+tracking the worker process's own tick/reconciliation bookkeeping.
+Written only by scripts/daily_news_worker.py. Read-only exposure was
+added later (Daily News operational-fix workstream, design/
+DECISIONS.md): daily_news_admin.py's own hidden "Autonomous worker
+health" section reads both tables, via daily_news_backend.
+get_daily_news_scan_status_repository() — never directly, and never
+writes to either table. daily_news.py (the public page) still never
+reads or writes either table.
 
 `last_fetch_success_at` updates on every tick where that feed's own
 fetch+parse succeeded, regardless of whether any new story was

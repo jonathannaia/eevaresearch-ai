@@ -49,6 +49,18 @@ class DailyNewsScanReport:
     items_discovered: int  # raw feed entries seen, across every source, before any gate
     items_suppressed_no_url: int
     items_deduplicated: int
+    # Observability fix (design/DECISIONS.md, Daily News operational-fix
+    # workstream): items whose deterministic story_id (see _story_id)
+    # already existed in the store — the idempotency path itself
+    # (dedup.py's own docstring: "re-running discovery naturally upserts
+    # the same id rather than creating a duplicate"), previously a silent
+    # `continue` with no counter and no suppressed_items entry at all.
+    # Distinct from items_deduplicated, which counts a DIFFERENT
+    # already-published story with a matching normalized title (dedup.
+    # is_duplicate_title) — this field counts the SAME story rediscovered
+    # by its own id, the ordinary, expected steady-state outcome once a
+    # feed's current items have already been published on an earlier run.
+    items_already_seen: int
     stories_published: int  # newly persisted this run
     source_failures: dict[str, str]  # company_name -> sanitized failure_code
     suppressed_items: tuple[tuple[str, str, str], ...]  # (company_name, title, reason) — admin view only
@@ -99,6 +111,7 @@ def run_discovery(
     items_discovered = 0
     suppressed_items: list[tuple[str, str, str]] = []
     items_deduplicated = 0
+    items_already_seen = 0
     newly_published: list[NewsStory] = []
     source_failures: dict[str, str] = {}
     warnings: list[str] = []
@@ -126,6 +139,7 @@ def run_discovery(
 
             story_id = _story_id(source.company_name, entry.link)
             if story_id in store:
+                items_already_seen += 1
                 continue  # already-seen item on a prior run — idempotent no-op
 
             if dedup.is_duplicate_title(existing_headlines, source.company_name, entry.title):
@@ -174,6 +188,6 @@ def run_discovery(
     return DailyNewsScanReport(
         scan_id=scan_id, started_at=started_at, completed_at=completed_at, sources_polled=len(feed_sources),
         items_discovered=items_discovered, items_suppressed_no_url=sum(1 for *_, reason in suppressed_items if reason == "No valid canonical source URL"),
-        items_deduplicated=items_deduplicated, stories_published=len(newly_published),
+        items_deduplicated=items_deduplicated, items_already_seen=items_already_seen, stories_published=len(newly_published),
         source_failures=source_failures, suppressed_items=tuple(suppressed_items), warnings=tuple(warnings),
     )

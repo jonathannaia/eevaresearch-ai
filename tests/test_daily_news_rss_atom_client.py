@@ -41,7 +41,11 @@ def _mock_response(content: bytes, status_code: int = 200) -> MagicMock:
     response.status_code = status_code
     response.raise_for_status = MagicMock()
     if status_code >= 400:
-        response.raise_for_status.side_effect = requests.HTTPError(f"{status_code} error")
+        # Mirrors real requests.Response.raise_for_status(), which passes
+        # response=self — attaching it here (not just the exception's
+        # message) is what makes this fixture meaningful for exercising
+        # _failure_code()'s status-code extraction below.
+        response.raise_for_status.side_effect = requests.HTTPError(f"{status_code} error", response=response)
     return response
 
 
@@ -99,7 +103,56 @@ def test_http_error_status_is_isolated_as_a_sanitized_failure_code(monkeypatch):
     result = rss_atom_client.fetch_entries("https://example.com/missing.xml")
 
     assert result.entries == ()
+    # Observability fix (design/DECISIONS.md, Daily News operational-fix
+    # workstream): the real HTTP status code is now included, since the
+    # bare "HTTPError" string alone conflated 403/404/429/5xx into one
+    # indistinguishable value in production logs.
+    assert result.failure_code == "HTTPError:404"
+
+
+def test_http_error_403_is_isolated_with_its_own_status_code(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(b"", status_code=403))
+
+    result = rss_atom_client.fetch_entries("https://example.com/forbidden.xml")
+
+    assert result.entries == ()
+    assert result.failure_code == "HTTPError:403"
+
+
+def test_http_error_without_a_response_object_falls_back_to_bare_class_name(monkeypatch):
+    # Defense-in-depth: an HTTPError constructed/raised without a
+    # `response` attached (never true for requests' own
+    # raise_for_status(), but not guaranteed by every possible caller)
+    # must not crash — it falls back to the pre-existing bare class name.
+    def _raise(*args, **kwargs):
+        raise requests.HTTPError("no response attached")
+
+    monkeypatch.setattr(rss_atom_client.requests, "get", _raise)
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.entries == ()
     assert result.failure_code == "HTTPError"
+
+
+def test_http_error_failure_code_never_includes_response_body_headers_or_message(monkeypatch):
+    response = MagicMock()
+    response.content = b""
+    response.status_code = 500
+    response.text = "raw response body — must never leak"
+    response.headers = {"X-Secret-Header": "must never leak", "Set-Cookie": "session=must-never-leak"}
+    response.raise_for_status = MagicMock(
+        side_effect=requests.HTTPError("500 Server Error: raw message that must never leak", response=response)
+    )
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: response)
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.failure_code == "HTTPError:500"
+    assert "raw response body" not in result.failure_code
+    assert "must never leak" not in result.failure_code
+    assert "Secret-Header" not in result.failure_code
+    assert "session=" not in result.failure_code
 
 
 def test_timeout_is_isolated_as_a_sanitized_failure_code(monkeypatch):
