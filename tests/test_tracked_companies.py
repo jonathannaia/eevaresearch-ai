@@ -256,13 +256,14 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_81():
+def test_active_tracked_company_count_is_exactly_100():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
     # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
     # issuer-expansion batch (2026-09-04) then added 19 more SEC EDGAR
-    # issuers (62 + 19 = 81).
-    assert len(get_tracked_companies(active_only=True)) == 81
+    # issuers (62 + 19 = 81), and Filings Radar issuer-expansion batch 2
+    # (2026-09-04) added 19 more still (81 + 19 = 100).
+    assert len(get_tracked_companies(active_only=True)) == 100
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
@@ -421,3 +422,94 @@ def test_core_expansion_batch_no_simmtech_entry_was_added():
     for c in companies:
         assert "simmtech" not in c.name.lower()
         assert c.krx_code not in simmtech_tickers
+
+
+# --- Filings Radar issuer-expansion batch 2 (2026-09-04) — 19 more new
+# SEC EDGAR issuers (81 -> 100 active). ---
+
+_BATCH_2_TICKERS_TO_NAMES = {
+    "TXN": "Texas Instruments Incorporated",
+    "ADI": "Analog Devices, Inc.",
+    "MPWR": "Monolithic Power Systems, Inc.",
+    "ON": "ON Semiconductor Corporation",
+    "MCHP": "Microchip Technology Incorporated",
+    "WDC": "Western Digital Corporation",
+    "GFS": "GlobalFoundries Inc.",
+    "CEG": "Constellation Energy Corporation",
+    "SWKS": "Skyworks Solutions, Inc.",
+    "MOD": "Modine Manufacturing Company",
+    "WOLF": "Wolfspeed, Inc.",
+    "AEIS": "Advanced Energy Industries, Inc.",
+    "ICHR": "Ichor Systems, Inc.",
+    "IBM": "International Business Machines Corporation",
+    "SYM": "Symbotic Inc.",
+    "GNRC": "Generac Holdings Inc.",
+    "LUNR": "Intuitive Machines, Inc.",
+    "ASTS": "AST SpaceMobile, Inc.",
+    "PL": "Planet Labs PBC",
+}
+
+
+def test_filings_radar_batch_2_has_exactly_nineteen_entries_present_once_each_and_active():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True) if c.source == "SEC EDGAR"}
+    assert len(_BATCH_2_TICKERS_TO_NAMES) == 19
+    for ticker, name in _BATCH_2_TICKERS_TO_NAMES.items():
+        assert by_ticker[ticker].name == name
+        assert by_ticker[ticker].active is True
+
+
+def test_filings_radar_batch_2_infn_was_not_added():
+    # Explicit exclusion: Nokia completed its acquisition of Infinera in
+    # 2025, so it is not an independent EDGAR issuer for this batch.
+    companies = get_tracked_companies(active_only=False)
+    assert "INFN" not in {c.krx_code for c in companies}
+    assert "infinera" not in {c.name.lower() for c in companies}
+
+
+def test_filings_radar_batch_2_corp_code_not_hardcoded():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _BATCH_2_TICKERS_TO_NAMES:
+        assert by_ticker[ticker].corp_code is None
+
+
+def test_filings_radar_batch_2_primary_themes_match_approved_assignment():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    ai_buildout_tickers = {
+        "TXN", "ADI", "MPWR", "ON", "MCHP", "GFS", "CEG", "SWKS", "MOD", "WOLF", "AEIS", "ICHR", "IBM", "GNRC",
+    }
+    for ticker in ai_buildout_tickers:
+        assert by_ticker[ticker].themes == ("ai-buildout",)
+    assert by_ticker["WDC"].themes == ("memory",)
+    assert by_ticker["SYM"].themes == ("humanoids",)
+    for ticker in ("LUNR", "ASTS", "PL"):
+        assert by_ticker[ticker].themes == ("space",)
+
+
+def test_filings_radar_batch_2_subthemes_match_approved_assignment():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    power_cooling_tickers = {"MPWR", "ON", "CEG", "MOD", "WOLF", "AEIS", "GNRC"}
+    for ticker in power_cooling_tickers:
+        assert by_ticker[ticker].subthemes == ("power-cooling",)
+    assert by_ticker["SYM"].subthemes == ("industrial-automation",)
+    unset_subtheme_tickers = set(_BATCH_2_TICKERS_TO_NAMES) - power_cooling_tickers - {"SYM"}
+    for ticker in unset_subtheme_tickers:
+        assert by_ticker[ticker].subthemes == ()
+
+
+def test_filings_radar_batch_2_wdc_notes_describe_hdd_storage_not_current_nand_flash():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    notes = by_ticker["WDC"].notes.lower()
+    assert "hdd" in notes or "storage" in notes
+    assert "sandisk spin-off" in notes
+    assert "not a current nand/flash issuer" in notes
+
+
+def test_filings_radar_batch_2_no_duplicate_identifiers_against_existing_registry():
+    companies = get_tracked_companies(active_only=False)
+    by_source: dict[str, list[str]] = {}
+    for c in companies:
+        by_source.setdefault(c.source, []).append(c.krx_code)
+    for source, codes in by_source.items():
+        assert len(codes) == len(set(codes)), f"{source} has a duplicate krx_code"
+    names = [c.name for c in companies]
+    assert len(names) == len(set(names))

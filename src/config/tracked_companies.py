@@ -1229,6 +1229,226 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "regardless of filing history length."
         ),
     ),
+    # ============================================================
+    # Filings Radar issuer-expansion batch 2 (2026-09-04) — 19 more new
+    # SEC EDGAR issuers, same conventions as the first Filings Radar
+    # batch above: corp_code deliberately left at its default (None) for
+    # every entry below, per this module's own "never hardcode a CIK"
+    # discipline — each awaits the existing, separately-approved
+    # post-addition resolver/cross-check
+    # (scripts/resolve_tracked_identifiers.py --source edgar), never a
+    # guessed value. `exchange` is a display label only, same convention
+    # as every other EDGAR entry above — based on current public listing
+    # knowledge, not independently verified against a live source.
+    #
+    # Infinera Corporation (INFN) was explicitly excluded from this batch
+    # — Nokia completed its acquisition of Infinera in 2025, so it is no
+    # longer an independent EDGAR issuer.
+    # ============================================================
+    TrackedCompany(
+        name="Texas Instruments Incorporated", exchange="NASDAQ", krx_code="TXN", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Analog/embedded semiconductor maker; broad "
+            "industrial and data-center power-management/analog exposure "
+            "adjacent to the existing tracked semiconductor cohort. No "
+            "existing subtheme fits generically; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Analog Devices, Inc.", exchange="NASDAQ", krx_code="ADI", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Analog/mixed-signal semiconductor maker; direct "
+            "peer of Texas Instruments, added this same batch. No "
+            "existing subtheme fits generically; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Monolithic Power Systems, Inc.", exchange="NASDAQ", krx_code="MPWR", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Power-delivery semiconductors for AI accelerators "
+            "and data-center servers; `power-cooling` reused, same "
+            "precedent as Navitas/Bloom Energy/Vertiv/Eaton above."
+        ),
+    ),
+    TrackedCompany(
+        name="ON Semiconductor Corporation", exchange="NASDAQ", krx_code="ON", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Power/SiC semiconductor maker; `power-cooling` "
+            "reused, same precedent as Navitas/Wolfspeed-class power-"
+            "silicon issuers in this registry."
+        ),
+    ),
+    TrackedCompany(
+        name="Microchip Technology Incorporated", exchange="NASDAQ", krx_code="MCHP", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Embedded microcontroller/analog semiconductor "
+            "maker; broad industrial/data-center exposure. No existing "
+            "subtheme fits generically; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Western Digital Corporation", exchange="NASDAQ", krx_code="WDC", source="SEC EDGAR",
+        themes=("memory",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — "
+            "Memory. Included for HDD/storage exposure following the "
+            "2025 SanDisk spin-off, which separated Western Digital's "
+            "former NAND/flash business into the already-tracked "
+            "'SanDisk Corp' entry above — Western Digital itself is NOT "
+            "a current NAND/flash issuer post-spin-off; this entry "
+            "represents its remaining HDD/enterprise-storage business "
+            "only."
+        ),
+    ),
+    TrackedCompany(
+        name="GlobalFoundries Inc.", exchange="NASDAQ", krx_code="GFS", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Specialty-node semiconductor foundry; no existing "
+            "subtheme accurately represents foundry manufacturing "
+            "(distinct from the equipment-vendor `semiconductor-"
+            "equipment` informal classification used elsewhere); left "
+            "unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Constellation Energy Corporation", exchange="NASDAQ", krx_code="CEG", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Power generation/utility with direct AI-datacenter "
+            "power-purchase-agreement exposure; `power-cooling` reused, "
+            "same precedent as the other grid/power infrastructure "
+            "issuers in this registry."
+        ),
+    ),
+    TrackedCompany(
+        name="Skyworks Solutions, Inc.", exchange="NASDAQ", krx_code="SWKS", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. RF/analog semiconductor maker; broad connectivity-"
+            "silicon exposure. No existing subtheme fits generically; "
+            "left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Modine Manufacturing Company", exchange="NYSE", krx_code="MOD", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Thermal-management systems, including data-center "
+            "liquid cooling; `power-cooling` is a direct, accurate fit."
+        ),
+    ),
+    TrackedCompany(
+        name="Wolfspeed, Inc.", exchange="NYSE", krx_code="WOLF", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Silicon-carbide power semiconductor maker; "
+            "`power-cooling` reused, same precedent as ON Semiconductor/"
+            "Navitas power-silicon issuers above."
+        ),
+    ),
+    TrackedCompany(
+        name="Advanced Energy Industries, Inc.", exchange="NASDAQ", krx_code="AEIS", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. `power-cooling` applied (correction, 2026-09-04): "
+            "Advanced Energy makes power-conversion and power-delivery "
+            "systems for semiconductor fabrication and data-center power "
+            "infrastructure — the same power-conversion/power-delivery "
+            "exposure already captured by the `power-cooling` tag "
+            "elsewhere in this registry (ON Semiconductor, Navitas, "
+            "Wolfspeed), not a stretch. Informal supply-chain-layer "
+            "classification (not a structured field): "
+            "semiconductor-equipment, power-infrastructure."
+        ),
+    ),
+    TrackedCompany(
+        name="Ichor Systems, Inc.", exchange="NASDAQ", krx_code="ICHR", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Fluid-delivery subsystems for semiconductor "
+            "fabrication equipment; peer of the existing AMAT/LRCX/KLAC "
+            "equipment cohort. No existing subtheme fits; left unset. "
+            "Informal supply-chain-layer classification (not a "
+            "structured field): semiconductor-equipment."
+        ),
+    ),
+    TrackedCompany(
+        name="International Business Machines Corporation", exchange="NYSE", krx_code="IBM", source="SEC EDGAR",
+        themes=("ai-buildout",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Enterprise AI infrastructure and compute systems "
+            "vendor. No existing subtheme fits generically; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Symbotic Inc.", exchange="NASDAQ", krx_code="SYM", source="SEC EDGAR",
+        themes=("humanoids",), subthemes=("industrial-automation",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — "
+            "Humanoids. Warehouse robotics/automation systems; "
+            "`industrial-automation` reused directly from Rockwell "
+            "Automation/Doosan Robotics/Teradyne/Mitsubishi Electric — "
+            "same product category."
+        ),
+    ),
+    TrackedCompany(
+        name="Generac Holdings Inc.", exchange="NYSE", krx_code="GNRC", source="SEC EDGAR",
+        themes=("ai-buildout",), subthemes=("power-cooling",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — AI "
+            "Buildout. Backup power/generator systems, including "
+            "data-center standby power; `power-cooling` reused, same "
+            "precedent as the other grid/backup-power infrastructure "
+            "issuers in this registry."
+        ),
+    ),
+    TrackedCompany(
+        name="Intuitive Machines, Inc.", exchange="NASDAQ", krx_code="LUNR", source="SEC EDGAR",
+        themes=("space",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — "
+            "Space. Lunar-lander/space-services provider; no existing "
+            "subtheme fits (`launch` is Rocket Lab-specific to launch "
+            "vehicles); left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="AST SpaceMobile, Inc.", exchange="NASDAQ", krx_code="ASTS", source="SEC EDGAR",
+        themes=("space",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — "
+            "Space. Satellite direct-to-device connectivity constellation "
+            "operator; no existing subtheme fits; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Planet Labs PBC", exchange="NYSE", krx_code="PL", source="SEC EDGAR",
+        themes=("space",),
+        notes=(
+            "Filings Radar issuer-expansion batch 2 (2026-09-04) — "
+            "Space. Earth-observation satellite operator; no existing "
+            "subtheme fits; left unset."
+        ),
+    ),
 )
 
 
