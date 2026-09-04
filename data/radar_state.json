@@ -2,6 +2,7 @@
   "seen_url_hashes": [
     "00b6b595b72750df",
     "0132ebed82c9de27",
+    "02384799706db0d4",
     "027a23e549c57653",
     "0370b5d96bd90098",
     "05362583d07a4296",
@@ -477,6 +478,19 @@
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-09-04T23:35:00+00:00",
+      "finished_at": "2026-09-04T23:35:43+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 427,
+      "items_after_freshness_filter": 55,
+      "items_after_keyword_filter": 21,
+      "items_sent_to_llm": 21,
+      "items_saved": 1,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
     {
       "started_at": "2026-09-04T20:03:29+00:00",
       "finished_at": "2026-09-04T20:04:19+00:00",

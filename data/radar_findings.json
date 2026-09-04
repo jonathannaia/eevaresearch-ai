@@ -1,5 +1,26 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "8-K filed by FLEX LTD.  (FLEX)  (CIK 0000866374)",
+    "summary": "Flex Ltd. filed an 8-K with the SEC on September 4, 2026, containing information matched to data center capital expenditure.",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/866374/000119312526382492/d108491dex21.htm",
+    "source_name": "SEC EDGAR Full-Text Search — 8-K capex filings",
+    "source_type": "Regulatory Filing",
+    "published_at": "2026-09-04",
+    "retrieved_at": "2026-09-04T23:35:42+00:00",
+    "tickers": [
+      {
+        "ticker": "FLEX",
+        "company_name": "Flex Ltd.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Company filed SEC disclosure matching search term directly related to data center capital expenditure, which is core to AI Buildout scope.",
+    "url_hash": "02384799706db0d4",
+    "id": "02384799706db0d4"
+  },
+  {
     "niche": "Space",
     "headline": "NASA Hosts Virtual Artemis Webinar for Blind, Low-Vision Community",
     "summary": "NASA is hosting a virtual webinar on the RS-25 Engine and future Artemis missions, designed to be accessible to blind and low-vision audiences.",
