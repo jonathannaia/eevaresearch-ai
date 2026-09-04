@@ -1449,6 +1449,86 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "subtheme fits; left unset."
         ),
     ),
+    # EDINET Filings Radar issuer-expansion batch (2026-09-04) — 5 new
+    # EDINET issuers, all AI Buildout. corp_code hardcoded directly, same
+    # convention as the existing 13-entry EDINET exception to the "never
+    # hardcode" rule (see module docstring) — each value was independently
+    # live-verified this session against the real, official EDINET code
+    # list (live download via disclosure2.edinet-fsa.go.jp/weee0010.aspx,
+    # 11,392 records, dated 2026-09-05). krx_code holds EDINET's own
+    # 5-character source-native securities code, same convention as every
+    # other EDINET entry above. No subtheme fits any of the five (broad
+    # semiconductor-equipment/components/motors businesses, no clean
+    # match to existing subtheme vocabulary); left unset for all five.
+    TrackedCompany(
+        name="SCREEN Holdings Co., Ltd.",
+        native_name="株式会社ＳＣＲＥＥＮホールディングス",
+        exchange="TSE", krx_code="77350", source="EDINET", corp_code="E02288",
+        themes=("ai-buildout",),
+        notes=(
+            "EDINET Filings Radar issuer-expansion batch (2026-09-04) — "
+            "AI Buildout. EDINET code and securities code verified live "
+            "against the official EDINET code-list CSV (single clean "
+            "match). Semiconductor equipment maker. No existing subtheme "
+            "fits; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Nidec Corporation",
+        native_name="ニデック株式会社",
+        exchange="TSE", krx_code="65940", source="EDINET", corp_code="E01975",
+        themes=("ai-buildout",),
+        notes=(
+            "EDINET Filings Radar issuer-expansion batch (2026-09-04) — "
+            "AI Buildout. EDINET code and securities code verified live, "
+            "single clean match. Filer name confirmed live as ニデック株式会社 "
+            "(\"NIDEC CORPORATION\") — the company's 2023 rename from 日本電産 "
+            "is reflected in the official code list. `power-cooling` was "
+            "considered (Nidec makes data-center cooling fans) but left "
+            "unset — that is a minority segment of a much broader motors "
+            "business (EVs, appliances, precision motors), the same "
+            "left-unset judgment already applied to AMAT/LRCX above rather "
+            "than a direct fit like Modine's."
+        ),
+    ),
+    TrackedCompany(
+        name="TDK Corporation",
+        native_name="ＴＤＫ株式会社",
+        exchange="TSE", krx_code="67620", source="EDINET", corp_code="E01780",
+        themes=("ai-buildout",),
+        notes=(
+            "EDINET Filings Radar issuer-expansion batch (2026-09-04) — "
+            "AI Buildout. EDINET code and securities code verified live, "
+            "single clean match. Broad electronic-components maker. No "
+            "existing subtheme fits; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Murata Manufacturing Co., Ltd.",
+        native_name="株式会社村田製作所",
+        exchange="TSE", krx_code="69810", source="EDINET", corp_code="E01914",
+        themes=("ai-buildout",),
+        notes=(
+            "EDINET Filings Radar issuer-expansion batch (2026-09-04) — "
+            "AI Buildout. EDINET code and securities code verified live, "
+            "single clean match. Broad electronic-components maker "
+            "(passives). No existing subtheme fits; left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="TOWA Corporation",
+        native_name="ＴＯＷＡ株式会社",
+        exchange="TSE", krx_code="63150", source="EDINET", corp_code="E01708",
+        themes=("ai-buildout",),
+        notes=(
+            "EDINET Filings Radar issuer-expansion batch (2026-09-04) — "
+            "AI Buildout. EDINET code and securities code verified live, "
+            "single clean match. Semiconductor packaging/molding "
+            "equipment maker. No existing subtheme fits; left unset. "
+            "Informal supply-chain-layer classification (not a "
+            "structured field): advanced-packaging."
+        ),
+    ),
 )
 
 

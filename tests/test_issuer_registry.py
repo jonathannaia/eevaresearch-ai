@@ -70,7 +70,15 @@ def test_edinet_identifiers_survive_migration_exactly():
     assert edinet_issuers["Ibiden Co., Ltd."].identifiers["EDINET"] == "E00775"
     assert edinet_issuers["Mitsubishi Electric Corporation"].identifiers["EDINET"] == "E01739"
     assert edinet_issuers["Renesas Electronics Corporation"].identifiers["EDINET"] == "E02081"
-    assert len(edinet_issuers) == 13
+    # EDINET Filings Radar issuer-expansion batch (2026-09-04) — 5 more
+    # hardcoded EDINET identifiers, same live-verified-hardcoding
+    # convention.
+    assert edinet_issuers["SCREEN Holdings Co., Ltd."].identifiers["EDINET"] == "E02288"
+    assert edinet_issuers["Nidec Corporation"].identifiers["EDINET"] == "E01975"
+    assert edinet_issuers["TDK Corporation"].identifiers["EDINET"] == "E01780"
+    assert edinet_issuers["Murata Manufacturing Co., Ltd."].identifiers["EDINET"] == "E01914"
+    assert edinet_issuers["TOWA Corporation"].identifiers["EDINET"] == "E01708"
+    assert len(edinet_issuers) == 18
 
 
 def test_dart_and_edgar_seed_issuers_have_no_invented_identifiers():
@@ -212,16 +220,17 @@ def test_mrvl_and_tsem_registry_themes_are_unchanged_by_ontology_module():
 
 # --- INDI/AIP/CEVA batch (2026-08-20) — grew the registry from 29 to 32 ---
 
-def test_seed_issuer_count_is_100_after_the_filings_radar_expansion_batch_2():
+def test_seed_issuer_count_is_105_after_the_edinet_filings_radar_expansion_batch():
     # Was "exactly 32 after the INDI/AIP/CEVA batch" through that batch;
     # renamed and updated (Gate 7.1's own established discipline for a
     # stale count/name) after the Core Issuer Expansion batch
     # (2026-09-04) added 30 more (32 + 30 = 62), again after the Filings
     # Radar issuer-expansion batch (2026-09-04) added 19 more SEC EDGAR
-    # issuers (62 + 19 = 81), and again after Filings Radar
-    # issuer-expansion batch 2 (2026-09-04) added 19 more still
-    # (81 + 19 = 100).
-    assert len(SEED_ISSUERS) == 100
+    # issuers (62 + 19 = 81), again after Filings Radar issuer-expansion
+    # batch 2 (2026-09-04) added 19 more still (81 + 19 = 100), and again
+    # after the EDINET Filings Radar issuer-expansion batch (2026-09-04)
+    # added 5 more EDINET issuers (100 + 5 = 105).
+    assert len(SEED_ISSUERS) == 105
 
 
 def test_indi_aip_ceva_appear_exactly_once_each_in_seed_issuers():
@@ -281,12 +290,14 @@ def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_quanta():
     # file's own history). The Core Issuer Expansion batch (2026-09-04)
     # later added 30 more for an unrelated reason (32 + 30 = 62), the
     # Filings Radar issuer-expansion batch (2026-09-04) added 19 more
-    # still (62 + 19 = 81), and Filings Radar issuer-expansion batch 2
-    # (2026-09-04) added 19 more still (81 + 19 = 100) — see
+    # still (62 + 19 = 81), Filings Radar issuer-expansion batch 2
+    # (2026-09-04) added 19 more still (81 + 19 = 100), and the EDINET
+    # Filings Radar issuer-expansion batch (2026-09-04) added 5 more
+    # still (100 + 5 = 105) — see
     # test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch
     # below for Quanta's own, now-changed status specifically.
-    assert len(get_tracked_companies(active_only=False)) == 100
-    assert len(SEED_ISSUERS) == 100
+    assert len(get_tracked_companies(active_only=False)) == 105
+    assert len(SEED_ISSUERS) == 105
 
 
 def test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -330,9 +341,9 @@ def test_discovery_stubs_grew_by_exactly_one_for_nvent_electric():
 
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_nvent():
     # True as of the nVent-only addition — see the matching Quanta test
-    # above for why this now asserts 100, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 100
-    assert len(SEED_ISSUERS) == 100
+    # above for why this now asserts 105, not 32.
+    assert len(get_tracked_companies(active_only=False)) == 105
+    assert len(SEED_ISSUERS) == 105
 
 
 def test_nvent_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -370,9 +381,9 @@ def test_discovery_stubs_grew_by_exactly_two_for_arista_and_cisco():
 
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_arista_and_cisco():
     # True as of the Arista/Cisco-only addition — see the matching Quanta
-    # test above for why this now asserts 100, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 100
-    assert len(SEED_ISSUERS) == 100
+    # test above for why this now asserts 105, not 32.
+    assert len(get_tracked_companies(active_only=False)) == 105
+    assert len(SEED_ISSUERS) == 105
 
 
 def test_arista_and_cisco_are_now_also_real_tracked_companies_via_the_core_expansion_batch():

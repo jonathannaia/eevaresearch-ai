@@ -77,7 +77,7 @@ def test_readiness_checks_translation_key_without_making_any_provider_call(tmp_p
     assert "provider" not in inspect.signature(edinet_service.edinet_readiness).parameters
 
 
-def test_get_edinet_companies_returns_the_thirteen_live_verified_cohort_entries(tmp_path):
+def test_get_edinet_companies_returns_the_eighteen_live_verified_cohort_entries(tmp_path):
     companies = edinet_service.get_edinet_companies(tmp_path)
     names = {c.name for c in companies}
     assert names == {
@@ -87,6 +87,9 @@ def test_get_edinet_companies_returns_the_thirteen_live_verified_cohort_entries(
         "Tokyo Electron Limited", "Advantest Corporation", "Disco Corporation",
         "Shin-Etsu Chemical Co., Ltd.", "SUMCO Corporation", "Ibiden Co., Ltd.",
         "Mitsubishi Electric Corporation", "Renesas Electronics Corporation",
+        # EDINET Filings Radar issuer-expansion batch (2026-09-04)
+        "SCREEN Holdings Co., Ltd.", "Nidec Corporation", "TDK Corporation",
+        "Murata Manufacturing Co., Ltd.", "TOWA Corporation",
     }
     assert all(c.corp_code is not None for c in companies)
 

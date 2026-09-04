@@ -117,9 +117,11 @@ def test_source_filter_returns_expected_subset():
 
 def test_country_filter_returns_expected_subset():
     # Was 5 through Gate 7; the Core Issuer Expansion batch (2026-09-04)
-    # added 8 more EDINET issuers (5 + 8 = 13).
+    # added 8 more EDINET issuers (5 + 8 = 13). The EDINET Filings Radar
+    # issuer-expansion batch (2026-09-04) then added 5 more still
+    # (13 + 5 = 18).
     japan_only = filter_seed_issuers(countries=("Japan (listing exchange)",))
-    assert len(japan_only) == 13
+    assert len(japan_only) == 18
 
 
 def test_combined_filters_are_intersected_not_unioned():

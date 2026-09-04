@@ -125,14 +125,19 @@ def test_get_tracked_companies_for_source_filters_edinet_only():
         "Tokyo Electron Limited", "Advantest Corporation", "Disco Corporation",
         "Shin-Etsu Chemical Co., Ltd.", "SUMCO Corporation", "Ibiden Co., Ltd.",
         "Mitsubishi Electric Corporation", "Renesas Electronics Corporation",
+        # EDINET Filings Radar issuer-expansion batch (2026-09-04)
+        "SCREEN Holdings Co., Ltd.", "Nidec Corporation", "TDK Corporation",
+        "Murata Manufacturing Co., Ltd.", "TOWA Corporation",
     }
 
 
-def test_edinet_cohort_has_exactly_thirteen_entries():
+def test_edinet_cohort_has_exactly_eighteen_entries():
     # Was "exactly five" through Gate 7; the Core Issuer Expansion batch
     # (2026-09-04) added 8 more (5 + 8 = 13) — renamed rather than left
     # stale, same discipline Gate 7.1 already established for this file.
-    assert len(get_tracked_companies_for_source("EDINET")) == 13
+    # The EDINET Filings Radar issuer-expansion batch (2026-09-04) then
+    # added 5 more still (13 + 5 = 18).
+    assert len(get_tracked_companies_for_source("EDINET")) == 18
 
 
 def test_edinet_cohort_direct_edinet_code_mapping():
@@ -256,14 +261,16 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_100():
+def test_active_tracked_company_count_is_exactly_105():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
     # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
     # issuer-expansion batch (2026-09-04) then added 19 more SEC EDGAR
-    # issuers (62 + 19 = 81), and Filings Radar issuer-expansion batch 2
-    # (2026-09-04) added 19 more still (81 + 19 = 100).
-    assert len(get_tracked_companies(active_only=True)) == 100
+    # issuers (62 + 19 = 81), Filings Radar issuer-expansion batch 2
+    # (2026-09-04) added 19 more still (81 + 19 = 100), and the EDINET
+    # Filings Radar issuer-expansion batch (2026-09-04) added 5 more
+    # EDINET issuers (100 + 5 = 105).
+    assert len(get_tracked_companies(active_only=True)) == 105
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
