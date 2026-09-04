@@ -569,9 +569,48 @@ EXPANSION_BATCH_1_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News source-expansion batch 2 (2026-09-04) — exactly one entry:
+# a worker-context validation candidate for the existing meta-ir-rss
+# source, which is reportedly returning HTTPError:403. This entry is
+# NOT a replacement for meta-ir-rss — that entry stays unchanged,
+# enabled, and first in registry order; this one is appended after it
+# to let the real worker's own fetch attempt (not this browser-context
+# check) determine whether about.fb.com avoids the same block. Health
+# state is deliberately NEEDS_REVIEW, never VERIFIED — a real browser
+# navigation confirmed this feed is live, fresh, and on-domain, but
+# that does not confirm it avoids the SAME bot/WAF block under the
+# worker's own distinct fetch signature (User-Agent, IP, headers) that
+# is causing meta-ir-rss's reported 403 — only a real worker-context
+# fetch attempt can resolve that question. See this entry's own `notes`.
+EXPANSION_BATCH_2_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="meta-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://about.fb.com/feed/",
+        domains=("about.fb.com",),
+        # Requested as health_state="needs_review" — no such member exists
+        # on SourceHealthState (PENDING_REVIEW, VERIFIED, DEGRADED,
+        # FAILING, RETIRED only), and this task's own scope forbids
+        # changing validation/categories, so no new member was added.
+        # PENDING_REVIEW is used instead — its own docstring describes
+        # exactly this situation: "never treated as a live, trustworthy
+        # source until it has actually been fetched and confirmed
+        # working." See this entry's own notes below.
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.PENDING_REVIEW,
+        attribution_label="Meta Platforms, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Meta Platforms, Inc.", last_verified_at="2026-09-04",
+        notes=(
+            "Worker-context validation candidate for the existing, reportedly-blocked "
+            "meta-ir-rss source (investor.atmeta.com, HTTPError:403). Not confirmed to bypass "
+            "that 403 under the real worker's own fetch signature."
+        ),
+    ),
+)
+
 # The real, live runtime feed list — original 12 pilot sources first
-# (byte-identical, same order), then expansion batch 1's 7 sources, in
-# the exact order given. feed_registry.PILOT_FEEDS is generated from
-# this tuple via to_daily_news_feed_source(); see that module's own
-# updated docstring.
-RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY
+# (byte-identical, same order), then expansion batch 1's 7 sources, then
+# expansion batch 2's 1 source, in the exact order given (19 + 1 = 20).
+# feed_registry.PILOT_FEEDS is generated from this tuple via
+# to_daily_news_feed_source(); see that module's own updated docstring.
+RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
+)
