@@ -1,6 +1,90 @@
 [
   {
     "niche": "Space",
+    "headline": "'A new mission starting today': 8 years after launch, BepiColombo begins Mercury arrival",
+    "summary": "The BepiColombo spacecraft, launched nearly eight years ago, has begun its arrival sequence at Mercury. The mission marks a significant milestone in planetary exploration of the inner solar system.",
+    "source_url": "https://www.space.com/space-exploration/missions/a-new-mission-starting-today-8-years-after-launch-bepicolombo-begins-mercury-arrival",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 16:25:20 +0000",
+    "retrieved_at": "2026-09-04T08:20:40+00:00",
+    "tickers": [],
+    "relevance_reason": "Substantive article about spacecraft mission to Mercury, directly within space scope.",
+    "url_hash": "e975c15e360bbb34",
+    "id": "e975c15e360bbb34"
+  },
+  {
+    "niche": "Space",
+    "headline": "2 spacecraft will soon reach Mercury after 8 years in space. Here's what BepiColombo can do",
+    "summary": "After an 8-year journey, the BepiColombo spacecraft will split into two separate spacecraft to conduct scientific observations of Mercury. The mission aims to study the least-explored planet in the inner solar system.",
+    "source_url": "https://www.space.com/astronomy/mercury/2-spacecraft-will-soon-reach-mercury-after-8-years-in-space-heres-what-bepicolombo-can-do",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 18:00:00 +0000",
+    "retrieved_at": "2026-09-04T08:20:38+00:00",
+    "tickers": [],
+    "relevance_reason": "Article describes spacecraft operations and mission details directly relevant to the space scope.",
+    "url_hash": "76d446df6e46d44f",
+    "id": "76d446df6e46d44f"
+  },
+  {
+    "niche": "Space",
+    "headline": "Galaxia Takes Next Step in Earth Observation with purchase of Simera Sense Hyperspectral Imager",
+    "summary": "Canadian space technology company Galaxia has acquired a HyperScape100 hyperspectral imaging payload from European optical provider Simera Sense for earth observation applications.",
+    "source_url": "https://spacenews.com/galaxia-takes-next-step-in-earth-observation-with-purchase-of-simera-sense-hyperspectral-imager/",
+    "source_name": "SpaceNews",
+    "source_type": "Reputable Financial News",
+    "published_at": "Thu, 03 Sep 2026 13:00:00 +0000",
+    "retrieved_at": "2026-09-04T08:20:36+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly concerns space technology acquisition involving earth observation satellite payload.",
+    "url_hash": "66b18b6eda12c6c9",
+    "id": "66b18b6eda12c6c9"
+  },
+  {
+    "niche": "Space",
+    "headline": "Igniting Roman’s Journey",
+    "summary": "NASA's Nancy Grace Roman Space Telescope launched on August 30 aboard a SpaceX Falcon Heavy rocket from Kennedy Space Center and is en route to its final orbit on a three-month, million-mile journey.",
+    "source_url": "https://www.nasa.gov/image-article/igniting-romans-journey/",
+    "source_name": "NASA News Releases",
+    "source_type": "Regulatory/Gov Release",
+    "published_at": "Thu, 03 Sep 2026 14:24:23 +0000",
+    "retrieved_at": "2026-09-04T08:20:33+00:00",
+    "tickers": [
+      {
+        "ticker": "SPACEX",
+        "company_name": "Space Exploration Technologies Corp.",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article describes the launch of NASA's Nancy Grace Roman Space Telescope aboard a SpaceX Falcon Heavy rocket, which is directly relevant to space infrastructure and launch services.",
+    "url_hash": "e4d65c08fed659d1",
+    "id": "e4d65c08fed659d1"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Chip Industry Week In Review",
+    "summary": "A semiconductor industry weekly review covering multiple AI-relevant topics including MediaTek's NVLink Fusion deal, heterogeneous HBM development, India's $13.4B Semicon 2.0 initiative, and various chip manufacturing technologies for AI applications.",
+    "source_url": "https://semiengineering.com/chip-industry-week-in-review-154/",
+    "source_name": "Semiconductor Engineering",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 07:01:21 +0000",
+    "retrieved_at": "2026-09-04T08:20:17+00:00",
+    "tickers": [
+      {
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Multiple items substantively address AI infrastructure components including NVLink, HBM, and chip supply chain technologies directly relevant to AI buildout.",
+    "url_hash": "d1b2bfc8bc6110d0",
+    "id": "d1b2bfc8bc6110d0"
+  },
+  {
+    "niche": "Space",
     "headline": "NASA to Cover Progress 96 Spacecraft Launch, Docking",
     "summary": "NASA will provide live coverage of the Roscosmos Progress 96 cargo spacecraft launch and docking, scheduled for September 9, carrying supplies for the International Space Station.",
     "source_url": "https://www.nasa.gov/news-release/nasa-to-cover-progress-96-spacecraft-launch-docking/",
