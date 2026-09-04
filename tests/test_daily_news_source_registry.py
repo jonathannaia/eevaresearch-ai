@@ -1,15 +1,21 @@
-"""Daily News source-registry FOUNDATION (design/DAILY_NEWS_SOURCE_
-ADMISSION_POLICY.md) — pure, fixture-driven tests. Zero network calls.
-`feed_registry.py` is asserted here to be byte-for-byte unchanged in
-its own runtime shape (PILOT_FEEDS itself is never touched by this
-foundation), and separately, that the new registry can represent every
-one of those 12 sources with zero behavioral difference once adapted.
+"""Daily News source registry (design/DAILY_NEWS_SOURCE_ADMISSION_
+POLICY.md) — pure, fixture-driven tests. Zero network calls.
+
+Updated for Daily News source-expansion batch 1 (2026-09-04):
+`feed_registry.PILOT_FEEDS` is now derived from `source_registry.
+RUNTIME_SOURCE_REGISTRY` (the original 12 pilot sources plus expansion
+batch 1's 7) — this file proves that derivation reproduces the original
+12 exactly, field-for-field, in their original order, first; that the 7
+new entries validate cleanly; and that the resulting 19-entry runtime
+feed list is exactly what's expected.
 """
 from __future__ import annotations
 
 from src.data_access.daily_news import feed_registry
 from src.data_access.daily_news.source_registry import (
+    EXPANSION_BATCH_1_SOURCE_REGISTRY,
     PILOT_SOURCE_REGISTRY,
+    RUNTIME_SOURCE_REGISTRY,
     DailyNewsSourceEntry,
     SourceCategory,
     SourceFormat,
@@ -356,34 +362,121 @@ def test_independent_news_with_both_allowlisting_and_licensing_is_accepted():
 # ============================================================
 
 
-def test_feed_registry_pilot_feeds_is_completely_untouched():
-    # This foundation must not alter feed_registry.py at all — the real
-    # pipeline/worker import chain stays exactly as it was.
-    assert len(feed_registry.PILOT_FEEDS) == 12
+_EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER = (
+    "Amazon.com, Inc.", "Meta Platforms, Inc.", "Oracle Corporation", "Applied Materials, Inc.",
+    "Lam Research Corp", "KLA Corp", "Arm Holdings plc",
+)
+_EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER = (
+    "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp", "Marvell Technology, Inc.",
+    "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix", "Quanta Services, Inc.", "nVent Electric plc",
+    "Arista Networks, Inc.", "Cisco Systems, Inc.",
+)
 
 
-def test_pilot_source_registry_has_exactly_twelve_entries():
+def test_pilot_source_registry_still_has_exactly_twelve_entries_unchanged():
+    # The original 12 pilot sources themselves are untouched by the
+    # expansion batch — same 12, same fields, same order.
     assert len(PILOT_SOURCE_REGISTRY) == 12
+    assert tuple(e.issuer_name for e in PILOT_SOURCE_REGISTRY) == _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER
+
+
+def test_expansion_batch_1_has_exactly_seven_entries_in_the_given_order():
+    assert len(EXPANSION_BATCH_1_SOURCE_REGISTRY) == 7
+    assert tuple(e.issuer_name for e in EXPANSION_BATCH_1_SOURCE_REGISTRY) == _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
+
+
+def test_runtime_source_registry_is_the_twelve_then_the_seven_in_order():
+    assert len(RUNTIME_SOURCE_REGISTRY) == 19
+    assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[12:] == EXPANSION_BATCH_1_SOURCE_REGISTRY
 
 
 def test_pilot_source_registry_has_zero_validation_violations():
     assert find_registry_violations(PILOT_SOURCE_REGISTRY) == ()
 
 
-def test_pilot_source_registry_source_ids_are_unique():
-    ids = [e.source_id for e in PILOT_SOURCE_REGISTRY]
-    assert len(ids) == len(set(ids))
+def test_expansion_batch_1_has_zero_validation_violations():
+    assert find_registry_violations(EXPANSION_BATCH_1_SOURCE_REGISTRY) == ()
+
+
+def test_runtime_source_registry_has_zero_validation_violations():
+    # Also proves no cross-batch duplicate was introduced.
+    assert find_registry_violations(RUNTIME_SOURCE_REGISTRY) == ()
+
+
+def test_runtime_source_registry_source_ids_are_all_unique():
+    ids = [e.source_id for e in RUNTIME_SOURCE_REGISTRY]
+    assert len(ids) == len(set(ids)) == 19
 
 
 def test_pilot_source_registry_covers_the_same_twelve_companies_as_pilot_feeds():
     registry_companies = {e.issuer_name for e in PILOT_SOURCE_REGISTRY}
-    pilot_companies = {f.company_name for f in feed_registry.PILOT_FEEDS}
+    pilot_companies = set(_EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER)
     assert registry_companies == pilot_companies
 
 
-def test_adapting_pilot_source_registry_reproduces_pilot_feeds_exactly_in_order():
-    adapted = tuple(to_daily_news_feed_source(e) for e in PILOT_SOURCE_REGISTRY)
-    assert adapted == feed_registry.PILOT_FEEDS
+def test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order():
+    """The exact proof this task's own approved scope requires: the
+    original 12 runtime feeds (now computed via
+    feed_registry.PILOT_FEEDS, derived from RUNTIME_SOURCE_REGISTRY) are
+    field-for-field equal to adapting PILOT_SOURCE_REGISTRY directly,
+    and are the first 12 entries of the real, live PILOT_FEEDS."""
+    adapted_original_twelve = tuple(to_daily_news_feed_source(e) for e in PILOT_SOURCE_REGISTRY)
+    assert len(feed_registry.PILOT_FEEDS) == 19
+    assert feed_registry.PILOT_FEEDS[:12] == adapted_original_twelve
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[:12]) == _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER
+
+
+def test_final_runtime_feed_list_has_exactly_nineteen_entries():
+    assert len(feed_registry.PILOT_FEEDS) == 19
+
+
+def test_final_runtime_feed_list_appends_expansion_batch_1_after_the_original_twelve():
+    adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_1_SOURCE_REGISTRY)
+    assert feed_registry.PILOT_FEEDS[12:] == adapted_expansion
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[12:]) == _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
+
+
+def test_final_runtime_feed_list_company_order_is_exactly_the_nineteen_expected():
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS) == (
+        _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER + _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
+    )
+
+
+def test_all_nineteen_runtime_feeds_use_rss_feed_format():
+    # feed_format is informational-only (rss_atom_client.py handles both
+    # RSS and Atom regardless), but every one of these 19 real sources
+    # is in fact RSS — proving the adapter's "rss" default is accurate
+    # for the whole real runtime list, not just the original 12.
+    assert all(f.feed_format == "rss" for f in feed_registry.PILOT_FEEDS)
+
+
+def test_all_nineteen_runtime_feeds_are_official_issuer_linked_and_no_excluded_source_present():
+    # Every runtime feed traces back to an enabled, RSS_ATOM-format,
+    # issuer-linked entry in an official category — never
+    # issuer-agnostic, never independent_news, never one of the
+    # explicitly excluded names/domains.
+    _OFFICIAL_ISSUER_CATEGORIES = (
+        SourceCategory.OFFICIAL_IR, SourceCategory.OFFICIAL_NEWSROOM, SourceCategory.OFFICIAL_FILING,
+    )
+    excluded_lowered = {"semianalysis", "citrini", "serenity"}
+    for entry in RUNTIME_SOURCE_REGISTRY:
+        if not (entry.enabled and entry.format == SourceFormat.RSS_ATOM):
+            continue
+        assert entry.category in _OFFICIAL_ISSUER_CATEGORIES, entry.source_id
+        assert entry.issuer_agnostic is False, entry.source_id
+        assert entry.issuer_name, entry.source_id
+        lowered = f"{entry.attribution_label} {entry.source_id} {entry.issuer_name}".lower()
+        assert not any(name in lowered for name in excluded_lowered), entry.source_id
+        for domain in entry.domains:
+            assert "twitter.com" not in domain and "x.com" != domain and "reddit.com" not in domain
+
+
+def test_expansion_batch_1_alphabet_microsoft_micron_are_not_present():
+    # Explicit negative proof matching this task's own exclusion list.
+    excluded_companies = {"Alphabet Inc.", "Microsoft Corporation", "Micron Technology"}
+    runtime_companies = {f.company_name for f in feed_registry.PILOT_FEEDS}
+    assert not (excluded_companies & runtime_companies)
 
 
 def test_to_daily_news_feed_source_rejects_a_non_rss_atom_format():
@@ -409,7 +502,15 @@ def test_to_daily_news_feed_source_rejects_an_issuer_agnostic_entry():
 # ============================================================
 
 
-def test_source_registry_module_is_not_imported_by_the_real_pipeline_worker_or_ui():
+def test_source_registry_module_is_not_imported_directly_by_the_real_pipeline_worker_or_ui():
+    """Updated for Daily News source-expansion batch 1 (2026-09-04):
+    `feed_registry.py` now intentionally imports `source_registry` (to
+    build the real, live PILOT_FEEDS) — that file is deliberately
+    excluded from this check as of this batch. Every other real
+    entry-point file must still never import `source_registry` directly
+    — they only ever need `feed_registry.PILOT_FEEDS`, transitively
+    benefiting from the new wiring without needing any direct knowledge
+    of source_registry.py's own existence."""
     import ast
     from pathlib import Path
 
@@ -419,7 +520,6 @@ def test_source_registry_module_is_not_imported_by_the_real_pipeline_worker_or_u
         repo_root / "scripts" / "daily_news_worker.py",
         repo_root / "src" / "ui" / "pages" / "daily_news.py",
         repo_root / "src" / "ui" / "pages" / "daily_news_admin.py",
-        repo_root / "src" / "data_access" / "daily_news" / "feed_registry.py",
     )
     for path in targets:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -430,3 +530,16 @@ def test_source_registry_module_is_not_imported_by_the_real_pipeline_worker_or_u
             elif isinstance(node, ast.Import):
                 module = ",".join(alias.name for alias in node.names)
             assert not (module and "source_registry" in module), (path, module)
+
+
+def test_feed_registry_module_now_intentionally_imports_source_registry():
+    import ast
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "src" / "data_access" / "daily_news" / "feed_registry.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = any(
+        isinstance(node, ast.ImportFrom) and node.module and "source_registry" in node.module
+        for node in ast.walk(tree)
+    )
+    assert found, "feed_registry.py should import source_registry as of the expansion-batch-1 wiring"

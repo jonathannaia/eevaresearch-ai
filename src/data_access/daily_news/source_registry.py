@@ -1,50 +1,50 @@
-"""Daily News source-registry FOUNDATION (design/DAILY_NEWS_SOURCE_
-ADMISSION_POLICY.md) — a typed, data-driven admission/validation layer
-for Daily News sources, built to support a much broader future source
-set than the 12 hand-authored `feed_registry.PILOT_FEEDS` entries.
+"""Daily News source registry (design/DAILY_NEWS_SOURCE_ADMISSION_
+POLICY.md) — a typed, data-driven admission/validation layer for Daily
+News sources.
 
-Foundation only. This module adds NO new external I/O, is imported by
-NOTHING outside itself and its own tests, and is NOT wired into
-daily_news_pipeline.run_discovery(), scripts/daily_news_worker.py, or
-any UI page. `feed_registry.py` — the module the real pipeline/worker
-actually read from today — is completely untouched by this file; see
-this module's own docstring section "Migration decision" below for why.
+Migration status (UPDATED — Daily News source-expansion batch 1,
+2026-09-04): `feed_registry.PILOT_FEEDS`, the value the real pipeline
+(`daily_news_pipeline.py`) and worker (`scripts/daily_news_worker.py`)
+actually read, is now DERIVED from `RUNTIME_SOURCE_REGISTRY` below via
+`to_daily_news_feed_source()` — see `feed_registry.py`'s own updated
+docstring for the wiring itself. This was originally deferred at this
+module's first introduction (design/DECISIONS.md's "Daily News source-
+registry foundation" entry) specifically to keep this brand-new
+validation module decoupled from the real, already-running worker's
+import chain until it had been independently proven correct — that
+proof is `test_adapted_original_twelve_pilot_feeds_are_unchanged_and_
+first_in_order` (tests/test_daily_news_source_registry.py), which this
+same batch's own wiring change is required to keep passing.
+
+`RUNTIME_SOURCE_REGISTRY = PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_
+SOURCE_REGISTRY` — the original 12 pilot sources, unchanged, first;
+then the 7 sources added in expansion batch 1, in the exact order
+given. `feed_registry.PILOT_FEEDS` reproduces this order exactly.
 
 Deliberately reuses `feed_registry.tracked_company_for()` (read-only)
 for issuer-linkage validation, so an entry that resolves here resolves
 identically to how the real pipeline already resolves
 `DailyNewsFeedSource.company_name` today — the same two-source lookup
 (tracked_companies.py, then issuer_registry.DISCOVERY_STUBS), never a
-separate or looser rule.
-
-Migration decision (item 6 of the approved scope): a real migration —
-making `feed_registry.PILOT_FEEDS` a value *derived* from this new
-registry — was considered and rejected for this foundation pass, even
-though a byte-identical derivation is achievable (see
-`PILOT_SOURCE_REGISTRY`/`to_daily_news_feed_source` below, and
-test_daily_news_source_registry.py's own equivalence proof). Rejected
-because `feed_registry.py` is imported at module-load time by the real,
-already-running worker (`scripts/daily_news_worker.py`) and pipeline
-(`daily_news_pipeline.py`) — coupling its import chain to a brand-new,
-just-written validation module inside the SAME task that introduces
-that module is a real, if small, availability risk for zero behavioral
-benefit this pass. Instead: `feed_registry.py` is left completely
-unmodified, and this module provides (a) `PILOT_SOURCE_REGISTRY`, a
-parallel, fully-typed, fully-validated registry-shaped description of
-the exact same 12 sources, and (b) `to_daily_news_feed_source()`, an
-adapter proven by test to reproduce `feed_registry.PILOT_FEEDS` exactly,
-field-for-field, in the same order — so the equivalence is proven now,
-and wiring `feed_registry.PILOT_FEEDS` to actually be generated from
-this module (or replacing it outright) is a separate, later,
-explicitly-approved step, exactly as the task's own item 6 permits.
+separate or looser rule. Imported LOCALLY (inside the functions that
+need it, not at module top level) together with `DailyNewsFeedSource`
+itself — `feed_registry.py` now imports FROM this module at its own top
+level (to build `PILOT_FEEDS`), so a top-level import in the opposite
+direction here would be circular; a local/deferred import is the
+standard, safe way to let two modules reference each other without
+requiring either to fully load before the other. Neither loses any
+functionality: both names are resolved successfully the moment they're
+actually used, well after both modules have finished loading.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, tracked_company_for
+if TYPE_CHECKING:  # avoids the circular import at runtime; see module docstring
+    from src.data_access.daily_news.feed_registry import DailyNewsFeedSource
 
 
 class SourceCategory(str, Enum):
@@ -169,6 +169,8 @@ def validate_source_entry(entry: DailyNewsSourceEntry) -> tuple[str, ...]:
     problem, so a caller building an admission report sees the whole
     picture at once. Duplicate-across-registry detection is a separate,
     registry-level concern — see find_registry_violations()."""
+    from src.data_access.daily_news.feed_registry import tracked_company_for  # local import — see module docstring
+
     violations: list[str] = []
 
     try:
@@ -290,11 +292,14 @@ def find_registry_violations(entries: tuple[DailyNewsSourceEntry, ...]) -> tuple
 
 def to_daily_news_feed_source(entry: DailyNewsSourceEntry) -> DailyNewsFeedSource:
     """Adapter proving this registry can represent an existing pilot
-    feed with zero behavioral change — see this module's own "Migration
-    decision" docstring section. Only ever valid for an
-    RSS_ATOM-format, issuer-linked entry; every other shape raises,
-    since the pipeline's own DailyNewsFeedSource has no way to represent
-    an issuer-agnostic or non-RSS/Atom source at all today."""
+    feed with zero behavioral change — see this module's own docstring.
+    Only ever valid for an RSS_ATOM-format, issuer-linked entry; every
+    other shape raises, since the pipeline's own DailyNewsFeedSource has
+    no way to represent an issuer-agnostic or non-RSS/Atom source at all
+    today. This is the exact function `feed_registry.py` now calls, at
+    its own module-load time, to build the real, live `PILOT_FEEDS`."""
+    from src.data_access.daily_news.feed_registry import DailyNewsFeedSource  # local import — see module docstring
+
     if entry.format != SourceFormat.RSS_ATOM:
         raise SourceRegistryValidationError(
             f"{entry.source_id}: to_daily_news_feed_source only supports SourceFormat.RSS_ATOM, got {entry.format!r}"
@@ -354,7 +359,13 @@ PILOT_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
         jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
         attribution_label="Intel Corp.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
         priority=1, issuer_name="Intel Corp.",
-        notes="Migrated from feed_registry.PILOT_FEEDS.",
+        notes=(
+            "Migrated from feed_registry.PILOT_FEEDS. Repaired (Daily News feed audit, design/"
+            "DECISIONS.md) — newsroom.intel.com/feed no longer served RSS at all (404s into an "
+            "Access-Denied redirector; confirmed live). Replaced with Intel's own official "
+            "investor-relations RSS feed (www.intc.com), confirmed live and fetchable with this "
+            "app's own worker User-Agent."
+        ),
     ),
     DailyNewsSourceEntry(
         source_id="amd-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
@@ -399,7 +410,13 @@ PILOT_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
         jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
         attribution_label="Rockwell Automation", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
         priority=1, issuer_name="Rockwell Automation",
-        notes="Migrated from feed_registry.PILOT_FEEDS. Q4-hosted IR subdomain, exact hostname only.",
+        notes=(
+            "Migrated from feed_registry.PILOT_FEEDS. One-company exception: Rockwell's "
+            "dedicated Q4-hosted IR subdomain, not its own root domain. Exact hostname only — "
+            "canonical_url.py's existing set-membership match already rejects any other "
+            "q4web.com subdomain; never widen this to a wildcard/suffix match across q4web.com "
+            "generally."
+        ),
     ),
     DailyNewsSourceEntry(
         source_id="sk-hynix-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
@@ -450,3 +467,111 @@ PILOT_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
         ),
     ),
 )
+
+
+# Daily News source-expansion batch 1 (2026-09-04) — 7 official issuer
+# IR/newsroom RSS feeds, each independently live-verified (real fetch,
+# HTTP 200, parseable RSS 2.0, on-domain dated items) in a separate,
+# bounded, read-only verification pass before this batch was approved.
+# Appended AFTER PILOT_SOURCE_REGISTRY, never interleaved — see
+# RUNTIME_SOURCE_REGISTRY below, which preserves this exact ordering.
+EXPANSION_BATCH_1_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="amazon-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://ir.aboutamazon.com/rss/pressrelease.aspx",
+        domains=("ir.aboutamazon.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Amazon.com, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Amazon.com, Inc.", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official IR RSS "
+            "feed, HTTP 200, 10 dated items, newest 2026-07-30. One item (a proxy-statement link) "
+            "resolves off-domain (ezodproxy.com) — the existing per-item canonical_url gate "
+            "already suppresses that single item; it does not affect feed-level admission."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="meta-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.atmeta.com/rss/pressrelease.aspx",
+        domains=("investor.atmeta.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Meta Platforms, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Meta Platforms, Inc.", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official IR RSS "
+            "feed, HTTP 200, 10 dated items, newest 2026-08-26, all items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="oracle-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.oracle.com/rss/pressrelease.aspx",
+        domains=("investor.oracle.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Oracle Corporation", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Oracle Corporation", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official IR RSS "
+            "feed, HTTP 200, 10 dated items, newest 2026-09-02, all items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="applied-materials-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://ir.appliedmaterials.com/rss/news-releases.xml",
+        domains=("ir.appliedmaterials.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Applied Materials, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Applied Materials, Inc.", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official IR RSS "
+            "feed (discovered via the site's own declared <link rel=alternate> feed tag), HTTP "
+            "200, 10 dated items, newest 2026-08-27, all items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="lam-research-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://newsroom.lamresearch.com/press-releases?pagetemplate=rss",
+        domains=("newsroom.lamresearch.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Lam Research Corp", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Lam Research Corp", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official newsroom "
+            "RSS feed (linked directly from the real investor.lamresearch.com IR site's own "
+            "'Press Releases Site' links; discovered via the page's own declared <link "
+            "rel=alternate> feed tag), HTTP 200, 5 dated items, newest 2026-08-27, on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="kla-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://ir.kla.com/news-events/press-releases/rss",
+        domains=("ir.kla.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="KLA Corp", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="KLA Corp", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official IR RSS "
+            "feed (discovered via an explicit on-page 'RSS News Feed' link), HTTP 200, 10 dated "
+            "items, newest 2026-08-20, all items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="arm-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://newsroom.arm.com/news/feed/",
+        domains=("newsroom.arm.com",),
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Arm Holdings plc", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Arm Holdings plc", last_verified_at="2026-09-04",
+        notes=(
+            "Daily News source-expansion batch 1 (2026-09-04) — live-verified official newsroom "
+            "RSS feed (linked from investors.arm.com; discovered via the page's own declared "
+            "<link rel=alternate> feed tag), HTTP 200, 6 dated items, newest 2026-07-29, on-domain."
+        ),
+    ),
+)
+
+# The real, live runtime feed list — original 12 pilot sources first
+# (byte-identical, same order), then expansion batch 1's 7 sources, in
+# the exact order given. feed_registry.PILOT_FEEDS is generated from
+# this tuple via to_daily_news_feed_source(); see that module's own
+# updated docstring.
+RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY

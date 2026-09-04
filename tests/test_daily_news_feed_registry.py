@@ -446,12 +446,19 @@ def test_intel_off_domain_url_is_rejected():
     assert not validate_canonical_url("https://investors.arista.com/Communications/Press-Releases-and-Events/some-release/", source.canonical_domains, source.feed_url)
 
 
-def test_pilot_feeds_now_has_exactly_twelve_sources():
-    assert len(PILOT_FEEDS) == 12
+def test_pilot_feeds_now_has_exactly_nineteen_sources():
+    # Was exactly 12 through Daily News source-expansion batch 1
+    # (2026-09-04), which appended 7 more official IR/newsroom RSS
+    # sources after the original 12 (12 + 7 = 19) — PILOT_FEEDS is now
+    # derived from source_registry.RUNTIME_SOURCE_REGISTRY; see that
+    # module's own docstring.
+    assert len(PILOT_FEEDS) == 19
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
         "Quanta Services, Inc.", "nVent Electric plc", "Arista Networks, Inc.", "Cisco Systems, Inc.",
+        "Amazon.com, Inc.", "Meta Platforms, Inc.", "Oracle Corporation", "Applied Materials, Inc.",
+        "Lam Research Corp", "KLA Corp", "Arm Holdings plc",
     }
 
 

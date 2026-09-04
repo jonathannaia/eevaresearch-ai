@@ -8,10 +8,32 @@ Quanta Services) — both reused here read-only. This module never
 imports anything from src.data_access.dart/edgar/edinet and never
 touches any Radar store.
 
-Every entry below was independently verified live before being added —
-see design/DECISIONS.md for the exact verification method and the two
+Every entry was independently verified live before being added — see
+design/DECISIONS.md for the exact verification method and the two
 companies (Micron, Rocket Lab) that were checked and excluded rather
 than guessed.
+
+Migration (Daily News source-expansion batch 1, 2026-09-04): `PILOT_FEEDS`
+below is now DERIVED from `source_registry.RUNTIME_SOURCE_REGISTRY` via
+`source_registry.to_daily_news_feed_source()`, rather than being a
+hand-typed literal tuple — this replaces the module's own former literal
+12-entry tuple with a computed value proven, by
+`tests/test_daily_news_source_registry.py::
+test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order`,
+to reproduce those exact same 12 entries, field-for-field, in the same
+order, as the first 12 of the resulting 19. The 7 entries appended after
+them are Daily News source-expansion batch 1's own additions — see
+`source_registry.EXPANSION_BATCH_1_SOURCE_REGISTRY` for their full,
+individually-verified metadata (each independently live-verified: real
+fetch, HTTP 200, parseable RSS 2.0, on-domain dated items).
+
+`source_registry.py` does a LOCAL (function-body, not top-level) import
+of `DailyNewsFeedSource` from this module — the two modules reference
+each other, so a top-level import in both directions would be circular;
+see source_registry.py's own docstring for why a local/deferred import
+is the safe, standard way to resolve this. This module's own top-level
+import of `source_registry` is safe in either direction, since
+source_registry.py has zero top-level dependency back on this module.
 """
 from __future__ import annotations
 
@@ -19,6 +41,11 @@ from dataclasses import dataclass
 
 from src.config.issuer_registry import DISCOVERY_STUBS
 from src.config.tracked_companies import TrackedCompany, get_tracked_companies
+from src.data_access.daily_news.source_registry import (
+    RUNTIME_SOURCE_REGISTRY,
+    SourceFormat,
+    to_daily_news_feed_source,
+)
 
 
 @dataclass(frozen=True)
@@ -36,109 +63,17 @@ class DailyNewsFeedSource:
     image_host: str | None = None
 
 
-PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = (
-    DailyNewsFeedSource(
-        company_name="NVIDIA",
-        feed_url="https://nvidianews.nvidia.com/releases.xml",
-        feed_format="rss",
-        # blogs.nvidia.com confirmed live in the verified feed's own item
-        # links alongside nvidianews.nvidia.com itself (design/DECISIONS.md)
-        # — both are NVIDIA-owned, not a third-party domain.
-        canonical_domains=("nvidianews.nvidia.com", "blogs.nvidia.com"),
-        # Per-item media:content images confirmed live, hosted on a
-        # separate third-party asset CDN (not nvidianews.nvidia.com/
-        # blogs.nvidia.com) — approved as its own exact-hostname image
-        # allowlist entry, never merged into canonical_domains above.
-        image_host="iprsoftwaremedia.com",
-    ),
-    DailyNewsFeedSource(
-        company_name="Intel Corp.",
-        # Repaired (Daily News feed audit, design/DECISIONS.md) —
-        # newsroom.intel.com/feed no longer serves RSS at all (the path
-        # 404s into an Access-Denied redirector; confirmed live, both
-        # headless and via a real browser). Replaced with Intel's own
-        # official investor-relations RSS feed (www.intc.com), confirmed
-        # live and fetchable with this app's own worker User-Agent.
-        feed_url="https://www.intc.com/news-events/press-releases/rss",
-        feed_format="rss",
-        canonical_domains=("www.intc.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Advanced Micro Devices",
-        feed_url="https://ir.amd.com/news-events/press-releases/rss",
-        feed_format="rss",
-        canonical_domains=("ir.amd.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Bloom Energy Corp",
-        feed_url="https://investor.bloomenergy.com/rss/pressrelease.aspx",
-        feed_format="rss",
-        canonical_domains=("investor.bloomenergy.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Marvell Technology, Inc.",
-        feed_url="https://investor.marvell.com/rss-news-feed",
-        feed_format="rss",
-        canonical_domains=("investor.marvell.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="MaxLinear, Inc.",
-        feed_url="https://investors.maxlinear.com/news/rss",
-        feed_format="rss",
-        canonical_domains=("investors.maxlinear.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Rockwell Automation",
-        feed_url="https://rockwell2023tf.q4web.com/rss/pressrelease.aspx",
-        feed_format="rss",
-        # One-company exception: Rockwell's dedicated Q4-hosted IR
-        # subdomain, not its own root domain. Exact hostname only —
-        # canonical_url.py's existing set-membership match already
-        # rejects any other q4web.com subdomain; never widen this to a
-        # wildcard/suffix match across q4web.com generally.
-        canonical_domains=("rockwell2023tf.q4web.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="SK Hynix",
-        feed_url="https://news.skhynix.com/en/feed",
-        feed_format="rss",
-        canonical_domains=("news.skhynix.com",),
-        # Embedded item-level <img> tags confirmed live, hosted on a
-        # separate CloudFront CDN domain (not news.skhynix.com) —
-        # approved as its own exact-hostname image allowlist entry.
-        image_host="d18r0a86za96sg.cloudfront.net",
-    ),
-    DailyNewsFeedSource(
-        company_name="Quanta Services, Inc.",
-        feed_url="https://investors.quantaservices.com/news-events/press-releases/rss",
-        feed_format="rss",
-        canonical_domains=("investors.quantaservices.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="nVent Electric plc",
-        feed_url="https://investors.nvent.com/rss/pressrelease.aspx",
-        feed_format="rss",
-        canonical_domains=("investors.nvent.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Arista Networks, Inc.",
-        feed_url="https://investors.arista.com/rss/pressrelease.aspx",
-        feed_format="rss",
-        canonical_domains=("investors.arista.com",),
-    ),
-    DailyNewsFeedSource(
-        company_name="Cisco Systems, Inc.",
-        # Path ends in .json, but the response content is confirmed live
-        # RSS 2.0 XML — rss_atom_client.py's feedparser-based parsing
-        # doesn't care about the URL's own extension, only the actual
-        # response body, so this requires no special-casing.
-        feed_url="https://newsroom.cisco.com/c/services/i/servlets/newsroom/rssfeed.json?feed=press-releases",
-        feed_format="rss",
-        canonical_domains=("newsroom.cisco.com",),
-        # Embedded item-level <img> tags confirmed live, hosted on the
-        # same approved domain as the article links themselves.
-        image_host="newsroom.cisco.com",
-    ),
+# Derived from source_registry.RUNTIME_SOURCE_REGISTRY — see this
+# module's own docstring. Every enabled, RSS/Atom, issuer-linked entry
+# in that registry becomes one DailyNewsFeedSource here, in the exact
+# order the registry lists them: the original 12 pilot sources first
+# (their full individual verification history now lives on their own
+# entries in source_registry.PILOT_SOURCE_REGISTRY), then Daily News
+# source-expansion batch 1's 7 sources.
+PILOT_FEEDS: tuple[DailyNewsFeedSource, ...] = tuple(
+    to_daily_news_feed_source(entry)
+    for entry in RUNTIME_SOURCE_REGISTRY
+    if entry.enabled and entry.format == SourceFormat.RSS_ATOM
 )
 
 
