@@ -1,6 +1,55 @@
 [
   {
     "niche": "Space",
+    "headline": "Watch Isar Aerospace try to make history today with launch from Norway",
+    "summary": "Isar Aerospace's Spectrum rocket will attempt to become the first vehicle to reach orbit from European soil on September 5, with a live broadcast available.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/isar-aerospace-second-launch-norway-andoya-spaceport-spectrum-rocket",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 05 Sep 2026 14:00:00 +0000",
+    "retrieved_at": "2026-09-05T14:16:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Article covers orbital rocket launch attempt, directly aligned with space launch scope.",
+    "url_hash": "630bf109ed96599c",
+    "id": "630bf109ed96599c"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Video Friday: Digit Redecorates",
+    "summary": "Video Friday curates a collection of robotics videos including demonstrations from Agility Robotics' Digit, Figure AI, Unitree's G1 humanoid, ROBOTIS, DEEP Robotics, and others showcasing various humanoid and robotic systems performing tasks like furniture manipulation, payload stabilization, and autonomous navigation.",
+    "source_url": "https://spectrum.ieee.org/video-friday-agility-robotics-digit",
+    "source_name": "IEEE Spectrum — Robotics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 16:00:05 +0000",
+    "retrieved_at": "2026-09-05T14:16:40+00:00",
+    "tickers": [
+      {
+        "ticker": "AGILITY",
+        "company_name": "Agility Robotics",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article features multiple humanoid robots and robotics companies demonstrating capabilities and developments",
+    "url_hash": "ce9586eecdb20aa4",
+    "id": "ce9586eecdb20aa4"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Cyborg Roaches Can Stab You With Needles",
+    "summary": "Researchers at the University of Queensland have developed cyborg cockroaches equipped with electronic controls and remote-operated injectors for potential disaster rescue applications, successfully demonstrating navigation through obstacle courses and drug delivery in proof-of-concept tests.",
+    "source_url": "https://spectrum.ieee.org/cyborg-rescue-roach",
+    "source_name": "IEEE Spectrum — Robotics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 05 Sep 2026 13:00:04 +0000",
+    "retrieved_at": "2026-09-05T14:16:35+00:00",
+    "tickers": [],
+    "relevance_reason": "This article describes cyborg cockroaches developed as a robotics application for search-and-rescue, directly addressing humanoid/robotics automation through biological-electronic interfaces.",
+    "url_hash": "98ec9d8d675227d9",
+    "id": "98ec9d8d675227d9"
+  },
+  {
+    "niche": "Space",
     "headline": "This NASA-funded 'Slingshot' spacecraft idea could map minerals on planets and moons across our solar system",
     "summary": "NASA funded an early-stage spacecraft concept called 'Slingshot' designed to demonstrate new techniques for mapping minerals on the moon, asteroids, and Martian moons.",
     "source_url": "https://www.space.com/technology/nasa-funds-spacecraft-concept-that-aims-to-map-minerals-on-solar-system-planets-and-moons",
