@@ -102,13 +102,16 @@ def _render_worker_health(settings) -> None:
     section_header("Latest scan item counts")
     st.write(
         f"Items discovered: **{sum(s.items_discovered_last_run for s in feed_statuses.values())}**  ·  "
+        f"Already seen: **{sum(s.items_already_seen_last_run for s in feed_statuses.values())}**  ·  "
+        f"Deduplicated: **{sum(s.items_deduplicated_last_run for s in feed_statuses.values())}**  ·  "
+        f"Suppressed (no URL): **{sum(s.items_suppressed_no_url_last_run for s in feed_statuses.values())}**  ·  "
         f"Newly published: **{sum(s.stories_published_last_run for s in feed_statuses.values())}**"
     )
     st.caption(
-        "Already-seen, title-deduplicated, and invalid/no-URL-suppressed counts are not "
-        "currently persisted per feed by the worker (only the two totals above and a per-feed "
-        "publish/failure outcome are) — those three breakdowns are only available for a manual "
-        "\"Run discovery now\" run within this session, shown below."
+        "Already-seen / deduplicated / suppressed-no-URL counts above are each feed's most "
+        "recent tick only (observability fix, design/DECISIONS.md) — not persisted history "
+        "across ticks. A manual \"Run discovery now\" run within this session shows the same "
+        "breakdown plus per-item suppression reasons, below."
     )
 
     # Resilience fix (Daily News final-integration-review workstream,

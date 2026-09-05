@@ -230,6 +230,40 @@ def test_v12_daily_news_scan_status_round_trips_and_upserts(pg_isolated_connecti
     conn.rollback()
 
 
+def test_v13_schema_upgrades_to_v14(pg_isolated_connection):
+    """Simulates a schema that was already at v13 before the Daily News
+    worker observability workstream — applies exactly migrations 1..13,
+    confirms it really is recorded at v13, then calls migrate() and
+    confirms v14's own three new daily_news_scan_status columns are
+    present, NOT NULL, default 0, and every pre-existing row was
+    backfilled to 0 by the ALTER TABLE itself. Compares against
+    postgres_schema.CURRENT_SCHEMA_VERSION dynamically, same discipline
+    as test_v11_schema_upgrades_to_v12 above."""
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 13)
+    assert postgres_schema.get_schema_version(conn) == 13
+    conn.execute("INSERT INTO daily_news_scan_status (company_name, updated_at) VALUES ('NVIDIA', 'now')")
+    conn.commit()
+
+    result = postgres_schema.migrate(conn)
+
+    assert result == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
+    rows = conn.execute(
+        "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'daily_news_scan_status'"
+    ).fetchall()
+    by_name = {row["column_name"]: row for row in rows}
+    for column in ("items_already_seen_last_run", "items_deduplicated_last_run", "items_suppressed_no_url_last_run"):
+        assert column in by_name
+        assert by_name[column]["is_nullable"] == "NO"
+        assert by_name[column]["column_default"] == "0"
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["items_already_seen_last_run"] == 0
+    assert row["items_deduplicated_last_run"] == 0
+    assert row["items_suppressed_no_url_last_run"] == 0
+
+
 def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connection):
     """A no-hidden-state proof mirroring the SQLite suite's own
     discipline: after migrate() returns, ordinary reads on the same

@@ -155,7 +155,10 @@ def test_healthy_worker_shows_counts_and_per_feed_sanitized_results(tmp_path):
     settings = _settings(tmp_path)
     _seed_worker_status(settings)
     ok_company, fail_company = PILOT_FEEDS[0].company_name, PILOT_FEEDS[1].company_name
-    _seed_feed_status(settings, ok_company, items_discovered_last_run=8, stories_published_last_run=3)
+    _seed_feed_status(
+        settings, ok_company, items_discovered_last_run=8, stories_published_last_run=3,
+        items_already_seen_last_run=4, items_deduplicated_last_run=1, items_suppressed_no_url_last_run=0,
+    )
     _seed_feed_status(
         settings, fail_company, last_fetch_success_at=None, last_failure_code="HTTPError:403",
         items_discovered_last_run=0, stories_published_last_run=0,
@@ -172,6 +175,11 @@ def test_healthy_worker_shows_counts_and_per_feed_sanitized_results(tmp_path):
     assert "HTTPError:403" in text
     assert "Items discovered: **8**" in text
     assert "Newly published: **3**" in text
+    # Observability fix — the three previously-discarded-per-tick counts
+    # now show in the same summary line.
+    assert "Already seen: **4**" in text
+    assert "Deduplicated: **1**" in text
+    assert "Suppressed (no URL): **0**" in text
 
 
 def test_sanitized_failure_code_shown_never_a_raw_message_dsn_or_url(tmp_path):
@@ -291,7 +299,10 @@ def test_story_repository_failure_after_scan_status_success_does_not_crash_the_p
     settings = _settings(tmp_path)
     _seed_worker_status(settings)
     ok_company = PILOT_FEEDS[0].company_name
-    _seed_feed_status(settings, ok_company, items_discovered_last_run=8, stories_published_last_run=3)
+    _seed_feed_status(
+        settings, ok_company, items_discovered_last_run=8, stories_published_last_run=3,
+        items_already_seen_last_run=5, items_deduplicated_last_run=0, items_suppressed_no_url_last_run=0,
+    )
 
     with patch(
         "src.ui.pages.daily_news_admin._published_stories",
@@ -304,9 +315,12 @@ def test_story_repository_failure_after_scan_status_success_does_not_crash_the_p
 
     # Scan-status data (retrieved BEFORE the simulated failure) still
     # renders — the page degrades only the part that actually failed.
+    # This includes the observability-fix counters, which come from the
+    # same already-succeeded feed_statuses read, not the failing one.
     assert "Feeds registered" in text
     assert ok_company in text
     assert "Items discovered: **8**" in text
+    assert "Already seen: **5**" in text
 
     # The story-freshness section degrades to a concise, sanitized notice.
     assert "Latest story status unavailable" in text

@@ -184,6 +184,69 @@ def test_double_tick_with_same_feed_content_creates_no_duplicate_story(tmp_path,
     feed_status = scan_status_repository.get_feed_status("NVIDIA")
     assert feed_status.items_discovered_last_run == 1  # the same raw entry is still seen
     assert feed_status.stories_published_last_run == 0  # but nothing new was published this tick
+    # Observability fix: this is the exact "healthy idempotent rerun"
+    # case the persisted counter now makes distinguishable from a real
+    # suppression bug — items_already_seen_last_run must be 1, not just
+    # stories_published_last_run being 0.
+    assert feed_status.items_already_seen_last_run == 1
+    assert feed_status.items_deduplicated_last_run == 0
+    assert feed_status.items_suppressed_no_url_last_run == 0
+
+
+def test_deduplicated_items_are_persisted_in_the_feed_status(tmp_path, monkeypatch):
+    """Two entries in the same tick, same normalized title, different
+    links — the second is title-deduplicated against the first (which
+    just published), never persisted as a separate story."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(
+                _entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),
+                _entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something-2"),
+            ),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    feed_status = scan_status_repository.get_feed_status("NVIDIA")
+    assert feed_status.items_discovered_last_run == 2
+    assert feed_status.stories_published_last_run == 1
+    assert feed_status.items_already_seen_last_run == 0
+    assert feed_status.items_deduplicated_last_run == 1
+    assert feed_status.items_suppressed_no_url_last_run == 0
+
+    repository = daily_news_backend.get_daily_news_repository(worker_settings)
+    assert len(repository.load_stories()) == 1
+
+
+def test_items_suppressed_for_no_valid_canonical_url_are_persisted_in_the_feed_status(tmp_path, monkeypatch):
+    """A bare-homepage link (no path segment) fails canonical_url.
+    validate_canonical_url() — suppressed, never published."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    feed_status = scan_status_repository.get_feed_status("NVIDIA")
+    assert feed_status.items_discovered_last_run == 1
+    assert feed_status.stories_published_last_run == 0
+    assert feed_status.items_already_seen_last_run == 0
+    assert feed_status.items_deduplicated_last_run == 0
+    assert feed_status.items_suppressed_no_url_last_run == 1
+
+    repository = daily_news_backend.get_daily_news_repository(worker_settings)
+    assert len(repository.load_stories()) == 0
 
 
 def test_run_one_tick_does_not_rerun_reconciliation_before_interval_elapses(tmp_path, monkeypatch):
@@ -249,6 +312,12 @@ def test_one_feed_raising_unexpectedly_does_not_block_others(tmp_path, monkeypat
 
     nvda_status = scan_status_repository.get_feed_status("NVIDIA")
     assert nvda_status.last_failure_code == "ConnectionError"
+    # An exception means no DailyNewsScanReport was ever produced for this
+    # tick — the three new counters must reset to 0, same convention as
+    # items_discovered_last_run/stories_published_last_run.
+    assert nvda_status.items_already_seen_last_run == 0
+    assert nvda_status.items_deduplicated_last_run == 0
+    assert nvda_status.items_suppressed_no_url_last_run == 0
     intel_status = scan_status_repository.get_feed_status("Intel Corp.")
     assert intel_status.stories_published_last_run == 1
 

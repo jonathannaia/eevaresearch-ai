@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -546,6 +546,20 @@ _V13_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_candidate_state_transitions_issuer ON candidate_state_transitions (issuer_id, at)",
 )
 
+# Daily News worker observability workstream — isolated Postgres
+# counterpart to state_db/schema.py's own _V14_STATEMENTS (see that
+# module's comment for the full rationale). Same three additive columns,
+# same NOT NULL DEFAULT 0 backfill semantics — Postgres's own ALTER TABLE
+# ... ADD COLUMN ... NOT NULL DEFAULT 0 is likewise a fast, additive,
+# metadata-only change on modern Postgres versions (a constant default is
+# stored once, not rewritten per row), and requires no data migration
+# script.
+_V14_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_already_seen_last_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_deduplicated_last_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_suppressed_no_url_last_run INTEGER NOT NULL DEFAULT 0",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -564,6 +578,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (11, _V11_STATEMENTS),
     (12, _V12_STATEMENTS),
     (13, _V13_STATEMENTS),
+    (14, _V14_STATEMENTS),
 )
 
 

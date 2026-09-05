@@ -41,6 +41,17 @@ class DailyNewsFeedScanStatus:
     items_discovered_last_run: int
     stories_published_last_run: int
     updated_at: str
+    # Observability fix (Daily News worker observability workstream,
+    # design/DECISIONS.md) — additive, defaulted fields so every existing
+    # keyword-constructed call site (worker, tests) keeps working
+    # unchanged. Mirror DailyNewsScanReport's own same-named fields
+    # (daily_news_pipeline.py) for exactly this one feed's most recent
+    # tick, closing the gap where items_discovered_last_run/
+    # stories_published_last_run alone couldn't distinguish "healthy
+    # idempotent rerun" from "silent suppression."
+    items_already_seen_last_run: int = 0
+    items_deduplicated_last_run: int = 0
+    items_suppressed_no_url_last_run: int = 0
 
 
 @dataclass(frozen=True)
@@ -63,6 +74,9 @@ def _row_to_feed_status(row: sqlite3.Row) -> DailyNewsFeedScanStatus:
         items_discovered_last_run=row["items_discovered_last_run"],
         stories_published_last_run=row["stories_published_last_run"],
         updated_at=row["updated_at"],
+        items_already_seen_last_run=row["items_already_seen_last_run"],
+        items_deduplicated_last_run=row["items_deduplicated_last_run"],
+        items_suppressed_no_url_last_run=row["items_suppressed_no_url_last_run"],
     )
 
 
@@ -87,8 +101,9 @@ def upsert_feed_status(conn: sqlite3.Connection, status: DailyNewsFeedScanStatus
             """
             INSERT INTO daily_news_scan_status (
                 company_name, last_attempt_at, last_fetch_success_at, last_story_published_at,
-                last_failure_code, items_discovered_last_run, stories_published_last_run, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                last_failure_code, items_discovered_last_run, stories_published_last_run, updated_at,
+                items_already_seen_last_run, items_deduplicated_last_run, items_suppressed_no_url_last_run
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (company_name) DO UPDATE SET
                 last_attempt_at = excluded.last_attempt_at,
                 last_fetch_success_at = excluded.last_fetch_success_at,
@@ -96,12 +111,17 @@ def upsert_feed_status(conn: sqlite3.Connection, status: DailyNewsFeedScanStatus
                 last_failure_code = excluded.last_failure_code,
                 items_discovered_last_run = excluded.items_discovered_last_run,
                 stories_published_last_run = excluded.stories_published_last_run,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                items_already_seen_last_run = excluded.items_already_seen_last_run,
+                items_deduplicated_last_run = excluded.items_deduplicated_last_run,
+                items_suppressed_no_url_last_run = excluded.items_suppressed_no_url_last_run
             """,
             (
                 status.company_name, status.last_attempt_at, status.last_fetch_success_at,
                 status.last_story_published_at, status.last_failure_code,
                 status.items_discovered_last_run, status.stories_published_last_run, status.updated_at,
+                status.items_already_seen_last_run, status.items_deduplicated_last_run,
+                status.items_suppressed_no_url_last_run,
             ),
         )
 

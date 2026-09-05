@@ -128,6 +128,33 @@ def test_a_failed_tick_can_preserve_prior_success_timestamps_across_upserts():
     assert loaded.last_failure_code == "ConnectionError"
 
 
+def test_items_already_seen_deduplicated_and_suppressed_no_url_round_trip():
+    """Observability fix — proves the three new counters actually persist
+    non-default values through a real upsert/read cycle (not just an
+    incidental 0==0 match on both sides, which a default-only test could
+    mask)."""
+    conn = _conn()
+    status = _feed_status(
+        items_discovered_last_run=9, stories_published_last_run=2,
+        items_already_seen_last_run=4, items_deduplicated_last_run=2, items_suppressed_no_url_last_run=1,
+    )
+    upsert_feed_status(conn, status)
+    loaded = get_feed_status(conn, "NVIDIA")
+    assert loaded == status
+    assert loaded.items_already_seen_last_run == 4
+    assert loaded.items_deduplicated_last_run == 2
+    assert loaded.items_suppressed_no_url_last_run == 1
+
+
+def test_items_already_seen_deduplicated_and_suppressed_no_url_default_to_zero():
+    conn = _conn()
+    upsert_feed_status(conn, _feed_status())
+    loaded = get_feed_status(conn, "NVIDIA")
+    assert loaded.items_already_seen_last_run == 0
+    assert loaded.items_deduplicated_last_run == 0
+    assert loaded.items_suppressed_no_url_last_run == 0
+
+
 def test_get_worker_status_returns_none_when_absent():
     conn = _conn()
     assert get_worker_status(conn) is None

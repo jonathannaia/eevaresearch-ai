@@ -240,6 +240,55 @@ def test_v11_database_upgrades_to_v12():
     assert {"daily_news_scan_status", "daily_news_worker_status"} <= tables
 
 
+def test_v13_database_upgrades_to_v14():
+    """Simulates a database that was already at v13 before the Daily
+    News worker observability workstream — applies exactly migrations
+    1..13, confirms it really is recorded at v13, then calls migrate()
+    and confirms v14's own three new daily_news_scan_status columns are
+    present, usable, and every pre-existing row was backfilled to 0 (not
+    NULL) by the ALTER TABLE ... DEFAULT 0 itself. Compares against
+    schema.CURRENT_SCHEMA_VERSION dynamically, same discipline as
+    test_v11_database_upgrades_to_v12 above."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 13)
+    assert schema.get_schema_version(conn) == 13
+    conn.execute(
+        "INSERT INTO daily_news_scan_status (company_name, updated_at) VALUES ('NVIDIA', 'now')"
+    )
+    conn.commit()
+
+    result = schema.migrate(conn)
+
+    assert result == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(daily_news_scan_status)").fetchall()}
+    assert {
+        "items_already_seen_last_run", "items_deduplicated_last_run", "items_suppressed_no_url_last_run",
+    } <= columns
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["items_already_seen_last_run"] == 0
+    assert row["items_deduplicated_last_run"] == 0
+    assert row["items_suppressed_no_url_last_run"] == 0
+
+
+def test_v14_daily_news_scan_status_new_columns_accept_explicit_values():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        """
+        INSERT INTO daily_news_scan_status (
+            company_name, updated_at, items_already_seen_last_run,
+            items_deduplicated_last_run, items_suppressed_no_url_last_run
+        ) VALUES ('NVIDIA', 'now', 3, 2, 1)
+        """
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_scan_status WHERE company_name = 'NVIDIA'").fetchone()
+    assert row["items_already_seen_last_run"] == 3
+    assert row["items_deduplicated_last_run"] == 2
+    assert row["items_suppressed_no_url_last_run"] == 1
+
+
 def test_v12_daily_news_worker_status_tables_start_empty_and_are_usable():
     conn = connection.connect_in_memory()
     schema.migrate(conn)

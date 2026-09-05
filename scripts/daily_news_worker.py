@@ -232,6 +232,13 @@ def _run_feed_tick(
             items_discovered_last_run=0,
             stories_published_last_run=0,
             updated_at=now,
+            # This tick produced no DailyNewsScanReport at all — reset to
+            # 0, same convention as items_discovered_last_run/
+            # stories_published_last_run above (these are "_last_run"
+            # counts, not "last known good" markers like the timestamps).
+            items_already_seen_last_run=0,
+            items_deduplicated_last_run=0,
+            items_suppressed_no_url_last_run=0,
         ))
         print(f"{company_name}: tick failed ({type(exc).__name__}) — skipped.")
         return
@@ -252,6 +259,16 @@ def _run_feed_tick(
         items_discovered_last_run=report.items_discovered,
         stories_published_last_run=report.stories_published,
         updated_at=now,
+        # Observability fix (design/DECISIONS.md, Daily News worker
+        # observability workstream): these three were already computed by
+        # run_discovery() into DailyNewsScanReport every tick but
+        # previously discarded here — persisting them closes the gap
+        # where items_discovered>0, stories_published=0 was
+        # indistinguishable between "healthy idempotent rerun" and
+        # "silent suppression."
+        items_already_seen_last_run=report.items_already_seen,
+        items_deduplicated_last_run=report.items_deduplicated,
+        items_suppressed_no_url_last_run=report.items_suppressed_no_url,
     ))
     if fetch_succeeded:
         print(

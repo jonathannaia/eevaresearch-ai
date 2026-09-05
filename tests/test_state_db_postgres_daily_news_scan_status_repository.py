@@ -94,6 +94,30 @@ def test_failure_code_and_null_success_fields_round_trip(pg_conn):
     assert loaded.last_failure_code == "TimeoutError"
 
 
+def test_items_already_seen_deduplicated_and_suppressed_no_url_round_trip(pg_conn):
+    """Observability fix — Postgres counterpart to the identical SQLite
+    test; proves the three new counters persist non-default values
+    through a real upsert/read cycle."""
+    status = _feed_status(
+        items_discovered_last_run=9, stories_published_last_run=2,
+        items_already_seen_last_run=4, items_deduplicated_last_run=2, items_suppressed_no_url_last_run=1,
+    )
+    upsert_feed_status(pg_conn, status)
+    loaded = get_feed_status(pg_conn, "NVIDIA")
+    assert loaded == status
+    assert loaded.items_already_seen_last_run == 4
+    assert loaded.items_deduplicated_last_run == 2
+    assert loaded.items_suppressed_no_url_last_run == 1
+
+
+def test_items_already_seen_deduplicated_and_suppressed_no_url_default_to_zero(pg_conn):
+    upsert_feed_status(pg_conn, _feed_status())
+    loaded = get_feed_status(pg_conn, "NVIDIA")
+    assert loaded.items_already_seen_last_run == 0
+    assert loaded.items_deduplicated_last_run == 0
+    assert loaded.items_suppressed_no_url_last_run == 0
+
+
 def test_get_worker_status_returns_none_when_absent(pg_conn):
     assert get_worker_status(pg_conn) is None
 

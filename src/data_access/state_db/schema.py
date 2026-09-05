@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -712,6 +712,25 @@ _V13_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_candidate_state_transitions_issuer ON candidate_state_transitions (issuer_id, at)",
 )
 
+# Daily News worker observability workstream (design/DECISIONS.md) —
+# three wholly additive columns on the existing `daily_news_scan_status`
+# table (v12), giving scripts/daily_news_worker.py somewhere to persist,
+# per feed and per tick, the three counts that DailyNewsScanReport
+# (daily_news_pipeline.py) already computes every run but previously
+# discarded: items already seen (expected idempotent skips), title-
+# deduplicated items, and items suppressed for lacking a valid canonical
+# URL. Purely additive — `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT
+# 0` backfills every pre-existing row with 0 automatically, no data
+# migration/backfill script needed, and every existing SELECT * / named-
+# column read elsewhere in this codebase is unaffected (they simply never
+# referenced these three column names before). No existing table,
+# column, or row is altered or removed.
+_V14_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_already_seen_last_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_deduplicated_last_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE daily_news_scan_status ADD COLUMN items_suppressed_no_url_last_run INTEGER NOT NULL DEFAULT 0",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -730,6 +749,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (11, _V11_STATEMENTS),
     (12, _V12_STATEMENTS),
     (13, _V13_STATEMENTS),
+    (14, _V14_STATEMENTS),
 )
 
 
