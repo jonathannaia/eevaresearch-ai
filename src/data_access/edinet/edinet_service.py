@@ -122,13 +122,22 @@ def run_scan(
     through to edinet_pipeline.run_pipeline's own
     `material_event_lexicon_enabled` parameter — disabled by default, so
     every real caller today behaves exactly as before unless that flag
-    is explicitly set."""
+    is explicitly set.
+
+    Daily News Filing-Event Shadow Adapter, Batch 2b: also threads
+    `settings.edinet_filing_candidate_shadow_enabled` straight through to
+    edinet_pipeline.run_pipeline's own `filing_candidate_shadow_enabled`
+    parameter — a SECOND, independent shadow feature from
+    `material_event_lexicon_enabled` above (different flag, different
+    ScanReport fields) — disabled by default, so every real caller today
+    behaves exactly as before unless that flag is explicitly set."""
     companies = get_edinet_companies(settings.cache_dir)
     return edinet_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository, translation_provider=_translation_provider(settings),
         material_event_lexicon_enabled=settings.edinet_material_event_lexicon_enabled,
+        filing_candidate_shadow_enabled=settings.edinet_filing_candidate_shadow_enabled,
     )
 
 

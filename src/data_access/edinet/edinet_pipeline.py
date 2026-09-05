@@ -34,6 +34,8 @@ from pathlib import Path
 from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
+from src.data_access.daily_news.edinet_filing_candidate_adapter import map_edinet_filing_to_candidate
+from src.data_access.daily_news.filing_event_models import FilingDerivedNewsCandidate
 from src.data_access.edinet import document_service, edinet_rules, material_event_shadow, scan_service
 from src.data_access.edinet.client import EdinetClient
 from src.data_access.translation import translation_service
@@ -45,6 +47,14 @@ _PROCESSABLE_CONFIDENCE_LEVELS = frozenset({"Moderate", "High"})
 
 DEFAULT_MAX_CANDIDATES_PER_SCAN = 5
 MAX_CANDIDATES_PER_SCAN_CEILING = 10
+
+# Daily News Filing-Event Shadow Adapter, Batch 2b — combined cap for
+# mapping-exception diagnostics per pipeline run. This is a SECOND,
+# independent shadow feature from the Extraordinary Report shadow
+# observation below (material_event_shadow.py / shadow_material_event_
+# matches) — see _build_edinet_filing_candidate_shadow_report()'s own
+# docstring.
+_FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP = 20
 
 _ELIGIBLE_STATUSES = frozenset({CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.PROCESSING_DEFERRED})
 
@@ -99,6 +109,64 @@ class ScanReport:
     # — see material_event_shadow.py's own docstring for the full,
     # structural read-only guarantee.
     shadow_material_event_matches: tuple = ()
+    # Daily News Filing-Event Shadow Adapter, Batch 2b — a SECOND,
+    # independent shadow feature from shadow_material_event_matches
+    # above. Additive, defaults to () so every existing construction of
+    # this dataclass (positional or keyword) is unaffected. Populated
+    # only when run_pipeline's own filing_candidate_shadow_enabled
+    # parameter is True; empty otherwise, including for every existing
+    # caller/test that omits the parameter. In-memory report data only —
+    # never written to any store, never rendered by any UI, never read
+    # by scripts/daily_news_worker.py or scripts/radar_worker.py. Every
+    # candidate here has status=SHADOW and official_document_url=None
+    # (enforced inside edinet_filing_candidate_adapter.py itself, Batch
+    # 2a — this wiring changes none of that). Never touches, reads, or
+    # is derived from shadow_material_event_matches/
+    # material_event_lexicon_enabled above — the two features are wired
+    # completely independently and both can be enabled/disabled without
+    # affecting the other.
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+
+
+def _build_edinet_filing_candidate_shadow_report(
+    scan_result: "scan_service.ScanResult",
+) -> tuple[tuple[FilingDerivedNewsCandidate, ...], tuple[str, ...]]:
+    """Daily News Filing-Event Shadow Adapter, Batch 2b — pure, in-memory
+    only; never called unless run_pipeline's own filing_candidate_shadow_
+    enabled parameter is True. Never creates, persists, or displays
+    anything; never touches candidate_store, translation, or any UI.
+    Completely independent of material_event_shadow.find_matches() below
+    — a different feature, a different settings flag, a different
+    ScanReport field, evaluated separately.
+
+    map_edinet_filing_to_candidate() needs no CandidateSignal join —
+    every field it reads (ordinance_code, pblntf_ty, pblntf_detail_ty,
+    report_nm) is already on the bare FilingEvent — so this is simply one
+    call per filing in scan_result.new_filing_events. Every returned
+    candidate keeps status=SHADOW and official_document_url=None,
+    enforced by the adapter itself (Batch 2a), unchanged by this wiring.
+
+    A per-filing mapping exception is caught, recorded as a sanitized
+    "{rcept_no}:{ExceptionClassName}" diagnostic (never a raw message),
+    and never stops evaluation of the remaining filings. Diagnostics are
+    capped at _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP entries for this
+    run."""
+    candidates: list[FilingDerivedNewsCandidate] = []
+    diagnostics: list[str] = []
+
+    for filing in scan_result.new_filing_events:
+        try:
+            candidate = map_edinet_filing_to_candidate(filing)
+        except Exception as exc:  # noqa: BLE001 — one filing's mapping failure must never fail the scan
+            if len(diagnostics) < _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP:
+                diagnostics.append(f"{filing.rcept_no}:{type(exc).__name__}")
+            continue
+
+        if candidate is not None:
+            candidates.append(candidate)
+
+    return tuple(candidates), tuple(diagnostics)
 
 
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
@@ -347,6 +415,7 @@ def run_pipeline(
     candidate_repository: CandidatePersistence | None = None,
     translation_provider: TranslationProvider | None = None,
     material_event_lexicon_enabled: bool = False,
+    filing_candidate_shadow_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -381,7 +450,22 @@ def run_pipeline(
     own `shadow_material_event_matches` field. This is a read-only
     observation only: it never touches `detected_now`, `store`, the
     candidate_repository, process_candidate, or translation_provider in
-    any way, and never creates or persists a CandidateSignal."""
+    any way, and never creates or persists a CandidateSignal.
+
+    `filing_candidate_shadow_enabled` (Daily News Filing-Event Shadow
+    Adapter, Batch 2b) is a SECOND, completely independent shadow
+    feature from `material_event_lexicon_enabled` above — a different
+    settings flag, a different ScanReport field
+    (`filing_candidate_shadow_matches`/`filing_candidate_shadow_
+    diagnostics`, never `shadow_material_event_matches`), evaluated
+    separately via _build_edinet_filing_candidate_shadow_report(). Same
+    additive/optional/disabled-by-default contract: every existing call
+    site that omits it is unaffected, and this whole branch never
+    executes when it's False. When True, it evaluates against the same
+    already-in-memory `scan_result.new_filing_events` — no new fetch,
+    no interaction with `material_event_lexicon_enabled`'s own branch
+    above, no interaction with `detected_now`/`store`/
+    candidate_repository/process_candidate/translation_provider."""
     scan_id = f"edinet-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
     max_candidates_to_process = clamp_max_candidates(max_candidates_to_process)
@@ -391,6 +475,13 @@ def run_pipeline(
     shadow_matches: tuple = ()
     if material_event_lexicon_enabled:
         shadow_matches = material_event_shadow.find_matches(scan_result.new_filing_events)
+
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+    if filing_candidate_shadow_enabled:
+        filing_candidate_shadow_matches, filing_candidate_shadow_diagnostics = (
+            _build_edinet_filing_candidate_shadow_report(scan_result)
+        )
 
     detected_now = list(scan_result.new_candidate_signals)
     if candidate_repository is None:
@@ -478,4 +569,6 @@ def run_pipeline(
         warnings=tuple(warnings),
         translations_completed=counters["translations_completed"],
         shadow_material_event_matches=shadow_matches,
+        filing_candidate_shadow_matches=filing_candidate_shadow_matches,
+        filing_candidate_shadow_diagnostics=filing_candidate_shadow_diagnostics,
     )

@@ -26,6 +26,8 @@ from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store, document_service, ownership_materiality, retry_policy, scan_service
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.dart.client import DartClient
+from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
+from src.data_access.daily_news.filing_event_models import FilingDerivedNewsCandidate
 from src.data_access.dart.document_extractor import assess_excerpt_quality
 from src.data_access.translation import translation_service
 from src.data_access.translation.interfaces import TranslationProvider
@@ -50,6 +52,12 @@ DEFAULT_MAX_CANDIDATES_PER_SCAN = 5
 MAX_CANDIDATES_PER_SCAN_CEILING = 10
 
 _ELIGIBLE_STATUSES = frozenset({CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.PROCESSING_DEFERRED})
+
+# Daily News Filing-Event Shadow Adapter, Batch 2b — combined cap across
+# both mapping-exception and (for parity with the EDGAR adapter's own
+# join-based diagnostics; DART needs no join, so this cap here only ever
+# bounds mapping-exception diagnostics) per pipeline run.
+_FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP = 20
 
 
 def clamp_max_candidates(n: int) -> int:
@@ -89,6 +97,52 @@ class ScanReport:
     errors_by_category: dict[str, int]
     cache_hits: int  # document-retrieval cache hits this run
     warnings: tuple[str, ...]  # safe, human-readable — never a raw exception or secret
+    # Daily News Filing-Event Shadow Adapter, Batch 2b — additive,
+    # defaulted so every existing construction of this dataclass
+    # (positional or keyword) is unaffected. Populated only when
+    # run_pipeline's own filing_candidate_shadow_enabled parameter is
+    # True; empty otherwise, including for every existing caller/test
+    # that omits the parameter. In-memory report data only — never
+    # written to any store, never rendered by any UI, never read by
+    # scripts/daily_news_worker.py or any Daily News code path.
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+
+
+def _build_dart_filing_candidate_shadow_report(
+    scan_result: "scan_service.ScanResult",
+) -> tuple[tuple[FilingDerivedNewsCandidate, ...], tuple[str, ...]]:
+    """Daily News Filing-Event Shadow Adapter, Batch 2b — pure, in-memory
+    only; never called unless run_pipeline's own filing_candidate_shadow_
+    enabled parameter is True. Never creates, persists, or displays
+    anything; never touches candidate_store, translation, or any UI.
+
+    Unlike EDGAR, DART's map_dart_filing_to_candidate() needs no
+    CandidateSignal join at all — dart_rules.evaluate_report_name()
+    (called inside the adapter, already committed) takes only
+    filing.report_nm, already present on the bare FilingEvent — so this
+    is simply one call per filing in scan_result.new_filing_events.
+
+    A per-filing mapping exception is caught, recorded as a sanitized
+    "{rcept_no}:{ExceptionClassName}" diagnostic (never a raw message),
+    and never stops evaluation of the remaining filings. Diagnostics are
+    capped at _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP entries for this
+    run."""
+    candidates: list[FilingDerivedNewsCandidate] = []
+    diagnostics: list[str] = []
+
+    for filing in scan_result.new_filing_events:
+        try:
+            candidate = map_dart_filing_to_candidate(filing)
+        except Exception as exc:  # noqa: BLE001 — one filing's mapping failure must never fail the scan
+            if len(diagnostics) < _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP:
+                diagnostics.append(f"{filing.rcept_no}:{type(exc).__name__}")
+            continue
+
+        if candidate is not None:
+            candidates.append(candidate)
+
+    return tuple(candidates), tuple(diagnostics)
 
 
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
@@ -202,6 +256,7 @@ def run_pipeline(
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
+    filing_candidate_shadow_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals (scan_
@@ -229,12 +284,33 @@ def run_pipeline(
     candidates this call just detected are visible to its own
     eligibility selection and processing loops. scan_service.scan()'s own
     filing-event read/write and translate_cached()'s own translation-
-    cache read/write are never affected by this parameter."""
+    cache read/write are never affected by this parameter.
+
+    `filing_candidate_shadow_enabled` (Daily News Filing-Event Shadow
+    Adapter, Batch 2b) is additive and optional, defaulting to False —
+    every existing call site that omits it is completely unaffected, and
+    this whole branch never executes when it's False. When True,
+    _build_dart_filing_candidate_shadow_report() is evaluated against
+    `scan_result` (this tick's own already-tracked-issuer filings,
+    already in memory from the scan_service.scan() call above — no new
+    fetch) purely to populate the returned ScanReport's own
+    `filing_candidate_shadow_matches`/`filing_candidate_shadow_
+    diagnostics` fields. This is a read-only observation only: it never
+    touches `detected_now`, `store`, the candidate_repository,
+    process_candidate, or translation_provider in any way, and never
+    creates or persists a CandidateSignal or NewsStory."""
     scan_id = f"scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
     max_candidates_to_process = clamp_max_candidates(max_candidates_to_process)
 
     scan_result = scan_service.scan(client, companies, cache_dir, lookback_days=lookback_days)
+
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+    if filing_candidate_shadow_enabled:
+        filing_candidate_shadow_matches, filing_candidate_shadow_diagnostics = (
+            _build_dart_filing_candidate_shadow_report(scan_result)
+        )
 
     detected_now = list(scan_result.new_candidate_signals)
     if candidate_repository is None:
@@ -329,6 +405,8 @@ def run_pipeline(
         errors_by_category=error_counts,
         cache_hits=counters["cache_hits"],
         warnings=tuple(warnings),
+        filing_candidate_shadow_matches=filing_candidate_shadow_matches,
+        filing_candidate_shadow_diagnostics=filing_candidate_shadow_diagnostics,
     )
 
 

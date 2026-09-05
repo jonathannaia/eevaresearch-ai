@@ -123,6 +123,7 @@ def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
     def _fake_run_pipeline(
         client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None,
         candidate_repository=None, translation_provider=None, material_event_lexicon_enabled=False,
+        filing_candidate_shadow_enabled=False,
     ):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"
@@ -142,6 +143,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
     def _fake_run_pipeline(
         client, companies, cache_dir, lookback_days=None, max_candidates_to_process=None,
         candidate_repository=None, translation_provider=None, material_event_lexicon_enabled=False,
+        filing_candidate_shadow_enabled=False,
     ):
         captured["candidate_repository"] = candidate_repository
         return "sentinel-report"

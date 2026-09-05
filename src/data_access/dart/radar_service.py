@@ -103,12 +103,20 @@ def run_scan(
     `"postgres"` `db_backend` resolves identifiers from that backend's
     own identifier repository instead of always the on-disk JSON cache.
     No-op for every existing caller — see get_edgar_companies' own
-    sibling note in edgar_service.py for why."""
+    sibling note in edgar_service.py for why.
+
+    `filing_candidate_shadow_enabled` (Daily News Filing-Event Shadow
+    Adapter, Batch 2b) is read straight from `settings.
+    dart_filing_candidate_shadow_enabled` and threaded through
+    unchanged, disabled by default — never a separate parameter of this
+    function, same convention as edgar_service.run_scan()'s own
+    equivalent."""
     companies = get_radar_companies(settings.cache_dir, settings)
     return radar_pipeline.run_pipeline(
         _client(settings), _translation_provider(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
+        filing_candidate_shadow_enabled=settings.dart_filing_candidate_shadow_enabled,
     )
 
 

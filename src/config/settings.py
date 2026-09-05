@@ -147,6 +147,37 @@ class Settings:
     edgar_auto_publish_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_AUTO_PUBLISH_ENABLED")
     )
+    # Daily News Filing-Event Shadow Adapter, Batch 2b — three separate,
+    # per-source master switches, one per filing pipeline, reusing the
+    # exact same wiring shape edinet_material_event_lexicon_enabled above
+    # already established (settings flag -> service optional kwarg ->
+    # pipeline optional kwarg -> in-memory evaluation right after
+    # scan_result = scan_service.scan(...) -> additive, defaulted
+    # ScanReport fields). Disabled by default, same "unset/blank/
+    # unrecognized -> disabled" parsing as every other flag on this
+    # class. Even when enabled, the shadow step each flag gates is
+    # structurally read-only: it evaluates
+    # src.data_access.daily_news.{edgar,dart,edinet}_filing_candidate_
+    # adapter's own pure mapping functions against scan_result.
+    # new_filing_events (already in memory from the scan_service.scan()
+    # call above — no new fetch) and returns the result only on that
+    # pipeline's own ScanReport, in memory — it never creates, persists,
+    # or displays anything, and never touches Radar's own candidate
+    # detection/persistence/eligibility/processing/translation. This is
+    # a genuinely separate, independent feature from
+    # edinet_material_event_lexicon_enabled above (EDINET's own
+    # Extraordinary Report shadow observation) — edinet_filing_candidate_
+    # shadow_enabled below controls a second, distinct EDINET shadow
+    # block, not a replacement for the first.
+    edgar_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    dart_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_DART_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    edinet_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDINET_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
     cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cache")
     # Durable-State Phase 1 (dormant — see src/data_access/state_db/).
     # "json" (the default, used whenever this var is unset/blank/

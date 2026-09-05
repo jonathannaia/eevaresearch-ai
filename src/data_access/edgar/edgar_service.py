@@ -94,13 +94,21 @@ def run_scan(
     caller that must guarantee this scan can never autonomously publish
     (scripts/radar_worker.py does) is responsible for passing a
     `settings` object with `edgar_auto_publish_enabled=False` forced —
-    see that script's own docstring for why."""
+    see that script's own docstring for why.
+
+    `filing_candidate_shadow_enabled` (Daily News Filing-Event Shadow
+    Adapter, Batch 2b) is read straight from `settings.
+    edgar_filing_candidate_shadow_enabled` and threaded through
+    unchanged, same convention as `auto_publish_enabled` above — never a
+    separate parameter of this function, always the ambient settings
+    value, disabled by default."""
     companies = get_edgar_companies(settings.cache_dir, settings)
     return edgar_pipeline.run_pipeline(
         _client(settings), list(companies), settings.cache_dir,
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
         auto_publish_enabled=settings.edgar_auto_publish_enabled,
+        filing_candidate_shadow_enabled=settings.edgar_filing_candidate_shadow_enabled,
     )
 
 

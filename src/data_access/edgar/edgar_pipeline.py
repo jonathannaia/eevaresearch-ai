@@ -29,6 +29,8 @@ from pathlib import Path
 from src.config.tracked_companies import TrackedCompany
 from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
+from src.data_access.daily_news.edgar_filing_candidate_adapter import map_edgar_filing_to_candidate
+from src.data_access.daily_news.filing_event_models import FilingDerivedNewsCandidate
 from src.data_access.edgar import document_service, edgar_rules, scan_service
 from src.logic.signal_decision_policy import SignalRoute, decide_signal_route
 from src.data_access.edgar.client import EdgarClient
@@ -52,6 +54,12 @@ MAX_CANDIDATES_PER_SCAN_CEILING = 10
 _ELIGIBLE_STATUSES = frozenset({CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.PROCESSING_DEFERRED})
 
 CANDIDATE_STORE_FILENAME = "edgar_candidates.json"
+
+# Daily News Filing-Event Shadow Adapter, Batch 2b — see module-level
+# docstring addition below _build_edgar_filing_candidate_shadow_report()
+# for the full rationale. Combined cap across both mapping-exception and
+# duplicate-join-key diagnostics, per pipeline run.
+_FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP = 20
 
 
 def clamp_max_candidates(n: int) -> int:
@@ -85,6 +93,83 @@ class ScanReport:
     errors_by_category: dict[str, int]
     cache_hits: int
     warnings: tuple[str, ...]
+    # Daily News Filing-Event Shadow Adapter, Batch 2b — additive,
+    # defaulted so every existing construction of this dataclass
+    # (positional or keyword) is unaffected. Populated only when
+    # run_pipeline's own filing_candidate_shadow_enabled parameter is
+    # True; empty otherwise, including for every existing caller/test
+    # that omits the parameter. In-memory report data only — never
+    # written to any store, never rendered by any UI, never read by
+    # scripts/daily_news_worker.py or any Daily News code path. See
+    # _build_edgar_filing_candidate_shadow_report()'s own docstring for
+    # the full read-only guarantee and the join/diagnostic rules.
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+
+
+def _build_edgar_filing_candidate_shadow_report(
+    scan_result: "scan_service.ScanResult",
+) -> tuple[tuple[FilingDerivedNewsCandidate, ...], tuple[str, ...]]:
+    """Daily News Filing-Event Shadow Adapter, Batch 2b — pure, in-memory
+    only; never called unless run_pipeline's own filing_candidate_shadow_
+    enabled parameter is True. Never creates, persists, or displays
+    anything; never touches candidate_store, translation, or any UI.
+
+    Builds a (source_name, corp_code, rcept_no) -> matched_rules lookup
+    from scan_result.new_candidate_signals — FilingEvent's own documented
+    natural identity key, never list position, since new_filing_events
+    and new_candidate_signals are NOT parallel/same-length (scan_service.
+    scan()'s own loop appends to new_candidate_signals only when a rule
+    matched, a strict subset of new_filing_events). Never imports
+    CandidateSignal — matched_rules is read off the already-constructed
+    signal.filing/signal.matched_rules here, in this pipeline module, and
+    handed to map_edgar_filing_to_candidate() as a plain
+    tuple[str, ...] | None.
+
+    A duplicate (source_name, corp_code, rcept_no) key across more than
+    one CandidateSignal (should never happen given scan_service's own
+    per-tick dedup, but never assumed) is treated as "no matched_rules
+    available" for that filing — never last-write-wins, never an
+    arbitrary pick — plus one sanitized diagnostic recording the
+    collision.
+
+    A per-filing mapping exception is caught, recorded as a sanitized
+    "{rcept_no}:{ExceptionClassName}" diagnostic (never a raw message),
+    and never stops evaluation of the remaining filings. Diagnostics
+    (mapping failures and duplicate-key collisions combined) are capped
+    at _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP entries for this run."""
+    signals_by_key: dict[tuple[str, str, str], tuple[str, ...]] = {}
+    duplicate_keys: set[tuple[str, str, str]] = set()
+    for signal in scan_result.new_candidate_signals:
+        key = (signal.filing.source_name, signal.filing.corp_code, signal.filing.rcept_no)
+        if key in signals_by_key:
+            duplicate_keys.add(key)
+            continue
+        signals_by_key[key] = tuple(signal.matched_rules)
+
+    candidates: list[FilingDerivedNewsCandidate] = []
+    diagnostics: list[str] = []
+
+    for filing in scan_result.new_filing_events:
+        key = (filing.source_name, filing.corp_code, filing.rcept_no)
+        if key in duplicate_keys:
+            if len(diagnostics) < _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP:
+                diagnostics.append(f"{filing.rcept_no}:DuplicateCandidateSignalKey")
+            matched_rules = None
+        else:
+            matched_rules = signals_by_key.get(key) or None
+
+        try:
+            candidate = map_edgar_filing_to_candidate(filing, matched_rules=matched_rules)
+        except Exception as exc:  # noqa: BLE001 — one filing's mapping failure must never fail the scan
+            if len(diagnostics) < _FILING_CANDIDATE_SHADOW_DIAGNOSTICS_CAP:
+                diagnostics.append(f"{filing.rcept_no}:{type(exc).__name__}")
+            continue
+
+        if candidate is not None:
+            candidates.append(candidate)
+
+    return tuple(candidates), tuple(diagnostics)
 
 
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
@@ -276,6 +361,7 @@ def run_pipeline(
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
     auto_publish_enabled: bool = False,
+    filing_candidate_shadow_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
     scope never creates duplicate FilingEvents/CandidateSignals
@@ -294,12 +380,33 @@ def run_pipeline(
     processing-loop writes) routes through the same collaborator, so
     candidates this call just detected are visible to its own
     eligibility selection and processing loops. scan_service.scan()'s own
-    filing-event read/write is never affected by this parameter."""
+    filing-event read/write is never affected by this parameter.
+
+    `filing_candidate_shadow_enabled` (Daily News Filing-Event Shadow
+    Adapter, Batch 2b) is additive and optional, defaulting to False —
+    every existing call site that omits it is completely unaffected, and
+    this whole branch never executes when it's False. When True,
+    _build_edgar_filing_candidate_shadow_report() is evaluated against
+    `scan_result` (this tick's own already-tracked-issuer filings and
+    candidate signals, already in memory from the scan_service.scan()
+    call above — no new fetch) purely to populate the returned
+    ScanReport's own `filing_candidate_shadow_matches`/
+    `filing_candidate_shadow_diagnostics` fields. This is a read-only
+    observation only: it never touches `detected_now`, `store`, the
+    candidate_repository, process_candidate, or translation in any way,
+    and never creates or persists a CandidateSignal or NewsStory."""
     scan_id = f"edgar-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
     max_candidates_to_process = clamp_max_candidates(max_candidates_to_process)
 
     scan_result = scan_service.scan(client, companies, cache_dir, lookback_days=lookback_days)
+
+    filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
+    filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+    if filing_candidate_shadow_enabled:
+        filing_candidate_shadow_matches, filing_candidate_shadow_diagnostics = (
+            _build_edgar_filing_candidate_shadow_report(scan_result)
+        )
 
     detected_now = list(scan_result.new_candidate_signals)
     if candidate_repository is None:
@@ -362,4 +469,6 @@ def run_pipeline(
         errors_by_category=error_counts,
         cache_hits=counters["cache_hits"],
         warnings=tuple(warnings),
+        filing_candidate_shadow_matches=filing_candidate_shadow_matches,
+        filing_candidate_shadow_diagnostics=filing_candidate_shadow_diagnostics,
     )

@@ -102,6 +102,7 @@ def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
         max_candidates_to_process=None,
         candidate_repository=None,
         auto_publish_enabled=False,
+        filing_candidate_shadow_enabled=False,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
@@ -128,6 +129,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
         max_candidates_to_process=None,
         candidate_repository=None,
         auto_publish_enabled=False,
+        filing_candidate_shadow_enabled=False,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
