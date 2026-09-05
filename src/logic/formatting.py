@@ -3,7 +3,7 @@ isolation. Shared across every page so a percentage or date never gets
 formatted two different ways in two different places."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 
@@ -60,6 +60,21 @@ def fmt_datetime_local(iso_str: str, tz: ZoneInfo = _EASTERN) -> str:
         return f"{local_dt:%b} {local_dt.day}, {local_dt.year}, {local_dt:%H:%M} {local_dt:%Z}"
     except (ValueError, TypeError):
         return iso_str
+
+
+def today_local(now: datetime | None = None) -> date:
+    """Today's calendar date in the app's one established display
+    timezone (_EASTERN, same convention fmt_datetime_local already uses)
+    — never the host process's own OS-local date.today(), and never a
+    bare UTC-date truncation, which can be off by a calendar day near a
+    US midnight boundary (e.g. 11pm Eastern is already the next day in
+    UTC). `now` is injectable so a caller (a UI page picking a date-
+    picker's max date, or a test) can pass an explicit UTC instant rather
+    than depending on wall-clock time — defaults to datetime.now(utc)
+    when omitted, same pattern as radar_freshness.compute_radar_freshness's
+    own optional `now` parameter."""
+    now = now or datetime.now(timezone.utc)
+    return now.astimezone(_EASTERN).date()
 
 
 def days_ago(iso_str: str) -> int | None:

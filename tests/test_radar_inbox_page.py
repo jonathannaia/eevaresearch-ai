@@ -5,7 +5,7 @@ data/cache/ (gitignored live pilot cache) is never touched."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -82,6 +82,19 @@ def _filing(rcept_no: str, report_nm: str) -> FilingEvent:
     return FilingEvent(
         rcept_no=rcept_no, corp_code="00126380", corp_name="삼성전자", stock_code="005930",
         report_nm=report_nm, rcept_dt="20260812", flr_nm="삼성전자", theme_slug="memory",
+        source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}",
+        retrieved_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _filing_on(rcept_no: str, report_nm: str, rcept_dt: str) -> FilingEvent:
+    """Same shape as _filing() above, but with an explicit rcept_dt — for
+    the date-filter tests below, which need to control each filing's own
+    calendar date precisely rather than accepting _filing()'s fixed
+    "20260812"."""
+    return FilingEvent(
+        rcept_no=rcept_no, corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+        report_nm=report_nm, rcept_dt=rcept_dt, flr_nm="삼성전자", theme_slug="memory",
         source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}",
         retrieved_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -708,3 +721,157 @@ def test_radar_inbox_escapes_unsafe_characters_in_excerpt_and_title(tmp_path):
     assert "<script>alert(1)</script>" not in raw_html
     assert "<script>alert(2)</script>" not in raw_html
     assert "&lt;script&gt;" in raw_html
+
+
+# ============================================================
+# Radar Inbox "Filed between" date-filter fix (design/DECISIONS.md) —
+# max_date must always be today (in the app's own Eastern display
+# timezone, via today_local()), never derived from the latest stored
+# filing's own date. `today_local` is patched at its
+# src.ui.pages.radar_inbox import site (not the underlying wall clock),
+# same "patch where it's looked up" convention this file already uses
+# for get_settings — deterministic, no freezegun dependency.
+# ============================================================
+
+_FROZEN_TODAY = date(2026, 9, 5)
+
+
+def test_radar_inbox_date_filter_max_and_default_end_is_today_even_when_latest_filing_is_older(tmp_path):
+    _seed_corp_codes(tmp_path)
+    old_filing = _filing_on("20260805000001", "August filing", "20260805")
+    _seed_filing_events(tmp_path, [old_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+
+    assert not at.exception
+    date_widget = at.date_input(key="radar-filter-dates")
+    assert date_widget.value == (date(2026, 8, 5), _FROZEN_TODAY)
+    assert date_widget.max == _FROZEN_TODAY
+
+
+def test_radar_inbox_date_filter_max_is_today_not_tomorrow(tmp_path):
+    _seed_corp_codes(tmp_path)
+    old_filing = _filing_on("20260805000002", "August filing", "20260805")
+    _seed_filing_events(tmp_path, [old_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+
+    assert not at.exception
+    date_widget = at.date_input(key="radar-filter-dates")
+    # The strongest assertion this harness supports: the widget's own
+    # registered `max` bound is exactly today, never one day later —
+    # this is the same `max_value=max_date` argument Streamlit's real
+    # calendar control uses to gray out/reject tomorrow in the browser.
+    assert date_widget.max == _FROZEN_TODAY
+    assert date_widget.max != _FROZEN_TODAY.replace(day=_FROZEN_TODAY.day + 1)
+
+
+def test_radar_inbox_date_filter_today_range_with_no_today_filings_shows_graceful_empty_state(tmp_path):
+    _seed_corp_codes(tmp_path)
+    old_filing = _filing_on("20260805000003", "August filing", "20260805")
+    _seed_filing_events(tmp_path, [old_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+            at.date_input(key="radar-filter-dates").set_value((_FROZEN_TODAY, _FROZEN_TODAY))
+            at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "No items match these filters" in all_text
+
+
+def test_radar_inbox_date_filter_includes_a_filing_dated_today(tmp_path):
+    _seed_corp_codes(tmp_path)
+    today_filing = _filing_on("20260905000001", "오늘자 공시", "20260905")
+    _seed_filing_events(tmp_path, [today_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "오늘자 공시" in all_text
+
+
+def test_radar_inbox_date_filter_includes_a_filing_on_the_selected_end_date(tmp_path):
+    _seed_corp_codes(tmp_path)
+    end_date_filing = _filing_on("20260820000001", "선택된 종료일 공시", "20260820")
+    later_filing = _filing_on("20260825000001", "그 이후 공시", "20260825")
+    _seed_filing_events(tmp_path, [end_date_filing, later_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+            at.date_input(key="radar-filter-dates").set_value((date(2026, 8, 20), date(2026, 8, 20)))
+            at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "선택된 종료일 공시" in all_text
+    assert "그 이후 공시" not in all_text
+
+
+def test_radar_inbox_date_filter_composes_with_search_filter_when_range_ends_today(tmp_path):
+    _seed_corp_codes(tmp_path)
+    match_filing = _filing_on("20260905000002", "특별한 오늘 공시", "20260905")
+    other_filing = _filing_on("20260905000003", "다른 오늘 공시", "20260905")
+    _seed_filing_events(tmp_path, [match_filing, other_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+            # Default range already ends today (both filings are dated
+            # today) — never touching the date widget proves the default
+            # today-ending range composes with the search filter, not
+            # just an explicitly-set range.
+            default_range_end = at.date_input(key="radar-filter-dates").value[1]
+            at.text_input(key="radar-filter-search").set_value("특별한")
+            at.run()
+
+    assert not at.exception
+    assert default_range_end == _FROZEN_TODAY
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "특별한 오늘 공시" in all_text
+    assert "다른 오늘 공시" not in all_text
+
+
+def test_radar_inbox_date_filter_composes_with_theme_filter_when_range_ends_today(tmp_path):
+    _seed_corp_codes(tmp_path)
+    memory_filing = _filing_on("20260905000004", "메모리 오늘 공시", "20260905")
+    ai_filing = _filing_on("20260905000005", "AI 오늘 공시", "20260905")
+    ai_filing.theme_slug = "ai-buildout"
+    _seed_filing_events(tmp_path, [memory_filing, ai_filing])
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+            default_range_end = at.date_input(key="radar-filter-dates").value[1]
+            at.multiselect(key="radar-filter-theme").set_value(["memory"])
+            at.run()
+
+    assert not at.exception
+    assert default_range_end == _FROZEN_TODAY
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "메모리 오늘 공시" in all_text
+    assert "AI 오늘 공시" not in all_text

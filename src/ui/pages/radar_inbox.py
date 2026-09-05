@@ -41,6 +41,7 @@ from src.data_access.edgar import edgar_pipeline, edgar_service
 from src.data_access.edgar import scan_service as edgar_scan_service
 from src.data_access.edinet import edinet_pipeline, edinet_service
 from src.data_access.edinet import scan_service as edinet_scan_service
+from src.logic.formatting import today_local
 from src.logic.radar_freshness import compute_radar_freshness
 from src.ui.components.empty_state import empty_state
 from src.ui.components.radar_card import candidate_row
@@ -570,8 +571,15 @@ def render() -> None:
     sources = sorted(set(_ALL_RADAR_SOURCES) | {i.filing.source_name for i in items})
     themes = sorted({i.filing.theme_slug for i in items if i.filing.theme_slug})
     parsed_dates = sorted(d for d in (_parse_rcept_date(i.filing.rcept_dt) for i in items) if d is not None)
-    min_date = parsed_dates[0] if parsed_dates else date.today()
-    max_date = parsed_dates[-1] if parsed_dates else date.today()
+    # Radar Inbox date-filter fix (design/DECISIONS.md): max_date must
+    # always be today in the app's own display timezone — never derived
+    # from the latest stored filing's own date, which previously capped
+    # the picker at whatever the newest captured filing happened to be
+    # (observed: picker stuck at Aug 5 on Sep 5 once ingestion lagged).
+    # min_date is unaffected — still the earliest parsed filing date when
+    # one exists.
+    min_date = parsed_dates[0] if parsed_dates else today_local()
+    max_date = today_local()
 
     search_col, source_col, theme_col, date_col = st.columns([2, 2, 2, 3])
     search_query = search_col.text_input("Search", key="radar-filter-search", placeholder="Company or filing title…")

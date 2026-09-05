@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from src.logic.formatting import days_ago, fmt_currency, fmt_date, fmt_datetime, fmt_datetime_local, fmt_pct
+from src.logic.formatting import days_ago, fmt_currency, fmt_date, fmt_datetime, fmt_datetime_local, fmt_pct, today_local
 
 
 def test_fmt_pct_signed_positive():
@@ -86,6 +86,20 @@ def test_fmt_datetime_still_returns_utc_unchanged():
     result = fmt_datetime("2026-07-15T18:30:00+00:00")
     assert "UTC" in result
     assert "EDT" not in result and "EST" not in result
+
+
+def test_today_local_normal_case_matches_eastern_calendar_date():
+    # 2026-07-15T18:30:00+00:00 is 14:30 EDT — same calendar day in both
+    # UTC and Eastern, so this proves the ordinary, non-boundary case.
+    assert today_local(datetime(2026, 7, 15, 18, 30, tzinfo=timezone.utc)) == date(2026, 7, 15)
+
+
+def test_today_local_uses_eastern_date_not_naive_utc_date_at_the_boundary():
+    # 2026-07-16T02:00:00+00:00 is already "the 16th" in UTC, but only
+    # 22:00 EDT on the 15th in Eastern — proves today_local() returns the
+    # Eastern calendar date, never a bare `now.date()` UTC truncation
+    # (which would wrongly return the 16th here, a full day early).
+    assert today_local(datetime(2026, 7, 16, 2, 0, tzinfo=timezone.utc)) == date(2026, 7, 15)
 
 
 def test_days_ago_computes_correctly():
