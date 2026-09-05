@@ -53,6 +53,23 @@ class SourceCategory(str, Enum):
     OFFICIAL_FILING = "official_filing"
     REGULATOR_EXCHANGE = "regulator_exchange"
     INDEPENDENT_NEWS = "independent_news"
+    # Daily News Source-Expansion & Ingestion Design, Batch 1 (source-
+    # registry/model foundation only — no source entry anywhere in this
+    # registry uses any of these six yet, and none is enabled/created for
+    # live use by this batch). ISSUER_IR/ISSUER_NEWSROOM are the
+    # finer-grained successors the approved design proposes for
+    # OFFICIAL_IR/OFFICIAL_NEWSROOM; REGULATOR_EXCHANGE similarly splits
+    # into EXCHANGE/REGULATOR. All four original members above are kept
+    # completely unchanged — every existing DailyNewsSourceEntry
+    # (PILOT_SOURCE_REGISTRY, EXPANSION_BATCH_1/2) and every existing
+    # caller keeps working with zero behavioral change; this is a purely
+    # additive vocabulary extension, not a rename or migration.
+    ISSUER_IR = "issuer_ir"
+    ISSUER_NEWSROOM = "issuer_newsroom"
+    EXCHANGE = "exchange"
+    REGULATOR = "regulator"
+    GOVERNMENT_POLICY = "government_policy"
+    GOVERNMENT_PROCUREMENT = "government_procurement"
 
 
 class SourceFormat(str, Enum):
@@ -79,6 +96,38 @@ class SourceHealthState(str, Enum):
     RETIRED = "retired"
 
 
+class SourceReliabilityTier(str, Enum):
+    """Daily News Source-Expansion & Ingestion Design, Batch 1 — a
+    separate, additive reliability/admission classification, deliberately
+    NOT merged into or replacing SourceHealthState above. SourceHealthState
+    is that enum's own existing fetch-health lifecycle (pending_review ->
+    verified -> degraded/failing -> retired) and is left completely
+    unchanged, per this batch's explicit "do not alter current
+    source-health behavior" scope. No existing DailyNewsSourceEntry
+    references this enum, and no field on that dataclass uses it yet —
+    it exists only as a typed vocabulary for a later, separately-approved
+    batch (Tier 2 independent-news admission, and a filing-derived
+    candidate's own shadow/publish eligibility — see
+    filing_event_models.py / policy_disclosure_models.py).
+
+    VERIFIED / PROBATIONARY / RETIRED describe an admission decision
+    ("is this source trustworthy enough to publish from"), distinct from
+    SourceHealthState's own question ("is this source's feed currently
+    fetching successfully"). SHADOW_ONLY and VALIDATION_REQUIRED are new
+    states with no SourceHealthState equivalent at all: SHADOW_ONLY marks
+    a source/category admitted for internal observation only, never
+    autonomous publication; VALIDATION_REQUIRED marks a proposed source
+    whose feed/API existence, terms, and stability have not yet been
+    independently live-verified — the same posture this project's design
+    document uses for every unverified candidate row it proposed."""
+
+    VERIFIED = "verified"
+    PROBATIONARY = "probationary"
+    RETIRED = "retired"
+    SHADOW_ONLY = "shadow_only"
+    VALIDATION_REQUIRED = "validation_required"
+
+
 class SourceRegistryValidationError(ValueError):
     """Raised only by the `assert_*` convenience wrappers below — never
     a raw/unsanitized value, always the same human-readable violation
@@ -103,6 +152,23 @@ _SOCIAL_MEDIA_DOMAINS: frozenset[str] = frozenset({
     "linkedin.com", "threads.net", "tiktok.com", "youtube.com", "youtu.be",
     "mastodon.social", "bsky.app", "substack.com", "medium.com",
 })
+
+
+def contains_excluded_source_name(text: str) -> bool:
+    """Case-insensitive substring check against this module's fixed,
+    permanently-excluded source-name list (SemiAnalysis, Citrini
+    Research, Serenity) — same `_EXCLUDED_SOURCE_NAMES` set
+    `validate_source_entry()` below already checks inline. Extracted as
+    its own reusable, public function (Daily News Source-Expansion &
+    Ingestion Design, Batch 1) so any other Daily News foundation module
+    with its own free-text source/publisher-name-shaped field (e.g.
+    policy_disclosure_models.OfficialDisclosureProvenance.issuing_body)
+    can reuse the exact same check rather than re-declaring the excluded
+    set. `validate_source_entry()`'s own existing inline loop is left
+    untouched — this is a pure addition, not a refactor of that
+    already-tested code path."""
+    lowered = (text or "").strip().lower()
+    return any(excluded in lowered for excluded in _EXCLUDED_SOURCE_NAMES)
 
 
 @dataclass(frozen=True)
@@ -231,8 +297,15 @@ def validate_source_entry(entry: DailyNewsSourceEntry) -> tuple[str, ...]:
     # issuer — the exact same lookup daily_news_pipeline.run_discovery()
     # itself already performs (tracked_company_for), so an entry that
     # validates here is guaranteed resolvable by the real pipeline too.
+    # Extended (Batch 1) to include ISSUER_IR/ISSUER_NEWSROOM — the new
+    # categories' own future issuer-linked entries must resolve via
+    # tracked_company_for() exactly like OFFICIAL_IR/OFFICIAL_NEWSROOM/
+    # OFFICIAL_FILING already do. No existing entry uses either new
+    # category, so this extension changes zero existing validation
+    # outcomes.
     _OFFICIAL_ISSUER_CATEGORIES = (
         SourceCategory.OFFICIAL_IR, SourceCategory.OFFICIAL_NEWSROOM, SourceCategory.OFFICIAL_FILING,
+        SourceCategory.ISSUER_IR, SourceCategory.ISSUER_NEWSROOM,
     )
     if entry.category in _OFFICIAL_ISSUER_CATEGORIES and not entry.issuer_agnostic:
         if entry.issuer_name and tracked_company_for(entry.issuer_name) is None:

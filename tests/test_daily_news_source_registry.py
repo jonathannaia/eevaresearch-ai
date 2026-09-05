@@ -22,7 +22,9 @@ from src.data_access.daily_news.source_registry import (
     SourceFormat,
     SourceHealthState,
     SourceRegistryValidationError,
+    SourceReliabilityTier,
     assert_valid_source_entry,
+    contains_excluded_source_name,
     find_registry_violations,
     normalize_source_url,
     to_daily_news_feed_source,
@@ -46,9 +48,18 @@ def _entry(**overrides) -> DailyNewsSourceEntry:
 # ============================================================
 
 
-def test_source_category_has_exactly_the_five_approved_values():
+def test_source_category_has_exactly_the_eleven_supported_values():
+    # Was "exactly the five approved values"; the Daily News Source-
+    # Expansion & Ingestion Design, Batch 1 (source-registry/model
+    # foundation only) added six more (issuer_ir, issuer_newsroom,
+    # exchange, regulator, government_policy, government_procurement) —
+    # purely additive, the original five are unchanged and still used by
+    # every real RUNTIME_SOURCE_REGISTRY entry (see
+    # test_runtime_source_registry_has_zero_violations_after_batch_2
+    # elsewhere in this file, still passing unmodified).
     assert {c.value for c in SourceCategory} == {
         "official_ir", "official_newsroom", "official_filing", "regulator_exchange", "independent_news",
+        "issuer_ir", "issuer_newsroom", "exchange", "regulator", "government_policy", "government_procurement",
     }
 
 
@@ -663,3 +674,81 @@ def test_feed_registry_module_now_intentionally_imports_source_registry():
         for node in ast.walk(tree)
     )
     assert found, "feed_registry.py should import source_registry as of the expansion-batch-1 wiring"
+
+
+# ============================================================
+# Daily News Source-Expansion & Ingestion Design, Batch 1 — additive
+# SourceCategory vocabulary, SourceReliabilityTier, and the reusable
+# contains_excluded_source_name() helper. Nothing below changes any
+# existing DailyNewsSourceEntry, SourceHealthState behavior, or the real
+# RUNTIME_SOURCE_REGISTRY's own zero-violations state (proven by
+# test_runtime_source_registry_has_zero_violations_after_batch_2
+# elsewhere in this file, which this batch leaves untouched and passing).
+# ============================================================
+
+
+def test_original_five_source_categories_are_unchanged():
+    assert SourceCategory.OFFICIAL_IR.value == "official_ir"
+    assert SourceCategory.OFFICIAL_NEWSROOM.value == "official_newsroom"
+    assert SourceCategory.OFFICIAL_FILING.value == "official_filing"
+    assert SourceCategory.REGULATOR_EXCHANGE.value == "regulator_exchange"
+    assert SourceCategory.INDEPENDENT_NEWS.value == "independent_news"
+
+
+def test_six_new_source_categories_have_the_exact_expected_values():
+    assert SourceCategory.ISSUER_IR.value == "issuer_ir"
+    assert SourceCategory.ISSUER_NEWSROOM.value == "issuer_newsroom"
+    assert SourceCategory.EXCHANGE.value == "exchange"
+    assert SourceCategory.REGULATOR.value == "regulator"
+    assert SourceCategory.GOVERNMENT_POLICY.value == "government_policy"
+    assert SourceCategory.GOVERNMENT_PROCUREMENT.value == "government_procurement"
+
+
+def test_no_existing_runtime_source_registry_entry_uses_a_new_category():
+    # This batch creates no source entry for live use — every real entry
+    # in the runtime registry must still use one of the five original
+    # categories only.
+    new_categories = {
+        SourceCategory.ISSUER_IR, SourceCategory.ISSUER_NEWSROOM, SourceCategory.EXCHANGE,
+        SourceCategory.REGULATOR, SourceCategory.GOVERNMENT_POLICY, SourceCategory.GOVERNMENT_PROCUREMENT,
+    }
+    for entry in RUNTIME_SOURCE_REGISTRY:
+        assert entry.category not in new_categories, entry.source_id
+
+
+def test_source_health_state_is_completely_unchanged():
+    # Batch 1's own explicit scope: do not alter current source-health
+    # behavior. SourceReliabilityTier (below) is a separate, additive
+    # enum, never a replacement.
+    assert {s.value for s in SourceHealthState} == {
+        "pending_review", "verified", "degraded", "failing", "retired",
+    }
+
+
+def test_source_reliability_tier_has_exactly_the_five_approved_values():
+    assert {t.value for t in SourceReliabilityTier} == {
+        "verified", "probationary", "retired", "shadow_only", "validation_required",
+    }
+
+
+def test_source_reliability_tier_is_not_referenced_by_daily_news_source_entry():
+    # Structural proof this batch did not wire the new reliability tier
+    # into the existing, live source-entry dataclass.
+    import dataclasses
+
+    field_types = {f.name: f.type for f in dataclasses.fields(DailyNewsSourceEntry)}
+    assert "SourceReliabilityTier" not in " ".join(str(t) for t in field_types.values())
+
+
+def test_contains_excluded_source_name_matches_all_three_excluded_names_case_insensitively():
+    assert contains_excluded_source_name("SemiAnalysis")
+    assert contains_excluded_source_name("the SEMIANALYSIS newsletter")
+    assert contains_excluded_source_name("Citrini Research")
+    assert contains_excluded_source_name("citrini")
+    assert contains_excluded_source_name("Serenity")
+
+
+def test_contains_excluded_source_name_returns_false_for_a_clean_name():
+    assert not contains_excluded_source_name("NVIDIA")
+    assert not contains_excluded_source_name("")
+    assert not contains_excluded_source_name(None)
