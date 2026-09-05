@@ -1,5 +1,19 @@
 [
   {
+    "niche": "AI Buildout",
+    "headline": "AI compute provider Nscale is looking for $3.5B in pre-IPO financing",
+    "summary": "Nscale, an AI compute provider that recently signed a $45 billion deal with Anthropic, is seeking $3.5 billion in pre-IPO financing.",
+    "source_url": "https://techcrunch.com/2026/09/04/ai-compute-provider-nscale-is-looking-for-3-5b-in-pre-ipo-financing/",
+    "source_name": "TechCrunch — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 21:12:11 +0000",
+    "retrieved_at": "2026-09-05T19:44:00+00:00",
+    "tickers": [],
+    "relevance_reason": "AI compute provider raising capital for infrastructure expansion, directly relevant to AI Buildout scope",
+    "url_hash": "ac4ec989a2a725db",
+    "id": "ac4ec989a2a725db"
+  },
+  {
     "niche": "Space",
     "headline": "Watch Isar Aerospace try to make history today with launch from Norway",
     "summary": "Isar Aerospace's Spectrum rocket will attempt to become the first vehicle to reach orbit from European soil on September 5, with a live broadcast available.",
