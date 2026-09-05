@@ -1,5 +1,40 @@
 [
   {
+    "niche": "Space",
+    "headline": "This NASA-funded 'Slingshot' spacecraft idea could map minerals on planets and moons across our solar system",
+    "summary": "NASA funded an early-stage spacecraft concept called 'Slingshot' designed to demonstrate new techniques for mapping minerals on the moon, asteroids, and Martian moons.",
+    "source_url": "https://www.space.com/technology/nasa-funds-spacecraft-concept-that-aims-to-map-minerals-on-solar-system-planets-and-moons",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sat, 05 Sep 2026 10:00:00 +0000",
+    "retrieved_at": "2026-09-05T11:32:56+00:00",
+    "tickers": [],
+    "relevance_reason": "Direct substantive discussion of a NASA-funded spacecraft concept for space applications.",
+    "url_hash": "5deb48f3006483e7",
+    "id": "5deb48f3006483e7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Broadcom slams AI silicon-fueled Q3, promises double-double on the way",
+    "summary": "Broadcom achieved strong Q3 results fueled by AI silicon sales and indicated expectations for continued double-digit growth ahead.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/broadcom-slams-ai-silicon-fueled-q3-promises-double-double-on-the-way/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Fri, 04 Sep 2026 14:52:12 +0000",
+    "retrieved_at": "2026-09-05T11:32:37+00:00",
+    "tickers": [
+      {
+        "ticker": "AVGO",
+        "company_name": "Broadcom Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Broadcom reports strong Q3 results driven by AI silicon demand, a core component of AI infrastructure buildout",
+    "url_hash": "d7b0b1abae87bb56",
+    "id": "d7b0b1abae87bb56"
+  },
+  {
     "niche": "Humanoids",
     "headline": "Robot.com partners with Sodexo to roll out more sidewalk delivery robots",
     "summary": "Robot.com has partnered with Sodexo to expand deployment of sidewalk delivery robots, with college campuses remaining a key part of the company's scaling strategy.",
