@@ -491,6 +491,19 @@
   ],
   "run_history": [
     {
+      "started_at": "2026-09-06T21:51:30+00:00",
+      "finished_at": "2026-09-06T21:51:45+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 413,
+      "items_after_freshness_filter": 11,
+      "items_after_keyword_filter": 4,
+      "items_sent_to_llm": 4,
+      "items_saved": 0,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
+    {
       "started_at": "2026-09-06T19:47:10+00:00",
       "finished_at": "2026-09-06T19:47:26+00:00",
       "status": "ok",
@@ -3098,19 +3111,6 @@
       "items_after_keyword_filter": 21,
       "items_sent_to_llm": 21,
       "items_saved": 0,
-      "items_rejected_by_guardrail": 0,
-      "errors": []
-    },
-    {
-      "started_at": "2026-08-15T00:41:33+00:00",
-      "finished_at": "2026-08-15T00:42:16+00:00",
-      "status": "ok",
-      "feeds_checked": 16,
-      "items_seen": 442,
-      "items_after_freshness_filter": 66,
-      "items_after_keyword_filter": 25,
-      "items_sent_to_llm": 25,
-      "items_saved": 4,
       "items_rejected_by_guardrail": 0,
       "errors": []
     }
