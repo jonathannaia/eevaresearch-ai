@@ -1,6 +1,62 @@
 [
   {
     "niche": "Space",
+    "headline": "SpaceX Falcon 9 rocket launches 27 Starlink satellites, lands on ship at sea (video)",
+    "summary": "SpaceX launched 27 Starlink satellites aboard a Falcon 9 rocket from California's central coast on September 6, with the booster landing on a droneship at sea.",
+    "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-starlink/group-15-24-launch-ocisly",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 06 Sep 2026 15:54:11 +0000",
+    "retrieved_at": "2026-09-06T16:35:23+00:00",
+    "tickers": [
+      {
+        "ticker": "TSLA",
+        "company_name": "Tesla Inc. (parent of SpaceX)",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "SpaceX's Falcon 9 launch of Starlink satellites is directly substantive to the Space scope.",
+    "url_hash": "147dd58a01b049df",
+    "id": "147dd58a01b049df"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Eric Sivertson discusses FPGAs and robot security",
+    "summary": "Eric Sivertson of Lattice Semiconductor discusses how FPGAs can improve robot safety and security applications.",
+    "source_url": "https://www.therobotreport.com/eric-sivertson-discusses-fpgas-robot-security/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 06 Sep 2026 14:30:01 +0000",
+    "retrieved_at": "2026-09-06T16:35:17+00:00",
+    "tickers": [
+      {
+        "ticker": "LSCC",
+        "company_name": "Lattice Semiconductor",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Discusses FPGAs for robot safety and security, directly relevant to robotics automation infrastructure.",
+    "url_hash": "7b541b16c6f3bf3e",
+    "id": "7b541b16c6f3bf3e"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Why data center cooling is now business-critical",
+    "summary": "Data center operators are rethinking thermal fluid management strategies in response to rapid growth of data centers. The article addresses cooling as a critical business concern for data center operations.",
+    "source_url": "https://www.datacenterdynamics.com/en/opinions/why-data-center-cooling-is-now-business-critical/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 06 Sep 2026 14:00:35 +0000",
+    "retrieved_at": "2026-09-06T16:35:09+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses data center cooling, which is a core component of AI infrastructure buildout.",
+    "url_hash": "c98d5137bbd05a4b",
+    "id": "c98d5137bbd05a4b"
+  },
+  {
+    "niche": "Space",
     "headline": "NASA expands Deep Space Network with giant new dish in California desert",
     "summary": "NASA is expanding its Deep Space Network by adding a new large antenna in California to increase capacity as missions like Artemis increase demand on the communications infrastructure.",
     "source_url": "https://www.space.com/astronomy/nasa-expands-deep-space-network-with-giant-new-dish-in-california-desert",
