@@ -1,5 +1,33 @@
 [
   {
+    "niche": "Space",
+    "headline": "NASA expands Deep Space Network with giant new dish in California desert",
+    "summary": "NASA is expanding its Deep Space Network by adding a new large antenna in California to increase capacity as missions like Artemis increase demand on the communications infrastructure.",
+    "source_url": "https://www.space.com/astronomy/nasa-expands-deep-space-network-with-giant-new-dish-in-california-desert",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 06 Sep 2026 10:00:00 +0000",
+    "retrieved_at": "2026-09-06T13:18:41+00:00",
+    "tickers": [],
+    "relevance_reason": "NASA infrastructure expansion directly supporting deep space missions including Artemis",
+    "url_hash": "c2976afac14d661b",
+    "id": "c2976afac14d661b"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "The electrical power problem that will decide the AI race",
+    "summary": "American data centers supporting AI are projected to require electrical power consumption at a scale comparable to entire nations.",
+    "source_url": "https://www.datacenterdynamics.com/en/opinions/the-electrical-power-problem-that-will-decide-the-ai-race/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Sun, 06 Sep 2026 10:00:35 +0000",
+    "retrieved_at": "2026-09-06T13:18:32+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses power infrastructure constraints for AI data centers, a core AI Buildout topic.",
+    "url_hash": "9897882e6401bc9d",
+    "id": "9897882e6401bc9d"
+  },
+  {
     "niche": "AI Buildout",
     "headline": "AI compute provider Nscale is looking for $3.5B in pre-IPO financing",
     "summary": "Nscale, an AI compute provider that recently signed a $45 billion deal with Anthropic, is seeking $3.5 billion in pre-IPO financing.",
