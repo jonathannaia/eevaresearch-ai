@@ -491,6 +491,19 @@
   ],
   "run_history": [
     {
+      "started_at": "2026-09-07T07:01:32+00:00",
+      "finished_at": "2026-09-07T07:01:45+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 415,
+      "items_after_freshness_filter": 17,
+      "items_after_keyword_filter": 4,
+      "items_sent_to_llm": 4,
+      "items_saved": 0,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
+    {
       "started_at": "2026-09-07T01:58:21+00:00",
       "finished_at": "2026-09-07T01:58:35+00:00",
       "status": "ok",
@@ -3100,19 +3113,6 @@
       "errors": [
         "NASA News Releases: unparseable feed (<unknown>:7:2: mismatched tag)"
       ]
-    },
-    {
-      "started_at": "2026-08-15T06:21:44+00:00",
-      "finished_at": "2026-08-15T06:22:25+00:00",
-      "status": "ok",
-      "feeds_checked": 16,
-      "items_seen": 441,
-      "items_after_freshness_filter": 64,
-      "items_after_keyword_filter": 20,
-      "items_sent_to_llm": 20,
-      "items_saved": 1,
-      "items_rejected_by_guardrail": 0,
-      "errors": []
     }
   ]
 }
