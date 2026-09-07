@@ -89,6 +89,7 @@
     "28eee855454393ba",
     "29657b5499f9fec2",
     "29b5431a8c1a3c5f",
+    "29ddb95cd8eb20bf",
     "29e26624444ca081",
     "2aa9d6637ebb3ccb",
     "2abb5d91db99d27b",
@@ -226,6 +227,7 @@
     "77e651c0246f9df1",
     "7820c002c7d69ea5",
     "7851e5630bc510e7",
+    "78bd0780318c1e30",
     "78dc4ecae4847346",
     "7950eb45f23088a8",
     "79a0646933911189",
@@ -500,6 +502,19 @@
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-09-07T18:30:22+00:00",
+      "finished_at": "2026-09-07T18:30:59+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 415,
+      "items_after_freshness_filter": 39,
+      "items_after_keyword_filter": 15,
+      "items_sent_to_llm": 15,
+      "items_saved": 2,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
     {
       "started_at": "2026-09-07T13:49:06+00:00",
       "finished_at": "2026-09-07T13:49:58+00:00",
@@ -3106,21 +3121,6 @@
       "items_saved": 0,
       "items_rejected_by_guardrail": 0,
       "errors": []
-    },
-    {
-      "started_at": "2026-08-15T10:13:42+00:00",
-      "finished_at": "2026-08-15T10:14:15+00:00",
-      "status": "partial_error",
-      "feeds_checked": 16,
-      "items_seen": 432,
-      "items_after_freshness_filter": 59,
-      "items_after_keyword_filter": 19,
-      "items_sent_to_llm": 19,
-      "items_saved": 0,
-      "items_rejected_by_guardrail": 0,
-      "errors": [
-        "SEC EDGAR Full-Text Search — 8-K capex filings: Request to https://efts.sec.gov/LATEST/search-index?q=data+center+capital+expenditure&forms=8-K&dateRange=custom&startdt=2026-08-13&enddt=2026-08-15 failed: HTTP Error 500: Internal Server Error"
-      ]
     }
   ]
 }

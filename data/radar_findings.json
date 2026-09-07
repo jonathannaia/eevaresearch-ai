@@ -1,5 +1,40 @@
 [
   {
+    "niche": "Humanoids",
+    "headline": "Inbolt to discuss physical AI’s deployment problem at RoboBusiness",
+    "summary": "Inbolt's CEO Rudy Cohen will speak at RoboBusiness about addressing deployment challenges in physical AI applications.",
+    "source_url": "https://www.therobotreport.com/inbolt-ceo-to-discuss-physical-ais-deployment-problem-at-robobusiness/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 14:00:13 +0000",
+    "retrieved_at": "2026-09-07T18:30:50+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses physical AI and robotics deployment, directly aligned with the humanoids scope.",
+    "url_hash": "78bd0780318c1e30",
+    "id": "78bd0780318c1e30"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "GLP begins development of 200MW data center in Foshan, China",
+    "summary": "GLP is beginning development of a 200MW data center in Foshan, China, with the first phase comprising 40MW.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/glp-begins-development-of-200mw-data-center-in-foshan-china/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 16:14:50 +0000",
+    "retrieved_at": "2026-09-07T18:30:31+00:00",
+    "tickers": [
+      {
+        "ticker": "GLP",
+        "company_name": "Global Logistic Properties Limited",
+        "jurisdiction": "Hong Kong",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Data center development is directly within AI Buildout scope as it relates to AI infrastructure buildout.",
+    "url_hash": "29ddb95cd8eb20bf",
+    "id": "29ddb95cd8eb20bf"
+  },
+  {
     "niche": "Space",
     "headline": "The future of Earth observation: Private satellites and AI bring benefits but also pose risks",
     "summary": "Private satellites are being used for Earth observation with artificial intelligence helping researchers analyze the data collected. The article discusses both benefits and risks associated with this emerging technology.",
