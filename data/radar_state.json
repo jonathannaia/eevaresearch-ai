@@ -5,6 +5,7 @@
     "02384799706db0d4",
     "027a23e549c57653",
     "0370b5d96bd90098",
+    "049ff916ee40fc05",
     "05362583d07a4296",
     "05bc4424f167bf61",
     "064b1ff0861f28e3",
@@ -93,6 +94,7 @@
     "2abb5d91db99d27b",
     "2ba68b9800d61752",
     "2d4ca0e835d3b4bd",
+    "2d58d46c714eacc1",
     "2d84da0c7b29cb7a",
     "2dbba38e5f0af2ee",
     "2eca5fc5e376076c",
@@ -193,6 +195,7 @@
     "661b4dd315dae6ab",
     "662dbc3cbb601e10",
     "66b18b6eda12c6c9",
+    "67b0d779bc51a063",
     "682ce2d8f0076bd7",
     "69804f465d9dfa6f",
     "6984ace22e427776",
@@ -247,6 +250,7 @@
     "7f85940174ae54a1",
     "7ff6c422420e10ca",
     "8063a4e40bb66987",
+    "818c56cb441e9ca7",
     "819bdffea9d6f031",
     "81a903bc9479f31f",
     "8235d6bd7e42095f",
@@ -279,6 +283,7 @@
     "8d1c46f386f293f6",
     "8d6a499113817b64",
     "9085060c085cec04",
+    "91cb3b85f15a66ef",
     "920440924028e140",
     "9276789d341156b7",
     "93fcee45c6de2b3f",
@@ -354,6 +359,7 @@
     "b7ebc1e6a168bb4d",
     "b89533b174c3276e",
     "b89664958ba9dbf6",
+    "b912a00c17780426",
     "b93d3babcd6a23a4",
     "b9b4b5538f073f6d",
     "b9ec799d769b0f4b",
@@ -389,6 +395,7 @@
     "c86c5d5f5cf725ad",
     "c891d16905f4bfc7",
     "c893e7f998d76a9e",
+    "c8fa5cdd9e3288f7",
     "c91c473307e25edb",
     "c98d5137bbd05a4b",
     "c9c5d836d3a31bd3",
@@ -458,6 +465,7 @@
     "ed81a0bc9bbb7085",
     "edfd6fd50b25c907",
     "ee07b48355dbb49d",
+    "ee6ed087f051d000",
     "ee9d5196766269b9",
     "eeb71822d855a9ea",
     "eebad86747ec5995",
@@ -473,6 +481,7 @@
     "f2f1d7569cc29a09",
     "f3ac3655bf675d20",
     "f3e214999e989b08",
+    "f46622d28002fc57",
     "f4802baaeed310ba",
     "f489c2f39fe8fe76",
     "f5d8912835d24dc8",
@@ -486,10 +495,24 @@
     "f849ee43332dac5c",
     "f8f7bfabd4d87e9c",
     "f9a8ee3717b52f99",
+    "fbab4f9201d6caa6",
     "fbd5c7f2369a30b9",
     "ffcae9ee822a4f26"
   ],
   "run_history": [
+    {
+      "started_at": "2026-09-07T13:49:06+00:00",
+      "finished_at": "2026-09-07T13:49:58+00:00",
+      "status": "ok",
+      "feeds_checked": 16,
+      "items_seen": 415,
+      "items_after_freshness_filter": 38,
+      "items_after_keyword_filter": 20,
+      "items_sent_to_llm": 20,
+      "items_saved": 10,
+      "items_rejected_by_guardrail": 0,
+      "errors": []
+    },
     {
       "started_at": "2026-09-07T07:01:32+00:00",
       "finished_at": "2026-09-07T07:01:45+00:00",
@@ -3097,21 +3120,6 @@
       "items_rejected_by_guardrail": 0,
       "errors": [
         "SEC EDGAR Full-Text Search — 8-K capex filings: Request to https://efts.sec.gov/LATEST/search-index?q=data+center+capital+expenditure&forms=8-K&dateRange=custom&startdt=2026-08-13&enddt=2026-08-15 failed: HTTP Error 500: Internal Server Error"
-      ]
-    },
-    {
-      "started_at": "2026-08-15T08:16:48+00:00",
-      "finished_at": "2026-08-15T08:17:21+00:00",
-      "status": "partial_error",
-      "feeds_checked": 16,
-      "items_seen": 430,
-      "items_after_freshness_filter": 56,
-      "items_after_keyword_filter": 15,
-      "items_sent_to_llm": 15,
-      "items_saved": 0,
-      "items_rejected_by_guardrail": 0,
-      "errors": [
-        "NASA News Releases: unparseable feed (<unknown>:7:2: mismatched tag)"
       ]
     }
   ]

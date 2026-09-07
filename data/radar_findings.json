@@ -1,6 +1,166 @@
 [
   {
     "niche": "Space",
+    "headline": "The future of Earth observation: Private satellites and AI bring benefits but also pose risks",
+    "summary": "Private satellites are being used for Earth observation with artificial intelligence helping researchers analyze the data collected. The article discusses both benefits and risks associated with this emerging technology.",
+    "source_url": "https://www.space.com/astronomy/earth/the-future-of-earth-observation-private-satellites-and-ai-bring-benefits-but-also-pose-risks",
+    "source_name": "Space.com",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 13:00:00 +0000",
+    "retrieved_at": "2026-09-07T13:49:52+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses private satellites for Earth observation, which is a core space industry topic involving satellite technology and operations.",
+    "url_hash": "2d58d46c714eacc1",
+    "id": "2d58d46c714eacc1"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "Agility Robotics reports $1.8M revenue ahead of humanoid SPAC",
+    "summary": "Agility Robotics' S-4 filing shows $1.8 million in 2025 revenue and a $140 million operating loss as it works to scale its Digit humanoid robot business ahead of a SPAC transaction.",
+    "source_url": "https://www.therobotreport.com/agility-robotics-reports-18m-revenue-ahead-of-humanoid-spac/",
+    "source_name": "The Robot Report",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 13:17:45 +0000",
+    "retrieved_at": "2026-09-07T13:49:45+00:00",
+    "tickers": [
+      {
+        "ticker": "AGIL",
+        "company_name": "Agility Robotics",
+        "jurisdiction": "United States",
+        "verified": false
+      },
+      {
+        "ticker": "AGILS",
+        "company_name": "Agility Robotics",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Directly reports on a humanoid robot company's financial performance and business scaling plans.",
+    "url_hash": "fbab4f9201d6caa6",
+    "id": "fbab4f9201d6caa6"
+  },
+  {
+    "niche": "Humanoids",
+    "headline": "This Robot Will Draw Your Blood Now",
+    "summary": "Vitestro's Aletta is the first FDA-authorized autonomous blood-draw robot, which uses near-infrared light, ultrasound, and AI to perform phlebotomy without human contact and achieved a 94.5% first-attempt success rate in clinical trials. The system allows one phlebotomist to supervise up to three machines, addressing staffing shortages in clinical labs, though concerns remain about performance disparities with darker skin tones.",
+    "source_url": "https://spectrum.ieee.org/blood-draw-robot-vitestro-aletta",
+    "source_name": "IEEE Spectrum — Robotics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 13:00:01 +0000",
+    "retrieved_at": "2026-09-07T13:49:42+00:00",
+    "tickers": [],
+    "relevance_reason": "Article describes Aletta, an autonomous robotic blood-draw device that uses robotics and AI for medical automation, directly relevant to the humanoids/robotics automation scope.",
+    "url_hash": "c8fa5cdd9e3288f7",
+    "id": "c8fa5cdd9e3288f7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Greenfield and Finsbury Infrastructure to invest €360m in Milan data center",
+    "summary": "Greenfield and Finsbury Infrastructure are investing €360m in a Milan data center that has secured 80MW of power capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/greenfield-and-finsbury-infrastructure-to-invest-360m-in-milan-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 09:38:09 +0000",
+    "retrieved_at": "2026-09-07T13:49:35+00:00",
+    "tickers": [],
+    "relevance_reason": "Direct investment in data center infrastructure with secured power capacity, core to AI buildout scope.",
+    "url_hash": "818c56cb441e9ca7",
+    "id": "818c56cb441e9ca7"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Humain breaks ground on Neom’s Oxagon data center",
+    "summary": "Humain has begun construction on a data center at Neom's Oxagon industrial district designed to support 1.5GW of capacity.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/humain-breaks-ground-on-neoms-oxagon-data-center/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 09:41:26 +0000",
+    "retrieved_at": "2026-09-07T13:49:33+00:00",
+    "tickers": [],
+    "relevance_reason": "Data center construction for AI infrastructure is core to AI Buildout scope.",
+    "url_hash": "91cb3b85f15a66ef",
+    "id": "91cb3b85f15a66ef"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Thailand pauses construction on 49 data centers, as it plans new regulations",
+    "summary": "Thailand has paused construction on 49 data centers as the government plans new regulations amid concerns about power consumption and local community impacts.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/thailand-pauses-construction-on-49-data-centers-as-it-plans-new-regulations/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 10:19:41 +0000",
+    "retrieved_at": "2026-09-07T13:49:29+00:00",
+    "tickers": [],
+    "relevance_reason": "directly concerns data center infrastructure buildout and construction.",
+    "url_hash": "f46622d28002fc57",
+    "id": "f46622d28002fc57"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Ireland weighs cut-price gas for data centers in exchange for curtailment - report",
+    "summary": "Ireland is considering offering discounted gas rates to data centers in exchange for their agreement to temporarily reduce power consumption during periods of high demand.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ireland-weighs-cut-price-gas-for-data-centers-in-exchange-for-curtailment-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 10:41:59 +0000",
+    "retrieved_at": "2026-09-07T13:49:27+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses energy policy and infrastructure considerations for data centers, which is a core component of AI buildout infrastructure.",
+    "url_hash": "b912a00c17780426",
+    "id": "b912a00c17780426"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "ERCOT to complete Texas data center audit by December",
+    "summary": "ERCOT is completing an audit of Texas data centers that was ordered by the governor, relevant to power capacity concerns for AI infrastructure buildout.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/ercot-to-complete-texas-data-center-audit-by-december/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 10:45:00 +0000",
+    "retrieved_at": "2026-09-07T13:49:25+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses regulatory oversight of data center power infrastructure in a major AI buildout region.",
+    "url_hash": "ee6ed087f051d000",
+    "id": "ee6ed087f051d000"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Stulz launches new air cooling systems for Edge data centers",
+    "summary": "Stulz launched updated air cooling systems targeted at small edge data centers.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/stulz-launches-new-air-cooling-systems-for-edge-data-centers/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 10:52:00 +0000",
+    "retrieved_at": "2026-09-07T13:49:23+00:00",
+    "tickers": [
+      {
+        "ticker": "FPE.DE",
+        "company_name": "Stulz",
+        "jurisdiction": "Other",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Air cooling systems for edge data centers are directly relevant to AI infrastructure power and cooling needs.",
+    "url_hash": "049ff916ee40fc05",
+    "id": "049ff916ee40fc05"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Key ASIC and CT Vision plan green AI data center in Malaysia",
+    "summary": "Key ASIC and CT Vision are planning an AI data center in Malaysia that will be powered entirely by renewable energy sources.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/key-asic-and-ct-vision-plan-green-ai-data-center-in-malaysia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 11:40:44 +0000",
+    "retrieved_at": "2026-09-07T13:49:18+00:00",
+    "tickers": [],
+    "relevance_reason": "Directly addresses AI data center infrastructure development with focus on power systems",
+    "url_hash": "67b0d779bc51a063",
+    "id": "67b0d779bc51a063"
+  },
+  {
+    "niche": "Space",
     "headline": "SpaceX Falcon 9 rocket launches 27 Starlink satellites, lands on ship at sea (video)",
     "summary": "SpaceX launched 27 Starlink satellites aboard a Falcon 9 rocket from California's central coast on September 6, with the booster landing on a droneship at sea.",
     "source_url": "https://www.space.com/space-exploration/launches-spacecraft/spacex-starlink/group-15-24-launch-ocisly",
