@@ -1,5 +1,152 @@
 [
   {
+    "niche": "Space",
+    "headline": "With another huge infusion of cash, Stoke Space goes even bigger",
+    "summary": "Stoke Space has received another significant cash infusion to support its growth in the commercial space launch sector.",
+    "source_url": "https://arstechnica.com/space/2026/09/stoke-space-sets-debut-launch-target-reveals-plans-for-larger-rocket/",
+    "source_name": "Ars Technica — Space",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 12:29:18 +0000",
+    "retrieved_at": "2026-09-08T14:00:50+00:00",
+    "tickers": [
+      {
+        "ticker": "PRIVATE",
+        "company_name": "Stoke Space",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Article covers funding for a commercial space launch company, directly relevant to space launch scope.",
+    "url_hash": "5db94ef302c6cd73",
+    "id": "5db94ef302c6cd73"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Google DeepMind Maps 9 Billion Possible DNA Variants",
+    "summary": "Google DeepMind announced the AlphaGenome Atlas, releasing pre-computed predictions for all 9 billion possible single-letter DNA variants using their AI model; the project required substantial GPU kernel optimization and computational engineering to process approximately 1 petabyte of data.",
+    "source_url": "https://spectrum.ieee.org/alphagenome-atlas",
+    "source_name": "IEEE Spectrum — AI",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 14:00:05 +0000",
+    "retrieved_at": "2026-09-08T14:00:47+00:00",
+    "tickers": [
+      {
+        "ticker": "GOOGL",
+        "company_name": "Alphabet Inc.",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Google DeepMind's computational project required significant GPU optimization and processing scale to compute 9 billion predictions, demonstrating AI infrastructure buildout and accelerator utilization.",
+    "url_hash": "d76497334b225f5e",
+    "id": "d76497334b225f5e"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "GPU Lifespan in Data Centers: Physical vs. Economic",
+    "summary": "Data center GPUs have a physical lifespan exceeding five years but are economically replaced every 2-4 years due to rapid performance improvements, with resale and GPU-as-a-Service models used to optimize value recovery.",
+    "source_url": "https://www.datacenterknowledge.com/data-center-chips/gpu-lifespan-in-data-centers-physical-vs-economic",
+    "source_name": "Data Center Knowledge",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 09:00:00 GMT",
+    "retrieved_at": "2026-09-08T14:00:43+00:00",
+    "tickers": [],
+    "relevance_reason": "Substantively discusses GPU hardware lifespan and economic replacement cycles in data center operations, a core AI Buildout infrastructure concern.",
+    "url_hash": "9e0770247f5feae1",
+    "id": "9e0770247f5feae1"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "JV plans 54MW data center in Dallas, Texas",
+    "summary": "Northampton Capital has partnered with Provident Data Centers to develop a 54MW data center in Dallas, Texas.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/jv-plans-54mw-data-center-in-dallas-texas/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Mon, 07 Sep 2026 15:29:23 +0000",
+    "retrieved_at": "2026-09-08T14:00:36+00:00",
+    "tickers": [],
+    "relevance_reason": "The item describes a data center buildout project, which is directly within AI Buildout scope.",
+    "url_hash": "dc2471f445fd562a",
+    "id": "dc2471f445fd562a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Firmus to provide OpenAI with compute capacity in Malaysia",
+    "summary": "Firmus will provide OpenAI with compute capacity in Malaysia, while OpenAI's Stargate project efforts in South Korea are experiencing delays.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/firmus-to-provide-openai-with-compute-capacity-in-malaysia/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 10:43:20 +0000",
+    "retrieved_at": "2026-09-08T14:00:27+00:00",
+    "tickers": [
+      {
+        "ticker": "OPENAI",
+        "company_name": "OpenAI",
+        "jurisdiction": "United States",
+        "verified": false
+      }
+    ],
+    "relevance_reason": "Involves a company providing compute capacity to OpenAI, directly related to hyperscaler capex and AI infrastructure buildout.",
+    "url_hash": "c317429f6705850a",
+    "id": "c317429f6705850a"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Fleet seeks approval to build two methane power plants to power data centers in Nevada - report",
+    "summary": "Fleet is seeking approval from Nevada's Public Utility Commission to build two methane power plants to supply electricity to data centers in the state.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/fleet-seeks-approval-to-build-two-methane-power-plants-to-power-data-centers-in-nevada-report/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 11:00:39 +0000",
+    "retrieved_at": "2026-09-08T14:00:24+00:00",
+    "tickers": [],
+    "relevance_reason": "Article discusses power infrastructure development specifically for data centers, which is directly relevant to AI infrastructure buildout scope.",
+    "url_hash": "35317bbc7bd25516",
+    "id": "35317bbc7bd25516"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "SGC Energy partners with Vertiv to deploy PowerNexus at planned AI data center in Gunsan, South Korea",
+    "summary": "SGC Energy is partnering with Vertiv to deploy PowerNexus infrastructure at a planned AI data center in Gunsan, South Korea, with energization expected in 2028.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/sgc-energy-partners-with-vertiv-to-deploy-powernexus-at-planned-ai-data-center-in-gunsan-south-korea/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 11:30:31 +0000",
+    "retrieved_at": "2026-09-08T14:00:20+00:00",
+    "tickers": [
+      {
+        "ticker": "VRT",
+        "company_name": "Vertiv Holdings Company",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct mention of AI data center infrastructure deployment and power solutions for AI facilities.",
+    "url_hash": "04606a8af2d91a33",
+    "id": "04606a8af2d91a33"
+  },
+  {
+    "niche": "AI Buildout",
+    "headline": "Digital Realty launches 6.4MW data center in Nairobi, Kenya",
+    "summary": "Digital Realty launched a 6.4MW data center in Nairobi, Kenya, while integrating iColo into the Digital Realty brand.",
+    "source_url": "https://www.datacenterdynamics.com/en/news/digital-realty-launches-64mw-data-center-in-nairobi-kenya/",
+    "source_name": "Data Center Dynamics",
+    "source_type": "Reputable Financial News",
+    "published_at": "Tue, 08 Sep 2026 11:50:38 +0000",
+    "retrieved_at": "2026-09-08T14:00:18+00:00",
+    "tickers": [
+      {
+        "ticker": "DLR",
+        "company_name": "Digital Realty",
+        "jurisdiction": "United States",
+        "verified": true
+      }
+    ],
+    "relevance_reason": "Direct AI infrastructure buildout through data center expansion",
+    "url_hash": "183222baee771700",
+    "id": "183222baee771700"
+  },
+  {
     "niche": "Humanoids",
     "headline": "Inbolt to discuss physical AI’s deployment problem at RoboBusiness",
     "summary": "Inbolt's CEO Rudy Cohen will speak at RoboBusiness about addressing deployment challenges in physical AI applications.",
@@ -8759,68 +8906,5 @@
     "relevance_reason": "Article discusses a data center project, which falls within AI infrastructure buildout scope.",
     "url_hash": "a8ed5a53b730fa99",
     "id": "a8ed5a53b730fa99"
-  },
-  {
-    "niche": "AI Buildout",
-    "headline": "CVC DIF acquires German data center firm Firstcolo",
-    "summary": "CVC DIF has acquired Firstcolo, a German data center provider with two operating facilities in Frankfurt and another facility in development.",
-    "source_url": "https://www.datacenterdynamics.com/en/news/cvc-dif-acquires-german-data-center-firm-firstcolo/",
-    "source_name": "Data Center Dynamics",
-    "source_type": "Reputable Financial News",
-    "published_at": "Fri, 14 Aug 2026 13:20:33 +0000",
-    "retrieved_at": "2026-08-14T19:06:41+00:00",
-    "tickers": [],
-    "relevance_reason": "acquisition of a data center company is directly relevant to AI infrastructure buildout",
-    "url_hash": "162657e948c3f865",
-    "id": "162657e948c3f865"
-  },
-  {
-    "niche": "AI Buildout",
-    "headline": "Naver invests in US offshore wave powered data center company Panthalassa",
-    "summary": "Naver has invested in Panthalassa, a US company developing wave-powered data centers, with commercial deployment targeted for 2027.",
-    "source_url": "https://www.datacenterdynamics.com/en/news/naver-invests-in-us-offshore-wave-powered-data-center-company-panthalassa/",
-    "source_name": "Data Center Dynamics",
-    "source_type": "Reputable Financial News",
-    "published_at": "Fri, 14 Aug 2026 13:28:56 +0000",
-    "retrieved_at": "2026-08-14T19:06:40+00:00",
-    "tickers": [
-      {
-        "ticker": "NAVER",
-        "company_name": "Naver Corporation",
-        "jurisdiction": "South Korea",
-        "verified": false
-      }
-    ],
-    "relevance_reason": "Direct investment in data center infrastructure powered by renewable energy, a key component of AI buildout capital expenditure and power solutions.",
-    "url_hash": "7851e5630bc510e7",
-    "id": "7851e5630bc510e7"
-  },
-  {
-    "niche": "AI Buildout",
-    "headline": "Data center spanning up to 50,000 sqm gets approval for construction in west London, the UK",
-    "summary": "A data center spanning up to 50,000 square meters received construction approval in west London, with specifications of 64MW electricity consumption and 48MW IT load capacity.",
-    "source_url": "https://www.datacenterdynamics.com/en/news/data-center-spanning-up-to-50000-sqm-gets-approval-for-construction-in-west-london-the-uk/",
-    "source_name": "Data Center Dynamics",
-    "source_type": "Reputable Financial News",
-    "published_at": "Fri, 14 Aug 2026 15:04:12 +0000",
-    "retrieved_at": "2026-08-14T19:06:33+00:00",
-    "tickers": [],
-    "relevance_reason": "Data center construction directly supports AI infrastructure buildout requirements.",
-    "url_hash": "8317af11e09aeb99",
-    "id": "8317af11e09aeb99"
-  },
-  {
-    "niche": "AI Buildout",
-    "headline": "Malaysia to launch palm oil-based immersion cooling fluid for data centers",
-    "summary": "Malaysia is launching a palm oil-based immersion cooling fluid for use in data centers. The development raises environmental concerns related to palm oil production.",
-    "source_url": "https://www.datacenterdynamics.com/en/news/malaysia-to-launch-palm-oil-based-immersion-cooling-fluid-for-data-centers/",
-    "source_name": "Data Center Dynamics",
-    "source_type": "Reputable Financial News",
-    "published_at": "Fri, 14 Aug 2026 15:45:35 +0000",
-    "retrieved_at": "2026-08-14T19:06:32+00:00",
-    "tickers": [],
-    "relevance_reason": "Directly addresses cooling technology for data center infrastructure, a core AI Buildout component.",
-    "url_hash": "d1d35ee34d5b17a8",
-    "id": "d1d35ee34d5b17a8"
   }
 ]
