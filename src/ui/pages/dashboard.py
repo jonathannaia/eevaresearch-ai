@@ -40,6 +40,17 @@ powering each remaining module:
     EDGAR/DART/EDINET Radar promotions only, see
     src/data_access/live/radar_signal_repository.py) — renders nothing
     at all unless at least one real signal qualifies.
+
+Dashboard Batch 1 (design/DECISIONS.md) — Recently Updated, additive
+only, added as the first content section above Market Map: a merged,
+reverse-chronological feed of real backend_factory.
+get_filing_event_repository() filings (SEC EDGAR/DART/EDINET, the same
+real data Regional Brief already reads) and real daily_news_backend.
+get_daily_news_repository() stories. See
+src/ui/components/recently_updated.py's own module docstring for the
+exact sort-key/fallback rule. Every other module on this page (Market
+Map, Regional Brief, Theme Health, Priority Signals) is unmoved and
+unmodified by this batch.
 """
 from __future__ import annotations
 
@@ -54,6 +65,7 @@ from src.logic.market_map import group_companies_by_theme
 from src.logic.unread import is_unread
 from src.ui.components.cards import priority_signal_row
 from src.ui.components.market_map import render_market_map
+from src.ui.components.recently_updated import render_recently_updated
 from src.ui.components.regional_brief import render_regional_brief
 from src.ui.components.section import section_header
 from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
@@ -184,6 +196,12 @@ def _render_regional_brief(settings) -> None:
 def render() -> None:
     ctx = get_repositories()
     settings = get_settings()
+
+    # Dashboard Batch 1 (design/DECISIONS.md) — additive only: the first
+    # content section on the page, above the existing Market Map. Every
+    # other section below is unchanged, unmoved, and unmodified by this
+    # batch.
+    render_recently_updated(settings)
 
     _render_market_map(ctx, _themes_available(settings))
     _render_regional_brief(settings)
