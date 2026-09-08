@@ -172,19 +172,49 @@ def _load_daily_news_rows(settings: Settings) -> list[_Row]:
 
 
 def _render_row(row: _Row) -> None:
-    company_line = f"{_esc(row.company_name)} · " if row.company_name else ""
-    st.markdown(
-        f'<div class="er-row" style="border-bottom:none; padding-bottom:var(--space-1);">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{_esc(row.title)}</div>'
-        f'<div class="er-muted" style="font-size:0.78rem;">{company_line}{_esc(row.source_label)} · {_esc(row.display_date)}</div>'
-        f"</div>",
-        unsafe_allow_html=True,
+    """Visual restyle only (design/DECISIONS.md) — `row` is already fully
+    computed by the unchanged loading/sort logic above; this function
+    only decides how to display it. Metadata (company, source, date)
+    renders via the existing, deliberately colorless `er-status-tag
+    er-tag-neutral` pill and `er-date-badge` — a uniform neutral badge
+    for every source, so no color ever implies a ranking between SEC
+    EDGAR / Korea DART / Japan EDINET / Daily News. The whole row is one
+    real <a> element (never a second, separately-clickable link nested
+    inside it — invalid HTML) when a real source URL exists; "View
+    source ↗" is a visible text affordance inside that same anchor, not
+    an independent link. A row with no real source URL renders the
+    identical content without any anchor wrapper or affordance — never a
+    fabricated or dead link."""
+    company_html = f"{_esc(row.company_name)} " if row.company_name else ""
+    metadata_html = (
+        f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.2rem; display:flex; align-items:center; '
+        f'gap:0.4rem; flex-wrap:wrap;">{company_html}'
+        f'<span class="er-status-tag er-tag-neutral">{_esc(row.source_label)}</span>'
+        f'<span class="er-date-badge">{_esc(row.display_date)}</span></div>'
     )
+    content_html = (
+        f'<div style="flex:1; min-width:0;">'
+        f'<div class="er-card-title" style="font-size:0.88rem;">{_esc(row.title)}</div>'
+        f"{metadata_html}"
+        f"</div>"
+    )
+
     if row.source_url:
         st.markdown(
-            f'<div class="er-muted" style="font-size:0.76rem; margin-top:-0.2rem; margin-bottom:0.3rem;">'
             f'<a href="{html.escape(row.source_url, quote=True)}" target="_blank" rel="noopener noreferrer" '
-            f'style="color:var(--text-2); text-decoration:underline;">View source ↗</a></div>',
+            f'style="text-decoration:none; color:inherit; display:block;">'
+            f'<div class="er-row" style="display:flex; align-items:center; justify-content:space-between; '
+            f'gap:var(--space-2); flex-wrap:wrap;">'
+            f"{content_html}"
+            f'<div class="er-muted" style="font-size:0.76rem; white-space:nowrap;">View source ↗</div>'
+            f"</div></a>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div class="er-row" style="display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap;">'
+            f"{content_html}"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -196,14 +226,15 @@ def render_recently_updated(settings: Settings) -> None:
     rows.sort(key=lambda r: r.sort_key, reverse=True)
     shown = rows[:PREVIEW_COUNT]
 
-    if not shown:
-        st.markdown(
-            '<div class="er-muted" style="margin-top:0.3rem;">No recent updates available.</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        for row in shown:
-            _render_row(row)
+    with st.container(border=True, key="card-recently-updated-feed"):
+        if not shown:
+            st.markdown(
+                '<div class="er-muted" style="margin-top:0.3rem;">No recent updates available.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for row in shown:
+                _render_row(row)
 
     link_cols = st.columns(2)
     with link_cols[0]:
