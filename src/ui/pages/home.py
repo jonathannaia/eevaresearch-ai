@@ -9,35 +9,26 @@ see dashboard.py's own docstring) with a precise description of Eeva's
 actual, currently-shipped capabilities: cross-market primary sources
 (SEC EDGAR / DART / EDINET), company research, Themes, supply-chain
 research (company roles within a theme's value chain), Daily News, and
-original-source links. The Fact/Interpretation/Inference/Uncertainty
-trust message is promoted from a buried hero-copy clause into its own
-standalone, scannable block, reusing the exact same evidence_chip
-component and the exact same four canonical descriptions Methodology's
-own "The four labels" section already uses (src/ui/pages/methodology.py)
-— never a second, divergent wording of the same four labels. "What this
-tool won't do" keeps pointing directly at Disclaimer, unchanged from
-before. No route, nav, auth, data model, or other page changed.
+original-source links. "What this tool won't do" keeps pointing directly
+at Disclaimer, unchanged from before.
+
+Homepage correction (design/DECISIONS.md): the standalone "How claims
+are labeled" Fact/Interpretation/Inference/Uncertainty block this batch
+originally added has been removed by product decision — Eeva does not
+display or market visible claim labels; researchers assess evidence
+themselves. Original-source links and source attribution stay (see
+_CAPABILITIES below); the underlying claim-type model, evidence_chip
+component, and Methodology's own "The four labels" section are
+untouched — this is a Home-page-only copy change, not a removal of the
+underlying methodology. No route, nav, auth, data model, or other page
+changed.
 """
 from __future__ import annotations
 
 import streamlit as st
 
-from src.models.models import ClaimType
-from src.ui.components.evidence_chips import evidence_chip
 from src.ui.components.section import section_header
 from src.ui.ui import brand_mark_html, get_page
-
-# Verbatim from src/ui/pages/methodology.py's own "The four labels"
-# section — the one canonical wording for these four descriptions;
-# duplicated as a literal here (not imported) since methodology.py
-# defines them inline in its own render() rather than as a module-level
-# constant, and this batch's scope is Home only, never Methodology.
-_CLAIM_LABELS = [
-    (ClaimType.FACT, "Stated in a source document, and attributed to it. No attribution, no label."),
-    (ClaimType.INTERPRETATION, "A market read built on facts shown alongside it."),
-    (ClaimType.INFERENCE, "Follows logically from the evidence but is not confirmed anywhere."),
-    (ClaimType.UNCERTAINTY, "A named open question. Recorded rather than smoothed over."),
-]
 
 _CAPABILITIES = [
     ("Cross-market primary sources", "SEC EDGAR (U.S.), DART (Korea), and EDINET (Japan) filings."),
@@ -89,15 +80,6 @@ def render() -> None:
                 st.page_link(disclaimer_page, label="What this tool won't do")
             st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
-
-    st.divider()
-    section_header("How claims are labeled")
-    for claim_type, description in _CLAIM_LABELS:
-        label_cols = st.columns([1, 4])
-        with label_cols[0]:
-            evidence_chip(claim_type)
-        with label_cols[1]:
-            st.markdown(f'<div class="er-muted" style="padding-top:0.3rem;">{description}</div>', unsafe_allow_html=True)
 
     st.divider()
     section_header("What Eeva does today")

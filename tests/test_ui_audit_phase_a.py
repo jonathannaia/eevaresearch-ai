@@ -52,22 +52,38 @@ def test_dead_pages_are_not_referenced_anywhere_in_src_or_app():
 
 
 
-# --- Home: hero + capability list + trust block + one primary CTA ---
+# --- Home: hero + capability list + one primary CTA ---
 # (Homepage rewrite, Batch 1, design/DECISIONS.md — supersedes the
 # earlier Phase A "hero + 3-step" content; the 3-step "how to use it"
-# section was removed and replaced with a precise capability list and a
-# standalone Fact/Interpretation/Inference/Uncertainty trust block.)
+# section was removed and replaced with a precise capability list.
+# Homepage correction, design/DECISIONS.md: the standalone Fact/
+# Interpretation/Inference/Uncertainty "How claims are labeled" block
+# this rewrite originally added was itself removed by product decision —
+# Eeva does not display or market visible claim labels on Home. The
+# underlying claim-type model, evidence_chip component, and Methodology's
+# own "The four labels" section are unaffected; this is Home-copy-only.)
 
-def test_home_page_shows_capability_list_and_trust_block():
+def test_home_page_shows_capability_list():
     at = AppTest.from_file(str(HARNESS_DIR / "home_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "How claims are labeled" in all_text
     assert "What Eeva does today" in all_text
     assert "Cross-market primary sources" in all_text
     assert "Daily News" in all_text
     assert "Step 1" not in all_text
+
+
+def test_home_page_does_not_show_claim_labels():
+    at = AppTest.from_file(str(HARNESS_DIR / "home_page.py"), default_timeout=10)
+    at.run()
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "How claims are labeled" not in all_text
+    assert "Fact" not in all_text
+    assert "Interpretation" not in all_text
+    assert "Inference" not in all_text
+    assert "Uncertainty" not in all_text
 
 
 def test_home_page_has_exactly_one_primary_cta():
