@@ -27,6 +27,10 @@ def _ambient_settings(**overrides) -> Settings:
         radar_worker_state_db_path=None,
         radar_worker_state_db_url=None,
         edgar_auto_publish_enabled=False,
+        # Explicit, not left to Settings' own os.environ.get() default —
+        # this test file's real host environment must never leak in;
+        # every test that cares about this field sets it itself.
+        radar_live_scan_providers=None,
     )
     fields.update(overrides)
     return Settings(**fields)
@@ -88,6 +92,67 @@ def test_build_worker_settings_forces_edgar_auto_publish_disabled_even_when_ambi
 
     worker_settings = radar_worker._build_worker_settings(ambient)
     assert worker_settings.edgar_auto_publish_enabled is False
+
+
+# --- _resolve_active_providers: provider-scoping safety control ---
+
+def test_resolve_active_providers_defaults_to_all_three_when_absent():
+    assert radar_worker._resolve_active_providers(None) == ("edgar", "dart", "edinet")
+
+
+def test_resolve_active_providers_rejects_explicit_blank():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers("")
+
+
+def test_resolve_active_providers_rejects_whitespace_only():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers("   ")
+
+
+def test_resolve_active_providers_narrows_to_requested_subset_in_canonical_order():
+    assert radar_worker._resolve_active_providers("dart,edinet") == ("dart", "edinet")
+
+
+def test_resolve_active_providers_is_case_insensitive_and_trims_whitespace():
+    assert radar_worker._resolve_active_providers("EDINET, Dart") == ("dart", "edinet")
+
+
+def test_resolve_active_providers_accepts_a_single_provider():
+    assert radar_worker._resolve_active_providers("edgar") == ("edgar",)
+
+
+def test_resolve_active_providers_rejects_comma_only_value():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers(",")
+
+
+def test_resolve_active_providers_rejects_comma_and_whitespace_only_value():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers(" , ")
+
+
+def test_resolve_active_providers_rejects_unknown_provider_name():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers("dart,xyz")
+
+
+def test_resolve_active_providers_rejects_duplicate_provider_name():
+    with pytest.raises(radar_worker.WorkerConfigurationError):
+        radar_worker._resolve_active_providers("dart,dart")
+
+
+def test_resolve_active_providers_error_messages_never_include_unrelated_config():
+    """Sanitized-message proof: the raised message names only the
+    offending provider token(s) — never a DSN, key, or any other
+    environment variable's name/value."""
+    with pytest.raises(radar_worker.WorkerConfigurationError) as excinfo:
+        radar_worker._resolve_active_providers("dart,not-a-real-provider")
+    message = str(excinfo.value)
+    assert "not-a-real-provider" in message
+    assert "EDGE_DART_API_KEY" not in message
+    assert "EDGE_TRANSLATION_API_KEY" not in message
+    assert "EDGE_EDINET_SUBSCRIPTION_KEY" not in message
 
 
 # --- _provider_lock: exclusion + auto-release ---
@@ -292,6 +357,36 @@ def test_run_one_tick_provider_failure_does_not_prevent_other_providers_from_run
     assert scan_status_repo.get_scan_status("EDINET").failure_code is None
 
 
+def test_run_one_tick_with_scoped_providers_only_scans_the_named_providers(tmp_path, monkeypatch):
+    """Provider-scoping safety control, end to end: passing
+    providers=("dart", "edinet") must scan DART/EDINET and must never
+    call EDGAR's own run_scan at all, and must never write EDGAR's own
+    ProviderScanStatus row."""
+    worker_settings = _worker_settings(tmp_path)
+    scan_status_repo = _scan_status_repo(worker_settings)
+
+    def _fail_if_called(settings, candidate_repository=None):
+        raise AssertionError("EDGAR must not be scanned when scoped to dart,edinet")
+
+    dart_called = []
+    edinet_called = []
+    monkeypatch.setitem(radar_worker._SERVICE_MODULES, "edgar", types.SimpleNamespace(run_scan=_fail_if_called))
+    monkeypatch.setitem(
+        radar_worker._SERVICE_MODULES, "dart",
+        types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: dart_called.append(1) or _FakeDartReport()),
+    )
+    monkeypatch.setitem(
+        radar_worker._SERVICE_MODULES, "edinet",
+        types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: edinet_called.append(1) or _FakeReport()),
+    )
+
+    radar_worker.run_one_tick(worker_settings, scan_status_repo, providers=("dart", "edinet"))
+
+    assert dart_called == [1]
+    assert edinet_called == [1]
+    assert scan_status_repo.get_scan_status("SEC EDGAR") is None
+
+
 def test_run_one_tick_repository_construction_failure_is_isolated_per_provider(tmp_path, monkeypatch):
     """A provider whose candidate-repository construction itself fails
     (not just run_scan) must be isolated exactly the same way."""
@@ -356,3 +451,66 @@ def test_main_never_reaches_the_scan_loop_when_disabled(tmp_path, monkeypatch):
 
     monkeypatch.setattr(radar_worker, "run_one_tick", _fail)
     assert radar_worker.main([]) == 0
+
+
+def test_main_returns_one_and_sanitized_message_on_invalid_provider_list(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        radar_worker, "get_settings",
+        lambda: _ambient_settings(
+            radar_live_scan_enabled=True, radar_worker_db_backend="sqlite",
+            radar_worker_state_db_path=tmp_path / "state.db", radar_live_scan_providers="dart,xyz",
+        ),
+    )
+    rc = radar_worker.main([])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "ERROR" in captured.err
+    assert "xyz" in captured.err
+
+
+def test_main_never_reaches_the_scan_loop_on_invalid_provider_list(tmp_path, monkeypatch):
+    """The provider-scoping half of the same 'fail closed before the
+    scan loop starts' invariant — an invalid EDGE_RADAR_LIVE_SCAN_PROVIDERS
+    must never let run_one_tick execute even once, the same way an
+    invalid worker DB backend already doesn't."""
+    monkeypatch.setattr(
+        radar_worker, "get_settings",
+        lambda: _ambient_settings(
+            radar_live_scan_enabled=True, radar_worker_db_backend="sqlite",
+            radar_worker_state_db_path=tmp_path / "state.db", radar_live_scan_providers=",",
+        ),
+    )
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("must not be called when the provider list fails to resolve")
+
+    monkeypatch.setattr(radar_worker, "run_one_tick", _fail)
+    assert radar_worker.main([]) == 1
+
+
+def test_main_passes_absent_provider_list_through_as_all_three(tmp_path, monkeypatch):
+    """The default-path proof at the main() level: a genuinely absent
+    EDGE_RADAR_LIVE_SCAN_PROVIDERS must reach run_one_tick as exactly
+    ("edgar", "dart", "edinet"), in that order — today's unchanged
+    behavior."""
+    monkeypatch.setattr(
+        radar_worker, "get_settings",
+        lambda: _ambient_settings(
+            radar_live_scan_enabled=True, radar_worker_db_backend="sqlite",
+            radar_worker_state_db_path=tmp_path / "state.db", radar_live_scan_providers=None,
+        ),
+    )
+
+    captured_providers = []
+
+    def _capture(worker_settings, scan_status_repo, providers=radar_worker._PROVIDERS):
+        captured_providers.append(providers)
+        radar_worker._shutdown_requested = True  # stop main()'s while-loop after one tick
+
+    monkeypatch.setattr(radar_worker, "run_one_tick", _capture)
+    try:
+        radar_worker.main([])
+    finally:
+        radar_worker._shutdown_requested = False  # restore module state for later tests
+
+    assert captured_providers == [("edgar", "dart", "edinet")]

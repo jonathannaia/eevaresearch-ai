@@ -17,6 +17,16 @@ default false. If unset/false, main() prints a clear, safe message and
 exits 0 immediately — a no-op, not an error — so accidentally starting
 this process without the flag is inert.
 
+Provider scoping (design/DECISIONS.md): EDGE_RADAR_LIVE_SCAN_PROVIDERS
+(Settings.radar_live_scan_providers), optional, a comma-separated subset
+of edgar/dart/edinet — see _resolve_active_providers()'s own docstring
+for the exact parsing/validation rules. Genuinely absent scans all three
+in canonical order, unchanged from before this control existed; an
+explicitly blank or invalid value is a fail-closed WorkerConfigurationError
+at startup, before the scan loop ever begins — never silently "all
+providers" and never a guessed subset. This is layered on top of, and
+does not change, EDGE_RADAR_LIVE_SCAN_ENABLED above.
+
 Backend: EDGE_RADAR_WORKER_DB_BACKEND (Settings.radar_worker_db_backend)
 must be exactly "sqlite" or "postgres" — "json" (or unset/blank/
 anything else) is a hard, sanitized startup failure. SQLite
@@ -199,6 +209,7 @@ from src.models.theme_research import (
 # docstring for the shared shape.
 
 _PROVIDERS: tuple[str, ...] = ("edgar", "dart", "edinet")
+_VALID_PROVIDERS = frozenset(_PROVIDERS)
 _SOURCE_DISPLAY_NAMES = {"edgar": "SEC EDGAR", "dart": "OpenDART / DART", "edinet": "EDINET"}
 _SERVICE_MODULES = {"edgar": edgar_service, "dart": dart_radar_service, "edinet": edinet_service}
 
@@ -214,6 +225,75 @@ _SHADOW_MATERIAL_EVENT_LOG_CAP = 5
 class WorkerConfigurationError(Exception):
     """Raised at startup for a sanitized, fatal configuration problem —
     never a raw exception, DSN, or credential."""
+
+
+def _resolve_active_providers(raw: str | None) -> tuple[str, ...]:
+    """Provider-scoping safety control (design/DECISIONS.md) —
+    EDGE_RADAR_LIVE_SCAN_PROVIDERS. `raw` is `Settings.
+    radar_live_scan_providers` — None only when the environment variable
+    is genuinely absent (see that field's own docstring for why it
+    deliberately does not fold an explicit blank into None the way every
+    other optional string Settings field does).
+
+    - Absent (raw is None): today's exact behavior, unchanged —
+      every provider, in canonical order.
+    - Present but blank/whitespace-only: a real, fail-closed
+      configuration error, never treated as "all providers" — an
+      operator who explicitly set this to nothing almost certainly
+      meant to restrict scanning.
+    - Present with real content: split on comma, trim, lowercase; a
+      purely-whitespace segment between commas is dropped as harmless
+      formatting slack, but a result that resolves to zero names after
+      that (e.g. "," or " , ") is the same fail-closed error as an
+      explicit blank, not silently "all providers." Every remaining
+      name must be exactly one of edgar/dart/edinet, and no name may
+      repeat. Never fuzzy-matched, never partially accepted.
+    - Valid, non-empty, deduplicated input: returned in
+      _PROVIDERS' own canonical order (edgar, dart, edinet) —
+      the caller-provided order is never trusted.
+
+    Every error message is a WorkerConfigurationError naming only the
+    offending provider token(s) — never a secret, DSN, or any other
+    environment variable's value."""
+    if raw is None:
+        return _PROVIDERS
+
+    if not raw.strip():
+        raise WorkerConfigurationError(
+            "EDGE_RADAR_LIVE_SCAN_PROVIDERS is set but blank. Unset the variable "
+            "entirely to scan all providers, or list at least one of: edgar, dart, edinet."
+        )
+
+    tokens = [token.strip().lower() for token in raw.split(",")]
+    tokens = [token for token in tokens if token]
+
+    if not tokens:
+        raise WorkerConfigurationError(
+            "EDGE_RADAR_LIVE_SCAN_PROVIDERS is set but resolves to an empty provider list. "
+            "Unset the variable entirely to scan all providers, or list at least one of: edgar, dart, edinet."
+        )
+
+    unknown = sorted({token for token in tokens if token not in _VALID_PROVIDERS})
+    if unknown:
+        raise WorkerConfigurationError(
+            "EDGE_RADAR_LIVE_SCAN_PROVIDERS contains unrecognized provider name(s): "
+            f"{', '.join(unknown)!r}. Allowed values: edgar, dart, edinet."
+        )
+
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for token in tokens:
+        if token in seen and token not in duplicates:
+            duplicates.append(token)
+        seen.add(token)
+    if duplicates:
+        raise WorkerConfigurationError(
+            "EDGE_RADAR_LIVE_SCAN_PROVIDERS contains duplicate provider name(s): "
+            f"{', '.join(sorted(duplicates))!r}. Each provider may be listed at most once."
+        )
+
+    requested = set(tokens)
+    return tuple(provider for provider in _PROVIDERS if provider in requested)
 
 
 _shutdown_requested = False
@@ -899,12 +979,21 @@ def _run_provider_tick(
         return _NO_CASES_GATHERED
 
 
-def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:
+def run_one_tick(worker_settings: Settings, scan_status_repo, providers: tuple[str, ...] = _PROVIDERS) -> None:
     """Runs exactly one scan attempt per provider, in order, each fully
     isolated from the others' exceptions. Never loops, never sleeps,
     never checks the shutdown flag itself — the only function tests
     should call directly; main()'s own while-loop is not meant to be
     unit-tested as a whole.
+
+    `providers` (design/DECISIONS.md, provider-scoping safety control)
+    is additive and optional, defaulting to `_PROVIDERS` — every
+    existing caller that omits it (including every test written before
+    this control existed) scans exactly the same three providers in the
+    same order as before. `main()` is the only real caller that ever
+    passes a narrowed value, and only after `_resolve_active_providers()`
+    has already validated it at startup — this function itself performs
+    no validation of `providers` and trusts the caller completely.
 
     Phase 2 (design/DECISIONS.md): after every provider's own scan +
     research-case step has run, this function merges all three
@@ -923,7 +1012,7 @@ def run_one_tick(worker_settings: Settings, scan_status_repo) -> None:
     EDGAR-only."""
     all_candidates: dict[str, CandidateSignal] = {}
     all_newly_created_cases: list[ResearchCase] = []
-    for provider_key in _PROVIDERS:
+    for provider_key in providers:
         candidates, newly_created_cases = _run_provider_tick(provider_key, worker_settings, scan_status_repo)
         all_candidates.update(candidates)
         all_newly_created_cases.extend(newly_created_cases)
@@ -976,6 +1065,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
+        active_providers = _resolve_active_providers(ambient.radar_live_scan_providers)
+    except WorkerConfigurationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    try:
         scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
     except Exception as exc:  # noqa: BLE001 — never leak a raw connection/config error
         print(f"ERROR: could not construct the scan-status repository ({type(exc).__name__}).", file=sys.stderr)
@@ -984,11 +1079,12 @@ def main(argv: list[str] | None = None) -> int:
     interval_seconds = max(_MIN_INTERVAL_SECONDS, ambient.radar_scan_interval_minutes * 60)
     print(
         f"Radar worker starting — backend={worker_settings.db_backend} "
-        f"interval_minutes={ambient.radar_scan_interval_minutes}"
+        f"interval_minutes={ambient.radar_scan_interval_minutes} "
+        f"providers={','.join(active_providers)}"
     )
 
     while not _shutdown_requested:
-        run_one_tick(worker_settings, scan_status_repo)
+        run_one_tick(worker_settings, scan_status_repo, providers=active_providers)
         if _shutdown_requested:
             break
         _sleep_in_chunks(interval_seconds)
