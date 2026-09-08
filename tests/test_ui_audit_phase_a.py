@@ -52,31 +52,35 @@ def test_dead_pages_are_not_referenced_anywhere_in_src_or_app():
 
 
 
-# --- Home: hero + 3-step + one primary CTA ---
+# --- Home: hero + capability list + trust block + one primary CTA ---
+# (Homepage rewrite, Batch 1, design/DECISIONS.md — supersedes the
+# earlier Phase A "hero + 3-step" content; the 3-step "how to use it"
+# section was removed and replaced with a precise capability list and a
+# standalone Fact/Interpretation/Inference/Uncertainty trust block.)
 
-def test_home_page_shows_exactly_three_steps():
+def test_home_page_shows_capability_list_and_trust_block():
     at = AppTest.from_file(str(HARNESS_DIR / "home_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Step 1" in all_text
-    assert "Step 2" in all_text
-    assert "Step 3" in all_text
-    assert "Step 4" not in all_text
+    assert "How claims are labeled" in all_text
+    assert "What Eeva does today" in all_text
+    assert "Cross-market primary sources" in all_text
+    assert "Daily News" in all_text
+    assert "Step 1" not in all_text
 
 
-def test_home_page_has_exactly_one_open_dashboard_link():
+def test_home_page_has_exactly_one_primary_cta():
     # get_page() returns None in this isolated per-page AppTest harness
     # (st.session_state["_pages"] is only populated by app.py's own
     # _build_pages(), which this harness deliberately doesn't run — same
     # limitation every other page_link-using page in this app already
     # has in isolation), so the actual st.page_link call never renders
     # here regardless of this fix. Checked at the source level instead:
-    # exactly one "Open Dashboard" page_link call site exists in the
-    # page's own code (previously two — one after the hero, one as a
-    # closing CTA at the bottom of the old, longer page).
+    # exactly one "Explore the research →" page_link call site exists.
     source = (REPO_ROOT / "src" / "ui" / "pages" / "home.py").read_text(encoding="utf-8")
-    assert source.count('label="Open Dashboard"') == 1
+    assert source.count('label="Explore the research →"') == 1
+    assert 'label="Open Dashboard"' not in source
 
 
 def test_home_page_no_longer_duplicates_evidence_legend_theme_grid_or_limits():
