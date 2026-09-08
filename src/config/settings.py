@@ -133,6 +133,28 @@ class Settings:
     # scans on page render regardless of this value; only the worker
     # process's own startup checks it.
     radar_live_scan_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_RADAR_LIVE_SCAN_ENABLED"))
+    # Provider-scoping safety control for scripts/radar_worker.py (design/
+    # DECISIONS.md) — a comma-separated subset of "edgar", "dart", "edinet"
+    # letting an operator narrow one worker tick to fewer than all three
+    # providers, without touching radar_live_scan_enabled above or any
+    # provider's own scan/pipeline code. Deliberately NOT the usual
+    # `os.getenv(name) or None` pattern every other optional string field
+    # on this class uses — that idiom would silently collapse an
+    # explicitly-set-but-blank value ("") into the same None this field
+    # returns for a genuinely absent variable, and the two must stay
+    # distinguishable: absent means "scan all three" (radar_worker.py's
+    # own _resolve_active_providers()), while an explicit blank/
+    # whitespace-only value is a real, fail-closed configuration error —
+    # an operator who explicitly set this variable to nothing almost
+    # certainly meant to restrict scanning, not run it unrestricted.
+    # This field itself performs no validation at all — it only
+    # preserves the raw presence/value distinction; every parsing and
+    # validation rule lives in radar_worker.py's own
+    # _resolve_active_providers(), the same separation of concerns
+    # db_backend/_build_worker_settings() already established.
+    radar_live_scan_providers: str | None = field(
+        default_factory=lambda: os.environ.get("EDGE_RADAR_LIVE_SCAN_PROVIDERS")
+    )
     # Conservative default (hourly) — this pilot's tracked-issuer universe
     # (25 EDGAR + 2 DART + 5 EDINET) does not need sub-hourly polling, and
     # EDGAR's own existing client-side throttle (0.5s/request minimum
