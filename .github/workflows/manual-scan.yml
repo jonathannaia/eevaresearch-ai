@@ -1,0 +1,42 @@
+name: Radar headless scan (manual)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar-headless-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Run headless scan
+        env:
+          EDGE_REMOTE_CACHE_ENABLED: "true"
+          EDGE_R2_ENDPOINT: ${{ secrets.EDGE_R2_ENDPOINT }}
+          EDGE_R2_ACCESS_KEY_ID: ${{ secrets.EDGE_R2_ACCESS_KEY_ID }}
+          EDGE_R2_SECRET_ACCESS_KEY: ${{ secrets.EDGE_R2_SECRET_ACCESS_KEY }}
+          EDGE_R2_BUCKET: ${{ secrets.EDGE_R2_BUCKET }}
+          EDGE_DART_API_KEY: ${{ secrets.EDGE_DART_API_KEY }}
+          EDGE_EDGAR_USER_AGENT: ${{ vars.EDGE_EDGAR_USER_AGENT }}
+          EDGE_EDINET_SUBSCRIPTION_KEY: ${{ secrets.EDGE_EDINET_SUBSCRIPTION_KEY }}
+        run: python -m scripts.run_scan

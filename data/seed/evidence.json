@@ -1,0 +1,76 @@
+[
+  {
+    "id": "ev-001", "title": "Sample evidence: AI Buildout compute capacity",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-14T09:00:00+00:00", "retrieved_at": "2026-08-14T09:00:00+00:00",
+    "excerpt": "Demo excerpt text standing in for a factual, sourced statement about AI Buildout capacity trends. Not a real data point.",
+    "claim_type": "Fact", "is_demo": true, "theme_slug": "ai-buildout"
+  },
+  {
+    "id": "ev-002", "title": "Sample evidence: Networking interconnect demand",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-10T09:00:00+00:00", "retrieved_at": "2026-08-10T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for a market-interpretation statement about interconnect demand, translated from the fictional original below. Not a real data point.",
+    "excerpt_original": "当社は、光インターコネクト需要の拡大を見込み、来期の生産能力を段階的に引き上げる計画です。(架空のデモ文)",
+    "document_location": "p.4 (demo)",
+    "claim_type": "Interpretation", "is_demo": true, "theme_slug": "ai-buildout"
+  },
+  {
+    "id": "ev-003", "title": "Sample evidence: Humanoid actuator supply",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-07-28T09:00:00+00:00", "retrieved_at": "2026-07-28T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for an inference about actuator supply constraints. Not a real data point.",
+    "claim_type": "Inference", "is_demo": true, "theme_slug": "humanoids"
+  },
+  {
+    "id": "ev-004", "title": "Sample evidence: Humanoid integrator roadmap",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-15T06:00:00+00:00", "retrieved_at": "2026-08-15T06:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for an uncertainty/open-question note about integrator production timelines. Not a real data point.",
+    "claim_type": "Uncertainty", "is_demo": true, "theme_slug": "humanoids"
+  },
+  {
+    "id": "ev-005", "title": "Sample evidence: Launch cadence",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-13T09:00:00+00:00", "retrieved_at": "2026-08-13T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for a factual statement about commercial launch cadence. Not a real data point.",
+    "claim_type": "Fact", "is_demo": true, "theme_slug": "space"
+  },
+  {
+    "id": "ev-006", "title": "Sample evidence: Memory pricing cycle",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-06T09:00:00+00:00", "retrieved_at": "2026-08-06T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for a market-interpretation note about memory pricing. Not a real data point.",
+    "claim_type": "Interpretation", "is_demo": true, "theme_slug": "memory"
+  },
+  {
+    "id": "ev-007", "title": "Sample evidence: HBM capacity allocation",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-07-20T09:00:00+00:00", "retrieved_at": "2026-07-20T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for an inference about HBM capacity allocation trends, translated from the fictional original below. Not a real data point.",
+    "excerpt_original": "당사는 차세대 HBM 생산능력의 상당 부분을 소수의 전략 고객사에 우선 배정할 계획입니다. (가상의 데모 문구)",
+    "document_location": "p.11 (demo)",
+    "claim_type": "Inference", "is_demo": true, "theme_slug": "memory"
+  },
+  {
+    "id": "ev-008", "title": "Sample evidence: Optical interconnect adoption",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-15T08:00:00+00:00", "retrieved_at": "2026-08-15T08:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for a factual statement about optical interconnect adoption. Not a real data point.",
+    "claim_type": "Fact", "is_demo": true, "theme_slug": "photonics"
+  },
+  {
+    "id": "ev-009", "title": "Demo company: Nova Aperture Systems (DEMO) template note",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-08-14T09:00:00+00:00", "retrieved_at": "2026-08-14T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for company-specific evidence on the fictional DEMO ticker's evidence timeline. Not a real data point.",
+    "claim_type": "Interpretation", "is_demo": true, "theme_slug": "photonics", "ticker_symbol": "DEMO"
+  },
+  {
+    "id": "ev-010", "title": "Sample evidence: Silicon photonics yield",
+    "source_name": "EevaResearch Demo Data", "source_type": "Demo Dataset",
+    "published_at": "2026-07-15T09:00:00+00:00", "retrieved_at": "2026-07-15T09:00:00+00:00",
+    "excerpt": "Demo excerpt standing in for an uncertainty note about silicon photonics manufacturing yield. Not a real data point.",
+    "claim_type": "Uncertainty", "is_demo": true, "theme_slug": "photonics"
+  }
+]

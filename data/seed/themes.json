@@ -1,0 +1,60 @@
+[
+  {
+    "slug": "ai-buildout",
+    "name": "AI Buildout",
+    "description": "The physical and infrastructure layer behind AI compute — accelerators, data centers, power, cooling, and the networking fabric connecting it all.",
+    "subthemes": [
+      {"slug": "compute-accelerators", "name": "Compute & Accelerators", "description": "GPUs, custom AI accelerators, and the foundries/packaging behind them."},
+      {"slug": "data-center-infrastructure", "name": "Data Center Infrastructure", "description": "Facility construction, racks, and hyperscale build-out."},
+      {"slug": "power-cooling", "name": "Power & Cooling", "description": "Grid connections, backup power, and thermal management for dense compute."},
+      {"slug": "networking-interconnect", "name": "Networking & Interconnect", "description": "Switches, NICs, and the fabric linking accelerators within and across racks."},
+      {"slug": "storage-memory-systems", "name": "Storage & Memory Systems", "description": "High-throughput storage and memory feeding training/inference clusters."},
+      {"slug": "semiconductor-test", "name": "Semiconductor Test", "description": "Test, burn-in, and reliability equipment supporting AI and data-center chip supply."}
+    ]
+  },
+  {
+    "slug": "humanoids",
+    "name": "Humanoids",
+    "description": "The supply chain behind general-purpose humanoid robots — actuation, sensing, power, and the integrators assembling full systems.",
+    "subthemes": [
+      {"slug": "actuators-motors", "name": "Actuators & Motors", "description": "Joint actuation, gearing, and motor systems."},
+      {"slug": "sensors-vision", "name": "Sensors & Vision Systems", "description": "Cameras, depth sensing, force/torque, and tactile sensing."},
+      {"slug": "batteries-power", "name": "Batteries & Power Systems", "description": "Energy density and power management for mobile platforms."},
+      {"slug": "integrators-oems", "name": "Integrators & OEMs", "description": "Companies assembling and selling complete humanoid platforms."},
+      {"slug": "software-ai-stack", "name": "Software & AI Stack", "description": "Control software, perception models, and the AI stack running on-platform."}
+    ]
+  },
+  {
+    "slug": "space",
+    "name": "Space",
+    "description": "Launch, satellite constellations, and the ground infrastructure supporting a growing commercial space economy.",
+    "subthemes": [
+      {"slug": "launch-systems", "name": "Launch Systems", "description": "Launch vehicles and the providers operating them."},
+      {"slug": "satellites-constellations", "name": "Satellites & Constellations", "description": "Satellite manufacturers and constellation operators."},
+      {"slug": "ground-systems", "name": "Ground Systems & Infrastructure", "description": "Ground stations, terminals, and supporting infrastructure."},
+      {"slug": "components-subsystems", "name": "Components & Subsystems", "description": "Propulsion, avionics, and other spacecraft subsystems."}
+    ]
+  },
+  {
+    "slug": "memory",
+    "name": "Memory",
+    "description": "The memory chip cycle — DRAM, NAND, and the high-bandwidth memory increasingly central to AI accelerators.",
+    "subthemes": [
+      {"slug": "dram", "name": "DRAM", "description": "Standard DRAM supply and pricing cycle."},
+      {"slug": "nand-flash", "name": "NAND / Flash", "description": "NAND flash storage supply and pricing."},
+      {"slug": "hbm", "name": "High-Bandwidth Memory (HBM)", "description": "HBM stacks used alongside AI accelerators."},
+      {"slug": "memory-modules-packaging", "name": "Memory Modules & Packaging", "description": "Module assembly and advanced packaging for memory."}
+    ]
+  },
+  {
+    "slug": "photonics",
+    "name": "Photonics",
+    "description": "Optical interconnect and photonic components increasingly required as electrical interconnect hits bandwidth and power limits.",
+    "subthemes": [
+      {"slug": "optical-transceivers", "name": "Optical Transceivers", "description": "Pluggable and co-packaged optical transceivers."},
+      {"slug": "silicon-photonics", "name": "Silicon Photonics", "description": "Photonic integration on silicon process nodes."},
+      {"slug": "lasers-optical-components", "name": "Lasers & Optical Components", "description": "Laser sources and discrete optical components."},
+      {"slug": "interconnect-switching", "name": "Interconnect & Switching", "description": "Optical switching and interconnect fabric."}
+    ]
+  }
+]

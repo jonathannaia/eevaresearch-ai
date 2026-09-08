@@ -1,11 +1,41 @@
 streamlit>=1.38,<2.0
 python-dotenv>=1.0,<2.0
 pytest>=8.0,<9.0
-
-# Radar (autonomous scanner) only — not used by the manual research app
-anthropic>=0.40,<1.0
-feedparser>=6.0,<7.0
-
-# Live SEC EDGAR provider (src/providers/edgar_client.py) — used for a
-# reliable CA bundle when calling data.sec.gov / www.sec.gov over HTTPS
-certifi>=2024.0.0
+requests>=2.31,<3.0
+# EDINET pilot (Gate 10.A) — lightweight, pure-Python PDF text extraction
+# only, behind src/data_access/edinet/document_extractor.py's own
+# EDINET-specific seam. No OCR, no external binaries, no browser
+# automation, no Java. Not used by DART or EDGAR, which never handle PDF.
+pypdf>=6.0,<7.0
+# R2 remote-cache sync (dormant infrastructure, see
+# src/data_access/remote_cache/) — only used by r2_client.py's lazy
+# `import boto3` inside build_r2_client(); nothing else in this repo
+# imports it, and no test requires it installed (tests inject an
+# ObjectStorageClient fake instead of building a real client).
+boto3>=1.34,<2.0
+psycopg[binary]>=3.2,<4.0
+Authlib>=1.3.2
+httpx>=0.27,<1
+# Theme Registry Foundation (design/THEME_REGISTRY_FOUNDATION.md) — safe
+# loading of config/eevaresearch_theme_registry.yaml only, via
+# yaml.safe_load exclusively. Never yaml.load.
+PyYAML>=6.0,<7.0
+# Phase T1 (design/DECISIONS.md) — src/logic/formatting.py::
+# fmt_datetime_local() uses stdlib zoneinfo.ZoneInfo("America/New_York")
+# to render the Radar freshness line in Eastern time. zoneinfo itself is
+# stdlib (Python 3.9+, this project runs 3.12 — see runtime.txt), but it
+# depends on the OS actually shipping the IANA time zone database; local
+# verification (macOS) succeeded via system tzdata with no extra
+# package, but Render's Linux runtime image has no confirmed system
+# tzdata. This package is CPython's own documented, portable fallback —
+# pure data, no compiled code — added defensively so
+# ZoneInfo("America/New_York") can never raise ZoneInfoNotFoundError in
+# production regardless of the underlying image.
+tzdata>=2024.1
+# Daily News Slice 1 (design/DECISIONS.md) — parses official company RSS
+# 2.0 and Atom feeds (src/data_access/daily_news/rss_atom_client.py).
+# Pure-Python, BSD-2-Clause licensed, no compiled/native code. Pinned to
+# the exact version verified at implementation time (6.0.14) rather than
+# an open range, since this is the one new dependency this phase was
+# explicitly approved to add and no other.
+feedparser==6.0.14

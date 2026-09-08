@@ -1,0 +1,211 @@
+[
+  {
+    "question": "What is happening in AI networking and photonics?",
+    "what_happened": "Demo placeholder summary — in a real answer this section would state, in plain factual terms, what has recently changed in AI networking and photonics, each sentence tied to a source.",
+    "why_it_matters": "Demo placeholder — this section would explain why the change matters for the theme's investment landscape.",
+    "underappreciated": "Demo placeholder — this section would surface a less-obvious angle the market may be underweighting.",
+    "risks": "Demo placeholder — this section would list concrete risks and thesis-breakers, not generic caveats.",
+    "what_to_watch": "Demo placeholder — this section would list specific upcoming events or data points worth monitoring.",
+    "sources": [
+      {
+        "id": "chat-ev-001",
+        "title": "Demo source — networking/photonics placeholder",
+        "source_name": "EevaResearch Demo Data",
+        "source_type": "Demo Dataset",
+        "published_at": "2026-08-15T06:00:00+00:00",
+        "retrieved_at": "2026-08-15T06:00:00+00:00",
+        "excerpt": "Placeholder excerpt.",
+        "claim_type": "Interpretation",
+        "is_demo": true,
+        "theme_slug": "photonics"
+      }
+    ],
+    "claims": [
+      {
+        "text": "Reported optical-interconnect demand rose in the most recent filing period, per a fictional demo supplier disclosure.",
+        "claim_type": "Fact",
+        "evidence": [
+          {
+            "id": "chat-claim-ev-001",
+            "title": "Demo filing — interconnect demand",
+            "source_name": "EevaResearch Demo Data",
+            "source_type": "Demo Dataset",
+            "published_at": "2026-08-15T06:00:00+00:00",
+            "retrieved_at": "2026-08-15T06:00:00+00:00",
+            "excerpt": "The Company reports higher orders for optical interconnect components in the most recent quarter, translated from the fictional original below. Not a real data point.",
+            "excerpt_original": "当社は、光インターコネクト部品の受注が直近四半期に増加したことを開示しております。(架空のデモ文)",
+            "document_location": "p.3 (demo)",
+            "claim_type": "Fact",
+            "is_demo": true,
+            "theme_slug": "photonics"
+          }
+        ]
+      },
+      {
+        "text": "That rise plausibly tracks broader AI networking buildout, though it isn't isolated from general capex growth across the sector.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "If the pattern holds through the next reporting cycle, transceiver suppliers may see order visibility extend — this hasn't been confirmed by any supplier yet.",
+        "claim_type": "Inference",
+        "evidence": []
+      },
+      {
+        "text": "How much of the reported demand is pull-forward ordering versus durable growth is not yet resolved.",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      },
+      {
+        "text": "Backlog commentary alongside shipment data is a more reliable read than shipment data alone.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      }
+    ],
+    "confidence": "Moderate",
+    "freshness": "Fresh",
+    "claim_type": "Interpretation",
+    "is_demo": true
+  },
+  {
+    "question": "Compare three optical interconnect suppliers.",
+    "what_happened": "Phase 1 template response: ticker-level supplier comparisons require the curated ticker universe, which is intentionally not loaded yet (planned for Phase 3). This card exists to demonstrate the answer-card layout, not to compare real or fictional companies.",
+    "why_it_matters": "Demo placeholder — once real tickers are loaded, this section would explain competitive positioning differences.",
+    "underappreciated": "Demo placeholder — not populated in this phase.",
+    "risks": "Demo placeholder — not populated in this phase.",
+    "what_to_watch": "See Methodology for the Phase 3 curated ticker-universe plan.",
+    "sources": [],
+    "claims": [
+      {
+        "text": "A ticker-level supplier comparison requires the curated ticker universe, which is not loaded in this phase (Phase 3).",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      },
+      {
+        "text": "This card demonstrates the answer-card layout, not a real comparison of any company.",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      }
+    ],
+    "confidence": "Weak",
+    "freshness": "Fresh",
+    "claim_type": "Uncertainty",
+    "is_demo": true
+  },
+  {
+    "question": "What are the main catalysts for the memory cycle?",
+    "what_happened": "Demo placeholder summary of memory-cycle catalysts — see the Catalysts section on the Memory theme page for the structured (also demo) catalyst list this answer would draw from.",
+    "why_it_matters": "Demo placeholder — this section would connect catalysts to the theme's current cycle position.",
+    "underappreciated": "Demo placeholder — not populated with a real angle in this phase.",
+    "risks": "Demo placeholder — not populated in this phase.",
+    "what_to_watch": "Demo placeholder — would list the nearest-dated catalysts specifically.",
+    "sources": [
+      {
+        "id": "chat-ev-002",
+        "title": "Demo source — memory cycle placeholder",
+        "source_name": "EevaResearch Demo Data",
+        "source_type": "Demo Dataset",
+        "published_at": "2026-08-06T09:00:00+00:00",
+        "retrieved_at": "2026-08-06T09:00:00+00:00",
+        "excerpt": "Placeholder excerpt.",
+        "claim_type": "Interpretation",
+        "is_demo": true,
+        "theme_slug": "memory"
+      }
+    ],
+    "claims": [
+      {
+        "text": "The Memory theme page's Catalysts tab lists the structured (demo) catalyst calendar this answer draws from.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "Catalyst timing is one input into where the current cycle sits, not a standalone signal.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "Specific nearest-dated catalysts aren't enumerated in this placeholder answer.",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      }
+    ],
+    "confidence": "Moderate",
+    "freshness": "Aging",
+    "claim_type": "Interpretation",
+    "is_demo": true
+  },
+  {
+    "question": "Which parts of the humanoid supply chain would benefit from volume scaling?",
+    "what_happened": "Demo placeholder summary of humanoid supply-chain scaling dynamics by subcategory (actuators, sensors, batteries, integrators).",
+    "why_it_matters": "Demo placeholder — would connect scaling economics to which subcategories see margin/cost benefits first.",
+    "underappreciated": "Demo placeholder — not populated with a real angle in this phase.",
+    "risks": "Demo placeholder — not populated in this phase.",
+    "what_to_watch": "Demo placeholder — would list specific production-volume milestones to track.",
+    "sources": [
+      {
+        "id": "chat-ev-003",
+        "title": "Demo source — humanoid supply chain placeholder",
+        "source_name": "EevaResearch Demo Data",
+        "source_type": "Demo Dataset",
+        "published_at": "2026-07-28T09:00:00+00:00",
+        "retrieved_at": "2026-07-28T09:00:00+00:00",
+        "excerpt": "Placeholder excerpt.",
+        "claim_type": "Inference",
+        "is_demo": true,
+        "theme_slug": "humanoids"
+      }
+    ],
+    "claims": [
+      {
+        "text": "Actuator, sensor, battery, and integrator subcategories all sit in the humanoid supply chain.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "Component-layer subcategories typically see cost benefits from volume before final-assembly integrators do.",
+        "claim_type": "Inference",
+        "evidence": []
+      },
+      {
+        "text": "Which subcategory benefits first in this specific cycle is not established in this placeholder answer.",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      }
+    ],
+    "confidence": "Weak",
+    "freshness": "Stale",
+    "claim_type": "Inference",
+    "is_demo": true
+  },
+  {
+    "question": "Where is capital rotating across the five themes?",
+    "what_happened": "Demo placeholder summary — see Capital Rotation for the (also demo) relative-performance table this answer would draw from.",
+    "why_it_matters": "Demo placeholder — would explain what a rotation between themes implies for positioning.",
+    "underappreciated": "Demo placeholder — not populated with a real angle in this phase.",
+    "risks": "Demo placeholder — rotation reads can reverse quickly; treat any single-period read cautiously.",
+    "what_to_watch": "Demo placeholder — would list the specific breadth/leadership changes to monitor next.",
+    "sources": [],
+    "claims": [
+      {
+        "text": "The Dashboard's capital-rotation panel and each theme's Rotation tab hold the (demo) relative-performance figures this answer draws from.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "A sustained leadership gap between themes is one input into where attention may be concentrating.",
+        "claim_type": "Interpretation",
+        "evidence": []
+      },
+      {
+        "text": "Rotation reads over a single period can reverse quickly and shouldn't be treated as durable on their own.",
+        "claim_type": "Uncertainty",
+        "evidence": []
+      }
+    ],
+    "confidence": "Moderate",
+    "freshness": "Fresh",
+    "claim_type": "Interpretation",
+    "is_demo": true
+  }
+]

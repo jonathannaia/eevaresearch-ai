@@ -1,90 +1,218 @@
-"""EevaResearch AI — Streamlit entry point.
+"""EevaResearch AI — foundation-phase entry point.
 
 Run with: streamlit run app.py
+
+Registers Home (first-visit landing, no sidebar), the WORKSPACE routes
+(Dashboard, Radar, Themes, Daily News), the SYSTEM route (Methodology &
+Coverage, reusing the Coverage page/route), and routes that stay fully
+reachable but are no longer linked from any visible sidebar group —
+Coverage/Signals/Methodology/About (direct URL, the command palette,
+in-page cross-links) and Disclaimer (Methodology's cross-link and the
+page footer) — see design/eevaresearch-brief.md §4 for the original
+route table and design/DECISIONS.md for the navigation-cleanup pass that
+reorganized it. Watchlists, Research (canned-demo-answer chat), and
+Company (a single fictional ticker) were removed entirely in the
+reader-facing data-integrity pass (design/DECISIONS.md) — none had any
+live real data of its own. src/ui/ui.render_sidebar is the persistent
+left-rail nav widget.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 import streamlit as st
 
 from src.config.settings import get_settings
-from src.database.db import init_db
-from src.ui import (
-    alerts as ui_alerts,
-    app_settings as ui_app_settings,
-    capital_rotation as ui_capital_rotation,
-    compare_snapshots as ui_compare,
-    dashboard as ui_dashboard,
-    data_provider_settings as ui_data_providers,
-    guardrails_page as ui_guardrails,
-    new_brief as ui_new_brief,
-    radar as ui_radar,
-    radar_trends as ui_radar_trends,
-    scoring_settings as ui_scoring_settings,
-    sources as ui_sources,
-    ticker_detail as ui_ticker_detail,
-    watchlist as ui_watchlist,
+from src.data_access.container import get_repositories
+from src.logic.unread import seed_initial_last_seen
+from src.ui.beta_gate import evaluate_beta_gate
+from src.ui.pages import (
+    about,
+    company_discovery_admin,
+    coverage,
+    daily_news,
+    daily_news_admin,
+    dashboard,
+    disclaimer,
+    home,
+    methodology,
+    radar_inbox,
+    research_cases,
+    signals,
+    theme_workspace,
+    themes_research,
 )
-from src.ui.components import inject_button_glow, render_top_disclaimer
+from src.ui.ui import HIDDEN_FROM_NAV, LAST_SEEN_KEY, PRIMARY_NAV, READ_IDS_KEY, SYSTEM_NAV, with_chrome
 
-st.set_page_config(page_title="EevaResearch AI", page_icon=None, layout="wide")
-inject_button_glow()
+_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "eeva-logo.png"
 
+st.set_page_config(
+    page_title="EevaResearch AI",
+    page_icon=str(_LOGO_PATH) if _LOGO_PATH.exists() else None,
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-@st.cache_resource
-def _bootstrap() -> None:
-    init_db(get_settings())
-
-
-_bootstrap()
-settings = get_settings()
-
-PAGES = {
-    "Dashboard": ui_dashboard,
-    "Watchlist": ui_watchlist,
-    "Ticker Detail": ui_ticker_detail,
-    "New Research Brief": ui_new_brief,
-    "Compare Snapshots": ui_compare,
-    "Alerts / Review Queue": ui_alerts,
-    "Sources": ui_sources,
-    "Scoring Settings": ui_scoring_settings,
-    "Data Provider Settings": ui_data_providers,
-    "Research Rules / Guardrails": ui_guardrails,
-    "App Settings": ui_app_settings,
-    "Radar": ui_radar,
-    "Radar Trends": ui_radar_trends,
-    "Capital Rotation": ui_capital_rotation,
+_RENDER_FNS = {
+    "dashboard": dashboard.render,
+    "radar_inbox": radar_inbox.render,
+    "daily_news": daily_news.render,
+    "coverage": coverage.render,
+    "themes": themes_research.render,
+    "signals": signals.render,
+    "methodology": methodology.render,
+    "about": about.render,
 }
 
-# Two independent categories, per the user's split: everything you drive
-# yourself (Watchlist/Research/etc.) vs. Radar, which runs unattended on a
-# schedule. Keeping them as separate sidebar sections makes that boundary
-# visible instead of burying Radar in one long page list.
-SECTIONS = {
-    "Manual Research": [
-        "Dashboard", "Watchlist", "Ticker Detail", "New Research Brief", "Compare Snapshots",
-        "Alerts / Review Queue", "Sources", "Scoring Settings", "Data Provider Settings",
-        "Research Rules / Guardrails", "App Settings",
-    ],
-    "Radar (Autonomous)": ["Radar", "Radar Trends", "Capital Rotation"],
+_URL_PATHS = {
+    "dashboard": "dashboard",
+    "radar_inbox": "radar-inbox",
+    "daily_news": "daily-news",
+    "coverage": "coverage",
+    "themes": "themes",
+    "signals": "signals",
+    "methodology": "methodology",
+    "about": "about",
 }
-PAGE_SECTION = {page: section for section, pages in SECTIONS.items() for page in pages}
 
-if "_requested_page" in st.session_state:
-    st.session_state["nav_page"] = st.session_state.pop("_requested_page")
+# Navigation-cleanup pass (design/DECISIONS.md): Coverage/Signals/
+# Methodology/About stay fully registered routes (direct URL, command
+# palette, in-page cross-links) — only visibility="hidden" changes,
+# since none of them are linked from any visible sidebar group any more.
+_HIDDEN_KEYS = {key for key, _ in HIDDEN_FROM_NAV}
 
-current_page = st.session_state.get("nav_page", "Dashboard")
-current_section = PAGE_SECTION.get(current_page, next(iter(SECTIONS)))
+# Navigation-bug repair (design/DECISIONS.md): `st.Page` objects — and the
+# `with_chrome(...)` closures wrapped inside them — used to be rebuilt from
+# scratch on every single rerun (this whole module re-executes on every
+# navigation). Live reproduction confirmed that broke click-driven sidebar
+# navigation: after a couple of reruns, `st.page_link` clicks silently
+# stopped changing the page (a hard URL reload always still worked, proving
+# server-side url_path routing itself was fine — only the client-side
+# page-identity tracking that `st.page_link` clicks depend on had gone
+# stale). `st.cache_resource` makes each distinct page set a stable,
+# singleton set of Python objects reused across reruns instead of fresh
+# ones every time — the officially-recommended fix for exactly this class
+# of `st.navigation` instability.
+@st.cache_resource(show_spinner=False)
+def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
+    pages = {
+        "home": st.Page(with_chrome(home.render, "home", show_sidebar=False), title="Home", default=not dashboard_is_default),
+    }
+    for key, _label in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV:
+        pages[key] = st.Page(
+            with_chrome(_RENDER_FNS[key], key),
+            title=_label,
+            url_path=_URL_PATHS.get(key),
+            default=(key == "dashboard" and dashboard_is_default),
+            visibility="hidden" if key in _HIDDEN_KEYS else "visible",
+        )
+    # Disclaimer is no longer a primary sidebar item, but stays a real
+    # reachable route via Methodology's cross-link and the page footer.
+    pages["disclaimer"] = st.Page(
+        with_chrome(disclaimer.render, "disclaimer"), title="Disclaimer", url_path="disclaimer", visibility="hidden",
+    )
+    # Daily News admin/status (Slice 1) — same hidden-but-reachable pattern
+    # as disclaimer above: not linked in the sidebar, reachable only by
+    # direct URL, for controlled pilot verification. Also gated a second
+    # way by settings.daily_news_admin_enabled (checked inside the page
+    # itself, default disabled — reader-facing data-integrity pass).
+    pages["daily_news_admin"] = st.Page(
+        with_chrome(daily_news_admin.render, "daily_news_admin"),
+        title="Daily News — Admin", url_path="daily-news-admin", visibility="hidden",
+    )
+    # Research Cases (Phase 4, Step 3C) — same hidden-but-reachable
+    # pattern as disclaimer/daily_news_admin above: not linked in the
+    # sidebar or any nav group, reachable only by direct URL, for
+    # invited-tester review of manually curated research cases. Also
+    # gated a second way by settings.research_cases_enabled (default
+    # disabled — reader-facing data-integrity pass).
+    pages["research_cases"] = st.Page(
+        with_chrome(research_cases.render, "research_cases"),
+        title="Research Cases", url_path="research-cases", visibility="hidden",
+    )
+    # Constraint Research Workspace (Citrini-style Theme research
+    # workspace vertical slice, design/DECISIONS.md) — same hidden-but-
+    # reachable pattern as disclaimer/daily_news_admin/research_cases
+    # above: never linked in the sidebar, any nav group, or the command
+    # palette. Internal-only; also gated a second way by
+    # settings.theme_workspace_enabled (checked inside the page itself,
+    # default disabled).
+    pages["theme_workspace"] = st.Page(
+        with_chrome(theme_workspace.render, "theme_workspace"),
+        title="Constraint Research Workspace", url_path="theme-workspace", visibility="hidden",
+    )
+    # Company Discovery — Phase 2 admin/status (design/DECISIONS.md) —
+    # same hidden-but-reachable pattern as disclaimer/daily_news_admin/
+    # research_cases/theme_workspace above: never linked in the sidebar,
+    # any nav group, or the command palette. Internal-only, strictly
+    # read-only (no promotion action exists in Phase 2); also gated a
+    # second way by settings.company_discovery_admin_enabled (checked
+    # inside the page itself, default disabled).
+    pages["company_discovery_admin"] = st.Page(
+        with_chrome(company_discovery_admin.render, "company_discovery_admin"),
+        title="Company Discovery — Admin", url_path="company-discovery-admin", visibility="hidden",
+    )
+    return pages
 
-with st.sidebar:
-    st.title("EevaResearch AI")
-    st.caption(f"v{settings.app_version} · Data mode: **{settings.data_mode}**")
-    section_name = st.radio("Section", list(SECTIONS.keys()), index=list(SECTIONS.keys()).index(current_section), key="nav_section")
-    section_pages = SECTIONS[section_name]
-    if st.session_state.get("nav_page") not in section_pages:
-        st.session_state["nav_page"] = section_pages[0]
-    page_name = st.radio("Page", section_pages, label_visibility="collapsed", key="nav_page")
-    st.divider()
-    render_top_disclaimer()
 
-st.title(page_name)
-PAGES[page_name].render(settings)
+# Home renders on first visit only; Dashboard is the default thereafter
+# (brief §4) — a page keeps the root path "/" via default=True regardless
+# of its own url_path, so Dashboard stays reachable at both "/" and
+# "/dashboard" once it takes over as default. This per-session flip is
+# unchanged by the cache-stability fix above: `_build_pages` has exactly
+# two possible cache entries (dashboard_is_default True/False), each built
+# once and then reused — so within one session, every rerun after the
+# first consistently gets the SAME "dashboard is default" page set, and a
+# brand-new session's first rerun consistently gets the SAME "home is
+# default" page set, instead of a fresh, unstable set every single time.
+_first_visit = "_has_visited" not in st.session_state
+st.session_state["_has_visited"] = True
+
+pages = _build_pages(dashboard_is_default=not _first_visit)
+st.session_state["_pages"] = pages
+
+if LAST_SEEN_KEY not in st.session_state:
+    # One-time per-session seed so the unread/last-seen pattern (brief §10)
+    # has something to demonstrate on the very first view, not just after a
+    # real Signals visit. Only Signals itself advances this afterward.
+    st.session_state[LAST_SEEN_KEY] = seed_initial_last_seen(get_repositories().signal_repository.get_all_signals())
+st.session_state.setdefault(READ_IDS_KEY, set())
+
+# Private-beta access foundation, Phase 1 (design/DECISIONS.md) — no
+# identity/sign-in exists yet, so `email` is always None; the flag defaults
+# to disabled, which keeps this a no-op and every page working exactly as
+# before. If a deployment enables the flag ahead of real sign-in wiring,
+# this fails closed with a neutral placeholder rather than ever running
+# `selected.run()` unauthenticated. The placeholder wording distinguishes
+# an unconfigured allowlist from "sign-in just isn't wired up yet" purely
+# to be honest with whoever operates the deployment — it never displays
+# the allowlist itself, its size, any email, or the gate's internal reason
+# value.
+_beta_settings = get_settings()
+
+_beta_is_logged_in = getattr(st.user, "is_logged_in", False)
+_beta_email = st.user.get("email") if _beta_is_logged_in else None
+
+if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
+    st.title("Private beta")
+    st.write("Sign in with your approved Google account to access EevaResearch AI.")
+    st.button("Continue with Google", on_click=st.login, args=("google",))
+    st.stop()
+
+_beta_gate_decision = evaluate_beta_gate(_beta_settings, email=_beta_email)
+
+if not _beta_gate_decision.allowed:
+    st.title("Private beta")
+    if _beta_settings.private_beta_allowed_emails:
+        st.error("This Google account is not approved for the private beta.")
+        if _beta_is_logged_in:
+            st.button("Sign out", on_click=st.logout)
+    else:
+        st.info(
+            "Private beta access is being configured. "
+            "Approved beta accounts have not been configured on this deployment yet."
+        )
+    st.stop()
+
+selected = st.navigation(list(pages.values()), position="hidden")
+selected.run()

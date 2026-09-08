@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EevaResearch — clickable prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --rail:#181818;--bg:#212121;--surface:#2A2A2A;--surface-2:#303030;--surface-3:#3A3A3A;
+  --hairline:rgba(255,255,255,.08);--hairline-2:rgba(255,255,255,.14);
+  --text:#ECECEC;--text-2:#B4B4B4;--text-3:#8F8F8F;--text-4:#6E6E6E;
+  --invert-bg:#FFFFFF;--invert-fg:#0D0D0D;--glow:rgba(255,255,255,.20);
+  --sans:'Inter',ui-sans-serif,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
+  --serif:'Source Serif 4',Georgia,serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --r-sm:8px;--r-md:12px;--r-lg:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;letter-spacing:-.006em}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9998;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit}
+.app{display:flex;min-height:100vh}
+
+/* ---------- sidebar ---------- */
+.rail{width:262px;flex-shrink:0;background:var(--rail);padding:12px 10px;display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh;overflow-y:auto}
+body.home-mode .rail{display:none}
+.railtop{display:flex;align-items:center;gap:9px;padding:8px 10px 4px;cursor:pointer}
+.wordmark{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.searchbtn{display:flex;align-items:center;gap:9px;margin:0 2px;padding:8px 11px;border-radius:var(--r-sm);background:var(--surface-2);color:var(--text-4);font-size:13.5px;cursor:pointer;border:0;width:calc(100% - 4px);text-align:left}
+.searchbtn:hover{background:var(--surface-3);color:var(--text-3)}
+.searchbtn kbd{margin-left:auto}
+.navgroup{display:flex;flex-direction:column;gap:1px}
+.navlabel{font-size:11.5px;color:var(--text-4);padding:6px 10px 5px;font-weight:500}
+.navitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:14px;color:var(--text-2);cursor:pointer;line-height:1.35}
+.navitem:hover{background:var(--surface-2);color:var(--text)}
+.navitem.on{background:var(--surface-2);color:var(--text);font-weight:500}
+.navitem .ico{width:15px;height:15px;flex-shrink:0;opacity:.65}
+.navitem.on .ico{opacity:1}
+.navitem .count{margin-left:auto;font-size:11.5px;color:var(--text-4);font-family:var(--mono)}
+.thread{padding:7px 10px;border-radius:var(--r-sm);font-size:13.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.thread:hover{background:var(--surface-2);color:var(--text-2)}
+.railfoot{margin-top:auto;border-top:1px solid var(--hairline);padding:12px 6px 4px;display:flex;flex-direction:column;gap:8px}
+.raillinks{display:flex;gap:12px;padding:0 5px;font-size:11.5px;color:var(--text-4);flex-wrap:wrap}
+.raillinks span{cursor:pointer}
+.raillinks span:hover{color:var(--text-2)}
+
+/* ---------- shared ---------- */
+main{flex:1;min-width:0}
+.inner{max-width:920px;margin:0 auto;padding:0 32px 80px}
+.topline{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 32px 0;max-width:920px;margin:0 auto}
+h1{font-size:25px;font-weight:600;letter-spacing:-.022em;line-height:1.25}
+.sub{font-size:14px;color:var(--text-3);margin-top:3px}
+.sub b{color:var(--text-2);font-weight:500}
+section{margin-top:28px}
+.sechead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;gap:14px}
+.sectitle{font-size:13px;color:var(--text-3);font-weight:500}
+.seclink{font-size:13px;color:var(--text-4);cursor:pointer}
+.seclink:hover{color:var(--text-2)}
+.card{background:var(--surface);border-radius:var(--r-lg);overflow:hidden}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:15px 18px 13px;border-bottom:1px solid var(--hairline)}
+.card-head .t{font-size:14px;font-weight:500}
+.card-head .m{font-family:var(--mono);font-size:11.5px;color:var(--text-4)}
+kbd{font-family:var(--mono);font-size:10.5px;background:var(--surface-3);border-radius:5px;padding:2px 6px;color:var(--text-2);line-height:1.5}
+
+.btn{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:500;padding:10px 19px;border-radius:999px;border:1px solid transparent;cursor:pointer;transition:box-shadow .22s ease,background .18s ease}
+.btn-primary{background:var(--invert-bg);color:var(--invert-fg);box-shadow:0 0 0 1px rgba(255,255,255,.10),0 0 22px var(--glow),0 2px 10px rgba(0,0,0,.4)}
+.btn-primary:hover{box-shadow:0 0 0 1px rgba(255,255,255,.22),0 0 38px rgba(255,255,255,.34),0 4px 16px rgba(0,0,0,.45)}
+.btn-primary:disabled{background:var(--surface-3);color:var(--text-4);box-shadow:none;cursor:not-allowed}
+.btn-ghost{color:var(--text-2);border-color:var(--hairline-2);background:transparent}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text)}
+.btn-sm{padding:7px 14px;font-size:13.5px}
+.btn:focus-visible{outline:2px solid #fff;outline-offset:3px}
+
+.ev{font-size:11px;font-weight:500;border-radius:999px;padding:2px 9px;display:inline-block;line-height:1.55;white-space:nowrap}
+.ev-fact{background:var(--invert-bg);color:var(--invert-fg)}
+.ev-interp{background:rgba(255,255,255,.16);color:var(--text)}
+.ev-infer{border:1px solid var(--hairline-2);color:var(--text-2)}
+.ev-unc{border:1px dashed var(--hairline-2);color:var(--text-3)}
+.tag{font-size:11.5px;color:var(--text-4);background:var(--surface-2);border-radius:99px;padding:2px 9px}
+
+.statuschip{display:inline-flex;align-items:center;gap:9px;font-size:13px;color:var(--text-3);padding:7px 12px;border-radius:999px;background:var(--surface-2)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text-4);flex-shrink:0}
+.dot.live{background:#fff;animation:pulse 2.4s ease-in-out infinite}
+.dot.stale{background:var(--text-2);box-shadow:0 0 0 3px rgba(255,255,255,.07)}
+.statuschip.stale{color:var(--text-2);background:var(--surface-3)}
+.statuschip.demo{border:1px dashed var(--hairline-2);background:transparent}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.45)}50%{box-shadow:0 0 0 5px rgba(255,255,255,0)}}
+
+.excerpt{font-family:var(--serif);font-size:15.5px;line-height:1.62;color:var(--text-2);border-left:1px solid var(--hairline-2);padding-left:15px;margin:11px 0 4px}
+.excerpt .orig{display:block;margin-bottom:7px;color:var(--text-3)}
+.excerpt cite{display:block;font-family:var(--mono);font-style:normal;font-size:11px;color:var(--text-4);margin-top:9px}
+.srcl{font-family:var(--mono);font-size:11.5px;color:var(--text-4);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.srcl:hover{color:var(--text-2)}
+
+/* views */
+.view{display:none}
+.view.on{display:block}
+
+/* ---------- dashboard ---------- */
+.themes{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
+.theme{background:var(--surface);border-radius:var(--r-md);padding:14px;cursor:pointer}
+.theme:hover{background:var(--surface-2)}
+.theme .nm{font-size:13.5px;font-weight:500;line-height:1.3}
+.theme .val{font-family:var(--mono);font-size:20px;margin-top:12px;letter-spacing:-.02em}
+.theme .chg{font-family:var(--mono);font-size:11.5px;margin-left:6px;color:var(--text-3)}
+.theme .chg.up{color:var(--text)}
+.theme .lbl{font-size:11.5px;color:var(--text-4);margin-top:1px}
+.bar{height:3px;background:rgba(255,255,255,.07);border-radius:99px;margin-top:11px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--text-4);border-radius:99px;width:0;animation:fill .9s cubic-bezier(.22,.9,.3,1) forwards}
+.bar i.lead{background:var(--text);box-shadow:0 0 10px rgba(255,255,255,.28)}
+@keyframes fill{to{width:var(--w)}}
+
+.sig{display:flex;gap:13px;padding:14px 18px;border-bottom:1px solid var(--hairline);cursor:pointer;position:relative}
+.sig:last-child{border-bottom:0}
+.sig:hover{background:var(--surface-2)}
+.sig:hover .tag{background:var(--surface-3)}
+.unread{position:absolute;left:7px;top:20px;width:5px;height:5px;border-radius:50%;background:#fff}
+.sig .meta{width:70px;flex-shrink:0;font-family:var(--mono);font-size:11.5px;line-height:1.5}
+.sig .meta .d{color:var(--text-4)}
+.sig .meta .s{color:var(--text-2);margin-top:2px}
+.sig .hd{font-size:14.5px;line-height:1.45;color:var(--text-2)}
+.sig.new .hd{color:var(--text)}
+.sig .tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.divider{display:flex;align-items:center;gap:14px;padding:11px 18px;background:rgba(255,255,255,.02)}
+.divider .ln{flex:1;height:1px;background:var(--hairline)}
+.divider .lb{font-size:11.5px;color:var(--text-4);font-family:var(--mono);white-space:nowrap}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11.5px;color:var(--text-4);font-weight:400;text-align:right;padding:11px 18px 9px;border-bottom:1px solid var(--hairline)}
+th:first-child{text-align:left}
+td{padding:11px 18px;border-bottom:1px solid var(--hairline);text-align:right;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+td:first-child{text-align:left;font-family:var(--sans);font-size:14px;font-weight:500}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-2);cursor:pointer}
+.co{display:block;font-size:12px;color:var(--text-4);font-weight:400;margin-top:1px}
+.up{color:var(--text)}.down{color:var(--text-3)}
+
+.rot{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.rotrow{display:grid;grid-template-columns:104px 1fr 54px;align-items:center;gap:14px}
+.rotrow .nm{font-size:13.5px;color:var(--text-2)}
+.track{height:8px;background:rgba(255,255,255,.06);border-radius:99px;position:relative}
+.track i{position:absolute;top:0;bottom:0;border-radius:99px}
+.track .mid{position:absolute;top:-4px;bottom:-4px;left:50%;width:1px;background:var(--hairline-2)}
+.rotrow .v{font-family:var(--mono);font-size:12px;text-align:right}
+
+/* ---------- theme detail ---------- */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--hairline);margin-bottom:20px}
+.tab{padding:9px 14px;font-size:14px;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--text-2)}
+.tab.on{color:var(--text);border-bottom-color:#fff;font-weight:500}
+.tabpane{display:none}.tabpane.on{display:block}
+.layer{display:grid;grid-template-columns:150px 1fr;gap:18px;padding:15px 18px;border-bottom:1px solid var(--hairline);align-items:start}
+.layer:last-child{border-bottom:0}
+.layer .lk{font-size:13.5px;font-weight:500}
+.layer .ln2{font-size:12px;color:var(--text-4);margin-top:3px}
+.layer .names{display:flex;gap:7px;flex-wrap:wrap}
+.pill{font-family:var(--mono);font-size:12px;background:var(--surface-2);border-radius:99px;padding:3px 11px;cursor:pointer;color:var(--text-2)}
+.pill:hover{background:var(--surface-3);color:var(--text)}
+.pill.second{background:transparent;border:1px dashed var(--hairline-2);color:var(--text-3)}
+.cat{display:flex;gap:16px;padding:14px 18px;border-bottom:1px solid var(--hairline)}
+.cat:last-child{border-bottom:0}
+.cat .when{font-family:var(--mono);font-size:11.5px;color:var(--text-4);width:74px;flex-shrink:0}
+.cat .t{font-size:14.5px}
+.cat .d{font-size:13px;color:var(--text-4);margin-top:3px}
+
+/* ---------- research ---------- */
+.q{background:var(--surface-2);border-radius:var(--r-lg);padding:11px 16px;font-size:14.5px;max-width:74%;margin-left:auto;margin-bottom:20px}
+.answer{padding:22px 20px 6px}
+.claim{display:grid;grid-template-columns:2px 96px 1fr;gap:0 14px;align-items:stretch}
+.spine{width:2px;border-radius:2px}
+.claim.fact .spine{background:#fff;box-shadow:0 0 8px rgba(255,255,255,.30)}
+.claim.interp .spine{background:rgba(255,255,255,.34)}
+.claim.infer .spine{background:rgba(255,255,255,.16)}
+.claim.unc .spine{background:repeating-linear-gradient(to bottom,rgba(255,255,255,.22) 0 4px,transparent 4px 9px)}
+.chipcol{display:flex;justify-content:flex-end;padding-top:2px}
+.cbody{padding-bottom:16px;font-size:14.5px;line-height:1.7}
+.composer{display:flex;align-items:center;gap:10px;margin:8px 20px 8px;padding:12px 16px;background:var(--surface-2);border-radius:26px;color:var(--text-4);font-size:14.5px;cursor:text}
+.disc{font-size:12px;color:var(--text-4);margin:0 20px 18px;text-align:center}
+.firstrun{margin:0 20px 16px;padding:13px 16px;background:var(--surface-2);border-radius:var(--r-md);font-size:13.5px;color:var(--text-2);display:flex;gap:14px;align-items:flex-start}
+.firstrun .x{margin-left:auto;color:var(--text-4);cursor:pointer;font-size:16px;line-height:1}
+
+/* ---------- company ---------- */
+.cohead{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.coticker{font-family:var(--mono);font-size:25px;font-weight:500;letter-spacing:-.02em}
+.exposure{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2);background:var(--surface-2);border-radius:99px;padding:4px 12px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:16px}
+.kpi{background:var(--surface);border-radius:var(--r-md);padding:13px 15px}
+.kpi .k{font-size:11.5px;color:var(--text-4)}
+.kpi .v{font-family:var(--mono);font-size:18px;margin-top:4px}
+
+/* ---------- empty / skeleton ---------- */
+.empty{padding:40px 26px;text-align:center}
+.empty .t{font-size:15px;font-weight:500}
+.empty .d{font-size:13.5px;color:var(--text-4);margin:7px auto 16px;max-width:300px;line-height:1.55}
+
+/* ---------- doc pages ---------- */
+.doc{max-width:660px}
+.doc h2{font-size:19px;font-weight:600;margin:30px 0 10px;letter-spacing:-.02em}
+.doc p{color:var(--text-2);margin-bottom:12px}
+.doc ul{color:var(--text-2);padding-left:20px;margin-bottom:12px}
+.doc li{margin-bottom:6px}
+
+/* ---------- home ---------- */
+.homebar{display:flex;align-items:center;gap:10px;padding:16px 32px;max-width:900px;margin:0 auto}
+.homewrap{max-width:900px;margin:0 auto;padding:0 32px 72px}
+.hero{padding:56px 0 8px;max-width:660px}
+.kicker{font-size:13px;color:var(--text-3);margin-bottom:14px}
+.hero h1{font-size:40px;line-height:1.12;font-weight:600;letter-spacing:-.03em}
+.hero .lede{font-size:16.5px;color:var(--text-2);margin-top:18px;line-height:1.65}
+.cta{display:flex;gap:10px;margin-top:26px;flex-wrap:wrap}
+.hsec{margin-top:52px}
+.hsechead{font-size:13px;color:var(--text-3);font-weight:500;margin-bottom:14px}
+.hseclede{font-size:15px;color:var(--text-2);margin:-6px 0 16px;max-width:620px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.step{background:var(--surface);border-radius:var(--r-md);padding:16px}
+.step .n{font-family:var(--mono);font-size:12px;color:var(--text-4);margin-bottom:8px}
+.step .t{font-size:14.5px;font-weight:500;line-height:1.35}
+.step .d{font-size:13.5px;color:var(--text-3);margin-top:6px;line-height:1.5}
+.evgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.evcard{background:var(--surface);border-radius:var(--r-md);padding:15px}
+.evcard .d{font-size:13px;color:var(--text-3);margin-top:10px;line-height:1.5}
+.themerow{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
+.tcard{background:var(--surface);border-radius:var(--r-md);padding:14px;cursor:pointer}
+.tcard:hover{background:var(--surface-2)}
+.tcard .nm{font-size:14px;font-weight:500}
+.tcard .d{font-size:12.5px;color:var(--text-4);margin-top:5px;line-height:1.45}
+.limits{background:var(--surface);border-radius:var(--r-lg);padding:8px 22px 22px}
+.limit{display:flex;gap:16px;padding:18px 0;border-bottom:1px solid var(--hairline)}
+.limit:last-of-type{border-bottom:0}
+.limit .k{width:26px;flex-shrink:0;font-family:var(--mono);font-size:12px;color:var(--text-4);padding-top:2px}
+.limit .t{font-size:15px;font-weight:500}
+.limit .d{font-size:14px;color:var(--text-3);margin-top:5px;line-height:1.6}
+.closer{display:flex;align-items:center;gap:16px;padding-top:20px;border-top:1px solid var(--hairline);flex-wrap:wrap}
+.closer .txt{font-size:14px;color:var(--text-3);flex:1;min-width:240px}
+.hfoot{border-top:1px solid var(--hairline);margin-top:56px}
+.hfoot .f{display:flex;gap:22px;padding:20px 32px 48px;font-size:13px;color:var(--text-4);max-width:900px;margin:0 auto}
+.hfoot span{cursor:pointer}
+.hfoot span:hover{color:var(--text-2)}
+
+/* ---------- overlays ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:80px 20px}
+.scrim.on{display:flex}
+.scrim.center{align-items:center;padding:20px}
+.scrim.right{align-items:stretch;justify-content:flex-end;padding:0}
+.palette{width:100%;max-width:560px;background:#2E2E2E;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.6),0 0 0 1px var(--hairline-2);overflow:hidden;max-height:70vh;display:flex;flex-direction:column}
+.pinput{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--hairline)}
+.pinput input{flex:1;background:transparent;border:0;outline:0;font-size:15.5px;color:var(--text);font-family:inherit}
+.pinput input::placeholder{color:var(--text-4)}
+.presults{overflow-y:auto;padding-bottom:4px}
+.plabel{font-size:11.5px;color:var(--text-4);padding:9px 18px 5px;font-weight:500}
+.prow{display:flex;align-items:center;gap:12px;padding:8px 18px;font-size:14px;cursor:pointer}
+.prow:hover,.prow.sel{background:var(--surface-3)}
+.prow .ic{width:16px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--text-4);flex-shrink:0}
+.prow .main{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .side{font-size:12.5px;color:var(--text-4);flex-shrink:0}
+.prow .tk{font-family:var(--mono);font-weight:500}
+.pfoot{display:flex;gap:16px;padding:10px 18px;border-top:1px solid var(--hairline);font-size:11.5px;color:var(--text-4);align-items:center}
+.pempty{padding:26px 18px;text-align:center;font-size:13.5px;color:var(--text-4)}
+
+.drawer{width:100%;max-width:470px;background:#2E2E2E;box-shadow:-20px 0 60px rgba(0,0,0,.55);overflow-y:auto;height:100vh}
+.dhead{padding:17px 20px 15px;border-bottom:1px solid var(--hairline);position:relative}
+.dclose{position:absolute;right:14px;top:14px;color:var(--text-4);cursor:pointer;font-size:18px;line-height:1}
+.dclose:hover{color:var(--text)}
+.dhead .top{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;color:var(--text-4);margin-bottom:9px;flex-wrap:wrap;padding-right:24px}
+.dhead h3{font-size:16.5px;font-weight:600;line-height:1.35;letter-spacing:-.015em}
+.dmeta{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--hairline)}
+.dmeta div{padding:13px 20px;border-right:1px solid var(--hairline)}
+.dmeta div:last-child{border-right:0}
+.dmeta .k{font-size:11.5px;color:var(--text-4)}
+.dmeta .v{font-size:14px;font-weight:500;margin-top:2px}
+.dsec{padding:15px 20px;border-bottom:1px solid var(--hairline)}
+.dsec .k{font-size:11.5px;color:var(--text-4);margin-bottom:7px}
+.dsec p{font-size:14px;line-height:1.6;color:var(--text-2)}
+.dsec.counter{background:rgba(255,255,255,.025)}
+.dfoot{display:flex;gap:9px;padding:14px 20px;flex-wrap:wrap}
+
+.dialog{width:100%;max-width:440px;background:#2E2E2E;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 0 1px var(--hairline);overflow:hidden}
+.dialog .h{padding:17px 20px 6px;font-size:16px;font-weight:600;letter-spacing:-.015em}
+.dialog .subd{padding:0 20px 15px;font-size:13.5px;color:var(--text-4);line-height:1.5}
+.field{padding:0 20px 15px}
+.field .lb{font-size:12.5px;color:var(--text-3);margin-bottom:6px;display:flex;gap:6px;align-items:center}
+.req{font-size:10.5px;color:var(--text-4);border:1px solid var(--hairline-2);border-radius:99px;padding:1px 7px}
+.inp,textarea.inp,select.inp{background:var(--surface);border:1px solid var(--hairline-2);border-radius:10px;padding:10px 13px;font-size:14px;color:var(--text);width:100%;font-family:inherit;outline:0}
+textarea.inp{min-height:76px;resize:vertical;line-height:1.55}
+.inp:focus{border-color:rgba(255,255,255,.35)}
+.hint{font-size:12px;color:var(--text-4);margin-top:7px;line-height:1.5}
+.dialog .foot{display:flex;justify-content:flex-end;gap:9px;padding:6px 20px 18px}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff;color:#0D0D0D;font-size:13.5px;font-weight:500;padding:10px 18px;border-radius:999px;box-shadow:0 0 30px var(--glow),0 6px 20px rgba(0,0,0,.4);z-index:200;opacity:0;pointer-events:none;transition:opacity .25s ease}
+.toast.on{opacity:1}
+
+.protobadge{position:fixed;right:14px;bottom:14px;z-index:150;font-size:11.5px;color:var(--text-4);background:var(--surface);border:1px dashed var(--hairline-2);border-radius:999px;padding:5px 13px}
+
+@media(prefers-reduced-motion:reduce){.bar i{animation:none;width:var(--w)}.dot.live{animation:none}.btn{transition:none}}
+@media(max-width:1000px){
+  .rail{display:none}
+  .themes,.themerow,.evgrid,.steps,.kpis{grid-template-columns:repeat(2,1fr)}
+  .claim{grid-template-columns:2px 1fr;gap:0 12px}
+  .chipcol{display:none}
+  .hero h1{font-size:30px}
+}
+</style>
+</head>
+<body class="home-mode">
+
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="rail">
+    <div class="railtop" data-go="home">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="9" fill="#ECECEC"/><path d="M10 10h12M10 16h8M10 22h12" stroke="#181818" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div class="wordmark">EevaResearch</div>
+    </div>
+
+    <button class="searchbtn" id="openPalette">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+      Search everything <kbd>⌘K</kbd>
+    </button>
+
+    <div class="navgroup">
+      <div class="navitem on" data-go="dashboard">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg>Dashboard</div>
+      <div class="navitem" data-go="themes">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12.5 6 7l3 3 5-6.5"/></svg>Themes</div>
+      <div class="navitem" data-go="signals">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5v13M3.5 5v6M12.5 5v6"/></svg>Signals <span class="count">3</span></div>
+      <div class="navitem" data-go="research">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 8.5A5.5 5.5 0 0 1 8.5 14H2l1.7-2.2A5.5 5.5 0 1 1 14 8.5Z"/></svg>Research</div>
+    </div>
+
+    <div class="navgroup">
+      <div class="navlabel">Watchlists</div>
+      <div class="navitem" data-go="signals">Optical / photonics <span class="count">5</span></div>
+      <div class="navitem" data-go="emptylist">HBM supply chain <span class="count">0</span></div>
+      <div class="navitem" data-go="signals">Grid equipment <span class="count">6</span></div>
+    </div>
+
+    <div class="navgroup">
+      <div class="navlabel">Recent research</div>
+      <div class="thread" data-go="research">InP substrate capacity — who else supplies it?</div>
+      <div class="thread" data-go="research">AXT domestic China routing, Q2</div>
+      <div class="thread" data-go="research">Is photonics breadth real or LITE alone?</div>
+    </div>
+
+    <div class="railfoot">
+      <div class="statuschip"><span class="dot live"></span> Live · 4m ago</div>
+      <div class="raillinks">
+        <span data-go="methodology">Methodology</span>
+        <span data-go="disclaimer">Disclaimer</span>
+        <span data-go="about">About</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main>
+
+  <!-- ---------- HOME ---------- -->
+  <div class="view on" id="v-home">
+    <div class="homebar">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="9" fill="#ECECEC"/><path d="M10 10h12M10 16h8M10 22h12" stroke="#181818" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div class="wordmark">EevaResearch</div>
+      <div style="margin-left:auto"><button class="btn btn-ghost btn-sm" data-go="methodology">Methodology</button></div>
+    </div>
+
+    <div class="homewrap">
+      <div class="hero">
+        <div class="kicker">Evidence-first market intelligence</div>
+        <h1>Start with what was filed.</h1>
+        <p class="lede">Big technology trends create opportunity across whole supply chains, not just the headline names. EevaResearch tracks the companies, bottlenecks, catalysts, and capital flows behind AI Buildout, Humanoids, Space, Memory, and Photonics — and labels every claim by how well it's actually supported.</p>
+        <div class="cta">
+          <button class="btn btn-primary" data-go="dashboard">Open Dashboard</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('limits').scrollIntoView({behavior:'smooth'})">What this tool won't do</button>
+        </div>
+      </div>
+
+      <div class="hsec">
+        <div class="hsechead">How to use it</div>
+        <div class="steps">
+          <div class="step"><div class="n">01</div><div class="t">Start on the Dashboard</div><div class="d">What changed since your last visit — new signals, theme movement, watchlist alerts.</div></div>
+          <div class="step"><div class="n">02</div><div class="t">Follow a signal into its theme</div><div class="d">Every signal links back to the supply-chain layer it came from.</div></div>
+          <div class="step"><div class="n">03</div><div class="t">Read the supply chain</div><div class="d">Find who has direct exposure and who is second-order.</div></div>
+          <div class="step"><div class="n">04</div><div class="t">Check whether it's broad</div><div class="d">A theme carried by one name is a different situation than a theme moving together.</div></div>
+          <div class="step"><div class="n">05</div><div class="t">Ask a focused question</div><div class="d">Research separates what happened, why it matters, and what may be underappreciated.</div></div>
+          <div class="step"><div class="n">06</div><div class="t">Save it with an exit condition</div><div class="d">Nothing goes on a watchlist without a written note on what would invalidate it.</div></div>
+        </div>
+      </div>
+
+      <div class="hsec">
+        <div class="hsechead">Every claim carries a label</div>
+        <p class="hseclede">The strongest claims carry the most contrast. You can scan an answer and see its evidence profile before reading a word of it.</p>
+        <div class="evgrid">
+          <div class="evcard"><span class="ev ev-fact">Fact</span><div class="d">Source-backed. Links to the filing, transcript, or disclosure it came from.</div></div>
+          <div class="evcard"><span class="ev ev-interp">Interpretation</span><div class="d">A market read built on the evidence shown above it.</div></div>
+          <div class="evcard"><span class="ev ev-infer">Inference</span><div class="d">Reasoned but unproven. It follows logically; it isn't confirmed.</div></div>
+          <div class="evcard"><span class="ev ev-unc">Uncertainty</span><div class="d">An open question, named explicitly rather than smoothed over.</div></div>
+        </div>
+      </div>
+
+      <div class="hsec">
+        <div class="hsechead">Five themes</div>
+        <div class="themerow">
+          <div class="tcard" data-go="theme"><div class="nm">AI Buildout</div><div class="d">Compute, data centers, power, cooling, packaging</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Humanoids</div><div class="d">Actuators, sensors, vision, edge compute</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Space</div><div class="d">Launch, satellites, Earth observation, defense</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Memory</div><div class="d">DRAM, HBM, NAND, equipment, packaging</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Photonics</div><div class="d">Transceivers, lasers, silicon photonics, interconnect</div></div>
+        </div>
+      </div>
+
+      <div class="hsec" id="limits">
+        <div class="hsechead">What this tool does not do</div>
+        <div class="limits">
+          <div class="limit"><div class="k">01</div><div><div class="t">It does not give financial advice.</div><div class="d">Nothing here is a recommendation to buy, sell, or hold anything. EevaResearch is not a registered investment adviser, dealer, or analyst, and using it creates no advisory relationship. Every decision you make with it is yours.</div></div></div>
+          <div class="limit"><div class="k">02</div><div><div class="t">The conversational agent can be wrong.</div><div class="d">It can misread a filing, miss context, or state something confidently that turns out to be false. Treat its answers as the start of your research, never the end of it. Verify anything you intend to act on.</div></div></div>
+          <div class="limit"><div class="k">03</div><div><div class="t">It does not replace the primary source.</div><div class="d">Every <span class="ev ev-fact">Fact</span> links to the document it came from. Open it. A claim without a link has not been verified, and the label will tell you so.</div></div></div>
+          <div class="limit"><div class="k">04</div><div><div class="t">The data may be delayed or incomplete.</div><div class="d">Coverage varies by filing venue and language, and prices are not real-time. Check the timestamp in the sidebar before relying on anything you see.</div></div></div>
+          <div class="closer">
+            <div class="txt">If that's the arrangement you want, the Dashboard is where the work starts.</div>
+            <button class="btn btn-primary" data-go="dashboard">Open Dashboard</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hfoot"><div class="f">
+      <span data-go="methodology">Methodology</span><span data-go="about">Data sources</span><span data-go="disclaimer">Disclaimer</span><span data-go="about">About</span>
+      <span style="margin-left:auto;cursor:default">Research, not advice.</span>
+    </div></div>
+  </div>
+
+  <!-- ---------- DASHBOARD ---------- -->
+  <div class="view" id="v-dashboard">
+    <div class="topline">
+      <div><h1>Dashboard</h1><div class="sub"><b>3</b> new signals · <b>3</b> themes moved · <b>2</b> watchlist alerts</div></div>
+      <div class="statuschip"><span class="dot live"></span> Live · 4m ago</div>
+    </div>
+    <div class="inner">
+      <section>
+        <div class="sechead"><div class="sectitle">Theme health · share of constituents above 50-day</div><div class="seclink" data-go="themes">All themes</div></div>
+        <div class="themes">
+          <div class="theme" data-go="theme"><div class="nm">AI Buildout</div><div class="val">68<span class="chg up">▲6</span></div><div class="lbl">breadth</div><div class="bar"><i style="--w:68%;animation-delay:0ms"></i></div></div>
+          <div class="theme" data-go="theme"><div class="nm">Photonics</div><div class="val">81<span class="chg up">▲11</span></div><div class="lbl">breadth</div><div class="bar"><i class="lead" style="--w:81%;animation-delay:40ms"></i></div></div>
+          <div class="theme" data-go="theme"><div class="nm">Memory</div><div class="val">74<span class="chg up">▲2</span></div><div class="lbl">breadth</div><div class="bar"><i style="--w:74%;animation-delay:80ms"></i></div></div>
+          <div class="theme" data-go="theme"><div class="nm">Humanoids</div><div class="val">42<span class="chg">▼9</span></div><div class="lbl">breadth</div><div class="bar"><i style="--w:42%;animation-delay:120ms"></i></div></div>
+          <div class="theme" data-go="theme"><div class="nm">Space</div><div class="val">55<span class="chg">▼3</span></div><div class="lbl">breadth</div><div class="bar"><i style="--w:55%;animation-delay:160ms"></i></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">New signals</div><div class="m">3 unread · 4m ago</div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">14 Aug</div><div class="s">TDnet</div></div><div><div class="hd">JX Advanced Metals outlines ¥120B InP substrate capacity program in a Japanese-only disclosure</div><div class="tags"><span class="ev ev-fact">Fact</span><span class="tag">Photonics</span><span class="tag">Substrates</span></div></div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">14 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">AXT routes over half of a record Q2 through domestic Chinese sales</div><div class="tags"><span class="ev ev-interp">Interpretation</span><span class="tag">Photonics</span><span class="tag">AXTI</span></div></div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">13 Aug</div><div class="s">DART</div></div><div><div class="hd">Korean supplier discloses an HBM packaging qualification schedule — customer allocation not stated</div><div class="tags"><span class="ev ev-unc">Uncertainty</span><span class="tag">Memory</span></div></div></div>
+          <div class="divider"><div class="ln"></div><div class="lb">You were last here Thursday, 8:14pm</div><div class="ln"></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">13 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">Lumentum FQ3 Note 4 — Greensboro InP facility at $38M with a 15-month transitional supply agreement</div><div class="tags"><span class="ev ev-fact">Fact</span><span class="tag">Photonics</span><span class="tag">LITE</span></div></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">11 Aug</div><div class="s">TDnet</div></div><div><div class="hd">Sumitomo's Faraday rotator expansion suggests isolator demand runs ahead of transceiver builds</div><div class="tags"><span class="ev ev-infer">Inference</span><span class="tag">Photonics</span></div></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Optical / photonics</div><div class="m">Watchlist · 41m ago</div></div>
+          <table>
+            <thead><tr><th>Company</th><th>Last</th><th>5d</th><th>Breadth rank</th></tr></thead>
+            <tbody>
+              <tr data-go="company"><td>LITE<span class="co">Lumentum</span></td><td>142.18</td><td class="up">▲ 7.4%</td><td>1</td></tr>
+              <tr data-go="company"><td>COHR<span class="co">Coherent</span></td><td>118.60</td><td class="up">▲ 5.1%</td><td>3</td></tr>
+              <tr data-go="company"><td>AAOI<span class="co">Applied Optoelectronics</span></td><td>34.02</td><td class="up">▲ 12.8%</td><td>2</td></tr>
+              <tr data-go="company"><td>AXTI<span class="co">AXT Inc</span></td><td>4.77</td><td class="down">▼ 2.3%</td><td>9</td></tr>
+              <tr data-go="company"><td>NBIS<span class="co">Nebius Group</span></td><td>61.35</td><td class="up">▲ 3.9%</td><td>5</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px"><span class="statuschip stale"><span class="dot stale"></span> Stale · 41m ago · Retry</span></div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Capital rotation</div><div class="m">5-day relative strength vs equal-weight universe</div></div>
+          <div class="rot">
+            <div class="rotrow"><div class="nm">Photonics</div><div class="track"><div class="mid"></div><i style="left:50%;width:22%;background:var(--text)"></i></div><div class="v up">+4.4</div></div>
+            <div class="rotrow"><div class="nm">AI Buildout</div><div class="track"><div class="mid"></div><i style="left:50%;width:13%;background:var(--text-2)"></i></div><div class="v up">+2.6</div></div>
+            <div class="rotrow"><div class="nm">Memory</div><div class="track"><div class="mid"></div><i style="left:50%;width:5%;background:var(--text-3)"></i></div><div class="v">+1.0</div></div>
+            <div class="rotrow"><div class="nm">Space</div><div class="track"><div class="mid"></div><i style="left:41%;width:9%;background:var(--text-4)"></i></div><div class="v down">−1.8</div></div>
+            <div class="rotrow"><div class="nm">Humanoids</div><div class="track"><div class="mid"></div><i style="left:31%;width:19%;background:var(--text-4)"></i></div><div class="v down">−3.7</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- THEMES LIST ---------- -->
+  <div class="view" id="v-themes">
+    <div class="topline"><div><h1>Themes</h1><div class="sub">Five supply chains, tracked from raw material to system</div></div></div>
+    <div class="inner">
+      <section>
+        <div class="themerow">
+          <div class="tcard" data-go="theme"><div class="nm">AI Buildout</div><div class="d">Compute, data centers, power, cooling, packaging</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Humanoids</div><div class="d">Actuators, sensors, vision, edge compute</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Space</div><div class="d">Launch, satellites, Earth observation, defense</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Memory</div><div class="d">DRAM, HBM, NAND, equipment, packaging</div></div>
+          <div class="tcard" data-go="theme"><div class="nm">Photonics</div><div class="d">Transceivers, lasers, silicon photonics, interconnect</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- THEME DETAIL ---------- -->
+  <div class="view" id="v-theme">
+    <div class="topline">
+      <div><h1>Photonics</h1><div class="sub">Breadth <b>81</b> · <b>▲11</b> five-day · 13 constituents</div></div>
+      <div class="statuschip"><span class="dot live"></span> Live · 4m ago</div>
+    </div>
+    <div class="inner">
+      <div class="tabs" style="margin-top:22px">
+        <div class="tab on" data-tab="map">Map</div>
+        <div class="tab" data-tab="rotation">Rotation</div>
+        <div class="tab" data-tab="companies">Companies</div>
+        <div class="tab" data-tab="catalysts">Catalysts</div>
+      </div>
+
+      <div class="tabpane on" id="tab-map">
+        <div class="card">
+          <div class="card-head"><div class="t">Supply chain</div><div class="m">Solid = direct exposure · dashed = second-order</div></div>
+          <div class="layer"><div><div class="lk">Systems</div><div class="ln2">Switches, optical line systems</div></div><div class="names"><span class="pill" data-go="company">ANET</span><span class="pill second" data-go="company">CIEN</span></div></div>
+          <div class="layer"><div><div class="lk">Transceivers</div><div class="ln2">800G / 1.6T modules, CPO</div></div><div class="names"><span class="pill" data-go="company">AAOI</span><span class="pill" data-go="company">COHR</span><span class="pill" data-go="company">LITE</span></div></div>
+          <div class="layer"><div><div class="lk">Components</div><div class="ln2">Lasers, modulators, isolators</div></div><div class="names"><span class="pill" data-go="company">LITE</span><span class="pill second" data-go="company">5802.T</span></div></div>
+          <div class="layer"><div><div class="lk">Substrates</div><div class="ln2">InP, GaAs wafer supply</div></div><div class="names"><span class="pill" data-go="company">AXTI</span><span class="pill" data-go="company">5016.T</span></div></div>
+          <div class="layer"><div><div class="lk">Raw materials</div><div class="ln2">Indium, germanium, rare earths</div></div><div class="names"><span class="pill second" data-go="company">5713.T</span></div></div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-rotation">
+        <div class="card">
+          <div class="card-head"><div class="t">Within-theme rotation</div><div class="m">5-day relative strength vs theme average</div></div>
+          <div class="rot">
+            <div class="rotrow"><div class="nm">AAOI</div><div class="track"><div class="mid"></div><i style="left:50%;width:26%;background:var(--text)"></i></div><div class="v up">+5.2</div></div>
+            <div class="rotrow"><div class="nm">LITE</div><div class="track"><div class="mid"></div><i style="left:50%;width:11%;background:var(--text-2)"></i></div><div class="v up">+2.2</div></div>
+            <div class="rotrow"><div class="nm">COHR</div><div class="track"><div class="mid"></div><i style="left:50%;width:4%;background:var(--text-3)"></i></div><div class="v">+0.8</div></div>
+            <div class="rotrow"><div class="nm">AXTI</div><div class="track"><div class="mid"></div><i style="left:38%;width:12%;background:var(--text-4)"></i></div><div class="v down">−2.4</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px;padding:16px 18px">
+          <div style="display:grid;grid-template-columns:2px 96px 1fr;gap:0 14px">
+            <div class="spine" style="background:rgba(255,255,255,.34)"></div>
+            <div class="chipcol"><span class="ev ev-interp">Interpretation</span></div>
+            <div style="font-size:14.5px;line-height:1.7">Leadership rotated within the theme mid-week rather than concentrating. That pattern is more consistent with a supply-chain repricing than a single-name headline.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-companies">
+        <div class="card">
+          <div class="card-head"><div class="t">Constituents</div><div class="m">13 companies · 41m ago</div></div>
+          <table>
+            <thead><tr><th>Company</th><th>Layer</th><th>Last</th><th>5d</th></tr></thead>
+            <tbody>
+              <tr data-go="company"><td>LITE<span class="co">Lumentum</span></td><td>Components</td><td>142.18</td><td class="up">▲ 7.4%</td></tr>
+              <tr data-go="company"><td>COHR<span class="co">Coherent</span></td><td>Transceivers</td><td>118.60</td><td class="up">▲ 5.1%</td></tr>
+              <tr data-go="company"><td>AAOI<span class="co">Applied Optoelectronics</span></td><td>Transceivers</td><td>34.02</td><td class="up">▲ 12.8%</td></tr>
+              <tr data-go="company"><td>AXTI<span class="co">AXT Inc</span></td><td>Substrates</td><td>4.77</td><td class="down">▼ 2.3%</td></tr>
+              <tr data-go="company"><td>5016.T<span class="co">JX Advanced Metals</span></td><td>Substrates</td><td>1,284</td><td class="up">▲ 6.0%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-catalysts">
+        <div class="card">
+          <div class="card-head"><div class="t">Upcoming</div><div class="m">Next 90 days</div></div>
+          <div class="cat"><div class="when">21 Aug</div><div><div class="t">JX Advanced Metals Q1 briefing</div><div class="d">Watch for annual capex breakdown on the ¥120B substrate program.</div></div></div>
+          <div class="cat"><div class="when">04 Sep</div><div><div class="t">AAOI FQ3 earnings</div><div class="d">800G module mix and stated capacity constraints.</div></div></div>
+          <div class="cat"><div class="when">17 Sep</div><div><div class="t">ECOC 2026</div><div class="d">1.6T and CPO roadmap announcements from module vendors.</div></div></div>
+          <div class="cat"><div class="when">Nov</div><div><div class="t">AXT Q3 report</div><div class="d">Whether domestic China routing holds above 50% of revenue.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- SIGNALS ---------- -->
+  <div class="view" id="v-signals">
+    <div class="topline">
+      <div><h1>Signals</h1><div class="sub"><b>3</b> unread · across 5 filing venues</div></div>
+      <div class="statuschip"><span class="dot live"></span> Live · 4m ago</div>
+    </div>
+    <div class="inner">
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Feed</div><div class="m">EDGAR · TDnet · DART · CNINFO · HKEX</div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">14 Aug</div><div class="s">TDnet</div></div><div><div class="hd">JX Advanced Metals outlines ¥120B InP substrate capacity program in a Japanese-only disclosure</div><div class="tags"><span class="ev ev-fact">Fact</span><span class="tag">Photonics</span><span class="tag">Substrates</span></div></div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">14 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">AXT routes over half of a record Q2 through domestic Chinese sales</div><div class="tags"><span class="ev ev-interp">Interpretation</span><span class="tag">Photonics</span><span class="tag">AXTI</span></div></div></div>
+          <div class="sig new" data-drawer><span class="unread"></span><div class="meta"><div class="d">13 Aug</div><div class="s">DART</div></div><div><div class="hd">Korean supplier discloses an HBM packaging qualification schedule — customer allocation not stated</div><div class="tags"><span class="ev ev-unc">Uncertainty</span><span class="tag">Memory</span></div></div></div>
+          <div class="divider"><div class="ln"></div><div class="lb">You were last here Thursday, 8:14pm</div><div class="ln"></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">13 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">Lumentum FQ3 Note 4 — Greensboro InP facility at $38M with a 15-month transitional supply agreement</div><div class="tags"><span class="ev ev-fact">Fact</span><span class="tag">Photonics</span><span class="tag">LITE</span></div></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">11 Aug</div><div class="s">TDnet</div></div><div><div class="hd">Sumitomo's Faraday rotator expansion suggests isolator demand runs ahead of transceiver builds</div><div class="tags"><span class="ev ev-infer">Inference</span><span class="tag">Photonics</span></div></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">09 Aug</div><div class="s">CNINFO</div></div><div><div class="hd">Chinese substrate producer files environmental permit for a second InP line</div><div class="tags"><span class="ev ev-fact">Fact</span><span class="tag">Photonics</span><span class="tag">Substrates</span></div></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- EMPTY WATCHLIST ---------- -->
+  <div class="view" id="v-emptylist">
+    <div class="topline"><div><h1>HBM supply chain</h1><div class="sub">Watchlist · 0 companies</div></div></div>
+    <div class="inner">
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Companies</div><div class="m">empty</div></div>
+          <div class="empty">
+            <div class="t">Nothing here yet</div>
+            <div class="d">Add companies from a theme map, a signal drawer, or by ticker.</div>
+            <button class="btn btn-primary btn-sm" id="openSaveEmpty">Add a company</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- RESEARCH ---------- -->
+  <div class="view" id="v-research">
+    <div class="topline"><div><h1>Research</h1><div class="sub">Photonics · started 15 Aug</div></div></div>
+    <div class="inner">
+      <section>
+        <div class="card">
+          <div class="firstrun">
+            <div>Answers are generated and can be wrong. Every <span class="ev ev-fact">Fact</span> links to its source — open it before you act on anything. <span class="srcl" data-go="disclaimer">Full disclaimer</span></div>
+            <div class="x" onclick="this.parentElement.remove()">×</div>
+          </div>
+          <div class="answer">
+            <div class="q">Is the photonics move broad, or is Lumentum carrying the theme?</div>
+
+            <div class="claim fact"><div class="spine"></div><div class="chipcol"><span class="ev ev-fact">Fact</span></div>
+              <div class="cbody">Eleven of thirteen constituents closed above their 50-day this week. Breadth rose from 70 to 81. <span class="srcl">Universe file · 15 Aug</span></div></div>
+
+            <div class="claim fact"><div class="spine"></div><div class="chipcol"><span class="ev ev-fact">Fact</span></div>
+              <div class="cbody">The substrate layer disclosed a capacity commitment this week that has not appeared in English-language coverage.
+                <div class="excerpt"><span class="orig">当社は、インジウムリン基板の生産能力拡大に向け、約1,200億円の投資を計画しております。</span>The Company plans to invest approximately ¥120 billion toward expanding production capacity for indium phosphide substrates.<cite>JX Advanced Metals · TDnet · 14 Aug 2026 · p.7</cite></div>
+                <span class="srcl">Open filing</span></div></div>
+
+            <div class="claim interp"><div class="spine"></div><div class="chipcol"><span class="ev ev-interp">Interpretation</span></div>
+              <div class="cbody">The move looks thematic rather than single-name. Leadership rotated within the theme mid-week, which is unusual for a run driven by one headline.</div></div>
+
+            <div class="claim infer"><div class="spine"></div><div class="chipcol"><span class="ev ev-infer">Inference</span></div>
+              <div class="cbody">If substrate capacity is the binding constraint, upstream names should re-rate before transceiver assemblers do.</div></div>
+
+            <div class="claim unc"><div class="spine"></div><div class="chipcol"><span class="ev ev-unc">Uncertainty</span></div>
+              <div class="cbody">No disclosure yet on how the new capacity is allocated across customers. That determines whether this stays broad or concentrates.</div></div>
+          </div>
+          <div class="composer">Ask about a company, theme, filing, or move…</div>
+          <div class="disc">Answers can be wrong. Check the linked source before acting on anything.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- COMPANY ---------- -->
+  <div class="view" id="v-company">
+    <div class="topline">
+      <div>
+        <div class="cohead"><div class="coticker">AXTI</div><div style="padding-top:6px"><div style="font-size:15px;font-weight:500">AXT Inc</div><div class="sub" style="margin-top:1px">Photonics · Substrates</div></div></div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <span class="exposure">Direct exposure · InP wafer supply</span>
+          <span class="exposure">Second-order · Memory packaging</span>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="openSave">Save to watchlist</button>
+    </div>
+    <div class="inner">
+      <div class="kpis">
+        <div class="kpi"><div class="k">Last</div><div class="v">4.77</div></div>
+        <div class="kpi"><div class="k">5-day</div><div class="v down">▼2.3%</div></div>
+        <div class="kpi"><div class="k">Breadth rank</div><div class="v">9 / 13</div></div>
+        <div class="kpi"><div class="k">Signals, 90d</div><div class="v">7</div></div>
+      </div>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Recent signals</div><div class="m">3 in 30 days</div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">14 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">AXT routes over half of a record Q2 through domestic Chinese sales</div><div class="tags"><span class="ev ev-interp">Interpretation</span><span class="tag">Substrates</span></div></div></div>
+          <div class="sig" data-drawer><div class="meta"><div class="d">02 Aug</div><div class="s">EDGAR</div></div><div><div class="hd">Export permit backlog referenced in risk factors without quantification</div><div class="tags"><span class="ev ev-unc">Uncertainty</span><span class="tag">Substrates</span></div></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Thesis</div><div class="m">Your notes</div></div>
+          <div class="dsec" style="border-bottom:1px solid var(--hairline)"><div class="k">Why it's on the list</div><p>Only listed pure-play with InP substrate capacity outside Japan. Upstream of every transceiver name in the theme.</p></div>
+          <div class="dsec counter" style="border-bottom:1px solid var(--hairline)"><div class="k">Contrary evidence</div><p>Margin structure is materially worse than Japanese suppliers, and domestic Chinese routing may reflect weak export demand rather than strategic redirection.</p></div>
+          <div class="dsec"><div class="k">Invalidates if</div><p>Domestic China routing falls below 40% of revenue, or an export permit denial is disclosed.</p></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="card-head"><div class="t">Catalysts</div><div class="m">Next 90 days</div></div>
+          <div class="cat"><div class="when">Nov</div><div><div class="t">Q3 report</div><div class="d">Whether domestic routing holds above 50% of revenue.</div></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ---------- DOC PAGES ---------- -->
+  <div class="view" id="v-methodology">
+    <div class="topline"><div><h1>Methodology</h1><div class="sub">How signals are found, labelled, and checked</div></div></div>
+    <div class="inner"><div class="doc">
+      <h2>Where the material comes from</h2>
+      <p>Signals are extracted from primary filings across five venues — EDGAR, TDnet, DART, CNINFO, and HKEX — rather than from press coverage. A large share of what matters appears first in a footnote, a segment note, or a Japanese- or Korean-language disclosure that English coverage does not pick up for days.</p>
+      <h2>The four labels</h2>
+      <ul>
+        <li><b>Fact</b> — stated in a source document, and linked to it. No link, no label.</li>
+        <li><b>Interpretation</b> — a market read built on facts shown alongside it.</li>
+        <li><b>Inference</b> — follows logically from the evidence but is not confirmed anywhere.</li>
+        <li><b>Uncertainty</b> — a named open question. Recorded rather than smoothed over.</li>
+      </ul>
+      <h2>Novelty check</h2>
+      <p>Before a signal is published it is checked against prior coverage by source and date. If the material has already been reported, it is not a signal.</p>
+      <h2>Contrary evidence</h2>
+      <p>Every signal carries a contrary-evidence field. When none has been recorded, the drawer says so explicitly rather than hiding the section — an absent counter-argument and an unexamined one are different things.</p>
+    </div></div>
+  </div>
+
+  <div class="view" id="v-disclaimer">
+    <div class="topline"><div><h1>Disclaimer</h1><div class="sub">Research, not advice</div></div></div>
+    <div class="inner"><div class="doc">
+      <h2>Not financial advice</h2>
+      <p>Nothing in this tool is a recommendation to buy, sell, or hold any security. EevaResearch is not a registered investment adviser, dealer, or analyst, and using it creates no advisory relationship. Every decision you make with it is yours.</p>
+      <h2>The conversational agent can be wrong</h2>
+      <p>It can misread a filing, miss context, or state something confidently that turns out to be false. Treat its answers as the start of your research, never the end of it. Verify anything you intend to act on against the linked source.</p>
+      <h2>Not a substitute for the source</h2>
+      <p>Every Fact links to the document it came from. A claim without a link has not been verified, and the label will tell you so.</p>
+      <h2>Data may be delayed or incomplete</h2>
+      <p>Coverage varies by filing venue and language. Prices are not real-time. Check the freshness indicator on each panel before relying on what it shows.</p>
+    </div></div>
+  </div>
+
+  <div class="view" id="v-about">
+    <div class="topline"><div><h1>About</h1><div class="sub">What the tool does and where its data comes from</div></div></div>
+    <div class="inner"><div class="doc">
+      <h2>What the tool does</h2>
+      <p>EevaResearch tracks the companies, supply chains, catalysts, bottlenecks, and capital flows behind five technology investment themes. The premise is that major trends create opportunity across an entire supply chain, not only in the largest headline companies — so the work is figuring out which layer benefits, where the bottleneck actually sits, and who has direct versus second-order exposure.</p>
+      <h2>Five themes</h2>
+      <ul>
+        <li><b>AI Buildout</b> — compute, data centers, networking, power, cooling, packaging, servers</li>
+        <li><b>Humanoids</b> — actuators, motion systems, sensors, machine vision, edge compute, batteries</li>
+        <li><b>Space</b> — launch, satellites, satellite communications, Earth observation, defense</li>
+        <li><b>Memory</b> — DRAM, HBM, NAND, controllers, equipment, materials, testing, packaging</li>
+        <li><b>Photonics</b> — optical transceivers, lasers, silicon photonics, coherent networking, interconnect</li>
+      </ul>
+      <h2>Data sources</h2>
+      <p>SEC EDGAR, TDnet (Japan), DART (Korea), CNINFO (China), and HKEXnews, plus market pricing for breadth and rotation calculations. Filing coverage varies by venue; pricing is delayed.</p>
+    </div></div>
+  </div>
+
+  </main>
+</div>
+
+<!-- ================= COMMAND PALETTE ================= -->
+<div class="scrim" id="scrimPalette">
+  <div class="palette" onclick="event.stopPropagation()">
+    <div class="pinput">
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="opacity:.45"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+      <input id="pq" placeholder="Search companies, themes, signals, threads…" autocomplete="off">
+      <kbd>esc</kbd>
+    </div>
+    <div class="presults" id="presults"></div>
+    <div class="pfoot"><span><kbd>↑</kbd> <kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>⌘↵</kbd> new thread</span></div>
+  </div>
+</div>
+
+<!-- ================= SIGNAL DRAWER ================= -->
+<div class="scrim right" id="scrimDrawer">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="dhead">
+      <div class="dclose" data-close>×</div>
+      <div class="top"><span>TDnet</span><span>·</span><span>14 Aug 2026</span><span>·</span><span>Photonics / Substrates</span></div>
+      <h3>JX Advanced Metals outlines ¥120B InP substrate capacity program</h3>
+    </div>
+    <div class="dmeta">
+      <div><div class="k">Direction</div><div class="v">Improving</div></div>
+      <div><div class="k">Strength</div><div class="v">High</div></div>
+      <div><div class="k">Horizon</div><div class="v">12–24mo</div></div>
+    </div>
+    <div class="dsec"><div class="k">What changed</div><p>A capacity commitment of this size at the substrate layer implies the constraint sits upstream of transceiver assembly, not at it.</p></div>
+    <div class="dsec"><div class="k">Evidence</div>
+      <div class="excerpt"><span class="orig">当社は、インジウムリン基板の生産能力拡大に向け、約1,200億円の投資を計画しております。</span>The Company plans to invest approximately ¥120 billion toward expanding production capacity for indium phosphide substrates.<cite>JX Advanced Metals · TDnet · 14 Aug 2026 · p.7</cite></div>
+    </div>
+    <div class="dsec counter"><div class="k">Contrary evidence</div><p>The figure spans a multi-year program with no annual breakdown, and part may fund maintenance rather than net new capacity. Two peers announced expansions in the same quarter, so incremental industry supply may be smaller than the headline suggests.</p></div>
+    <div class="dsec"><div class="k">Validates if</div><p>Customer allocation is disclosed, or a downstream buyer confirms a long-term supply agreement at the substrate layer.</p></div>
+    <div class="dsec"><div class="k">Invalidates if</div><p>Capex guidance is revised down, or the program is restated as maintenance in the next quarterly report.</p></div>
+    <div class="dfoot">
+      <button class="btn btn-primary btn-sm" id="openSaveDrawer">Save to watchlist</button>
+      <button class="btn btn-ghost btn-sm">Open filing</button>
+      <button class="btn btn-ghost btn-sm" data-go="research">Ask about this</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SAVE DIALOG ================= -->
+<div class="scrim center" id="scrimSave">
+  <div class="dialog" onclick="event.stopPropagation()">
+    <div class="h">Save AXTI to a watchlist</div>
+    <div class="subd">AXT Inc · Photonics / Substrates</div>
+    <div class="field">
+      <div class="lb">Watchlist</div>
+      <select class="inp"><option>Optical / photonics</option><option>HBM supply chain</option><option>Grid equipment</option></select>
+    </div>
+    <div class="field">
+      <div class="lb">What would invalidate this <span class="req">required</span></div>
+      <textarea class="inp" id="invalidate" placeholder="Domestic China routing falls below 40% of revenue, or an export permit denial is disclosed…"></textarea>
+      <div class="hint">You'll be reminded of this the next time the position moves against you.</div>
+    </div>
+    <div class="foot">
+      <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" id="saveBtn" disabled>Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Saved to Optical / photonics</div>
+<div class="protobadge">Clickable prototype · sample data</div>
+
+<script>
+/* ---------- routing ---------- */
+const views=[...document.querySelectorAll('.view')];
+function go(id){
+  views.forEach(v=>v.classList.toggle('on', v.id==='v-'+id));
+  document.body.classList.toggle('home-mode', id==='home');
+  const map={dashboard:'dashboard',themes:'themes',theme:'themes',company:'themes',signals:'signals',emptylist:'signals',research:'research'};
+  document.querySelectorAll('.rail .navitem').forEach(n=>n.classList.remove('on'));
+  const target=map[id];
+  if(target){const n=document.querySelector('.rail .navitem[data-go="'+target+'"]'); if(n)n.classList.add('on');}
+  window.scrollTo({top:0});
+  // replay bar animation
+  document.querySelectorAll('#v-dashboard .bar i').forEach(b=>{b.style.animation='none';b.offsetHeight;b.style.animation='';});
+}
+document.addEventListener('click',e=>{
+  const g=e.target.closest('[data-go]');
+  if(g){ closeAll(); go(g.dataset.go); }
+});
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');
+  document.getElementById('tab-'+t.dataset.tab).classList.add('on');
+}));
+
+/* ---------- overlays ---------- */
+const scrims=[...document.querySelectorAll('.scrim')];
+function closeAll(){scrims.forEach(s=>s.classList.remove('on'))}
+scrims.forEach(s=>s.addEventListener('click',()=>s.classList.remove('on')));
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeAll));
+
+/* drawer */
+document.addEventListener('click',e=>{
+  const s=e.target.closest('[data-drawer]');
+  if(s){
+    s.classList.remove('new');
+    const u=s.querySelector('.unread'); if(u)u.remove();
+    document.getElementById('scrimDrawer').classList.add('on');
+  }
+});
+
+/* save dialog */
+const scrimSave=document.getElementById('scrimSave'),
+      inv=document.getElementById('invalidate'),
+      saveBtn=document.getElementById('saveBtn'),
+      toast=document.getElementById('toast');
+function openSave(){closeAll();scrimSave.classList.add('on');setTimeout(()=>inv.focus(),60)}
+['openSave','openSaveDrawer','openSaveEmpty'].forEach(id=>{
+  const el=document.getElementById(id); if(el)el.addEventListener('click',openSave);
+});
+inv.addEventListener('input',()=>{saveBtn.disabled=inv.value.trim().length===0});
+saveBtn.addEventListener('click',()=>{
+  closeAll(); inv.value=''; saveBtn.disabled=true;
+  toast.classList.add('on'); setTimeout(()=>toast.classList.remove('on'),2200);
+});
+
+/* ---------- command palette ---------- */
+const INDEX=[
+  {g:'Companies',ic:'◈',t:'AXTI · AXT Inc',s:'Photonics · substrates',go:'company',tk:1},
+  {g:'Companies',ic:'◈',t:'LITE · Lumentum',s:'Photonics · components',go:'company',tk:1},
+  {g:'Companies',ic:'◈',t:'AAOI · Applied Optoelectronics',s:'Photonics · transceivers',go:'company',tk:1},
+  {g:'Companies',ic:'◈',t:'COHR · Coherent',s:'Photonics · transceivers',go:'company',tk:1},
+  {g:'Themes',ic:'☰',t:'Photonics',s:'13 constituents',go:'theme'},
+  {g:'Themes',ic:'☰',t:'Memory',s:'19 constituents',go:'theme'},
+  {g:'Themes',ic:'☰',t:'AI Buildout',s:'31 constituents',go:'theme'},
+  {g:'Signals',ic:'▲',t:'JX Advanced Metals ¥120B InP capacity program',s:'14 Aug',go:'signals'},
+  {g:'Signals',ic:'▲',t:'Greensboro InP facility, Note 4',s:'13 Aug',go:'signals'},
+  {g:'Signals',ic:'▲',t:'HBM packaging qualification schedule',s:'13 Aug',go:'signals'},
+  {g:'Recent research',ic:'✳',t:'InP substrate capacity — who else supplies it?',s:'2d ago',go:'research'},
+  {g:'Recent research',ic:'✳',t:'Is photonics breadth real or LITE alone?',s:'5d ago',go:'research'},
+  {g:'Actions',ic:'＋',t:'New research thread',s:'⌘N',go:'research'},
+  {g:'Actions',ic:'☰',t:'Open Methodology',s:'',go:'methodology'},
+];
+const scrimP=document.getElementById('scrimPalette'),pq=document.getElementById('pq'),pres=document.getElementById('presults');
+let sel=0,shown=[];
+function render(){
+  const q=pq.value.trim().toLowerCase();
+  shown=q?INDEX.filter(i=>(i.t+' '+i.s+' '+i.g).toLowerCase().includes(q)):INDEX;
+  if(!shown.length){pres.innerHTML='<div class="pempty">No matches. Try a ticker, theme, or filing venue.</div>';return}
+  sel=Math.min(sel,shown.length-1);
+  let html='',last='';
+  shown.forEach((i,n)=>{
+    if(i.g!==last){html+='<div class="plabel">'+i.g+'</div>';last=i.g}
+    const nm=i.tk?'<span class="tk">'+i.t.split(' · ')[0]+'</span> · '+i.t.split(' · ')[1]:i.t;
+    html+='<div class="prow'+(n===sel?' sel':'')+'" data-n="'+n+'"><span class="ic">'+i.ic+'</span><span class="main">'+nm+'</span><span class="side">'+i.s+'</span></div>';
+  });
+  pres.innerHTML=html;
+  pres.querySelectorAll('.prow').forEach(r=>r.addEventListener('click',()=>choose(+r.dataset.n)));
+}
+function choose(n){const i=shown[n];if(!i)return;closeAll();go(i.go)}
+function openPalette(){closeAll();scrimP.classList.add('on');pq.value='';sel=0;render();setTimeout(()=>pq.focus(),50)}
+document.getElementById('openPalette').addEventListener('click',openPalette);
+pq.addEventListener('input',()=>{sel=0;render()});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();return}
+  if(e.key==='Escape'){closeAll();return}
+  if(!scrimP.classList.contains('on'))return;
+  if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(sel+1,shown.length-1);render();}
+  if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(sel-1,0);render();}
+  if(e.key==='Enter'){e.preventDefault();choose(sel);}
+});
+render();
+</script>
+</body>
+</html>

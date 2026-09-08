@@ -1,33 +1,48 @@
 [theme]
-base = "dark"
+# Light editorial visual-theme redesign (design/DECISIONS.md) — a full
+# replacement of the prior midnight-navy palette (commit 6e34c76), not an
+# additive layer on top of it. Same theme keys as before, values re-mapped
+# to the new light palette. secondaryBackgroundColor drives most native
+# widget chrome (text inputs, selectboxes, dataframe headers) — mapped to
+# the "input/table surface" tone, distinct from card surfaces (which
+# assets/styles.css handles via its own --surface token on custom-classed
+# containers). borderColor/dataframeBorderColor use assets/styles.css's
+# --hairline-2 value: #7A8DA2, a ~15%-darker version of the literally
+# specified functional-border color (#8FA6BF), which measured only
+# 2.29:1-2.51:1 against this palette's four backgrounds — short of the
+# 3:1 AA non-text-contrast minimum a functional widget/table boundary
+# needs. #7A8DA2 clears 3:1 in the worst case (3.11:1 on the sidebar
+# background) — see assets/styles.css's --hairline-2 comment for the full
+# before/after contrast table.
+base = "light"
 
-primaryColor = "#58A6FF"
-backgroundColor = "#0A0A0A"
-secondaryBackgroundColor = "#161616"
-textColor = "#F2F2F2"
+primaryColor = "#102A43"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
 
-linkColor = "#58A6FF"
+linkColor = "#1D4ED8"
 linkUnderline = false
 
-borderColor = "#2A2A2A"
-dataframeBorderColor = "#2A2A2A"
-dataframeHeaderBackgroundColor = "#161616"
+borderColor = "#7A8DA2"
+dataframeBorderColor = "#7A8DA2"
+dataframeHeaderBackgroundColor = "#FFFFFF"
 
-codeTextColor = "#58A6FF"
-codeBackgroundColor = "#161616"
+codeTextColor = "#0F172A"
+codeBackgroundColor = "#FFFFFF"
 
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
-headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
 codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
 
-baseFontSize = 16
-headingFontWeights = [700, 600, 600, 600, 600, 600]
+baseFontSize = 15
+headingFontWeights = [600, 600, 600, 600, 600, 600]
 
-baseRadius = "medium"
-buttonRadius = "full"
+baseRadius = "small"
+buttonRadius = "small"
 
 showWidgetBorder = true
-showSidebarBorder = true
+showSidebarBorder = false
 
 [server]
 headless = true

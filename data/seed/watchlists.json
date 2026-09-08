@@ -1,0 +1,10 @@
+{
+  "Core Themes": [
+    {"ticker_symbol": "DEMO", "added_at": "2026-08-15T00:00:00+00:00", "note": "Demo placeholder entry.", "invalidates_if": "Domestic routing falls below 40% of revenue, or an export permit denial is disclosed."}
+  ],
+  "High-Conviction Research": [
+    {"ticker_symbol": "DEMO", "added_at": "2026-08-15T00:00:00+00:00", "note": "Demo placeholder entry.", "invalidates_if": "Thesis-defining catalyst fails to materialize within the stated horizon."}
+  ],
+  "Earnings/Catalysts": [],
+  "Emerging Names": []
+}

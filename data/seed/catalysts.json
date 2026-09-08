@@ -1,0 +1,44 @@
+[
+  {
+    "id": "cat-001", "title": "Illustrative catalyst: AI infrastructure conference",
+    "date": "2026-09-05", "catalyst_type": "Industry Event",
+    "description": "Demo placeholder catalyst entry for the AI Buildout theme — not a real scheduled event.",
+    "theme_slug": "ai-buildout", "is_demo": true
+  },
+  {
+    "id": "cat-002", "title": "Illustrative catalyst: Export policy review",
+    "date": "2026-09-12", "catalyst_type": "Regulatory",
+    "description": "Demo placeholder catalyst entry — not a real regulatory date.",
+    "theme_slug": "ai-buildout", "is_demo": true
+  },
+  {
+    "id": "cat-003", "title": "Illustrative catalyst: Humanoid pilot deployment window",
+    "date": "2026-09-20", "catalyst_type": "Product Launch",
+    "description": "Demo placeholder catalyst entry for the Humanoids theme — not a real product date.",
+    "theme_slug": "humanoids", "is_demo": true
+  },
+  {
+    "id": "cat-004", "title": "Illustrative catalyst: Launch window",
+    "date": "2026-08-28", "catalyst_type": "Industry Event",
+    "description": "Demo placeholder catalyst entry for the Space theme — not a real launch date.",
+    "theme_slug": "space", "is_demo": true
+  },
+  {
+    "id": "cat-005", "title": "Illustrative catalyst: Memory cycle commentary",
+    "date": "2026-09-02", "catalyst_type": "Earnings",
+    "description": "Demo placeholder catalyst entry for the Memory theme — not a real earnings date.",
+    "theme_slug": "memory", "is_demo": true
+  },
+  {
+    "id": "cat-006", "title": "Illustrative catalyst: Optical interconnect standards meeting",
+    "date": "2026-09-15", "catalyst_type": "Industry Event",
+    "description": "Demo placeholder catalyst entry for the Photonics theme — not a real event date.",
+    "theme_slug": "photonics", "is_demo": true
+  },
+  {
+    "id": "cat-007", "title": "Demo company: Nova Aperture Systems (DEMO) earnings window",
+    "date": "2026-09-18", "catalyst_type": "Earnings",
+    "description": "Demo placeholder catalyst entry on the fictional DEMO ticker's catalyst calendar — not a real earnings date.",
+    "theme_slug": "photonics", "ticker_symbol": "DEMO", "is_demo": true
+  }
+]

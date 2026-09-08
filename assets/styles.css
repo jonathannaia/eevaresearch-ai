@@ -1,0 +1,724 @@
+/* EevaResearch — consolidated stylesheet (UI restructure, design/eevaresearch-brief.md
+   + design/DECISIONS.md's UX-refinement iteration). Single source of truth
+   for all app styling, loaded once via src/ui/ui.py::load_css(). No inline
+   <style> blocks anywhere else.
+
+   Light editorial visual-theme redesign (design/DECISIONS.md): a full
+   replacement of the shared token system, not an additive layer over the
+   prior midnight-navy pass (commit 6e34c76) — every background/text/
+   border/accent token below is redefined for a white-card, off-white-page
+   editorial look with a midnight-blue primary action. Layout, components,
+   copy, and the pill/glow button *mechanics* are unchanged; only the color
+   values feeding them moved. Verified against WCAG contrast math at
+   redesign time: primary text ≥16:1, secondary text ≥9.4:1, muted text
+   ≥4.5:1 (once panel-appropriate — see the --text-3/--text-4 note below),
+   and the three status accents (green/amber/rose) ≥4.4:1 against every
+   surface tone below — all clear of the 4.5:1 (normal text) / 3:1 (UI
+   controls, focus indicators) AA minimums this pass targets. Two values
+   were nudged slightly off their literally-specified hex to actually clear
+   3:1 (the functional border) — see that token's own comment for the
+   before/after math; this is called out again in the redesign's commit
+   message and PR-facing report, not just here.
+
+   Direction color (added in the UX-refinement pass, explicitly approved as
+   NOT a reversal of the black/white system): green/amber/rose are
+   restrained SEMANTIC accents only — small dots, thin rails, small arrows,
+   subtle metric accents, compact status tags, tiny chart-state markers.
+   Never large card backgrounds, never bright/neon, never colored headings,
+   never decorative. Glyph + text-weight still carry direction on their own;
+   color is an additional accent, not a replacement. Darker/more saturated
+   than a pastel would be, specifically so they still read as text-weight
+   (4.5:1+) when used as chip/glyph foreground, not just as a 3:1 dot fill.
+
+   Motion is restricted to two instances (breadth-bar fill, live-status-dot
+   pulse), both gated by prefers-reduced-motion. */
+
+:root {
+    /* Backgrounds — page / sidebar / card / elevated-hover / native-widget. */
+    --bg: #F8FAFC;
+    --rail: #F1F5F9;
+    --surface: #FFFFFF;
+    --surface-2: #F8FBFF;
+    /* Third elevation tier for track/badge/disabled fills (breadth-bar
+       track, unread-count badge, disabled-button background) — not one of
+       the seven given tokens (the palette only names 5 surface roles), but
+       every one of those roles is already spoken for by --bg/--rail/
+       --surface/--surface-2/--surface-input, so this fills the one
+       remaining internal role the previous palette's --surface-3 also
+       filled, kept deliberately subtle (contrast ~1.2:1 against white —
+       barely differentiated, by design, for a "track" rather than a card). */
+    --surface-3: #E2E8F0;
+    --surface-input: #FFFFFF;
+    /* Borders: --hairline is decorative (dividers, footer rules, chart
+       gridlines) with no contrast floor of its own. --hairline-2 is the
+       functional UI-component boundary (secondary-button/input/chip
+       outlines) — kept ≥3:1 against every surface above, which the
+       literally-specified #8FA6BF does not quite clear on its own
+       (2.29:1-2.51:1 measured against these four backgrounds); #7A8DA2 is
+       that same color ~15% darker, chosen as the lightest step that still
+       clears 3:1 in the worst case (sidebar, 3.11:1). Input surfaces are
+       white-on-white with their container card, so this border is the
+       *only* way an input's boundary is perceivable here — not a
+       decorative nicety. */
+    --hairline: #D9E2EC;
+    --hairline-2: #7A8DA2;
+    --text: #0F172A;
+    --text-2: #334155;
+    /* Only three text tiers in this palette (Primary/Secondary/Muted) —
+       the previous four-tier ramp's two dimmest steps (text-3/text-4)
+       both collapse onto the one Muted value rather than inventing a
+       shade outside the given palette. Muted (#64748B) clears 4.5:1 on
+       --bg/--surface/--surface-2 (4.55-4.76:1) but falls just short on
+       --rail specifically (4.34:1) — the handful of sidebar-only labels
+       that would otherwise use it are bumped to --text-2 at their call
+       sites below instead (search "sidebar contrast fix" in this file). */
+    --text-3: #64748B;
+    --text-4: #64748B;
+    /* Primary CTA fill/label — same role as before (the button/chip's
+       highest-emphasis pair): midnight-blue fill, white label (14.6:1). */
+    --invert-bg: #102A43;
+    --invert-fg: #FFFFFF;
+    --glow: rgba(22, 62, 104, .18);
+    --accent: #102A43;
+    --accent-hover: #163E68;
+    --focus: #2563EB;
+    --link: #1D4ED8;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --font-ui: "Inter", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+    --font-serif: "Source Serif 4", "Noto Serif JP", "Noto Serif KR", "Noto Serif SC", serif;
+    /* Restrained semantic direction accents only — see note above.
+       Green = positive/confirmed, amber = watch/uncertain, rose =
+       risk/negative. Never used as a large fill (dots/rails/tinted-pill
+       backgrounds only). The *-dim tints are deliberately much lower
+       alpha (.06) than the color's own saturation would suggest — on a
+       white ground, mixing more of a dark status color into the tint
+       darkens the pill background and erodes the text-on-tint contrast;
+       .06 is the lightest alpha that still clears 4.5:1 for every one of
+       the three colors used as text on its own tint. */
+    --pos: #087F5B;
+    --pos-dim: rgba(8, 127, 91, .06);
+    --neg: #B4233C;
+    --neg-dim: rgba(180, 35, 60, .06);
+    --mix: #9A6700;
+    --mix-dim: rgba(154, 103, 0, .06);
+    /* Spacing rhythm (final polish pass) — a shared scale so every
+       component reaches for one of these instead of a one-off margin.
+       4: tight label/value pair. 8: related inline metadata. 12: small
+       internal card grouping. 16: standard card padding/action gap. 24:
+       between component groups. 32: between major Dashboard modules.
+       40-48: between major page blocks. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 40px;
+    --space-8: 48px;
+}
+
+/* ---------- Streamlit chrome (brief §17) ---------- */
+#MainMenu, footer,
+[data-testid="stDecoration"], [data-testid="stStatusWidget"] {
+    display: none !important; visibility: hidden !important;
+}
+/* stHeader and stToolbar themselves stay in the tree (not display:none)
+   because the sidebar's expand button lives inside stToolbar in this
+   Streamlit version — display:none on an ancestor can't be overridden
+   per-descendant, which is what made that button permanently unreachable
+   once the sidebar was collapsed. Hide their unwanted native children
+   individually instead (deploy button, hamburger menu, toolbar actions);
+   the shells themselves get a transparent background so they don't paint
+   a visible bar (see the visibility-override rule further down for the
+   expand/collapse buttons themselves). */
+[data-testid="stHeader"], [data-testid="stToolbar"] {
+    background: transparent !important; box-shadow: none !important;
+}
+[data-testid="stToolbarActions"], [data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"], [data-testid="stMainMenuButton"] {
+    display: none !important; visibility: hidden !important;
+}
+
+/* ---------- base / layout ---------- */
+.stApp { background: var(--bg); }
+.block-container {
+    max-width: 1360px;
+    padding-top: 1.25rem;
+    padding-bottom: 3rem;
+}
+/* Sidebar expand/collapse control. Streamlit renders both with
+   `visibility: hidden` by default (a hover-to-reveal treatment that
+   wasn't surfacing reliably here) — with no other affordance to reopen a
+   closed sidebar, that left users with an apparently-permanent dead end
+   once they collapsed it (reported directly). Force both permanently
+   visible, and give them a high-contrast pill treatment on top (was 60%
+   text opacity, easy to miss even when it did show). Covers the collapse
+   button (inside the open sidebar) and the expand button (shown in the
+   main content's top-left corner when the sidebar is closed). */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stExpandSidebarButton"] {
+    visibility: visible !important;
+}
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stExpandSidebarButton"] {
+    background: var(--surface-2) !important;
+    border: 1px solid var(--hairline-2) !important;
+    border-radius: var(--r-sm) !important;
+}
+[data-testid="stSidebarCollapseButton"] button span,
+[data-testid="stExpandSidebarButton"] span {
+    color: var(--text) !important;
+    opacity: 1 !important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stExpandSidebarButton"]:hover {
+    background: var(--surface-3) !important;
+    border-color: var(--text-3) !important;
+}
+
+html, body, [class*="css"] { font-family: var(--font-ui); }
+h1, h2, h3 { font-family: var(--font-ui); letter-spacing: -0.006em; color: var(--text); }
+p, li, span, div { letter-spacing: -0.006em; }
+/* Accessible link color (6.4-6.7:1 against every surface) for any plain
+   content link — every nav/button/pill <a> above has its own higher-
+   specificity and/or !important color rule elsewhere in this file and
+   wins the cascade regardless, so this only reaches genuinely plain,
+   unclassed anchors (e.g. native markdown-syntax links). */
+a { color: var(--link); }
+a:hover { color: var(--accent-hover); }
+
+/* ---------- type scale ---------- */
+.er-eyebrow {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-3); margin-bottom: 0.5rem;
+}
+.er-hero-title {
+    /* 40px only on the Home hero (brief §5 type scale) — the only page
+       that uses this class. */
+    font-weight: 600; font-size: 40px;
+    line-height: 1.15; letter-spacing: -0.01em; color: var(--text); margin: 0 0 0.75rem 0;
+}
+.er-hero-sub {
+    font-size: 0.95rem; line-height: 1.6; color: var(--text-2);
+    max-width: 640px; margin-bottom: 0.5rem;
+}
+.er-page-title {
+    font-weight: 600; font-size: 1.55rem; color: var(--text); margin: 0 0 var(--space-1) 0;
+}
+/* Muted one-line description directly under a page title (final polish
+   pass) — distinct from .er-hero-sub (Home only, wider/larger) and from
+   section_header()'s own optional subtitle (which sits under a *section*
+   label, not the page title). */
+.er-page-subtitle { font-size: 0.9rem; color: var(--text-2); margin: 0 0 var(--space-6) 0; line-height: 1.5; }
+.er-card-title { font-weight: 600; font-size: 0.95rem; color: var(--text); }
+.er-section-label { font-size: 13px; color: var(--text-3); margin: var(--space-6) 0 var(--space-2) 0; font-weight: 500; }
+.er-section-label:first-child { margin-top: 0; }
+.er-muted { color: var(--text-2); font-size: 0.85rem; }
+.er-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.er-metric-value { font-family: var(--font-mono); font-weight: 500; font-size: 1.05rem; color: var(--text); }
+.er-metric-label {
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-3);
+    margin-bottom: var(--space-1); display: block;
+}
+.er-excerpt {
+    font-family: var(--font-serif);
+    font-size: 0.92rem; line-height: 1.65; color: var(--text-2);
+}
+
+/* ---------- footer ---------- */
+.er-footer {
+    margin-top: var(--space-8); padding-top: var(--space-5); border-top: 1px solid var(--hairline);
+    color: var(--text-3); font-size: 0.78rem; line-height: 1.6;
+}
+.er-footer .er-footer-version { font-family: var(--font-mono); margin-top: var(--space-2); }
+/* Compact one-line variant for normal workspace pages — full text stays
+   reserved for Methodology/Disclaimer (usability follow-up: the same long
+   footer repeated at Dashboard length on every page buried the page's own
+   content under boilerplate). */
+.er-footer-compact { margin-top: var(--space-6); padding-top: var(--space-4); }
+
+/* ---------- rows (catalyst timeline etc.) ---------- */
+.er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; }
+.er-row:last-child { border-bottom: none; }
+/* Fixed-width date badge so catalyst titles/types start at a consistent
+   x-position across rows, regardless of "Sep 5" vs "Dec 25" width. */
+.er-date-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 92px; background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 4px; padding: 0.15rem var(--space-2); font-size: 0.75rem; white-space: nowrap;
+}
+
+/* ---------- direction: glyph + text-weight, with a restrained color accent
+   on the glyph only (UX-refinement pass — see :root note). The label text
+   itself stays neutral; only the small glyph carries the semantic hue. ---------- */
+.er-dir { font-weight: 600; color: var(--text); }
+.er-dir.er-dir-weakening, .er-dir.er-dir-mixed { font-weight: 400; color: var(--text-3); }
+.er-dir-glyph { margin-right: 0.3rem; font-weight: 700; }
+.er-dir-glyph.er-glyph-pos { color: var(--pos); }
+.er-dir-glyph.er-glyph-neg { color: var(--neg); }
+.er-dir-glyph.er-glyph-mix { color: var(--mix); }
+
+/* Thin left rail on a card — a restrained accent, not a filled background. */
+.er-rail-pos { border-left: 2px solid var(--pos); }
+.er-rail-neg { border-left: 2px solid var(--neg); }
+.er-rail-mix { border-left: 2px solid var(--mix); }
+
+/* Compact status tag — small pill, tinted background, for tight spaces
+   (Theme Health cards, chart-state markers). */
+.er-status-tag {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 999px;
+}
+.er-status-tag.er-tag-pos { background: var(--pos-dim); color: var(--pos); }
+.er-status-tag.er-tag-neg { background: var(--neg-dim); color: var(--neg); }
+.er-status-tag.er-tag-mix { background: var(--mix-dim); color: var(--mix); }
+/* Two additional, deliberately colorless buckets for Radar Inbox's
+   status vocabulary (New filing / Processing deferred / Dismissed, and
+   Candidate signal) — built only from existing neutral tokens, no new
+   hues, staying inside the zero-accent-color rule. */
+.er-status-tag.er-tag-neutral { background: var(--surface-2); color: var(--text-4); }
+.er-status-tag.er-tag-info { background: transparent; color: var(--text-2); border: 1px solid var(--hairline-2); }
+
+/* Small mono order marker ("01", "02"...) — Priority Signals only, a
+   restrained way to read the row as ranked rather than an arbitrary list. */
+.er-order-marker {
+    font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-4);
+    display: inline-block; min-width: 1.5em;
+}
+
+/* "Moving against thesis" warning treatment (final polish pass) — a muted
+   rose left rail + tinted background (the same --neg-dim tint already used
+   for status-tag pills elsewhere, so this isn't a new color, just a new
+   application of it) plus a small rose dot on the label. Deliberately NOT
+   tiny low-contrast rose text alone: the label is rose, but the quoted
+   invalidation note itself renders in --text (near-white) so it stays
+   readable at any width, and the tint stays restrained rather than a large
+   bright warning block. */
+.er-alert-neg {
+    border-left: 3px solid var(--neg); background: var(--neg-dim);
+    border-radius: var(--r-sm); padding: var(--space-3) var(--space-4);
+}
+.er-alert-neg-label {
+    display: inline-flex; align-items: center; gap: var(--space-1);
+    color: var(--neg); font-weight: 600; font-size: 0.8rem;
+}
+.er-alert-neg-label::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--neg); display: inline-block; flex-shrink: 0;
+}
+.er-alert-neg-note { color: var(--text); font-size: 0.85rem; margin-top: var(--space-1); line-height: 1.5; }
+
+/* ---------- sidebar rail ---------- */
+[data-testid="stSidebar"] {
+    background: var(--rail) !important;
+    border-right: 1px solid var(--hairline);
+}
+[data-testid="stSidebar"] > div:first-child { padding-top: 1rem; }
+.er-rail-brand {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--hairline);
+    margin-bottom: 1rem;
+}
+/* 22px logo beside a 14.5px semibold wordmark, per brief §17. */
+.er-rail-logo { width: 22px; height: 22px; display: inline-flex; }
+.er-rail-logo img, .er-rail-logo svg { width: 100%; height: 100%; object-fit: contain; }
+.er-rail-word { font-weight: 600; font-size: 14.5px; color: var(--text); letter-spacing: 0.01em; }
+.er-rail-brand [data-testid="stPageLink"] a p { font-weight: 600 !important; font-size: 14.5px !important; }
+.er-rail-group-label {
+    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    /* sidebar contrast fix: --text-4/muted is 4.34:1 on --rail, just under
+       AA's 4.5:1 for normal text — --text-2/secondary (9.4:1) instead,
+       here and at the other sidebar-only call sites noted in the :root
+       comment above. */
+    color: var(--text-2); margin: var(--space-5) 0 var(--space-2) 0.25rem;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink"] a {
+    color: var(--text-2) !important; border-radius: var(--r-sm);
+    padding: 0.35rem 0.5rem !important; transition: background-color .12s ease, color .12s ease;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink"] a p { font-size: 0.83rem; }
+[data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
+    background: var(--surface); color: var(--text) !important;
+}
+.er-rail-navactive [data-testid="stPageLink"] a {
+    background: var(--surface-2); color: var(--text) !important; font-weight: 600;
+}
+.er-rail-status {
+    display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
+    /* sidebar contrast fix — see :root comment. */
+    font-size: 0.68rem; color: var(--text-2); margin-top: 0.25rem;
+}
+.er-rail-footlinks { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.4rem; }
+/* sidebar contrast fix — see :root comment. */
+.er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
+
+/* live-status dot (the one non-breadth-bar permitted motion instance) */
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-3); }
+.dot.live { background: var(--text); position: relative; }
+@media (prefers-reduced-motion: no-preference) {
+    .dot.live::after {
+        content: ""; position: absolute; inset: -4px; border-radius: 50%;
+        border: 1px solid var(--glow); animation: dot-pulse 2.4s ease-out infinite;
+    }
+}
+@keyframes dot-pulse {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ---------- buttons (brief §6) ----------
+   Key-prefix convention carried over from round 3: a wrapping
+   st.container(key="cta-{tier}-...") gets a `st-key-{key}` class from
+   Streamlit, matched here via substring attribute selector. primary =
+   solid invert fill + glow (one of the app's exactly three glow spots),
+   secondary = outlined pill, tertiary = ghost/text link. Full pill radius
+   per §5; no hover lift anywhere — the glow alone carries primary's state. */
+/* Streamlit's own default gap between stacked sibling elements is small —
+   noticeably smaller than the space already used between other groups —
+   so a CTA sitting right under a paragraph or card description read as
+   glued to it (final polish follow-up). One rule on the wrapping
+   container itself, rather than a spacer <div> hand-added before every
+   call site, so every action button/link site-wide gets this consistently
+   without per-page upkeep. A CTA that's the first/only child of its
+   parent (nothing above it to separate from) just gets a no-op margin. */
+[class*="st-key-cta-primary-"], [class*="st-key-cta-secondary-"], [class*="st-key-cta-tertiary-"] {
+    margin-top: var(--space-3) !important;
+}
+/* Streamlit gives st.page_link's <a> and st.button's <button> different
+   native padding/line-height (an <a> renders ~11px shorter at the same
+   font size), so the same tier looked a different height depending on
+   which element realized it — standardize both to one explicit box. */
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a,
+[class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"],
+[class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
+[class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"] {
+    box-sizing: border-box !important; min-height: 2.5rem !important;
+    padding: 0.5rem 1.1rem !important;
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+}
+
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a,
+[class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"] {
+    background: var(--invert-bg) !important; color: var(--invert-fg) !important;
+    border: none !important; border-radius: 999px !important; font-weight: 600 !important;
+    /* Soft navy-blue aura (not neon): a thin navy-tinted ring, the --glow
+       blur (rgba(22,62,104,.18) — the specified primary-CTA-glow value,
+       reused for the live-status dot and breadth-bar leader, the app's
+       other two glow spots), and a navy-tinted drop shadow for depth
+       (replacing the previous pure-black shadow — reads softer against a
+       white/off-white page than a hard black shadow would). */
+    box-shadow: 0 0 0 1px rgba(16,42,67,.25), 0 0 22px var(--glow), 0 2px 10px rgba(16,42,67,.18) !important;
+    transition: box-shadow .22s ease, background .18s ease;
+}
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
+[class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
+    box-shadow: 0 0 0 1px rgba(22,62,104,.45), 0 0 26px rgba(22,62,104,.32), 0 4px 16px rgba(22,62,104,.24) !important;
+    background: var(--accent-hover) !important;
+}
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--invert-fg) !important; }
+[class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:disabled {
+    background: var(--surface-3) !important; color: var(--text-4) !important; box-shadow: none !important; cursor: not-allowed;
+}
+
+[class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
+[class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"] {
+    background: transparent !important; border: 1px solid var(--hairline-2) !important;
+    border-radius: 999px !important; color: var(--text) !important;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+[class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:hover,
+[class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:hover {
+    border-color: var(--text-2) !important; background: var(--surface) !important;
+}
+/* Priority Signals' Review Evidence sits in a tight compact row inside a
+   narrow column — shrink its footprint so it doesn't overpower the row
+   (final polish pass). Scoped to that one call site's key prefix; every
+   other secondary button (Watchlists' Add/Remove, Company's Save, etc.)
+   keeps the standard size. Must come after the general secondary rule
+   above to win (equal specificity, later wins). */
+[class*="st-key-cta-secondary-priority-"] [data-testid="stBaseButton-secondary"] {
+    padding: 0.35rem 0.75rem !important; min-height: 2.1rem !important; font-size: 0.82rem !important;
+}
+/* This one sits beside plain Strength/Horizon text in the same row (not
+   stacked under a paragraph), so the general cta top-margin above would
+   misalign it against its row-mates — cancel it back out here. */
+[class*="st-key-cta-secondary-priority-"] {
+    margin-top: 0 !important;
+}
+/* Signals' two filter-row buttons sit beside plain text/inputs in the same
+   row (one uses Streamlit's own vertical_alignment="bottom" specifically
+   to line up with the filter multiselects above it) — the general cta
+   top-margin would fight that alignment, so cancel it here too. */
+.st-key-cta-tertiary-clear-watchlist-filter,
+.st-key-cta-tertiary-clear-filters {
+    margin-top: 0 !important;
+}
+/* Watchlists' Add/Remove buttons sit beside a selectbox, already lined up
+   with it via an explicit "&nbsp;" spacer matching the selectbox's own
+   label height — same reasoning as above. */
+[class*="st-key-cta-secondary-add-"],
+[class*="st-key-cta-secondary-remove-"] {
+    margin-top: 0 !important;
+}
+
+[class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a,
+[class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"] {
+    background: transparent !important; border: none !important; color: var(--text-3) !important;
+    padding-left: 0 !important; transition: color .15s ease;
+    /* No pill/border like primary+secondary (stays a plain ghost link),
+       but matched to the same row height so it aligns with a secondary
+       button sitting beside it in an action row instead of looking
+       vertically offset. */
+    box-sizing: border-box !important; min-height: 2.5rem !important;
+    display: inline-flex !important; align-items: center !important;
+}
+[class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
+[class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
+
+/* Focus ring uses the dedicated --focus token (#2563EB) rather than a
+   plain dark or muted-text color — ≥4.7:1 against every surface in this
+   palette, well past the 3:1 AA minimum for a focus indicator, and reads
+   as an intentional accent ring rather than a generic outline. */
+.btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: 3px; }
+
+[data-testid="stPageLink"] a:focus-visible,
+[data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stSidebarNavLink"]:focus-visible,
+[data-testid="stTextInput"] input:focus-visible,
+[data-testid="stTextArea"] textarea:focus-visible,
+[data-baseweb="select"]:focus-within,
+[data-testid="stDateInput"] input:focus-visible,
+[data-testid="stChatInput"] textarea:focus-visible {
+    outline: 2px solid var(--focus) !important; outline-offset: 2px;
+}
+
+/* ---------- native widget surfaces (light editorial redesign) ----------
+   Text inputs, selects, multiselects, date inputs, chat input, dataframes,
+   expanders, tabs, and the native `st.button(type="primary")` variant (the
+   3 "Scan ... now" buttons on Radar Inbox — the only native-primary
+   buttons in the app, not wrapped in a cta-primary-* container) are not
+   otherwise touched by this stylesheet at all; they render from
+   .streamlit/config.toml's [theme] colors. That covers backgroundColor/
+   secondaryBackgroundColor/textColor/borderColor/primaryColor, but not
+   every per-component detail (expander border, tab underline, multiselect
+   tag chips, dataframe outer border) — the rules below fill in exactly
+   those gaps with the same tokens, so no native control keeps the old
+   gray/charcoal theme by omission. */
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stDateInput"] input,
+[data-testid="stChatInput"] textarea,
+[data-testid="stNumberInput"] input {
+    background: var(--surface-input) !important;
+    border: 1px solid var(--hairline-2) !important;
+    color: var(--text) !important;
+}
+[data-baseweb="select"] > div {
+    background: var(--surface-input) !important;
+    border-color: var(--hairline-2) !important;
+    color: var(--text) !important;
+}
+/* Multiselect/select popover menu + selected-value tag chips. */
+[data-baseweb="popover"] [data-baseweb="menu"] {
+    background: var(--surface-2) !important;
+}
+[data-baseweb="tag"] {
+    background: var(--surface-3) !important;
+    color: var(--text) !important;
+}
+[data-testid="stExpander"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--hairline-2) !important;
+    border-radius: var(--r-md) !important;
+}
+[data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--hairline) !important; }
+[data-testid="stTabs"] [data-baseweb="tab"] { color: var(--text-2) !important; }
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { color: var(--text) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] { background-color: var(--accent) !important; }
+[data-testid="stDataFrame"] { border: 1px solid var(--hairline-2) !important; border-radius: var(--r-sm) !important; }
+/* The one native-primary-type button in the app (Radar Inbox's "Scan ...
+   now" — see module note above): explicit white-on-navy pairing matching
+   the custom primary-CTA pill, rather than relying on Streamlit's own
+   default text-color choice for a primary-type button. */
+[data-testid="stBaseButton-primary"] {
+    background: var(--invert-bg) !important; color: var(--invert-fg) !important;
+    border: none !important;
+}
+[data-testid="stBaseButton-primary"]:hover { background: var(--accent-hover) !important; }
+[data-testid="stBaseButton-primary"]:disabled {
+    background: var(--surface-3) !important; color: var(--text-4) !important;
+}
+
+/* ---------- cards ----------
+   Streamlit's st.container(border=True) renders a real 1px border by
+   default. Brief §5: "Panels have no outer border; separation is by
+   surface value" — override it away and separate purely by background
+   against --bg, with a small radius instead (12px small cards per §5). */
+[class*="st-key-card-"] {
+    border: none !important; border-radius: var(--r-md) !important;
+    background: var(--surface) !important; transition: background-color .15s ease;
+    /* Slightly less vertical padding than Streamlit's own default (was a
+       uniform 14px) so cards don't consume unnecessary height, matching
+       the shared spacing scale rather than a per-card override. */
+    padding: var(--space-3) var(--space-4) !important;
+}
+[class*="st-key-card-"]:hover { background: var(--surface-2) !important; }
+/* Subtheme/Map cards don't open anything (UX-refinement pass) — suppress
+   the hover brighten so they don't visually imply they're clickable. */
+[class*="st-key-card-subtheme-"]:hover { background: var(--surface) !important; }
+/* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
+   page's one "primary" content well: same shared white card as every
+   other card above, plus a restrained midnight-blue left-edge accent rule
+   marking it as the page's lead element. No new fill, gradient, or
+   one-off visual system — one border-side on the existing card shape. */
+.st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
+
+/* ---------- theme icon motifs ---------- */
+.er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }
+.er-theme-icon svg { width: 100%; height: 100%; }
+
+/* ---------- evidence chips (the signature element) ---------- */
+.er-chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 0.15rem 0.55rem; border-radius: 999px; line-height: 1.5;
+}
+.er-chip-fact { background: var(--invert-bg); color: var(--invert-fg); cursor: pointer; }
+.er-chip-fact:hover { box-shadow: 0 0 0 1px var(--invert-bg); }
+/* A translucent white overlay (the previous value) is invisible against a
+   white/near-white card — a translucent navy wash instead, using the same
+   CTA-navy RGB at low alpha (8%; 15.3:1 text contrast at that alpha),
+   still restrained/light rather than a solid tinted fill. */
+.er-chip-interpretation { background: rgba(16, 42, 67, .08); color: var(--text); }
+.er-chip-inference { background: transparent; color: var(--text-2); border: 1px solid var(--hairline-2); }
+.er-chip-uncertainty { background: transparent; color: var(--text-2); border: 1px dashed var(--hairline-2); }
+
+/* ---------- evidence spine ---------- */
+.er-spine {
+    display: grid; grid-template-columns: 2px 96px 1fr; column-gap: 0.9rem;
+}
+.er-spine-bar { background: var(--hairline-2); }
+.er-spine-bar.first { border-top-left-radius: 2px; border-top-right-radius: 2px; }
+.er-spine-bar.last { border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+.er-spine-chip { display: flex; justify-content: flex-end; padding-top: 0.15rem; }
+.er-spine-body { padding: 0.5rem 0 0.9rem 0; color: var(--text); font-size: 0.9rem; line-height: 1.6; }
+.er-spine-body .er-excerpt { margin-top: 0.4rem; }
+.er-spine-source { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-4); margin-top: 0.35rem; }
+@media (max-width: 860px) {
+    .er-spine { grid-template-columns: 2px 1fr; }
+    .er-spine-chip { justify-content: flex-start; padding-top: 0.2rem; grid-column: 2; }
+    .er-spine-body { grid-column: 2; }
+}
+
+/* ---------- freshness (Live / Stale / Demo) — brief §13.
+   Stale is the deliberately "louder" state (solid ring + surface-3 chip),
+   not a softer/quieter one — it's the dangerous case (connected but
+   behind), so it must not read as calmer than Live. ---------- */
+.er-fresh {
+    display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
+    font-size: 0.68rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+}
+.er-fresh-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; position: relative; }
+
+.er-fresh-live { background: var(--surface-2); color: var(--text); }
+.er-fresh-live .er-fresh-dot { background: var(--text); }
+@media (prefers-reduced-motion: no-preference) {
+    .er-fresh-live .er-fresh-dot::after {
+        content: ""; position: absolute; inset: -4px; border-radius: 50%;
+        border: 1px solid var(--glow); animation: dot-pulse 2.4s ease-out infinite;
+    }
+}
+
+.er-fresh-stale { background: var(--surface-3); color: var(--text); }
+.er-fresh-stale .er-fresh-dot { background: var(--text-2); box-shadow: 0 0 0 2px var(--hairline-2); }
+.er-fresh-retry {
+    background: none; border: none; color: var(--text); text-decoration: underline;
+    font-family: var(--font-mono); font-size: 0.68rem; cursor: pointer; padding: 0;
+}
+
+.er-fresh-demo { background: transparent; border: 1px dashed var(--hairline-2); color: var(--text-4); }
+.er-fresh-demo .er-fresh-dot { background: var(--text-4); }
+
+/* ---------- breadth bars (the one data-driven motion instance) ----------
+   Leading theme's bar is --text with glow (one of the app's exactly three
+   glow spots); the rest are --text-4 (brief §9/§16). */
+.bar { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--text-4); width: var(--w, 0%); border-radius: 2px; }
+.bar i.leader { background: var(--text); box-shadow: 0 0 8px var(--glow); }
+@media (prefers-reduced-motion: no-preference) {
+    .bar i { animation: fill .9s cubic-bezier(.22, .9, .3, 1) both; }
+}
+@keyframes fill { from { width: 0%; } to { width: var(--w, 0%); } }
+@media (prefers-reduced-motion: reduce) {
+    .bar i { width: var(--w, 0%); }
+    .dot.live::after { display: none; }
+}
+
+/* ---------- diverging bars (rotation leaders/laggards) — static, no
+   motion; the breadth strip above is the one animated data bar. ---------- */
+.er-divbar-row { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; }
+.er-divbar-label { width: 130px; font-size: 0.78rem; color: var(--text-2); flex-shrink: 0; }
+.er-divbar-track { flex: 1; height: 6px; background: var(--surface-3); border-radius: 3px; position: relative; }
+/* A clear neutral midpoint marker — deliberately stronger than the
+   surrounding hairlines elsewhere in the app (usability follow-up: at
+   --hairline-2 it read as barely-there against the track). Still neutral
+   grey, not a semantic color, since it marks "zero," not a direction. */
+.er-divbar-zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--text-4); }
+.er-divbar-fill { position: absolute; top: 0; bottom: 0; background: var(--text-2); border-radius: 3px; }
+.er-divbar-value { width: 60px; text-align: right; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text); flex-shrink: 0; }
+
+/* ---------- unread / last-seen divider ---------- */
+.er-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text); display: inline-block; margin-right: 0.4rem; }
+.er-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.9rem 0; color: var(--text-4); font-size: 0.72rem; }
+.er-divider::before, .er-divider::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+
+/* ---------- skeleton loading rows ---------- */
+.er-skel { background: var(--surface); border-radius: var(--r-sm); }
+.er-skel-line { height: 0.8rem; border-radius: 4px; background: var(--surface-2); margin-bottom: 0.5rem; }
+@media (prefers-reduced-motion: no-preference) {
+    /* 1.4s per brief §14 ("subtle shimmer, 1.4s") — the one motion
+       instance outside §16's "exactly two" count, since it's explicitly
+       sanctioned by the empty/loading-states section instead. */
+    .er-skel-line { animation: skel-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+
+/* ---------- film-grain texture (the only permitted texture, brief §16) ----------
+   Applied to .stApp rather than body — body sits behind Streamlit's own
+   app root in the DOM and a body::before doesn't reliably paint over the
+   visible surface in this Streamlit version; .stApp is the actual visible
+   canvas. Parameters otherwise match the brief's snippet exactly. */
+.stApp::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- Home: single narrow column, minimal top bar (brief §8) ---------- */
+.er-home-topbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
+.er-home-topbar .er-rail-logo { width: 22px; height: 22px; display: inline-flex; }
+.er-home-topbar .er-rail-logo img, .er-home-topbar .er-rail-logo svg { width: 100%; height: 100%; object-fit: contain; }
+.er-home-column { max-width: 900px; margin: 0 auto; }
+
+/* ---------- hero watermark + signal-path decoration (static, no motion —
+   brief §16 permits motion only on breadth-bar fill and the live-status
+   dot; this decorative SVG is a fixed backdrop, not animated) ---------- */
+.er-hero-wrap { position: relative; padding: 2rem 0 1.5rem 0; overflow: hidden; }
+.er-hero-signal-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.er-signal-path { fill: none; stroke: var(--hairline-2); stroke-width: 1; stroke-dasharray: 6 10; }
+.er-signal-path-2 { stroke: var(--hairline); }
+.er-signal-node { fill: var(--text-4); }
+.er-hero-watermark {
+    position: absolute; top: 50%; right: -4%; transform: translateY(-50%);
+    width: 300px; height: 300px; color: var(--text); opacity: 0.035; z-index: 0; pointer-events: none;
+}
+.er-hero-watermark svg, .er-hero-watermark img { width: 100%; height: 100%; object-fit: contain; }
+.er-hero-content { position: relative; z-index: 1; }
+

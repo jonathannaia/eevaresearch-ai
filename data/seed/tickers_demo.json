@@ -1,0 +1,33 @@
+[
+  {
+    "symbol": "DEMO",
+    "company_name": "Nova Aperture Systems (Demo Company — Not Real)",
+    "theme_slug": "photonics",
+    "subtheme_slug": "optical-transceivers",
+    "exposure": "Primary",
+    "market_cap_bucket": "Mid — placeholder",
+    "liquidity_bucket": "Medium — placeholder",
+    "technical_strength": "Neutral — placeholder",
+    "risk_level": "Medium — placeholder",
+    "thesis": "Template placeholder thesis for exercising the ticker-detail layout — not a real investment thesis and not based on any real company.",
+    "market_expectation": "Placeholder — this section would state the market's current baseline expectation, not a forecast written by EevaResearch.",
+    "underappreciated": "Placeholder — this section would surface a specific, sourced angle the market may be underweighting.",
+    "bull_factors": [
+      "Placeholder bull factor — template field, not a real claim.",
+      "Placeholder bull factor — template field, not a real claim."
+    ],
+    "base_factors": [
+      "Placeholder base-case factor — template field, not a real claim."
+    ],
+    "bear_factors": [
+      "Placeholder bear factor — template field, not a real claim.",
+      "Placeholder bear factor — template field, not a real claim."
+    ],
+    "key_risks": [
+      "Placeholder risk — template field, not a real claim.",
+      "Placeholder risk — template field, not a real claim."
+    ],
+    "what_would_change_thesis": "Placeholder — this section would name the specific evidence (a filing, a catalyst outcome, a data point) that would change the thesis above.",
+    "is_demo": true
+  }
+]

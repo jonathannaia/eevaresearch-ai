@@ -1,75 +1,359 @@
-"""Central application configuration, loaded from environment variables.
+"""App-wide configuration for the foundation build.
 
-All keys and tunables live here. Nothing in this module talks to the
-network or the database — it only resolves configuration values.
+Phase 1 needs no environment variables to run — everything is demo data
+read from data/seed/. The settings that exist are here so Phase 2 has a
+single, already-wired place to add real configuration (data mode, provider
+keys) without touching UI code.
 """
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:  # pragma: no cover - python-dotenv is a listed dependency
-    pass
+from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
+
+APP_VERSION = "0.1.0-foundation"
+APP_NAME = "EevaResearch AI"
+
+# Private-beta access foundation, Phase 1 (configuration + gating only — see
+# design/DECISIONS.md; no Google/OIDC login is implemented yet). Defaults
+# preserve today's fully-open local-dev behavior: absent, blank, or an
+# unrecognized value always resolves to disabled/empty, never enabled.
+_PRIVATE_BETA_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
+def _parse_beta_auth_enabled(var_name: str) -> bool:
+    return (os.getenv(var_name) or "").strip().lower() in _PRIVATE_BETA_TRUE_VALUES
+
+
+def _parse_beta_allowed_emails(var_name: str) -> frozenset[str]:
+    raw = os.getenv(var_name) or ""
+    return frozenset(email for email in (part.strip().lower() for part in raw.split(",")) if email)
 
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = "EevaResearch AI"
-    app_version: str = "0.1.0"
-
-    data_mode: str = field(default_factory=lambda: os.getenv("EDGE_DATA_MODE", "mock").strip().lower())
-    db_path: Path = field(
-        default_factory=lambda: PROJECT_ROOT / os.getenv("EDGE_DB_PATH", "data/edge_research.db")
+    app_version: str = APP_VERSION
+    app_name: str = APP_NAME
+    # Always "demo" in this phase — no live data mode exists yet. Kept as a
+    # field (not a hardcoded string in the UI) so Phase 2 can introduce a
+    # real "live" mode without a UI rewrite.
+    data_mode: str = field(default_factory=lambda: os.getenv("EDGE_DATA_MODE", "demo"))
+    seed_data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "seed")
+    # Korea DART radar pilot — narrowly scoped, not a general "live mode"
+    # switch (see design/DECISIONS.md). None means unconfigured; callers
+    # must show a clear missing-key state rather than guessing or crashing.
+    dart_api_key: str | None = field(default_factory=lambda: os.getenv("EDGE_DART_API_KEY") or None)
+    translation_api_key: str | None = field(default_factory=lambda: os.getenv("EDGE_TRANSLATION_API_KEY") or None)
+    # SEC EDGAR radar pilot — not a secret (EDGAR needs no API key at all),
+    # but still a required, non-empty identifying contact string per SEC's
+    # own access policy. None means unconfigured; callers must fail closed
+    # with a typed config error rather than sending an unidentified request
+    # EDGAR would reject anyway. Never logged/printed/exposed — only ever
+    # checked for presence (see edgar_service.edgar_readiness).
+    edgar_user_agent: str | None = field(default_factory=lambda: os.getenv("EDGE_EDGAR_USER_AGENT") or None)
+    # EDINET (Japan) radar pilot — planning Gate 1, fixture-only. This
+    # gate never reads/validates the real value beyond presence-checking
+    # (see edinet_service.edinet_readiness); no live request uses it yet.
+    # Exactly one env var, no competing aliases, per the Gate 1 brief.
+    edinet_subscription_key: str | None = field(default_factory=lambda: os.getenv("EDGE_EDINET_SUBSCRIPTION_KEY") or None)
+    # EDINET Extraordinary Report shadow-observation workstream (design/
+    # DECISIONS.md) — the master switch for src/data_access/edinet/
+    # material_event_shadow.py's own evaluator, threaded through
+    # edinet_service.run_scan()/edinet_pipeline.run_pipeline(). Disabled
+    # by default, same "unset/blank/unrecognized -> disabled" parsing as
+    # every other flag on this class. Even when enabled, this flag can
+    # never create, persist, or display a CandidateSignal — the shadow
+    # evaluator it gates is structurally read-only (see that module's own
+    # docstring); it only adds a bounded, capped log line to the Radar
+    # worker's own stdout.
+    edinet_material_event_lexicon_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDINET_MATERIAL_EVENT_LEXICON_ENABLED")
     )
-
-    freshness_fresh_days: int = field(default_factory=lambda: _env_int("EDGE_FRESHNESS_FRESH_DAYS", 30))
-    freshness_aging_days: int = field(default_factory=lambda: _env_int("EDGE_FRESHNESS_AGING_DAYS", 60))
-    freshness_stale_days: int = field(default_factory=lambda: _env_int("EDGE_FRESHNESS_STALE_DAYS", 90))
-
-    # Cost-control limits (guardrail principle #10). Deliberately conservative
-    # so a brief generation is bounded work, not an open-ended crawl.
-    max_sources_per_brief: int = field(default_factory=lambda: _env_int("EDGE_MAX_SOURCES_PER_BRIEF", 12))
-    max_excerpts_per_source: int = field(default_factory=lambda: _env_int("EDGE_MAX_EXCERPTS_PER_SOURCE", 5))
-    max_watchlist_size: int = 25
-
-    sec_user_agent: str = field(
-        default_factory=lambda: os.getenv("EDGE_SEC_USER_AGENT", "EevaResearch AI (unconfigured@example.com)")
+    # EDGAR issuer-discovery preview harness (Phase B — dormant, design/
+    # DECISIONS.md). Disabled by default, same "unset/blank/unrecognized ->
+    # disabled" parsing as private_beta_auth_enabled/remote_cache_enabled
+    # below. Nothing in the app reads this yet — src/data_access/edgar/
+    # discovery_service.py takes `discovery_enabled` as a plain bool
+    # argument rather than importing Settings itself (keeping that module
+    # dependency-free), so this flag has no call site in this phase; it
+    # exists so a future, separately-approved wiring step has a ready,
+    # already-fail-closed-by-default gate to read.
+    edgar_discovery_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_DISCOVERY_ENABLED"))
+    # Citrini-style Theme research workspace vertical slice (design/
+    # DECISIONS.md) — a dedicated off switch for the hidden, internal-
+    # only src/ui/pages/theme_workspace.py page, on top of that page
+    # already being absent from every nav list/command palette and
+    # behind the existing app-wide private-beta login gate. Disabled by
+    # default, same "unset/blank/unrecognized -> disabled" parsing as
+    # every other flag on this class.
+    theme_workspace_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_WORKSPACE_ENABLED"))
+    # Reader-facing data-integrity pass (design/DECISIONS.md) — same
+    # hidden-but-reachable-by-URL exposure theme_workspace_enabled above
+    # already closes for the Constraint Research Workspace: Research
+    # Cases and Daily News Admin are real-data operator/invited-tester
+    # tooling, not a general reader surface, but previously had no gate
+    # beyond "absent from nav." Disabled by default, same parsing as
+    # every other flag on this class.
+    research_cases_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_CASES_ENABLED"))
+    daily_news_admin_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_DAILY_NEWS_ADMIN_ENABLED"))
+    # Autonomous Theme candidate detection (design/DECISIONS.md) — the
+    # master switch for scripts/radar_worker.py's own
+    # _run_theme_candidate_detection_step. Disabled by default, same
+    # "unset/blank/unrecognized -> disabled" parsing as every other flag
+    # on this class. Read only by the worker (via worker_settings, which
+    # carries this field through unchanged from the ambient Settings —
+    # see _build_worker_settings's own dataclasses.replace call), never
+    # by the Streamlit dashboard.
+    theme_candidate_detection_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_CANDIDATE_DETECTION_ENABLED")
     )
-    dart_api_key: str = field(default_factory=lambda: os.getenv("EDGE_DART_API_KEY", ""))
-    finnhub_api_key: str = field(default_factory=lambda: os.getenv("EDGE_FINNHUB_API_KEY", ""))
-
-    def freshness_status(self, age_days: int) -> str:
-        if age_days <= self.freshness_fresh_days:
-            return "fresh"
-        if age_days <= self.freshness_aging_days:
-            return "aging"
-        if age_days <= self.freshness_stale_days:
-            return "stale"
-        return "very_stale"
-
-
-_settings: Settings | None = None
+    # Autonomous Theme candidate detection, Phase 2 (design/DECISIONS.md)
+    # — the master switch for scripts/radar_worker.py's own
+    # _run_theme_auto_publish_step. Disabled by default, same "unset/
+    # blank/unrecognized -> disabled" parsing as every other flag on
+    # this class. Read only by the worker (via worker_settings, which
+    # carries this field through unchanged), never by the Streamlit
+    # dashboard. Even when enabled, a theme only ever auto-publishes
+    # once every deterministic gate in src.logic.theme_auto_publish
+    # passes — this flag alone never publishes anything by itself.
+    theme_auto_publish_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_THEME_AUTO_PUBLISH_ENABLED")
+    )
+    # Durable-State Phase 4M-0 (design/DECISIONS.md) — the master switch
+    # for the standalone continuous worker (scripts/radar_worker.py)
+    # only. Disabled by default, same "unset/blank/unrecognized ->
+    # disabled" parsing as every other flag on this class. The Streamlit
+    # dashboard never reads this to decide whether to scan — it never
+    # scans on page render regardless of this value; only the worker
+    # process's own startup checks it.
+    radar_live_scan_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_RADAR_LIVE_SCAN_ENABLED"))
+    # Conservative default (hourly) — this pilot's tracked-issuer universe
+    # (25 EDGAR + 2 DART + 5 EDINET) does not need sub-hourly polling, and
+    # EDGAR's own existing client-side throttle (0.5s/request minimum
+    # interval, src/data_access/edgar/client.py) already bounds per-scan
+    # request volume independently of this setting.
+    radar_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_RADAR_SCAN_INTERVAL_MINUTES") or "60")
+    )
+    # Conservative autonomous-publication gate for the narrow, evidence-complete
+    # EDGAR policy path. Disabled unless explicitly enabled in the deployment
+    # environment; this field only parses the flag and never performs I/O.
+    edgar_auto_publish_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_AUTO_PUBLISH_ENABLED")
+    )
+    # Daily News Filing-Event Shadow Adapter, Batch 2b — three separate,
+    # per-source master switches, one per filing pipeline, reusing the
+    # exact same wiring shape edinet_material_event_lexicon_enabled above
+    # already established (settings flag -> service optional kwarg ->
+    # pipeline optional kwarg -> in-memory evaluation right after
+    # scan_result = scan_service.scan(...) -> additive, defaulted
+    # ScanReport fields). Disabled by default, same "unset/blank/
+    # unrecognized -> disabled" parsing as every other flag on this
+    # class. Even when enabled, the shadow step each flag gates is
+    # structurally read-only: it evaluates
+    # src.data_access.daily_news.{edgar,dart,edinet}_filing_candidate_
+    # adapter's own pure mapping functions against scan_result.
+    # new_filing_events (already in memory from the scan_service.scan()
+    # call above — no new fetch) and returns the result only on that
+    # pipeline's own ScanReport, in memory — it never creates, persists,
+    # or displays anything, and never touches Radar's own candidate
+    # detection/persistence/eligibility/processing/translation. This is
+    # a genuinely separate, independent feature from
+    # edinet_material_event_lexicon_enabled above (EDINET's own
+    # Extraordinary Report shadow observation) — edinet_filing_candidate_
+    # shadow_enabled below controls a second, distinct EDINET shadow
+    # block, not a replacement for the first.
+    edgar_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDGAR_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    dart_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_DART_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    edinet_filing_candidate_shadow_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDINET_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cache")
+    # Durable-State Phase 1 (dormant — see src/data_access/state_db/).
+    # "json" (the default, used whenever this var is unset/blank/
+    # unrecognized) keeps every existing JSON-cache-backed code path
+    # exactly as-is; "sqlite" is a local-development/test-only opt-in —
+    # nothing in the app actually branches on this value yet, since no
+    # pipeline/container wiring is part of this phase. A SQLite file is
+    # NOT a hosted-durable-storage answer on its own — treat it as
+    # ephemeral on Streamlit Community Cloud unless a persistent volume
+    # is separately verified and explicitly approved (see
+    # design/DECISIONS.md).
+    db_backend: str = field(default_factory=lambda: (os.getenv("EDGE_DB_BACKEND") or "json").strip().lower())
+    # Local filesystem path to the SQLite database file. Deliberately a
+    # dedicated EDGE_STATE_DB_* name, not EDGE_DB_PATH — this repo's real
+    # local .env already defines an unrelated, pre-"foundation rebuild"
+    # EDGE_DB_PATH (see design/DECISIONS.md); this field never reads that
+    # name and never will (no backward-compatible alias). None (the
+    # default) means unconfigured; a caller choosing db_backend="sqlite"
+    # is responsible for providing one — this field never invents a
+    # default path itself, the same "None means not configured, never
+    # guessed" convention every other optional Settings field follows.
+    state_db_path: Path | None = field(
+        default_factory=lambda: Path(os.getenv("EDGE_STATE_DB_PATH")) if os.getenv("EDGE_STATE_DB_PATH") else None
+    )
+    # Durable-State Phase 4B (dormant in production — see
+    # src/data_access/postgres_state_db/). Same dedicated EDGE_STATE_DB_*
+    # naming as state_db_path above, for the same reason. This field
+    # itself still only reads the env var for presence — no parsing or
+    # validation happens here, exactly like state_db_path. Real use is
+    # confined to backend_factory.py's db_backend="postgres" branch,
+    # which requires this to be an explicit, non-empty DSN before
+    # connecting (see that module's own docstring) — and, this phase,
+    # that branch is reachable only via direct backend_factory calls in
+    # local, synthetic tests against a disposable local Postgres target,
+    # never from get_settings()/any real service entry point, never a
+    # hosted database, never a secret.
+    state_db_url: str | None = field(default_factory=lambda: os.getenv("EDGE_STATE_DB_URL") or None)
+    # Durable-State Phase 4M-0 — deliberately separate from db_backend/
+    # state_db_url above, and read only by scripts/radar_worker.py, never
+    # by get_settings()'s own ambient use in app.py/container.py. This
+    # keeps a Streamlit Secrets misconfiguration from ever making the
+    # *dashboard* silently start writing to a worker's database — the
+    # worker's own backend/DSN pair lives in its own, separate deployment
+    # environment only (see design/DECISIONS.md and
+    # design/RADAR_WORKER_DEPLOYMENT.md). None means unconfigured; the
+    # worker fails closed rather than guessing json/sqlite/postgres.
+    radar_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_RADAR_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    radar_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_RADAR_WORKER_STATE_DB_URL") or None
+    )
+    # SQLite counterpart to radar_worker_state_db_url above — local/test
+    # only (design/RADAR_WORKER_DEPLOYMENT.md): a single-host, single-
+    # process worker may use this to validate the continuous-loop
+    # behavior without Postgres, but it is never the recommended
+    # deployed configuration for a separate dashboard+worker pair.
+    radar_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH")) if os.getenv("EDGE_RADAR_WORKER_STATE_DB_PATH") else None
+        )
+    )
+    # Daily News autonomous worker (design/DECISIONS.md) — the master
+    # switch for the standalone continuous worker (scripts/
+    # daily_news_worker.py) only, mirroring radar_live_scan_enabled's own
+    # convention exactly. Disabled by default; the Streamlit dashboard
+    # never reads this to decide anything.
+    daily_news_live_scan_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED")
+    )
+    # Deliberately separate from db_backend/state_db_url above, and read
+    # only by scripts/daily_news_worker.py, never by get_settings()'s own
+    # ambient use elsewhere — same isolation rationale as
+    # radar_worker_db_backend/radar_worker_state_db_url. None means
+    # unconfigured; the worker fails closed. Live-mode startup validation
+    # (daily_news_worker._build_worker_settings) accepts "postgres" only —
+    # stricter than the Radar worker, which also permits "sqlite" for a
+    # deployed worker. daily_news_worker_state_db_path below exists only
+    # for direct, local unit/integration-style tick tests that construct
+    # their own Settings and call the tick logic without going through
+    # main()'s live-mode gate at all; it is never accepted by that gate.
+    daily_news_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_DAILY_NEWS_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    daily_news_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_URL") or None
+    )
+    daily_news_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_PATH"))
+            if os.getenv("EDGE_DAILY_NEWS_WORKER_STATE_DB_PATH") else None
+        )
+    )
+    daily_news_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_SCAN_INTERVAL_MINUTES") or "30")
+    )
+    daily_news_reconciliation_interval_hours: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_RECONCILIATION_INTERVAL_HOURS") or "24")
+    )
+    daily_news_reconciliation_staleness_hours: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_DAILY_NEWS_RECONCILIATION_STALENESS_HOURS") or "72")
+    )
+    # Company Discovery Phase 2 (design/DECISIONS.md) — the master switch
+    # for the standalone worker (scripts/company_discovery_worker.py)
+    # only, mirroring daily_news_live_scan_enabled's own convention
+    # exactly. Disabled by default; no dashboard page reads this to
+    # decide anything — Phase 2 has no promotion path and no live-
+    # monitoring write path of any kind.
+    company_discovery_live_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_COMPANY_DISCOVERY_LIVE_ENABLED")
+    )
+    # Deliberately separate from db_backend/state_db_url above, and read
+    # only by scripts/company_discovery_worker.py and scripts/backfill_
+    # company_discovery.py — never by get_settings()'s own ambient use
+    # elsewhere. None means unconfigured; the worker fails closed. Live-
+    # mode startup validation accepts "postgres" only, same stricter-
+    # than-Radar posture as the Daily News worker.
+    company_discovery_worker_db_backend: str | None = field(
+        default_factory=lambda: (os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_DB_BACKEND") or "").strip().lower() or None
+    )
+    company_discovery_worker_state_db_url: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_URL") or None
+    )
+    # SQLite counterpart, local/test-only — same convention as
+    # daily_news_worker_state_db_path: never accepted by the worker's own
+    # live-mode gate (_build_worker_settings requires "postgres" exactly),
+    # exists only so a direct, local test or the admin page's own SQLite-
+    # backed read path can construct Settings without a real Postgres DSN.
+    company_discovery_worker_state_db_path: Path | None = field(
+        default_factory=lambda: (
+            Path(os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_PATH"))
+            if os.getenv("EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_PATH") else None
+        )
+    )
+    company_discovery_scan_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_COMPANY_DISCOVERY_SCAN_INTERVAL_MINUTES") or "240")
+    )
+    company_discovery_stale_days: int = field(
+        default_factory=lambda: int(os.getenv("EDGE_COMPANY_DISCOVERY_STALE_DAYS") or "180")
+    )
+    # Gates the hidden, read-only company_discovery_admin.py page —
+    # separate from company_discovery_live_enabled (the worker's own
+    # switch), same "admin visibility is its own flag" convention as
+    # daily_news_admin_enabled above.
+    company_discovery_admin_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_COMPANY_DISCOVERY_ADMIN_ENABLED")
+    )
+    # Private-beta access foundation, Phase 1 — disabled by default so every
+    # existing page keeps working with no configuration at all. The
+    # allowlist alone is authorization, not authentication (see
+    # src/ui/beta_gate.py); no identity/sign-in exists yet this phase.
+    private_beta_auth_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_PRIVATE_BETA_AUTH_ENABLED"))
+    private_beta_allowed_emails: frozenset[str] = field(default_factory=lambda: _parse_beta_allowed_emails("EDGE_PRIVATE_BETA_ALLOWED_EMAILS"))
+    # R2 remote-cache sync (dormant infrastructure — see
+    # src/data_access/remote_cache/ — nothing in the app reads/writes
+    # through these yet). Disabled by default so every existing page and
+    # pipeline keeps working with no configuration at all. None means
+    # unconfigured for each individual field; remote_cache_available()
+    # requires r2_endpoint/r2_access_key_id/r2_secret_access_key/r2_bucket
+    # to all be present (r2_account_id is optional metadata only — see
+    # r2_client.py's r2_settings_complete()), never a partial config of
+    # the four required fields. Never logged/printed/exposed — only ever
+    # checked for presence, same discipline as dart_api_key/edgar_user_agent above.
+    remote_cache_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_REMOTE_CACHE_ENABLED"))
+    r2_account_id: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_ACCOUNT_ID") or None)
+    r2_access_key_id: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_ACCESS_KEY_ID") or None)
+    r2_secret_access_key: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_SECRET_ACCESS_KEY") or None)
+    r2_bucket: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_BUCKET") or None)
+    r2_endpoint: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_ENDPOINT") or None)
 
 
 def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
+    return Settings()
+
+
+def demo_last_updated_label() -> str:
+    """A clearly-labeled mock 'last updated' value for the global status
+    banner — never a real data-refresh timestamp in this phase."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d (demo session)")
