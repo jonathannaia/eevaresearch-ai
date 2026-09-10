@@ -61,6 +61,17 @@ class DailyNewsFeedSource:
     # image host has been explicitly approved for this source; every
     # candidate image then fails closed via canonical_url.validate_image_url().
     image_host: str | None = None
+    # Daily News worker observability (design/DECISIONS.md) — the
+    # registry's own source_registry.DailyNewsSourceEntry.source_id,
+    # carried through unchanged so scripts/daily_news_worker.py's own
+    # per-feed log lines can name the exact source, not just the
+    # (possibly shared, e.g. two real Meta sources today) company name.
+    # Additive, default-preserving: every existing direct construction of
+    # this dataclass (tests, prior fixtures) keeps working unchanged.
+    # Purely a label — never read by any fetch/parse/validation/
+    # persistence logic, so this carries zero behavioral effect on its
+    # own.
+    source_id: str = ""
 
 
 # Derived from source_registry.RUNTIME_SOURCE_REGISTRY — see this

@@ -322,6 +322,109 @@ def test_one_feed_raising_unexpectedly_does_not_block_others(tmp_path, monkeypat
     assert intel_status.stories_published_last_run == 1
 
 
+# --- Worker observability: source_id in per-feed log lines (design/DECISIONS.md) ---
+
+_META_IR_SOURCE = DailyNewsFeedSource(
+    company_name="Meta Platforms, Inc.", feed_url="https://investor.atmeta.com/rss/pressrelease.aspx",
+    feed_format="rss", canonical_domains=("investor.atmeta.com",), source_id="meta-ir-rss",
+)
+_META_NEWSROOM_SOURCE = DailyNewsFeedSource(
+    company_name="Meta Platforms, Inc.", feed_url="https://about.fb.com/feed/",
+    feed_format="rss", canonical_domains=("about.fb.com",), source_id="meta-newsroom-rss",
+)
+
+
+def test_successful_tick_log_line_includes_source_id_and_every_counter(tmp_path, monkeypatch, capsys):
+    _mock_fetch({
+        _META_NEWSROOM_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Update", "https://about.fb.com/news/update"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_NEWSROOM_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    out = capsys.readouterr().out
+    assert "meta-newsroom-rss" in out
+    assert "Meta Platforms, Inc." in out
+    assert "items_discovered=1" in out
+    assert "stories_published=1" in out
+    assert "items_already_seen=0" in out
+    assert "items_deduplicated=0" in out
+    assert "items_suppressed_no_url=0" in out
+
+
+def test_fetch_failed_log_line_includes_source_id_company_and_failure_code(tmp_path, monkeypatch, capsys):
+    _mock_fetch({
+        _META_IR_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:403"),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    out = capsys.readouterr().out
+    assert "meta-ir-rss" in out
+    assert "Meta Platforms, Inc." in out
+    assert "HTTPError:403" in out
+
+
+def test_tick_failed_log_line_includes_source_id_and_company(tmp_path, monkeypatch, capsys):
+    def _raise(cache_dir, feed_sources=(), daily_news_repository=None):
+        raise ConnectionError("boom")
+
+    monkeypatch.setattr(daily_news_worker.daily_news_pipeline, "run_discovery", _raise)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    out = capsys.readouterr().out
+    assert "meta-ir-rss" in out
+    assert "Meta Platforms, Inc." in out
+    assert "ConnectionError" in out
+
+
+def test_two_feeds_sharing_a_company_name_are_distinguishable_by_source_id_in_logs(tmp_path, monkeypatch, capsys):
+    """The exact real-world case this workstream exists to fix: two
+    registered sources (meta-ir-rss, blocked; meta-newsroom-rss, healthy)
+    share the identical company_name "Meta Platforms, Inc." — before this
+    change their log lines were textually identical; now each line names
+    its own source_id, so the two are unambiguous even though the
+    persisted DailyNewsFeedScanStatus is still keyed by company_name only
+    (unchanged — see the second assertion block)."""
+    _mock_fetch({
+        _META_IR_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:403"),
+        _META_NEWSROOM_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Update", "https://about.fb.com/news/update"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE, _META_NEWSROOM_SOURCE))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if "Meta Platforms, Inc." in line]
+    assert len(lines) == 2
+    ir_lines = [line for line in lines if line.startswith("meta-ir-rss ")]
+    newsroom_lines = [line for line in lines if line.startswith("meta-newsroom-rss ")]
+    assert len(ir_lines) == 1 and "HTTPError:403" in ir_lines[0]
+    assert len(newsroom_lines) == 1 and "ok — items_discovered=1" in newsroom_lines[0]
+
+    # Persistence keying is unchanged by this observability-only batch —
+    # both sources still collapse onto the one company_name-keyed status
+    # row, last write wins (PILOT_FEEDS order: meta-ir-rss then
+    # meta-newsroom-rss), same pre-existing behavior as any other
+    # same-company-name pair.
+    status = scan_status_repository.get_feed_status("Meta Platforms, Inc.")
+    assert status is not None
+
+
 def test_main_loop_survives_an_unexpected_tick_failure(monkeypatch):
     """A tick failure must not kill future ticks — main()'s own loop
     catches whatever run_one_tick() itself might raise (e.g. the shared

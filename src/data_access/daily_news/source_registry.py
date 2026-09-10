@@ -393,6 +393,7 @@ def to_daily_news_feed_source(entry: DailyNewsSourceEntry) -> DailyNewsFeedSourc
         feed_format="rss",
         canonical_domains=entry.domains,
         image_host=entry.image_host,
+        source_id=entry.source_id,
     )
 
 
