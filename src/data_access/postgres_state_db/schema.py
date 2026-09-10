@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -560,6 +560,21 @@ _V14_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE daily_news_scan_status ADD COLUMN items_suppressed_no_url_last_run INTEGER NOT NULL DEFAULT 0",
 )
 
+# Admin Users v1 (design/DECISIONS.md) — isolated Postgres counterpart to
+# state_db/schema.py's own _V15_STATEMENTS (see that module's comment for
+# the full rationale). One new, wholly additive table.
+_V15_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE user_accounts (
+        email TEXT PRIMARY KEY,
+        display_name TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        sign_in_count INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -579,6 +594,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (12, _V12_STATEMENTS),
     (13, _V13_STATEMENTS),
     (14, _V14_STATEMENTS),
+    (15, _V15_STATEMENTS),
 )
 
 

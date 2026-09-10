@@ -41,6 +41,12 @@ def render() -> None:
         "indicator on each panel before relying on what it shows."
     )
 
+    section_header("Account data")
+    st.write(
+        "EevaResearch records an account's email address, display name, first and last sign-in "
+        "timestamps, and sign-in count solely for private-beta administration."
+    )
+
     section_header("This build (foundation phase)")
     st.write(
         "Application foundation, data model, navigation, UI system, and mock/demo data only. No real "

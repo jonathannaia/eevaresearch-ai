@@ -63,6 +63,7 @@ error can embed exactly that information in its message text, unlike a
 local SQLite file-path error."""
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,6 +95,7 @@ from src.data_access.postgres_state_db import identifier_repository as postgres_
 from src.data_access.postgres_state_db import research_repository as postgres_research
 from src.data_access.postgres_state_db import theme_matching_repository as postgres_theme_matching
 from src.data_access.postgres_state_db import theme_repository as postgres_themes
+from src.data_access.postgres_state_db import user_account_repository as postgres_user_accounts
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
@@ -109,6 +111,7 @@ from src.data_access.state_db import identifier_repository as sqlite_identifiers
 from src.data_access.state_db import research_repository as sqlite_research
 from src.data_access.state_db import theme_matching_repository as sqlite_theme_matching
 from src.data_access.state_db import theme_repository as sqlite_themes
+from src.data_access.state_db import user_account_repository as sqlite_user_accounts
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
@@ -125,6 +128,7 @@ from src.models.theme_research import (
     ThemeResearchNote,
     ThemeVisibility,
 )
+from src.models.user_account import UserAccount
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -1175,3 +1179,144 @@ def get_theme_matching_repository(settings: Settings) -> ThemeMatchingRepository
     if backend == "postgres":
         return PostgresThemeMatchingRepository(conn=_require_postgres_connection(settings))
     return JsonThemeMatchingRepository(cache_dir=settings.cache_dir)
+
+
+# --- User account repository — Admin Users v1 (design/DECISIONS.md).
+# app.py's own mandatory sign-in gate is the only write caller
+# (record_sign_in, at most once per authenticated browser session);
+# src/ui/pages/admin_users.py is the only read caller (get_user/
+# list_users), and only after its own is_admin() check passes. Supports
+# all three backends — unlike ScanStatusRepositoryProtocol (worker-only,
+# no JSON branch), this is reached through the ordinary ambient
+# EDGE_DB_BACKEND/EDGE_STATE_DB_URL/EDGE_STATE_DB_PATH pair every other
+# main-app-facing repository above uses, so local dev (db_backend
+# defaulting to "json") must keep working with zero configuration —
+# the same reason ThemeRepositoryProtocol/ResearchCaseRepositoryProtocol
+# above both have a JSON branch. The JSON store is a single
+# `user_accounts.json` file under `settings.cache_dir`, a dict keyed by
+# normalized email — deliberately inline here rather than a separate
+# `user_account_store.py` module: unlike theme_store.py/research_store.py
+# (shared by several distinct repository classes with a much larger
+# read/write surface), exactly one repository class uses this store, so
+# a dedicated module would be pure indirection for three functions worth
+# of logic.
+
+class UserAccountRepositoryProtocol(Protocol):
+    def get_user(self, email: str) -> UserAccount | None: ...
+    def list_users(self, search: str | None = None) -> list[UserAccount]: ...
+    def record_sign_in(self, email: str, display_name: str | None, now: str) -> None: ...
+
+
+def _user_accounts_json_path(cache_dir: Path) -> Path:
+    return cache_dir / "user_accounts.json"
+
+
+def _load_json_user_accounts(cache_dir: Path) -> dict[str, UserAccount]:
+    path = _user_accounts_json_path(cache_dir)
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        email: UserAccount(
+            email=email,
+            display_name=record.get("display_name"),
+            first_seen_at=record["first_seen_at"],
+            last_seen_at=record["last_seen_at"],
+            sign_in_count=record["sign_in_count"],
+        )
+        for email, record in raw.items()
+    }
+
+
+def _save_json_user_accounts(cache_dir: Path, accounts: dict[str, UserAccount]) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        email: {
+            "display_name": account.display_name,
+            "first_seen_at": account.first_seen_at,
+            "last_seen_at": account.last_seen_at,
+            "sign_in_count": account.sign_in_count,
+        }
+        for email, account in accounts.items()
+    }
+    _user_accounts_json_path(cache_dir).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _list_user_accounts(accounts: dict[str, UserAccount], search: str | None) -> list[UserAccount]:
+    values = list(accounts.values())
+    normalized_search = (search or "").strip().lower()
+    if normalized_search:
+        values = [
+            account for account in values
+            if normalized_search in account.email or normalized_search in (account.display_name or "").lower()
+        ]
+    return sorted(values, key=lambda account: account.last_seen_at, reverse=True)
+
+
+@dataclass(frozen=True)
+class JsonUserAccountRepository:
+    cache_dir: Path
+
+    def get_user(self, email: str) -> UserAccount | None:
+        return _load_json_user_accounts(self.cache_dir).get(email.strip().lower())
+
+    def list_users(self, search: str | None = None) -> list[UserAccount]:
+        return _list_user_accounts(_load_json_user_accounts(self.cache_dir), search)
+
+    def record_sign_in(self, email: str, display_name: str | None, now: str) -> None:
+        normalized_email = email.strip().lower()
+        accounts = _load_json_user_accounts(self.cache_dir)
+        existing = accounts.get(normalized_email)
+        if existing is None:
+            accounts[normalized_email] = UserAccount(
+                email=normalized_email, display_name=display_name,
+                first_seen_at=now, last_seen_at=now, sign_in_count=1,
+            )
+        else:
+            accounts[normalized_email] = UserAccount(
+                email=normalized_email, display_name=existing.display_name or display_name,
+                first_seen_at=existing.first_seen_at, last_seen_at=now,
+                sign_in_count=existing.sign_in_count + 1,
+            )
+        _save_json_user_accounts(self.cache_dir, accounts)
+
+
+@dataclass(frozen=True)
+class SqliteUserAccountRepository:
+    conn: sqlite3.Connection
+
+    def get_user(self, email: str) -> UserAccount | None:
+        return sqlite_user_accounts.get_user(self.conn, email)
+
+    def list_users(self, search: str | None = None) -> list[UserAccount]:
+        return sqlite_user_accounts.list_users(self.conn, search)
+
+    def record_sign_in(self, email: str, display_name: str | None, now: str) -> None:
+        sqlite_user_accounts.record_sign_in(self.conn, email, display_name, now)
+
+
+@dataclass(frozen=True)
+class PostgresUserAccountRepository:
+    conn: psycopg.Connection
+
+    def get_user(self, email: str) -> UserAccount | None:
+        return postgres_user_accounts.get_user(self.conn, email)
+
+    def list_users(self, search: str | None = None) -> list[UserAccount]:
+        return postgres_user_accounts.list_users(self.conn, search)
+
+    def record_sign_in(self, email: str, display_name: str | None, now: str) -> None:
+        postgres_user_accounts.record_sign_in(self.conn, email, display_name, now)
+
+
+def get_user_account_repository(settings: Settings) -> UserAccountRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as every other
+    main-app-facing factory function above — reads the ordinary ambient
+    EDGE_DB_BACKEND/EDGE_STATE_DB_URL/EDGE_STATE_DB_PATH, never a
+    dedicated worker-style pair (there is no worker for this table)."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteUserAccountRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresUserAccountRepository(conn=_require_postgres_connection(settings))
+    return JsonUserAccountRepository(cache_dir=settings.cache_dir)

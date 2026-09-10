@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -731,6 +731,27 @@ _V14_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE daily_news_scan_status ADD COLUMN items_suppressed_no_url_last_run INTEGER NOT NULL DEFAULT 0",
 )
 
+# Admin Users v1 (design/DECISIONS.md) — one new, wholly additive table
+# durably recording the minimal per-account bookkeeping app.py's own
+# mandatory sign-in gate now writes on each authenticated visitor's
+# first rerun of a browser session: normalized email (unique, the
+# natural primary key), an optional display name sourced only from
+# st.user's own "name" claim, first/last-seen timestamps, and a
+# sign-in count. Deliberately no IP, device, page-view, event, token,
+# or role/status column — see src/ui/pages/admin_users.py and
+# src/config/settings.py's admin_emails for the read/authorization side.
+_V15_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE user_accounts (
+        email TEXT PRIMARY KEY,
+        display_name TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        sign_in_count INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -750,6 +771,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (12, _V12_STATEMENTS),
     (13, _V13_STATEMENTS),
     (14, _V14_STATEMENTS),
+    (15, _V15_STATEMENTS),
 )
 
 

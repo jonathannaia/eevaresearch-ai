@@ -44,6 +44,9 @@ APP_PATH = Path(__file__).parent.parent / "app.py"
 
 _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + [
     "disclaimer", "daily_news_admin", "research_cases", "theme_workspace", "company_discovery_admin",
+    # Admin Users v1 (design/DECISIONS.md) — same hidden-but-reachable
+    # pattern as the other admin pages above.
+    "admin_users",
 ]
 
 

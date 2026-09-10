@@ -42,6 +42,18 @@ class AppContext:
     signal_repository: SignalRepository
     market_data_provider: MarketDataProvider
     research_answer_provider: ResearchAnswerProvider
+    # Admin Users v1 (design/DECISIONS.md) — deliberately NOT a field here.
+    # Every existing page calls get_repositories() (dashboard, Radar,
+    # Daily News, Themes, ...), so adding a field here would construct
+    # (and, for sqlite/postgres, connect + migration-check) a
+    # UserAccountRepositoryProtocol on every one of those calls, even
+    # though only two call sites in the entire app ever need it: app.py's
+    # own once-per-session sign-in-recording block, and
+    # src/ui/pages/admin_users.py's render() after its own is_admin()
+    # check passes. Both call backend_factory.get_user_account_repository(
+    # settings) directly instead — the same factory function this
+    # AppContext's own fields are built from, just not funneled through
+    # this shared, always-constructed bundle.
 
 
 def get_repositories(settings: Settings | None = None) -> AppContext:

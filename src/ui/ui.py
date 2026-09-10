@@ -12,7 +12,7 @@ from typing import Callable
 
 import streamlit as st
 
-from src.config.settings import APP_NAME, APP_VERSION
+from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
 
 METHODOLOGY_STATEMENT = (
     "EevaResearch separates source-backed facts, market interpretation, model "
@@ -181,6 +181,25 @@ def _correct_sidebar_state_for_width() -> None:
     )
 
 
+def is_admin(settings: Settings | None = None) -> bool:
+    """Admin Users v1 (design/DECISIONS.md) — the single authorization
+    check for the hidden Admin -> Users page, driven only by
+    EEVA_ADMIN_EMAILS (Settings.admin_emails). Fails closed by
+    construction: an absent/blank env var parses to an empty frozenset
+    (src.config.settings._parse_beta_allowed_emails), which no email can
+    ever be a member of, so an unconfigured deployment always denies
+    everyone, including a real signed-in user. This is a cosmetic
+    convenience for src/ui/pages/admin_users.py's own sidebar link and
+    render_sidebar() below — the page's own authorization check (run
+    before it ever constructs a repository) is the real access
+    boundary, not this function's use here."""
+    settings = settings or get_settings()
+    if not getattr(st.user, "is_logged_in", False):
+        return False
+    email = (st.user.get("email") or "").strip().lower()
+    return bool(email) and email in settings.admin_emails
+
+
 def render_sidebar(current_key: str) -> None:
     _correct_sidebar_state_for_width()
 
@@ -229,6 +248,16 @@ def render_sidebar(current_key: str) -> None:
             if page is not None:
                 st.page_link(page, label=label)
         st.markdown("</div>", unsafe_allow_html=True)
+
+        # Admin Users v1 (design/DECISIONS.md) — cosmetic only: hiding
+        # this link from a non-admin is not authorization (the page's own
+        # is_admin() check before any repository access is), but a real
+        # admin should still be able to reach it without typing the URL.
+        if is_admin():
+            admin_users_page = pages.get("admin_users")
+            if admin_users_page is not None:
+                st.markdown('<div class="er-rail-group-label">Admin</div>', unsafe_allow_html=True)
+                st.page_link(admin_users_page, label="Users")
 
         # Mandatory Google sign-in gate (design/DECISIONS.md) — every
         # visitor reaching this sidebar is already authenticated (app.py
