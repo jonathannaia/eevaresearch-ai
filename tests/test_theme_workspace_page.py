@@ -478,7 +478,20 @@ def test_page_never_imports_network_or_llm_modules():
 # ============================================================
 
 
-def test_route_registered_and_hidden_not_in_any_nav_group():
+def _sign_in_as(monkeypatch, email: str = "tester@example.test") -> None:
+    """Simulates a real authenticated user for AppTest — mirrors
+    tests/test_app_auth_gate.py's own technique (see that file's module
+    docstring for why: AppTest has no public API for a logged-in st.user,
+    so this monkeypatches the private streamlit.user_info._get_user_info
+    seam every st.user access funnels through)."""
+    import streamlit.user_info as user_info_module
+
+    monkeypatch.setattr(user_info_module, "_get_user_info", lambda: {"is_logged_in": True, "email": email})
+
+
+def test_route_registered_and_hidden_not_in_any_nav_group(monkeypatch):
+    _sign_in_as(monkeypatch)
+    monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
     at = AppTest.from_file(str(APP_PATH), default_timeout=30)
     at.run()
     pages = at.session_state["_pages"]
@@ -490,8 +503,16 @@ def test_route_registered_and_hidden_not_in_any_nav_group():
 
 
 def test_global_beta_gate_still_covers_the_route(monkeypatch):
-    monkeypatch.setenv("EDGE_PRIVATE_BETA_AUTH_ENABLED", "true")
-    monkeypatch.setenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", "")
+    """The beta gate runs in app.py before st.navigation(...).run() for
+    every registered page, hidden or not — this proves theme_workspace
+    doesn't bypass it, by asserting the (now-optional, secondary) allowlist
+    layer still blocks this specific route the same way it blocks any
+    other route for a signed-in user it excludes. Sign-in itself is
+    mandatory now (see app.py) and is simulated here rather than tested
+    negatively — the anonymous-blocked case is covered by
+    tests/test_app_auth_gate.py, not this route-coverage proof."""
+    _sign_in_as(monkeypatch, email="stranger@example.test")
+    monkeypatch.setenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", "founder@example.test")
     monkeypatch.setenv("EDGE_THEME_WORKSPACE_ENABLED", "true")
     at = AppTest.from_file(str(APP_PATH), default_timeout=30)
     at.query_params["theme_id"] = ""

@@ -75,10 +75,23 @@ def test_app_entry_point_runs_without_exception():
     assert not at.exception
 
 
-def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter():
+def _sign_in_as(monkeypatch, email: str = "tester@example.test") -> None:
+    """Simulates a real authenticated user for AppTest — mirrors
+    tests/test_app_auth_gate.py's own technique (see that file's module
+    docstring for why: AppTest has no public API for a logged-in st.user,
+    so this monkeypatches the private streamlit.user_info._get_user_info
+    seam every st.user access funnels through)."""
+    import streamlit.user_info as user_info_module
+
+    monkeypatch.setattr(user_info_module, "_get_user_info", lambda: {"is_logged_in": True, "email": email})
+    monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
+
+
+def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter(monkeypatch):
     # `st.Page` doesn't expose `default` publicly on this Streamlit version
     # (only the private `_default`) — used here only to assert this app's
     # own registration behavior, not as a documented public API.
+    _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()  # first-ever run of this session: home is default
     pages = at.session_state["_pages"]
@@ -91,7 +104,7 @@ def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter():
     assert pages["dashboard"]._default is True
 
 
-def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
+def test_every_registered_page_key_present_with_no_change_to_labels_or_order(monkeypatch):
     """Regression guard for the navigation-cleanup pass (design/DECISIONS.md)
     — asserts the exact visible WORKSPACE/SYSTEM nav tables app.py reads
     from, that Coverage/Signals/Methodology/About are still registered
@@ -110,19 +123,21 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order():
     # had any live real data of their own.
     assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about"]
 
+    _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()
     pages = at.session_state["_pages"]
     assert set(pages.keys()) == set(_ALL_REGISTERED_KEYS)
 
 
-def test_page_objects_stay_identical_across_reruns_within_the_same_default_phase():
+def test_page_objects_stay_identical_across_reruns_within_the_same_default_phase(monkeypatch):
     """The actual regression test for the navigation-bug-repair fix: before
     it, `app.py` rebuilt a brand-new `st.Page` (and a brand-new wrapped
     callable) on every single rerun. `st.cache_resource` now makes
     `_build_pages` hand back the *same* objects for the same
     `dashboard_is_default` value — this asserts that stays true two reruns
     in a row, once the session is past its first visit."""
+    _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
     at.run()  # first visit — dashboard_is_default=False phase
     at.run()  # now stably in the dashboard_is_default=True phase

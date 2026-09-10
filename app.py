@@ -18,6 +18,7 @@ left-rail nav widget.
 """
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import streamlit as st
@@ -25,7 +26,7 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access.container import get_repositories
 from src.logic.unread import seed_initial_last_seen
-from src.ui.beta_gate import evaluate_beta_gate
+from src.ui.beta_gate import BetaGateReason, evaluate_beta_gate
 from src.ui.pages import (
     about,
     company_discovery_admin,
@@ -155,6 +156,49 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     return pages
 
 
+# Mandatory Google sign-in gate (design/DECISIONS.md) — runs before
+# _build_pages(), any session-state seeding, any repository access, or
+# st.navigation, so an unauthenticated visitor never triggers a protected
+# data read or sees any page, nav, or dashboard content. Every visitor
+# must authenticate; there is no flag that reopens this.
+_beta_settings = get_settings()
+_beta_is_logged_in = getattr(st.user, "is_logged_in", False)
+
+if not _beta_is_logged_in:
+    st.title("Sign in to EevaResearch AI")
+    st.write("Sign in with your Google account to continue.")
+    st.button("Continue with Google", on_click=st.login, args=("google",))
+    st.stop()
+
+_beta_email = st.user.get("email")
+
+# EDGE_PRIVATE_BETA_ALLOWED_EMAILS is an optional, secondary, invite-only
+# layer for a later phase (Admin Users page not yet built) — any
+# authenticated Google account is allowed through today unless the
+# allowlist is non-empty and excludes it. evaluate_beta_gate() itself is
+# unchanged (src/ui/beta_gate.py) and keeps its own standalone contract —
+# including EMPTY_ALLOWLIST meaning "deny" — because that contract is
+# exercised directly by tests/test_beta_gate.py. Its AUTH_DISABLED/
+# EMPTY_ALLOWLIST branches both described the old "beta invite is
+# optional" design, which no longer applies now that sign-in itself is
+# mandatory (checked above); forcing private_beta_auth_enabled=True for
+# just this call routes the decision into evaluate_beta_gate's real
+# allowlist-comparison branches (ALLOWED_EMAIL/INVITE_REQUIRED) instead of
+# the now-stale AUTH_DISABLED shortcut, and this call site — not the
+# shared function — is what treats EMPTY_ALLOWLIST as "allow," per the
+# product decision that an empty allowlist must never lock out an
+# authenticated user.
+_beta_gate_decision = evaluate_beta_gate(
+    dataclasses.replace(_beta_settings, private_beta_auth_enabled=True), email=_beta_email
+)
+_beta_allowed = _beta_gate_decision.allowed or _beta_gate_decision.reason is BetaGateReason.EMPTY_ALLOWLIST
+
+if not _beta_allowed:
+    st.title("Private beta")
+    st.error("This Google account is not approved for the private beta.")
+    st.button("Sign out", on_click=st.logout)
+    st.stop()
+
 # Home renders on first visit only; Dashboard is the default thereafter
 # (brief §4) — a page keeps the root path "/" via default=True regardless
 # of its own url_path, so Dashboard stays reachable at both "/" and
@@ -177,42 +221,6 @@ if LAST_SEEN_KEY not in st.session_state:
     # real Signals visit. Only Signals itself advances this afterward.
     st.session_state[LAST_SEEN_KEY] = seed_initial_last_seen(get_repositories().signal_repository.get_all_signals())
 st.session_state.setdefault(READ_IDS_KEY, set())
-
-# Private-beta access foundation, Phase 1 (design/DECISIONS.md) — no
-# identity/sign-in exists yet, so `email` is always None; the flag defaults
-# to disabled, which keeps this a no-op and every page working exactly as
-# before. If a deployment enables the flag ahead of real sign-in wiring,
-# this fails closed with a neutral placeholder rather than ever running
-# `selected.run()` unauthenticated. The placeholder wording distinguishes
-# an unconfigured allowlist from "sign-in just isn't wired up yet" purely
-# to be honest with whoever operates the deployment — it never displays
-# the allowlist itself, its size, any email, or the gate's internal reason
-# value.
-_beta_settings = get_settings()
-
-_beta_is_logged_in = getattr(st.user, "is_logged_in", False)
-_beta_email = st.user.get("email") if _beta_is_logged_in else None
-
-if _beta_settings.private_beta_auth_enabled and not _beta_is_logged_in:
-    st.title("Private beta")
-    st.write("Sign in with your approved Google account to access EevaResearch AI.")
-    st.button("Continue with Google", on_click=st.login, args=("google",))
-    st.stop()
-
-_beta_gate_decision = evaluate_beta_gate(_beta_settings, email=_beta_email)
-
-if not _beta_gate_decision.allowed:
-    st.title("Private beta")
-    if _beta_settings.private_beta_allowed_emails:
-        st.error("This Google account is not approved for the private beta.")
-        if _beta_is_logged_in:
-            st.button("Sign out", on_click=st.logout)
-    else:
-        st.info(
-            "Private beta access is being configured. "
-            "Approved beta accounts have not been configured on this deployment yet."
-        )
-    st.stop()
 
 selected = st.navigation(list(pages.values()), position="hidden")
 selected.run()

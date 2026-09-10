@@ -230,6 +230,19 @@ def render_sidebar(current_key: str) -> None:
                 st.page_link(page, label=label)
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # Mandatory Google sign-in gate (design/DECISIONS.md) — every
+        # visitor reaching this sidebar is already authenticated (app.py
+        # stops before st.navigation() otherwise), so a sign-out control
+        # belongs here, not only in the denied-access screen. Only the
+        # email claim is shown — never a token, cookie, session id, or any
+        # other identity attribute.
+        _account_email = st.user.get("email") if getattr(st.user, "is_logged_in", False) else None
+        if _account_email:
+            st.markdown('<div class="er-rail-group-label">Account</div>', unsafe_allow_html=True)
+            st.caption(f"Signed in as {_account_email}")
+            st.button("Sign out", on_click=st.logout, key="er-rail-sign-out")
+            st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
+
         # Reader-facing data-integrity pass (design/DECISIONS.md): the
         # previous blanket "Demo environment · sample data" status was
         # removed rather than replaced with an equally blanket claim —

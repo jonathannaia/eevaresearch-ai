@@ -140,7 +140,7 @@ def test_beta_gate_module_has_no_streamlit_import():
 _APP_PATH = Path(__file__).parent.parent / "app.py"
 
 
-def test_app_with_beta_auth_disabled_by_default_renders_normally(monkeypatch):
+def test_app_with_beta_auth_disabled_by_default_still_requires_sign_in(monkeypatch):
     monkeypatch.delenv("EDGE_PRIVATE_BETA_AUTH_ENABLED", raising=False)
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
 
@@ -150,11 +150,19 @@ def test_app_with_beta_auth_disabled_by_default_renders_normally(monkeypatch):
     at.run()
 
     assert not at.exception
-    assert not at.info
-    assert len(at.markdown) > 0
+    # Mandatory Google sign-in gate (design/DECISIONS.md): this test used
+    # to assert an unauthenticated visitor "renders normally" whenever
+    # EDGE_PRIVATE_BETA_AUTH_ENABLED was left at its default (disabled) —
+    # that flag no longer controls whether sign-in is required at all; an
+    # unauthenticated visitor is always stopped at the sign-in screen, and
+    # that flag now only ever affects the (separate, optional) allowlist
+    # evaluation after a real sign-in. See tests/test_app_auth_gate.py for
+    # full coverage of the new gate.
+    assert [title.value for title in at.title] == ["Sign in to EevaResearch AI"]
+    assert [button.label for button in at.button] == ["Continue with Google"]
 
 
-def test_app_with_beta_auth_enabled_and_empty_allowlist_shows_unconfigured_placeholder(monkeypatch):
+def test_app_with_beta_auth_enabled_and_empty_allowlist_still_requires_sign_in(monkeypatch):
     monkeypatch.setenv("EDGE_PRIVATE_BETA_AUTH_ENABLED", "true")
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
 
@@ -164,18 +172,14 @@ def test_app_with_beta_auth_enabled_and_empty_allowlist_shows_unconfigured_place
     at.run()
 
     assert not at.exception
-    # With auth enabled and no authenticated user, the app must stop at
-    # the Google sign-in screen before ever evaluating the allowlist —
-    # regardless of whether the allowlist itself is configured. The old
-    # "unconfigured placeholder" expectation here relied on an
-    # unauthenticated placeholder email being treated as a real logged-in
-    # identity, which is exactly the login-state bug this test now guards
-    # against instead.
-    assert [title.value for title in at.title] == ["Private beta"]
-    assert any(
-        "Sign in with your approved Google account to access EevaResearch AI." in md.value
-        for md in at.markdown
-    )
+    # With no authenticated user, the app must stop at the Google sign-in
+    # screen before ever evaluating the allowlist — regardless of whether
+    # EDGE_PRIVATE_BETA_AUTH_ENABLED or the allowlist itself is configured.
+    # The old "Private beta"-titled unconfigured-placeholder expectation
+    # here described the pre-mandatory-gate design, where sign-in itself
+    # was optional and this flag decided whether it applied at all; that
+    # flag is no longer read by the sign-in check at all (see app.py).
+    assert [title.value for title in at.title] == ["Sign in to EevaResearch AI"]
     assert [button.label for button in at.button] == ["Continue with Google"]
 
 
