@@ -214,6 +214,14 @@ def _run_feed_tick(
     never needs to change run_discovery()'s own aggregate-only
     DailyNewsScanReport shape to get per-feed granularity."""
     company_name = feed_source.company_name
+    # Worker observability (design/DECISIONS.md) — log-line label only;
+    # DailyNewsFeedScanStatus stays keyed by company_name exactly as
+    # before (see get_feed_status/upsert_feed_status below), so this adds
+    # no new persistence key and changes no stored row's identity. Two
+    # real sources can share one company_name today (e.g. Meta's IR and
+    # newsroom feeds) — source_id is what actually disambiguates them in
+    # the printed log.
+    source_id = feed_source.source_id or "(no source_id)"
     started_at = datetime.now(timezone.utc).isoformat()
     previous = scan_status_repository.get_feed_status(company_name)
 
@@ -240,7 +248,7 @@ def _run_feed_tick(
             items_deduplicated_last_run=0,
             items_suppressed_no_url_last_run=0,
         ))
-        print(f"{company_name}: tick failed ({type(exc).__name__}) — skipped.")
+        print(f"{source_id} ({company_name}): tick failed ({type(exc).__name__}) — skipped.")
         return
 
     now = datetime.now(timezone.utc).isoformat()
@@ -272,11 +280,12 @@ def _run_feed_tick(
     ))
     if fetch_succeeded:
         print(
-            f"{company_name}: ok — items_discovered={report.items_discovered} "
-            f"stories_published={report.stories_published}"
+            f"{source_id} ({company_name}): ok — items_discovered={report.items_discovered} "
+            f"stories_published={report.stories_published} items_already_seen={report.items_already_seen} "
+            f"items_deduplicated={report.items_deduplicated} items_suppressed_no_url={report.items_suppressed_no_url}"
         )
     else:
-        print(f"{company_name}: fetch failed ({failure_code}).")
+        print(f"{source_id} ({company_name}): fetch failed ({failure_code}).")
 
 
 def _reconciliation_due(worker_status: DailyNewsWorkerStatus | None, worker_settings: Settings) -> bool:
