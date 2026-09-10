@@ -148,15 +148,32 @@ def test_theme_health_never_shows_price_breadth_or_performance_wording(tmp_path,
         assert forbidden not in all_text
 
 
+def _sign_in_as(monkeypatch, email: str = "tester@example.test") -> None:
+    """Simulates a real authenticated user for AppTest — mirrors
+    tests/test_app_auth_gate.py's own technique (see that file's module
+    docstring for why: AppTest has no public API for a logged-in st.user,
+    so this monkeypatches the private streamlit.user_info._get_user_info
+    seam every st.user access funnels through)."""
+    import streamlit.user_info as user_info_module
+
+    monkeypatch.setattr(user_info_module, "_get_user_info", lambda: {"is_logged_in": True, "email": email})
+    monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
+
+
 def test_theme_health_link_targets_the_specific_published_theme(tmp_path, monkeypatch):
     """get_page("themes") only resolves to a real Page object when run
     through app.py's real st.navigation entry point — an isolated
     per-page AppTest harness never populates st.session_state["_pages"]
     (same limitation documented elsewhere in this test suite), so this
-    one test runs through APP_PATH instead of DASHBOARD_HARNESS."""
+    one test runs through APP_PATH instead of DASHBOARD_HARNESS. Mandatory
+    Google sign-in gate (design/DECISIONS.md): app.py now stops at a
+    sign-in screen before st.navigation() for any unauthenticated visitor,
+    so reaching Dashboard's real content requires simulating an
+    authenticated user first."""
     settings = _settings(tmp_path)
     _publish_theme(settings)
     _patch_dashboard_settings(monkeypatch, settings)
+    _sign_in_as(monkeypatch)
 
     at = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=15)
     at.run()
@@ -305,10 +322,13 @@ def test_market_map_view_all_in_themes_link_present_with_a_real_published_theme(
     through app.py's real st.navigation entry point — an isolated
     per-page AppTest harness never populates st.session_state["_pages"]
     (same limitation documented elsewhere in this test suite), so this
-    test runs through app.py instead of DASHBOARD_HARNESS."""
+    test runs through app.py instead of DASHBOARD_HARNESS. Mandatory
+    Google sign-in gate (design/DECISIONS.md): see the sibling test above
+    for why sign-in must be simulated here too."""
     settings = _settings(tmp_path)
     _publish_theme(settings)
     _patch_dashboard_settings(monkeypatch, settings)
+    _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=15)
     at.run()
     at.run()  # second run: dashboard becomes the default page
