@@ -353,6 +353,17 @@ class Settings:
     # src/ui/beta_gate.py); no identity/sign-in exists yet this phase.
     private_beta_auth_enabled: bool = field(default_factory=lambda: _parse_beta_auth_enabled("EDGE_PRIVATE_BETA_AUTH_ENABLED"))
     private_beta_allowed_emails: frozenset[str] = field(default_factory=lambda: _parse_beta_allowed_emails("EDGE_PRIVATE_BETA_ALLOWED_EMAILS"))
+    # Admin Users v1 (design/DECISIONS.md) — owner-only access to the hidden
+    # Admin -> Users page. Deliberately its own variable, not folded into
+    # private_beta_allowed_emails above: being on the beta allowlist and
+    # being an administrator are different authorizations. Reuses
+    # _parse_beta_allowed_emails's exact comma-separated/case-insensitive/
+    # fail-closed-on-empty parsing — an absent or blank EEVA_ADMIN_EMAILS
+    # resolves to an empty frozenset, which is what makes admin access
+    # fail closed by construction (see src/ui/ui.py's is_admin()). Named
+    # EEVA_, not EDGE_, per explicit product decision — every other
+    # variable in this file uses EDGE_; this one deliberately doesn't.
+    admin_emails: frozenset[str] = field(default_factory=lambda: _parse_beta_allowed_emails("EEVA_ADMIN_EMAILS"))
     # R2 remote-cache sync (dormant infrastructure — see
     # src/data_access/remote_cache/ — nothing in the app reads/writes
     # through these yet). Disabled by default so every existing page and

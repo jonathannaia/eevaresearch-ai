@@ -15,20 +15,27 @@ Company (a single fictional ticker) were removed entirely in the
 reader-facing data-integrity pass (design/DECISIONS.md) — none had any
 live real data of its own. src/ui/ui.render_sidebar is the persistent
 left-rail nav widget.
+
+Admin Users v1 (design/DECISIONS.md) adds one more hidden-but-reachable
+route, admin_users — see that page's own module docstring and
+src/ui/ui.py's is_admin() for its authorization design.
 """
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
 
 from src.config.settings import get_settings
+from src.data_access import backend_factory
 from src.data_access.container import get_repositories
 from src.logic.unread import seed_initial_last_seen
 from src.ui.beta_gate import BetaGateReason, evaluate_beta_gate
 from src.ui.pages import (
     about,
+    admin_users,
     company_discovery_admin,
     coverage,
     daily_news,
@@ -153,6 +160,16 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
         with_chrome(company_discovery_admin.render, "company_discovery_admin"),
         title="Company Discovery — Admin", url_path="company-discovery-admin", visibility="hidden",
     )
+    # Admin Users v1 (design/DECISIONS.md) — same hidden-but-reachable
+    # pattern as the admin pages above: `visibility="hidden"` keeps it out
+    # of Streamlit's own nav; src/ui/ui.py:render_sidebar() adds the one
+    # manual, conditional st.page_link only when is_admin() is true — the
+    # page's own authorization check (before any repository access) is
+    # the real boundary, not the link's visibility.
+    pages["admin_users"] = st.Page(
+        with_chrome(admin_users.render, "admin_users"),
+        title="Admin — Users", url_path="admin-users", visibility="hidden",
+    )
     return pages
 
 
@@ -198,6 +215,35 @@ if not _beta_allowed:
     st.error("This Google account is not approved for the private beta.")
     st.button("Sign out", on_click=st.logout)
     st.stop()
+
+# Admin Users v1 (design/DECISIONS.md) — records this authenticated,
+# allowed visitor's sign-in at most once per Streamlit browser session
+# (the same "_has_visited"-style session_state guard app.py already uses
+# below), never on every rerun. Runs only after both the mandatory
+# sign-in gate and the optional allowlist gate above have already
+# passed, and before any protected page/nav content builds. Calls
+# backend_factory.get_user_account_repository(...) directly — not via
+# get_repositories()/AppContext — so that every other page's ordinary
+# get_repositories() call (dashboard, Radar, Daily News, Themes, ...)
+# never constructs, connects, or migration-checks a UserAccount
+# repository it doesn't need; only this block and
+# src/ui/pages/admin_users.py's own is_admin()-gated render() ever do. A
+# write failure — including the repository construction itself, e.g. a
+# misconfigured sqlite/postgres backend — must never block a legitimate
+# user or retry every rerun — the guard flag is set regardless of
+# outcome — but must not be completely silent either: exactly one
+# sanitized, non-sensitive line identifying only the event type, never
+# the email, exception text, backend, or any connection detail.
+if not st.session_state.get("_user_account_recorded", False):
+    try:
+        backend_factory.get_user_account_repository(_beta_settings).record_sign_in(
+            email=_beta_email,
+            display_name=st.user.get("name"),
+            now=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:  # noqa: BLE001 — bookkeeping only, must never block a legitimate user
+        print("[app] User-account session recording failed.")
+    st.session_state["_user_account_recorded"] = True
 
 # Home renders on first visit only; Dashboard is the default thereafter
 # (brief §4) — a page keeps the root path "/" via default=True regardless
