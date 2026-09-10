@@ -93,9 +93,39 @@ EDINET_CATEGORIES: tuple[str, ...] = (
 # ZIP package's safe "honbun" inline-XBRL HTML body yielded 600 real
 # extracted Japanese characters via document_extractor.py's HTML-in-ZIP
 # fallback — no further extraction work was needed for this category.
+#
+# Third real entry (Extraordinary Report / 臨時報告書) — ordinanceCode=010,
+# formCode=053000, docTypeCode=180 → "extraordinary_report". Promoted
+# from the existing, already-tested shadow evaluator
+# (material_event_shadow.py's is_eligible_extraordinary_report/
+# find_matches — title 臨時報告書, NFKC-normalized, plus this exact
+# triplet, both required), which stays in place unchanged as a harmless,
+# now-redundant secondary observation path. Production preconditions
+# confirmed before this promotion: EDGE_EDINET_MATERIAL_EVENT_LEXICON_
+# ENABLED=true showed real edinet_material_event_shadow_matches in live
+# worker logs, and one live shadow-matched document was spot-checked
+# through document_extractor.extract_excerpt(), returning a non-empty,
+# usable excerpt. Same look-alike-exclusion discipline as
+# material_event_shadow.py's own eligibility check — these four real,
+# confirmed companion triplets must never be added to this map without
+# independent re-verification:
+#   - 030:995000:180 — 臨時報告書（内国特定有価証券）(Extraordinary
+#     Report — Domestic Specified Securities), filed by asset-management/
+#     fund entities about securities they manage, never a tracked
+#     issuer's own material corporate event (17 independent instances
+#     observed, one consistent triplet).
+#   - 010:053001:190 — 訂正臨時報告書 (correction/amendment; 2
+#     independent instances observed, one consistent triplet).
+#   - 010:042000:135 — 確認書 (Confirmation Letter; the same SoftBank
+#     Group companion tuple already excluded from the annual-report
+#     entry above).
+#   - 015:010000:235 — 内部統制報告書 (Internal Control Report; the same
+#     SoftBank Group companion tuple already excluded from the
+#     annual-report entry above).
 DEFAULT_CODE_CATEGORY_MAP: dict[str, str] = {
     "010:030000:120": "annual_securities_report",
     "010:170000:220": "share_buyback_status",
+    "010:053000:180": "extraordinary_report",
 }
 
 

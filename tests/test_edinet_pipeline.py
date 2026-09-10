@@ -669,20 +669,23 @@ def test_run_pipeline_flag_true_populates_shadow_matches_for_eligible_filing(tmp
     assert match.triplet == "010:053000:180"
 
 
-def test_run_pipeline_flag_true_never_creates_a_candidate_signal_for_the_shadow_match(tmp_path):
-    # The central isolation guarantee: a shadow-eligible filing (matched
-    # by material_event_shadow, not by edinet_rules.DEFAULT_CODE_
-    # CATEGORY_MAP, which has no entry for this triplet) must still
-    # produce zero CandidateSignals — the shadow evaluator never feeds
-    # into candidate creation regardless of flag state.
+def test_run_pipeline_flag_true_also_creates_a_candidate_signal_for_the_now_promoted_extraordinary_report(tmp_path):
+    # Extraordinary Report (010:053000:180) was promoted from
+    # shadow-only to a real DEFAULT_CODE_CATEGORY_MAP entry — this same
+    # triplet is now BOTH shadow-matched (material_event_shadow still
+    # evaluates unconditionally whenever the flag is true, independent
+    # of edinet_rules.DEFAULT_CODE_CATEGORY_MAP) AND promoted to a real
+    # CandidateSignal via the normal scan_service.scan()/edinet_rules.
+    # evaluate_document() path — the two are independent evaluators that
+    # now happen to agree on this one triplet, not a special case.
     client = _make_client(
         {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
     )
     report = edinet_pipeline.run_pipeline(client, [_ACME], tmp_path, material_event_lexicon_enabled=True)
 
-    assert len(report.shadow_material_event_matches) == 1  # the shadow evaluator did match it
-    assert report.candidates_detected == 0  # but no CandidateSignal was created
-    assert candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME) == {}
+    assert len(report.shadow_material_event_matches) == 1  # the shadow evaluator still matches it too
+    assert report.candidates_detected == 1  # now a real CandidateSignal, via the promoted mapping
+    assert len(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)) == 1
 
 
 def test_run_pipeline_flag_true_excludes_known_non_eligible_shadow_patterns(tmp_path):
@@ -697,15 +700,21 @@ def test_run_pipeline_flag_true_excludes_known_non_eligible_shadow_patterns(tmp_
     assert report.shadow_material_event_matches == ()
 
 
-def test_run_pipeline_flag_true_shadow_evaluation_never_invokes_translation(tmp_path):
+def test_run_pipeline_flag_true_now_promoted_extraordinary_report_is_translated(tmp_path):
+    # Same triplet as the promotion test above — now that it's a real
+    # DEFAULT_CODE_CATEGORY_MAP entry, the resulting candidate goes
+    # through the normal processing loop within run_pipeline() and
+    # receives the existing translation path exactly like any other
+    # promoted EDINET candidate.
     client = _make_client(
         {_today(): _envelope([_result("S100SHADOW", "E00001", "1234", ordinance="010", form="053000", doc_type="180", description="臨時報告書")])},
     )
-    provider = _FakeTranslationProvider(result="should never be called")
+    provider = _FakeTranslationProvider(result="translated text")
 
     report = edinet_pipeline.run_pipeline(
         client, [_ACME], tmp_path, material_event_lexicon_enabled=True, translation_provider=provider,
     )
 
     assert len(report.shadow_material_event_matches) == 1
-    assert provider.calls == []  # the shadow filing never became a candidate, so it was never processed/translated
+    assert report.candidates_detected == 1
+    assert provider.calls != []  # the now-promoted candidate was processed and translated
