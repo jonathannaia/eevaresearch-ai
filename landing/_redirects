@@ -1,0 +1,11 @@
+# Prepared ahead of the future app.eevaresearch.com cutover (Phase 1 —
+# not yet active: this Static Site has no custom domain attached, so
+# these rules have no live effect today). Only known app deep links are
+# listed explicitly — deliberately no wildcard/catch-all rule, so this
+# landing page itself and any future/unknown public page are never
+# accidentally redirected.
+/radar-inbox      https://app.eevaresearch.com/radar-inbox      301
+/daily-news       https://app.eevaresearch.com/daily-news       301
+/market-map       https://app.eevaresearch.com/market-map       301
+/research-cases   https://app.eevaresearch.com/research-cases   301
+/admin            https://app.eevaresearch.com/admin            301
