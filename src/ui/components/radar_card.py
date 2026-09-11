@@ -60,17 +60,20 @@ still independently unit-tested; they are simply never called from this
 public card any more.
 
 Layout correction pass (design/DECISIONS.md), extended by the filing-
-quality pass to a second toggle: every text-reveal toggle on this card
-is purely a client-side visibility switch, keyed off `st.session_state`
-only — none of them ever calls a translation provider, writes to
-CandidateSignal/the database, or queues/retries anything. `Show English
-translation` is only ever rendered when a translation is already stored
-(`candidate.excerpt_translation` is not None); `View filing text`/`View
-original filing text` are only ever rendered when the corresponding
-stored text exists AND passes the quality gate. When no such text/
-translation is stored, this card renders no toggle and no messaging
-beyond the Summary and the source link — no "Translation unavailable",
-no "being prepared", no retry/status/error wording of any kind.
+quality pass to a second toggle, and further extended by the filing-card
+summary/translation presentation fix: every text-reveal toggle on this
+card is purely a client-side visibility switch, keyed off
+`st.session_state` only — none of them ever calls a translation
+provider, writes to CandidateSignal/the database, or queues/retries
+anything. `Show English translation`, `View filing text`, and `View
+original filing text` are now ALL only ever rendered when the
+corresponding stored text exists AND passes the same quality gate
+(`is_readable_extracted_text`) — a raw/document-like stored translation
+no longer bypasses this gate the way it previously did. When no such
+text/translation is stored, or it fails the gate, this card renders no
+toggle and no messaging beyond the Summary and the source link — no
+"Translation unavailable", no "being prepared", no retry/status/error
+wording of any kind.
 """
 from __future__ import annotations
 
@@ -267,20 +270,30 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         if filing_display.is_english_native(filing):
             readable_text = candidate.excerpt_original if candidate is not None else None
             passes_gate = bool(readable_text) and filing_display.is_readable_extracted_text(readable_text)
-            summary = (
-                filing_display.extractive_summary(readable_text) if passes_gate
-                else filing_display.metadata_only_summary(filing, title, filed_label)
-            )
+            summary = filing_display.extractive_summary(readable_text) if passes_gate else ""
+            if not summary:
+                summary = filing_display.metadata_only_summary(filing, title, filed_label)
         else:
             translation_text = (
                 candidate.excerpt_translation.translated_text
                 if candidate is not None and candidate.excerpt_translation is not None else None
             )
-            summary_source = translation_text if translation_text and filing_display.is_readable_extracted_text(translation_text) else None
-            summary = (
-                filing_display.extractive_summary(summary_source) if summary_source
-                else filing_display.metadata_only_summary(filing, title, filed_label)
-            )
+            # Filing-card summary/translation presentation fix: the same
+            # readability gate now decides both the Summary source below
+            # AND the "Show English translation" toggle further down —
+            # previously the toggle rendered whenever translation_text
+            # existed at all, regardless of readability, exposing a raw/
+            # document-like block. extractive_summary() itself may still
+            # return "" (no clean sentence found even within its own
+            # bounded search window); that empty-return case, not just an
+            # unreadable-source case, also falls back to
+            # metadata_only_summary() here — this is the "existing
+            # caller" extractive_summary()'s own docstring refers to.
+            translation_is_readable = bool(translation_text) and filing_display.is_readable_extracted_text(translation_text)
+            summary_source = translation_text if translation_is_readable else None
+            summary = filing_display.extractive_summary(summary_source) if summary_source else ""
+            if not summary:
+                summary = filing_display.metadata_only_summary(filing, title, filed_label)
 
         st.markdown('<div class="er-muted" style="margin-top:0.5rem;"><strong>Summary</strong></div>', unsafe_allow_html=True)
         st.markdown(f'<div>{html.escape(summary)}</div>', unsafe_allow_html=True)
@@ -293,7 +306,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     section_label="Filing text", text=readable_text,
                 )
         else:
-            if translation_text:
+            if translation_text and translation_is_readable:
                 _render_expandable_text(
                     toggle_key=f"radar-translation-expanded-{filing.rcept_no}",
                     show_label="Show English translation", hide_label="Hide English translation",

@@ -167,6 +167,48 @@ def test_extractive_summary_is_grounded_only_in_the_given_text():
     assert text.startswith(summary)
 
 
+def test_extractive_summary_extends_into_the_bounded_window_for_a_late_sentence_boundary():
+    """No sentence terminator exists inside the 320-char target window
+    here, but one exists shortly after it, well inside the 640-char
+    bounded search window — the summary must run long enough to reach it
+    rather than being cut at the target."""
+    filler = "filler word " * 30  # 360 chars, no terminator anywhere in it
+    text = filler + "First sentence ends right here. " + ("more filler word " * 40)
+    summary = filing_display.extractive_summary(text)
+    assert summary.endswith("First sentence ends right here.")
+    assert not summary.endswith("…")
+    assert not summary.endswith("...")
+    assert 320 < len(summary) <= 640
+    assert text.startswith(summary)
+
+
+def test_extractive_summary_returns_empty_when_no_terminator_exists_within_the_bounded_window():
+    """No sentence terminator anywhere in the text at all, and the text
+    is long enough that it cannot be returned verbatim — must never fall
+    back to a word-boundary-truncated excerpt plus an ellipsis. An empty
+    return is the caller's signal to use metadata_only_summary()."""
+    text = "word " * 200  # 1000 chars, zero sentence-ending punctuation
+    summary = filing_display.extractive_summary(text)
+    assert summary == ""
+
+
+def test_extractive_summary_returns_empty_when_the_only_terminator_is_beyond_the_bounded_window():
+    """A sentence terminator does exist, but only past the 640-char
+    bounded search window — still must not return a raw truncation."""
+    filler = "filler word " * 60  # 720 chars, no terminator anywhere in it
+    text = filler + "Sentence finally ends far too late."
+    summary = filing_display.extractive_summary(text)
+    assert summary == ""
+
+
+def test_extractive_summary_still_returns_short_boundary_free_text_verbatim():
+    """A short text with no sentence terminator at all still needs no
+    truncation decision, so it is returned verbatim — unchanged from the
+    pre-existing behavior this fix must not regress."""
+    text = "Loan amount stated without a terminating period"
+    assert filing_display.extractive_summary(text) == text
+
+
 def test_metadata_only_summary_uses_the_documented_template_with_date():
     filing = _dart_filing("신규시설투자등 결정")
     summary = filing_display.metadata_only_summary(filing, "New facility investment decision", "Aug 12, 2026")

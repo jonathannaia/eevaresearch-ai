@@ -266,6 +266,153 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert any(b.label == "Hide original filing text" for b in at.button)
 
 
+def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_summary(tmp_path):
+    """Filing-card summary/translation presentation fix regression proof
+    — modeled on the real production case (EDINET Extraordinary Report,
+    ispace, inc., docID S100Z0OT): a long, itemized, non-narrative stored
+    translation (real words, but structurally raw/document-like — no
+    sentence-ending punctuation anywhere) must never render the "Show
+    English translation" toggle, and the Summary must fall back to the
+    honest metadata-only sentence rather than an ellipsis-terminated or
+    partial fragment. The official EDINET source action must stay
+    visible regardless."""
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E12345", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-07-01",
+        flr_nm="株式会社ispace", pblntf_ty="180000", pblntf_detail_ty="010", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    raw_like_translation = (
+        "Lender name Example Bank Ltd loan amount five hundred million yen "
+        "use of proceeds working capital term five years interest rate variable "
+        "collateral none guarantor none execution date 2026 07 01 repayment schedule "
+        "lump sum at maturity governing law Japan "
+    ) * 2  # long, ordinary real words, zero sentence-ending punctuation anywhere
+    candidate = CandidateSignal(
+        id="edinet-cand-ispace-1", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="臨時報告書の抜粋。",
+        excerpt_translation=Translation(
+            translated_text=raw_like_translation, provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso()
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "ispace, inc." in all_text
+    assert "93480" in all_text
+    # Summary must be the honest metadata-only fallback — never the raw
+    # translation, never an ellipsis, never a partial sentence.
+    assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
+    assert "…" not in all_text
+    assert "..." not in all_text
+    assert raw_like_translation not in all_text
+    # The unreadable translation must never render its toggle at all.
+    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    # The official EDINET source action remains visible regardless.
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+    for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
+        assert forbidden not in all_text, forbidden
+
+
+def test_edinet_readable_translation_with_no_early_boundary_falls_back_to_metadata_summary_but_keeps_toggle(tmp_path):
+    """A stored translation can pass is_readable_extracted_text (it does
+    contain a sentence terminator somewhere) while still giving
+    extractive_summary() nothing usable within its own bounded 640-char
+    search window — extractive_summary() then returns "", and it is the
+    caller's (candidate_row's) responsibility to fall back to
+    metadata_only_summary() rather than render that empty string. The
+    toggle, gated only on readability (not on the Summary's own
+    boundary search), still renders — the raw text is legitimately
+    readable, just not summarizable within the bounded window."""
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E12345", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-07-01",
+        flr_nm="株式会社ispace", pblntf_ty="180000", pblntf_detail_ty="010", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    late_boundary_translation = ("filler word " * 60) + "Sentence finally ends far too late."
+    candidate = CandidateSignal(
+        id="edinet-cand-ispace-3", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="臨時報告書の抜粋。",
+        excerpt_translation=Translation(
+            translated_text=late_boundary_translation, provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso()
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
+    assert "…" not in all_text
+    assert "..." not in all_text
+    assert late_boundary_translation not in all_text
+    # Readable, just not summarizable in-window — the toggle still renders.
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    assert len(translation_toggle) == 1
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+
+
+def test_edinet_readable_translation_still_renders_the_toggle_regardless_of_summary_boundary(tmp_path):
+    """Companion proof to the unreadable-translation case above: ordinary
+    readable prose (short, real sentences) must still render the "Show
+    English translation" toggle exactly as before this fix — the new
+    readability gate on the toggle must not over-filter legitimate
+    translations. Uses the same ispace/S100Z0OT identity so the two
+    tests are directly comparable."""
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E12345", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-07-01",
+        flr_nm="株式会社ispace", pblntf_ty="180000", pblntf_detail_ty="010", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="edinet-cand-ispace-2", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="臨時報告書の抜粋。",
+        excerpt_translation=Translation(
+            translated_text="The company entered into a loan agreement with a lender for working capital.",
+            provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "The company entered into a loan agreement with a lender for working capital." in all_text
+    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    assert len(translation_toggle) == 1
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert any(b.label == "Hide English translation" for b in at.button)
+    # The source action stays visible with the toggle expanded too.
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+
+
 # ============================================================
 # English (EDGAR) fixture — no redundant Original/English translation
 # ============================================================
