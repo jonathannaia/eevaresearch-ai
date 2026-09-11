@@ -11,21 +11,25 @@ build for market performance, breadth, rotation, or catalyst-calendar
 data, and none was invented to replace them. The exact real data source
 powering each remaining module:
 
-  - Market Map: src/config/tracked_companies.py (the real tracked-issuer
-    registry) via src.logic.market_map.group_companies_by_theme; matched
-    signals in the selected-company detail come from the real Radar
-    signal repository. No price/quote/movement data exists anywhere in
-    this build, so price is omitted entirely from every tile (navigation/
-    empty-state pass, design/DECISIONS.md) rather than naming its own
-    absence as implementation-status copy. Known, disclosed limitation: the
-    theme-group *display names/order* (e.g. "AI Buildout") still come
-    from ctx.theme_repository — the same real, permanent 5-category
-    taxonomy tracked_companies.py itself encodes on every company's
-    `themes` field, just currently housed in a legacy demo-data-shaped
-    repository rather than a plain static config module. No company,
-    figure, or fact shown here is fabricated; this is a mislocation of
-    real label text, not mock content, and is flagged here for a
-    follow-up relocation rather than silently left unmentioned.
+  - Recent Theme Activity: the same two real sources Recently Updated
+    reads (backend_factory.get_filing_event_repository() per source,
+    daily_news_backend.get_daily_news_repository()), re-aggregated by
+    each item's existing theme_slug field via
+    src.logic.recent_theme_activity.build_recent_theme_activity. Dashboard
+    triage redesign (design/DECISIONS.md): replaces the Market Map tile
+    grid (commit ee685cb) — that component answered no triage question
+    (an unordered directory of every tracked company); this rolls
+    genuinely recent (last 14 days), theme-grouped activity up into a
+    bounded, ordered list instead, explicitly presented as recent
+    activity, never as a fabricated priority/ranking. The former Market
+    Map component (src/ui/components/market_map.py) is deleted, not
+    retained-but-unused, since it had no other caller. Its
+    logic-layer module (src/logic/market_map.py) is retained: it also
+    supplies REGION_SOURCE/jurisdiction_for_source to several unrelated,
+    still-live modules (regional_brief.py, recently_updated.py itself,
+    cards.py, themes_research.py) — only its Market-Map-exclusive
+    grouping/selection functions were removed as dead code once this
+    change landed.
   - Regional Brief: backend_factory.get_filing_event_repository() per
     jurisdiction — real, dated tracked-issuer filing titles for US/KR/JP;
     an explicit "not connected yet" state for China.
@@ -42,15 +46,15 @@ powering each remaining module:
     at all unless at least one real signal qualifies.
 
 Dashboard Batch 1 (design/DECISIONS.md) — Recently Updated, additive
-only, added as the first content section above Market Map: a merged,
-reverse-chronological feed of real backend_factory.
+only, added as the first content section above the theme-level module: a
+merged, reverse-chronological feed of real backend_factory.
 get_filing_event_repository() filings (SEC EDGAR/DART/EDINET, the same
 real data Regional Brief already reads) and real daily_news_backend.
 get_daily_news_repository() stories. See
 src/ui/components/recently_updated.py's own module docstring for the
-exact sort-key/fallback rule. Every other module on this page (Market
-Map, Regional Brief, Theme Health, Priority Signals) is unmoved and
-unmodified by this batch.
+exact sort-key/fallback rule. Regional Brief, Theme Health, and Priority
+Signals are unmoved and unmodified by either this batch or the Recent
+Theme Activity replacement.
 """
 from __future__ import annotations
 
@@ -61,10 +65,9 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.container import get_repositories
-from src.logic.market_map import group_companies_by_theme
 from src.logic.unread import is_unread
 from src.ui.components.cards import priority_signal_row
-from src.ui.components.market_map import render_market_map
+from src.ui.components.recent_theme_activity import render_recent_theme_activity
 from src.ui.components.recently_updated import render_recently_updated
 from src.ui.components.regional_brief import render_regional_brief
 from src.ui.components.section import section_header
@@ -159,34 +162,8 @@ def _render_priority_signals(ctx) -> None:
             st.page_link(signals_page, label="View all signals →")
 
 
-def _themes_available(settings) -> bool:
-    """Navigation/empty-state pass (design/DECISIONS.md) — whether at
-    least one real published Theme exists, via the same published-only
-    protocol Theme Health uses. Never raises; a repository-construction
-    failure degrades to "unavailable" (no dashboard link into Themes),
-    never a raw error."""
-    try:
-        return bool(backend_factory.get_theme_repository(settings).list_published_themes())
-    except Exception:  # noqa: BLE001 — best-effort; never show a raw error on the dashboard
-        return False
-
-
-def _render_market_map(ctx, themes_available: bool) -> None:
-    """Primary visual/research module (Phase E1, design/
-    DASHBOARD_MARKET_MAP_PHASE_E.md) — a theme-grouped navigator over
-    Eeva's tracked-company universe (src/config/tracked_companies.py, the
-    one authoritative source — see src/logic/market_map.py). No price,
-    quote, or movement data exists anywhere in this build; "Price
-    coverage not connected" is removed (navigation/empty-state pass,
-    design/DECISIONS.md) rather than shown as implementation-status
-    language — cards simply omit price entirely."""
-    themes = ctx.theme_repository.get_all_themes()
-    companies_by_theme = group_companies_by_theme([t.slug for t in themes])
-    render_market_map(ctx, themes, companies_by_theme, themes_available)
-
-
 def _render_regional_brief(settings) -> None:
-    """Compact supporting module beneath the Market Map (Phase E1) — real,
+    """Compact supporting module beneath Recent Theme Activity — real,
     dated tracked-issuer filing titles for US/KR/JP; an explicit "not
     connected yet" state for China (see src/ui/components/
     regional_brief.py for why no other honest state is available)."""
@@ -197,13 +174,14 @@ def render() -> None:
     ctx = get_repositories()
     settings = get_settings()
 
-    # Dashboard Batch 1 (design/DECISIONS.md) — additive only: the first
-    # content section on the page, above the existing Market Map. Every
-    # other section below is unchanged, unmoved, and unmodified by this
-    # batch.
+    # Recently Updated (Dashboard Batch 1) is the first content section
+    # on the page. Recent Theme Activity (Dashboard triage redesign,
+    # design/DECISIONS.md) is the second, replacing the former Market Map
+    # tile grid in this exact position. Regional Brief, Theme Health, and
+    # Priority Signals below are unmoved and unmodified by either change.
     render_recently_updated(settings)
 
-    _render_market_map(ctx, _themes_available(settings))
+    render_recent_theme_activity(ctx, settings)
     _render_regional_brief(settings)
     _render_theme_health(settings)
     _render_priority_signals(ctx)
