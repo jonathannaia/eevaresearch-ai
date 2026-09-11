@@ -72,6 +72,84 @@ def test_market_map_never_uses_live_today_or_heatmap_language():
         assert forbidden not in market_map_chunk.lower()
 
 
+# ============================== GROUPED TILE MOSAIC (design/DECISIONS.md) ==============================
+
+
+def test_market_map_still_shows_every_theme_and_multi_theme_duplication_on_the_rendered_page():
+    """Grouped-tile-mosaic pass: the visual layout changed (CSS Grid
+    zones instead of a fixed 3-column st.columns), but the underlying
+    company/theme membership shown on the actual rendered page must be
+    byte-identical to before — including a company appearing under every
+    theme it belongs to (Samsung Electronics and SK Hynix are both
+    "memory" and "ai-buildout", per src/config/tracked_companies.py)."""
+    at = _run_dashboard()
+    assert not at.exception
+    all_text = _text(at)
+    for theme_name in ("AI Buildout", "Humanoids", "Space", "Memory"):
+        assert theme_name in all_text
+    assert all_text.count("Samsung Electronics") >= 2
+    assert all_text.count("SK Hynix") >= 2
+
+
+def test_market_map_tile_shows_name_ticker_and_text_region_badge():
+    """Every tile must show its company name, the existing per-source
+    ticker/code label (unchanged _ticker_label formatting), and a plain
+    text region badge — required to be readable without color, per the
+    approved design."""
+    at = _run_dashboard()
+    all_text = _text(at)
+    market_map_start = all_text.index("Market Map")
+    market_map_chunk = all_text[market_map_start:]
+
+    nvidia_start = market_map_chunk.index("NVIDIA")
+    chunk = market_map_chunk[nvidia_start:nvidia_start + 200]
+    assert "NVDA" in chunk
+    assert "US" in chunk
+
+    sk_hynix_start = market_map_chunk.index("SK Hynix")
+    kr_chunk = market_map_chunk[sk_hynix_start:sk_hynix_start + 200]
+    assert "KRX 000660" in kr_chunk
+    assert "KR" in kr_chunk
+
+    fanuc_start = market_map_chunk.index("FANUC CORPORATION")
+    jp_chunk = market_map_chunk[fanuc_start:fanuc_start + 200]
+    assert "EDINET code" in jp_chunk
+    assert "JP" in jp_chunk
+
+
+def test_market_map_investigate_button_label_includes_the_company_name():
+    """Approved design: "Investigate [Company name] →" — descriptive for
+    screen readers and dense-grid legibility, not the old bare
+    "Investigate →" repeated on every tile."""
+    at = _run_dashboard()
+    labels = {b.label for b in at.button}
+    assert "Investigate NVIDIA →" in labels
+    assert "Investigate SK Hynix →" in labels
+    assert "Investigate →" not in labels  # the old, non-descriptive label must be gone
+
+
+def test_market_map_investigate_click_still_opens_the_existing_selected_detail_panel():
+    """Pure CSS/layout change only — the click-to-investigate mechanism
+    (company_selection_key/find_company_by_selection_key round-trip,
+    _render_selected_detail's own content) must be completely unchanged.
+    The "Related filings / Open Radar Inbox ->" link itself isn't
+    assertable through this isolated per-page harness — get_page(...)
+    only resolves a real Page object when run through app.py's own
+    st.navigation entry point (same documented limitation as the
+    "view all in Themes" tests in tests/test_dashboard_data_integrity.py)
+    — so this test covers everything _render_selected_detail renders
+    that IS observable here."""
+    at = _run_dashboard()
+    investigate = next(b for b in at.button if b.label == "Investigate NVIDIA →")
+    investigate.click().run()
+    assert not at.exception
+    all_text = _text(at)
+    assert "Theme membership:" in all_text
+    assert "Listing exchange: NASDAQ · NVDA" in all_text
+    assert "What may explain recent activity" in all_text
+    assert any(b.label == "Close" for b in at.button)
+
+
 # ============================== GROUPING LOGIC ==============================
 
 def test_group_companies_by_theme_has_no_second_mapping_and_preserves_multi_theme():
