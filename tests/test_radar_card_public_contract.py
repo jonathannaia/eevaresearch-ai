@@ -958,7 +958,13 @@ def test_public_source_url_leaves_edgar_url_unchanged_when_not_a_directory_link(
     assert _public_source_url(filing) == ""
 
 
-def test_public_source_url_leaves_dart_and_edinet_links_unchanged(tmp_path):
+def test_public_source_url_leaves_dart_unchanged_and_rewrites_edinet(tmp_path):
+    """EDINET-safety fix (design/DECISIONS.md): supersedes the former
+    test of the same shape, which asserted _public_source_url() left the
+    raw, key-required EDINET API URL completely unchanged — that was the
+    exact defect this fix corrects. DART is unaffected either way, since
+    its own source_url was never the EDINET API host."""
+    from src.logic.source_link import EDINET_PUBLIC_PORTAL_URL
     from src.ui.components.radar_card import _public_source_url
 
     dart_filing = FilingEvent(
@@ -974,7 +980,7 @@ def test_public_source_url_leaves_dart_and_edinet_links_unchanged(tmp_path):
         source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100YGH5",
         retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
     )
-    assert _public_source_url(edinet_filing) == edinet_filing.source_url
+    assert _public_source_url(edinet_filing) == EDINET_PUBLIC_PORTAL_URL
 
 
 def test_open_original_filing_button_links_to_primary_document_end_to_end(tmp_path):

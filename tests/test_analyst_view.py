@@ -137,3 +137,23 @@ def test_why_it_matters_templates_only_cover_market_rumor_response():
         "This may matter because it is a company's formal response to reported "
         "information — not yet a confirmed transaction."
     )
+
+
+def test_render_analyst_view_source_link_goes_through_the_shared_edinet_safety_helper():
+    """EDINET-safety fix (design/DECISIONS.md): render_analyst_view()
+    itself calls st.markdown directly (side-effecting), so — matching
+    this file's own "pure template-logic, no Streamlit runtime"
+    convention (see module docstring) and the fact that this component
+    is not called by any live page today (see radar_card.py's own
+    docstring) — this is proven by source inspection: the module must
+    import and use the shared public_source_url() helper, and must never
+    build its "Open original filing" href directly from the raw
+    `filing.source_url` without passing through it first."""
+    import inspect
+
+    from src.ui.components import analyst_view
+
+    source = inspect.getsource(analyst_view)
+    assert "from src.logic.source_link import public_source_url" in source
+    assert 'href="{safe_source_url}"' in source
+    assert 'href="{filing.source_url}"' not in source

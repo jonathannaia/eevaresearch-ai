@@ -19,6 +19,7 @@ from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.logic.formatting import fmt_date
 from src.logic.market_map import REGION_SOURCE
+from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
 from src.ui.ui import get_page
 
@@ -61,10 +62,14 @@ def _render_filing_item(filing: FilingEvent) -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
-    if filing.source_url:
+    # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites
+    # a raw, key-required EDINET API URL to the public disclosure portal
+    # root; every other source's URL passes through unchanged.
+    safe_url = public_source_url(filing.source_url)
+    if safe_url:
         st.markdown(
             f'<div class="er-muted" style="font-size:0.76rem; margin-top:-0.2rem; margin-bottom:0.3rem;">'
-            f'<a href="{filing.source_url}" target="_blank" rel="noopener noreferrer" '
+            f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
             f'style="color:var(--text-2); text-decoration:underline;">View source document ↗</a></div>',
             unsafe_allow_html=True,
         )

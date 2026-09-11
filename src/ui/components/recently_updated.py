@@ -47,6 +47,7 @@ from src.data_access import backend_factory
 from src.data_access.daily_news import daily_news_backend
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
+from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
 from src.ui.ui import get_page
 
@@ -142,7 +143,12 @@ def _load_filing_rows(settings: Settings) -> list[_Row]:
                 title=filing.report_nm,
                 source_label=_FILING_SOURCE_LABEL.get(filing.source_name, filing.source_name),
                 display_date=_filing_display_date(filing),
-                source_url=filing.source_url or None,
+                # EDINET-safety fix (design/DECISIONS.md): filing.source_url
+                # is always the raw, key-required EDINET API endpoint for an
+                # EDINET filing — public_source_url() rewrites it to the
+                # public disclosure portal root; every other source's URL
+                # passes through unchanged.
+                source_url=public_source_url(filing.source_url) or None,
             ))
     return rows
 

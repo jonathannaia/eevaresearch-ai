@@ -48,6 +48,7 @@ from src.data_access.backend_factory import (
 )
 from src.data_access.theme_matching_store import build_review_decision_id
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
+from src.logic.source_link import public_source_url
 from src.logic.theme_auto_publish import evaluate_auto_publish_gates
 from src.logic.theme_evidence_promotion import build_evidence_from_accepted_match
 from src.models.theme_matching import (
@@ -112,12 +113,17 @@ def _enum_label(value: object) -> str:
 
 
 def _safe_source_url(url: object) -> str | None:
+    """EDINET-safety fix (design/DECISIONS.md): passed through
+    public_source_url(), so a raw, key-required EDINET API URL is
+    rewritten to the public disclosure portal root rather than ever
+    rendered as a clickable link that would return an HTTP 401 to a
+    reader — every other source's URL is returned unchanged."""
     if not isinstance(url, str):
         return None
     stripped = url.strip()
     lowered = stripped.lower()
     if lowered.startswith("https://") or lowered.startswith("http://"):
-        return stripped
+        return public_source_url(stripped)
     return None
 
 
@@ -583,9 +589,14 @@ def _render_candidate_review(
         st.markdown(f'<div>{_esc(candidate.excerpt_original)}</div>', unsafe_allow_html=True)
         safe_url = _safe_source_url(filing.source_url)
         if safe_url:
+            # EDINET-safety fix (design/DECISIONS.md): the displayed link
+            # text must match `safe_url`, not the raw stored
+            # `filing.source_url` — otherwise an EDINET link would show
+            # the original api.edinet-fsa.go.jp text while actually
+            # pointing at the rewritten public portal URL.
             st.markdown(
                 f'<div style="margin-top:0.3rem;"><a href="{html.escape(safe_url, quote=True)}" '
-                f'target="_blank" rel="noopener noreferrer">{_esc(filing.source_url)}</a></div>',
+                f'target="_blank" rel="noopener noreferrer">{_esc(safe_url)}</a></div>',
                 unsafe_allow_html=True,
             )
 
@@ -658,9 +669,14 @@ def _render_evidence_item(item) -> None:
         st.markdown(f'<div>{_esc(item.relevance)}</div>', unsafe_allow_html=True)
         safe_url = _safe_source_url(item.source_url)
         if safe_url:
+            # EDINET-safety fix (design/DECISIONS.md): the displayed link
+            # text must match `safe_url`, not the raw stored
+            # `item.source_url` — otherwise an EDINET link would show the
+            # original api.edinet-fsa.go.jp text while actually pointing
+            # at the rewritten public portal URL.
             st.markdown(
                 f'<div style="margin-top:0.2rem;"><a href="{html.escape(safe_url, quote=True)}" '
-                f'target="_blank" rel="noopener noreferrer">{_esc(item.source_url)}</a></div>',
+                f'target="_blank" rel="noopener noreferrer">{_esc(safe_url)}</a></div>',
                 unsafe_allow_html=True,
             )
         elif item.source_url:

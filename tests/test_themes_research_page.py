@@ -262,6 +262,22 @@ def test_unsafe_or_malformed_source_urls_are_never_clickable(monkeypatch, unsafe
     assert 'href="data:' not in all_html.lower()
 
 
+def test_edinet_api_source_url_renders_the_public_portal_root_not_the_raw_api(monkeypatch):
+    """EDINET-safety fix (design/DECISIONS.md): a raw, key-required
+    api.edinet-fsa.go.jp evidence URL must never be rendered as a
+    clickable link — it must be rewritten to the public disclosure
+    portal root, and the displayed link text must match, never showing
+    the original API URL text while pointing elsewhere."""
+    theme = _theme()
+    item = _evidence(theme.id, source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT")
+    repo = _FakeRepo(themes=[theme], evidence_by_theme={theme.id: (item,)})
+    at = _run_with_repo(monkeypatch, repo, theme_id=theme.id)
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "api.edinet-fsa.go.jp" not in all_html
+    assert 'href="https://disclosure2.edinet-fsa.go.jp/"' in all_html
+    assert ">https://disclosure2.edinet-fsa.go.jp/<" in all_html
+
+
 # ============================================================
 # HTML escaping / malicious-string injection (matches research_cases.py style)
 # ============================================================

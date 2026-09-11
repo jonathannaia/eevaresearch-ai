@@ -61,6 +61,7 @@ from src.data_access.daily_news import daily_news_backend
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.recent_theme_activity import ThemeActivityItem, ThemeActivityRow, build_recent_theme_activity
+from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
 from src.ui.ui import get_page
 
@@ -139,7 +140,13 @@ def _load_filing_items(settings: Settings) -> list[ThemeActivityItem]:
                 continue
             items.append(ThemeActivityItem(
                 theme_slug=filing.theme_slug, company_name=filing.corp_name, item_type="Filing",
-                timestamp=timestamp, display_date=_filing_display_date(filing), source_url=filing.source_url or None,
+                timestamp=timestamp, display_date=_filing_display_date(filing),
+                # EDINET-safety fix (design/DECISIONS.md): see
+                # src.logic.source_link.public_source_url's own docstring —
+                # rewrites a raw, key-required EDINET API URL to the public
+                # disclosure portal root; every other source passes through
+                # unchanged.
+                source_url=public_source_url(filing.source_url) or None,
             ))
     return items
 

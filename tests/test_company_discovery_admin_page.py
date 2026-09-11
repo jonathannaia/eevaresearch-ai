@@ -73,6 +73,40 @@ def test_admin_page_has_zero_buttons_forms_or_callbacks(tmp_path):
     assert "Example Materials Corp." in all_text
 
 
+def test_evidence_edinet_api_source_url_renders_the_public_portal_root(tmp_path):
+    """EDINET-safety fix (design/DECISIONS.md): the evidence "[source](...)"
+    link must never resolve to the raw, key-required EDINET API host —
+    it must be rewritten to the public disclosure portal root."""
+    db_path = tmp_path / "test.db"
+    conn = connection.connect(db_path)
+    schema.migrate(conn)
+    create_candidate_with_evidence(
+        conn, issuer_id="candidate:edinet1", legal_name="ispace, inc.", native_name="株式会社ispace",
+        country_or_jurisdiction="Japan", entity_kind="corporate", coverage_state="Discovered",
+        resolution_confidence="Medium", discovered_via="test", now="2026-09-01T00:00:00+00:00",
+        evidence=CandidateEvidence(
+            issuer_id="candidate:edinet1", source_type=SourceType.FILING, source_name="EDINET",
+            source_record_id="edinet:S100Z0OT", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+            source_snippet="ispace, inc. disclosure.",
+            relationship_type=RelationshipType.SUPPLIER, matched_pattern_category="supplied_by",
+            extraction_timestamp="2026-09-01T00:00:00+00:00", dedup_key="dedup-edinet-1",
+        ),
+        alias_text="ispace",
+    )
+
+    settings = _settings(
+        tmp_path, company_discovery_worker_db_backend="sqlite", company_discovery_worker_state_db_path=db_path,
+    )
+    with patch("src.ui.pages.company_discovery_admin.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "api.edinet-fsa.go.jp" not in all_text
+    assert "https://disclosure2.edinet-fsa.go.jp/" in all_text
+
+
 def test_admin_page_not_linked_in_the_visible_sidebar(tmp_path):
     from src.ui.ui import HIDDEN_FROM_NAV, PRIMARY_NAV, SYSTEM_NAV
 
