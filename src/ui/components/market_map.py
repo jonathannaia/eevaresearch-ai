@@ -16,18 +16,42 @@ introduced. The "Open company"/"Ask Research" handoff links were removed
 (reader-facing data-integrity pass, design/DECISIONS.md) along with the
 Company and Research pages themselves, neither of which had live real
 data.
+
+Grouped-tile-mosaic pass (design/DECISIONS.md): each theme's tiles now
+render inside one extra `st.container(key="mm-zone-tint{N}-{slug}")`
+wrapper (N cycling 0..3, purely to vary the zone's decorative background
+tint in assets/styles.css — never tied to any company/theme importance or
+size), which assets/styles.css turns into a dense, responsive CSS Grid via
+the same `[class*="st-key-..."]` attribute-selector hook this app already
+uses for `.st-key-card-*`. Streamlit still renders each tile as its own
+real `st.container(key=..., border=True)`, so the existing per-tile
+border/hover treatment and every `st.button` keyboard/focus behavior is
+inherited unchanged — this is a pure CSS layout swap (fixed 3-column
+st.columns() -> a CSS Grid of equal-sized cells), not a new widget system.
+Every tile still shows only fields already on TrackedCompany (name,
+existing per-source ticker/code label, and a text region badge derived
+from src.logic.market_map.jurisdiction_for_source, already used elsewhere
+in this file for the same purpose) — no new data source, no size/priority
+signal invented. No area, order, color, or placement in this layout
+stands for market cap, returns, momentum, or importance; tiles are always
+equal-sized and the zone tint index is just an enumeration cycle, not a
+ranking.
 """
 from __future__ import annotations
 
 import streamlit as st
 
 from src.config.tracked_companies import TrackedCompany
-from src.logic.market_map import company_selection_key, find_company_by_selection_key
+from src.logic.market_map import company_selection_key, find_company_by_selection_key, jurisdiction_for_source
 from src.ui.components.cards import signal_card
 from src.ui.ui import get_page
 
 MAX_TILES_PER_THEME = 6
 SELECTED_KEY = "mm-selected-company"
+# Purely decorative zone-tint cycle length — see module docstring. Not a
+# count of anything real; four is simply enough that adjacent theme
+# sections rarely share a tint.
+_ZONE_TINT_COUNT = 4
 
 _TICKER_LABEL_BY_SOURCE = {
     "SEC EDGAR": lambda code: code,
@@ -35,30 +59,53 @@ _TICKER_LABEL_BY_SOURCE = {
     "EDINET": lambda code: f"EDINET code {code}",
 }
 
+# Short, visible text region badges — required to be readable without
+# color (see module docstring); any per-region accent color applied in
+# CSS is optional reinforcement layered on top of this same text, never a
+# substitute for it. Keyed off the same jurisdiction_for_source() output
+# src/logic/market_map.py already exposes and this file already imports
+# for other purposes — no new mapping/data source.
+_REGION_BADGE_TEXT = {"United States": "US", "South Korea": "KR", "Japan": "JP"}
+
 
 def _ticker_label(company: TrackedCompany) -> str:
     fmt = _TICKER_LABEL_BY_SOURCE.get(company.source)
     return fmt(company.krx_code) if fmt else company.krx_code
 
 
+def _region_badge_text(company: TrackedCompany) -> str | None:
+    jurisdiction = jurisdiction_for_source(company.source)
+    return _REGION_BADGE_TEXT.get(jurisdiction) if jurisdiction else None
+
+
 def _render_tile(company: TrackedCompany, theme_slug: str) -> None:
     tile_key = f"card-mm-tile-{theme_slug}-{company.source}-{company.krx_code}"
     with st.container(border=True, key=tile_key):
         st.markdown(f'<div class="er-card-title" style="font-size:0.9rem;">{company.name}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="er-muted er-mono" style="font-size:0.78rem;">{_ticker_label(company)}</div>', unsafe_allow_html=True)
+        badge = _region_badge_text(company)
+        badge_html = (
+            f'<span class="er-mm-region-badge er-mm-region-{badge.lower()}">{badge}</span>' if badge else ""
+        )
+        st.markdown(
+            f'<div class="er-mm-tile-meta"><span class="er-muted er-mono" style="font-size:0.78rem;">'
+            f"{_ticker_label(company)}</span>{badge_html}</div>",
+            unsafe_allow_html=True,
+        )
         btn_key = f"mm-investigate-{theme_slug}-{company.source}-{company.krx_code}"
-        if st.button("Investigate →", key=btn_key, width="stretch"):
+        if st.button(f"Investigate {company.name} →", key=btn_key, width="stretch"):
             st.session_state[SELECTED_KEY] = company_selection_key(company)
 
 
-def _render_theme_group(theme_name: str, theme_slug: str, companies: list[TrackedCompany], themes_available: bool) -> None:
+def _render_theme_group(
+    theme_name: str, theme_slug: str, companies: list[TrackedCompany], themes_available: bool, zone_index: int = 0,
+) -> None:
     if not companies:
         return
     st.markdown(f'<div class="er-section-label" style="margin-top:0.6rem;">{theme_name}</div>', unsafe_allow_html=True)
     shown = companies[:MAX_TILES_PER_THEME]
-    cols = st.columns(min(len(shown), 3) or 1)
-    for i, company in enumerate(shown):
-        with cols[i % len(cols)]:
+    zone_key = f"mm-zone-tint{zone_index % _ZONE_TINT_COUNT}-{theme_slug}"
+    with st.container(key=zone_key):
+        for company in shown:
             _render_tile(company, theme_slug)
     remaining = len(companies) - len(shown)
     # Navigation/empty-state pass (design/DECISIONS.md): never link into
@@ -132,6 +179,6 @@ def render_market_map(
     st.markdown('<div id="market-map"></div>', unsafe_allow_html=True)
     st.markdown('<div class="er-section-label">Market Map</div>', unsafe_allow_html=True)
     st.markdown('<div class="er-muted">Company and theme map</div>', unsafe_allow_html=True)
-    for theme in themes:
-        _render_theme_group(theme.name, theme.slug, companies_by_theme.get(theme.slug, []), themes_available)
+    for zone_index, theme in enumerate(themes):
+        _render_theme_group(theme.name, theme.slug, companies_by_theme.get(theme.slug, []), themes_available, zone_index)
     _render_selected_detail(ctx)
