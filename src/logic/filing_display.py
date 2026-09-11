@@ -192,18 +192,37 @@ def is_readable_extracted_text(text: str | None) -> bool:
 # ============================================================
 
 _SUMMARY_MAX_CHARS = 320
+# Filing-card summary/translation presentation fix (design/DECISIONS.md):
+# a bounded, secondary search window only — never unbounded — used solely
+# to let a summary that must run slightly past the target still end on a
+# complete sentence rather than being cut. Not a second, looser target;
+# _SUMMARY_MAX_CHARS above remains the normal length every summary aims
+# for first.
+_SUMMARY_MAX_SEARCH_CHARS = 640
 
 
 def extractive_summary(text: str) -> str:
     """A concise summary grounded ONLY in `text` itself — literally a
     leading substring of it, never a paraphrase, inference, or generated
-    claim. Stops at the last complete sentence boundary at or before the
-    length cap when one exists; otherwise hard-truncates at a word
-    boundary. Caller is responsible for only ever passing text that has
-    already passed `is_readable_extracted_text`."""
+    claim. Stops at the last complete sentence boundary at or before
+    _SUMMARY_MAX_CHARS when one exists there. When none exists inside
+    that target window, searches forward — bounded by
+    _SUMMARY_MAX_SEARCH_CHARS, never unbounded — for the first sentence
+    boundary beyond the target, so a summary that must run slightly long
+    still ends on a complete sentence. If no sentence boundary exists
+    anywhere inside that bounded window either, returns "" rather than a
+    word-boundary-truncated excerpt plus an ellipsis: this function has
+    no access to the filing/title/date needed to build the metadata-only
+    fallback itself, so an empty return is the caller's signal to use
+    that fallback instead. Text that already fits within
+    _SUMMARY_MAX_CHARS with no sentence boundary at all is returned
+    verbatim, unchanged from before — nothing about it needed cutting, so
+    it is not a truncation case. Caller is responsible for only ever
+    passing text that has already passed `is_readable_extracted_text`."""
     normalized = " ".join(text.split())
     if not normalized:
         return ""
+
     boundary = None
     for match in _SENTENCE_END_PATTERN.finditer(normalized):
         if match.end() > _SUMMARY_MAX_CHARS:
@@ -211,13 +230,15 @@ def extractive_summary(text: str) -> str:
         boundary = match.end()
     if boundary:
         return normalized[:boundary].strip()
+
     if len(normalized) <= _SUMMARY_MAX_CHARS:
         return normalized
-    truncated = normalized[:_SUMMARY_MAX_CHARS]
-    last_space = truncated.rfind(" ")
-    if last_space > 40:
-        truncated = truncated[:last_space]
-    return truncated.rstrip(" ,;:") + "…"
+
+    match = _SENTENCE_END_PATTERN.search(normalized)
+    if match and match.end() <= _SUMMARY_MAX_SEARCH_CHARS:
+        return normalized[:match.end()].strip()
+
+    return ""
 
 
 def metadata_only_summary(filing: FilingEvent, display_title_text: str, filed_label: str | None) -> str:
