@@ -254,6 +254,38 @@ def extractive_summary(text: str) -> str:
     return ""
 
 
+def trim_excerpt_for_display(text: str) -> str:
+    """Presentation-only: returns `text` cut back to its LAST complete
+    sentence boundary — the mirror image of extractive_summary()'s own
+    forward search for the FIRST reasonable boundary. Used only when a
+    displayed excerpt may have been cut by the shared extraction cap
+    (see excerpt_may_be_incomplete below), to discard a trailing
+    partial-sentence fragment without ever discarding, paraphrasing, or
+    translating any complete sentence that precedes it. Reuses the exact
+    same _SENTENCE_END_PATTERN as extractive_summary()/
+    is_readable_extracted_text() — already language-agnostic across
+    English, Japanese, and Korean (Korean uses the same ASCII
+    terminators this pattern already matches; Japanese's full-width
+    equivalents are already in the same character class), so no new
+    per-language logic is needed here.
+
+    Returns "" when no sentence boundary exists anywhere in the text —
+    the caller's signal to show its own honest fallback instead of a
+    broken raw fragment, the same "empty means fall back" contract
+    extractive_summary() already uses."""
+    normalized = " ".join(text.split())
+    if not normalized:
+        return ""
+
+    last_boundary = None
+    for match in _SENTENCE_END_PATTERN.finditer(normalized):
+        last_boundary = match.end()
+    if last_boundary is None:
+        return ""
+
+    return normalized[:last_boundary].strip()
+
+
 # ============================================================
 # EDINET-only machine-artifact cleanup (D)
 # ============================================================

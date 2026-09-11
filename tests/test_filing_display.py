@@ -209,6 +209,60 @@ def test_extractive_summary_still_returns_short_boundary_free_text_verbatim():
     assert filing_display.extractive_summary(text) == text
 
 
+# ============================================================
+# D2: trim_excerpt_for_display
+# ============================================================
+
+
+def test_trim_excerpt_for_display_drops_trailing_unterminated_clause():
+    """Real production shape (docID S100Z0OT): a trailing clause with no
+    sentence terminator before the extraction cut. Must keep every
+    complete sentence that precedes it and drop only the fragment."""
+    text = (
+        "The Company hereby submits this report. (2) Overview of the loan "
+        "agreement is as follows. (3) Details of Financial Covenants As of "
+        "the end of each fiscal year, the consolidated"
+    )
+    assert filing_display.trim_excerpt_for_display(text) == (
+        "The Company hereby submits this report. (2) Overview of the loan "
+        "agreement is as follows."
+    )
+
+
+def test_trim_excerpt_for_display_keeps_a_single_complete_sentence_when_it_is_the_last_one():
+    text = "This is a complete sentence. And another one."
+    assert filing_display.trim_excerpt_for_display(text) == text
+
+
+def test_trim_excerpt_for_display_handles_japanese_full_width_terminators():
+    """_SENTENCE_END_PATTERN (shared with extractive_summary/
+    is_readable_extracted_text) requires the terminator to be followed
+    by whitespace or end-of-string — matching real extracted text, where
+    document_extractor.py's whitespace-collapse turns an original
+    line/paragraph break between sentences into exactly one space, as
+    reproduced here."""
+    text = "これは完全な文です。 これは未完成な部分で終わ"
+    assert filing_display.trim_excerpt_for_display(text) == "これは完全な文です。"
+
+
+def test_trim_excerpt_for_display_handles_korean_ascii_terminators():
+    """Korean prose uses the same ASCII '.'/'!'/'?' terminators as
+    English, not a distinct full-width convention — already covered by
+    the shared pattern with no per-language branching needed."""
+    text = "이것은 완전한 문장입니다. 이것은 미완성 부분으로 끝"
+    assert filing_display.trim_excerpt_for_display(text) == "이것은 완전한 문장입니다."
+
+
+def test_trim_excerpt_for_display_returns_empty_when_no_boundary_exists_anywhere():
+    text = "word " * 100
+    assert filing_display.trim_excerpt_for_display(text) == ""
+
+
+def test_trim_excerpt_for_display_handles_empty_and_whitespace_only():
+    assert filing_display.trim_excerpt_for_display("") == ""
+    assert filing_display.trim_excerpt_for_display("   ") == ""
+
+
 def test_metadata_only_summary_uses_the_documented_template_with_date():
     filing = _dart_filing("신규시설투자등 결정")
     summary = filing_display.metadata_only_summary(filing, "New facility investment decision", "Aug 12, 2026")
