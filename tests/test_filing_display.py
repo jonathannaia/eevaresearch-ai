@@ -226,3 +226,129 @@ def test_metadata_only_summary_never_uses_prohibited_wording():
     summary = filing_display.metadata_only_summary(filing, "Quarterly Report — Form 10-Q", "Aug 28, 2026")
     for prohibited in ("material", "signal", "review", "detected", "potential", "analysis", "metadata-only", "pending", "unavailable", "Phase 1"):
         assert prohibited not in summary.lower()
+
+
+# ============================================================
+# D: strip_edinet_machine_artifacts
+# ============================================================
+
+
+def test_strip_edinet_machine_artifacts_removes_english_title_timestamp_and_heading():
+    """Real production shape (docID S100Z0OT): a translated document-
+    title-timestamp label immediately followed by a numbered, ASCII-
+    bracketed item heading — both removed, leaving only the substantive
+    sentence that follows."""
+    text = "Extraordinary Report_20260909153311 1 [Reason for Submission] The Company resolved to borrow funds."
+    assert filing_display.strip_edinet_machine_artifacts(text) == "The Company resolved to borrow funds."
+
+
+def test_strip_edinet_machine_artifacts_removes_japanese_title_timestamp_and_heading():
+    """Same real shape in the native Japanese text — full-width brackets
+    and a full-width leading numeral, both handled without any per-
+    language branching."""
+    text = "臨時報告書_20260909153311 １【提出理由】本日開催の取締役会において、資金を借り入れることを決議した。"
+    assert filing_display.strip_edinet_machine_artifacts(text) == "本日開催の取締役会において、資金を借り入れることを決議した。"
+
+
+def test_strip_edinet_machine_artifacts_handles_either_artifact_alone():
+    only_timestamp = "Extraordinary Report_20260909153311 The Company resolved to borrow funds."
+    assert filing_display.strip_edinet_machine_artifacts(only_timestamp) == "The Company resolved to borrow funds."
+
+    only_heading = "1 [Reason for Submission] The Company resolved to borrow funds."
+    assert filing_display.strip_edinet_machine_artifacts(only_heading) == "The Company resolved to borrow funds."
+
+
+def test_strip_edinet_machine_artifacts_preserves_mid_text_underscore_timestamp_shape():
+    """A coincidental "word_14digits" shape that is NOT at the very start
+    of the text — because real prose precedes it — must never be
+    stripped. The leading-word-boundary constraint (no underscore
+    permitted inside any of the leading label's own words) is what makes
+    this safe: "ABC_Bank" can never be consumed as one leading word."""
+    text = "The lender is ABC_Bank_20260909153311 and the note [Note 1] applies here."
+    assert filing_display.strip_edinet_machine_artifacts(text) == text
+
+
+def test_strip_edinet_machine_artifacts_preserves_mid_text_bracket():
+    text = "The Company entered into an agreement [see Note 1] for working capital purposes."
+    assert filing_display.strip_edinet_machine_artifacts(text) == text
+
+
+def test_strip_edinet_machine_artifacts_is_a_noop_on_already_clean_text():
+    text = "The Company entered into a loan agreement with a lender for working capital."
+    assert filing_display.strip_edinet_machine_artifacts(text) == text
+
+
+def test_strip_edinet_machine_artifacts_handles_empty_and_none():
+    assert filing_display.strip_edinet_machine_artifacts("") == ""
+    assert filing_display.strip_edinet_machine_artifacts(None) is None
+
+
+# ============================================================
+# E: excerpt_may_be_incomplete
+# ============================================================
+
+
+def test_excerpt_may_be_incomplete_false_below_the_cap():
+    assert filing_display.excerpt_may_be_incomplete("a" * 599) is False
+
+
+def test_excerpt_may_be_incomplete_true_at_the_cap():
+    assert filing_display.excerpt_may_be_incomplete("a" * 600) is True
+
+
+def test_excerpt_may_be_incomplete_true_above_the_cap():
+    assert filing_display.excerpt_may_be_incomplete("a" * 601) is True
+
+
+def test_excerpt_may_be_incomplete_false_for_none_or_empty():
+    assert filing_display.excerpt_may_be_incomplete(None) is False
+    assert filing_display.excerpt_may_be_incomplete("") is False
+
+
+# ============================================================
+# F: official_filing_reference
+# ============================================================
+
+
+def test_official_filing_reference_edinet_labels_and_values():
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E37584", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-09-10", flr_nm="株式会社ispace",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    reference = filing_display.official_filing_reference(filing, "Sep 10, 2026")
+    assert "EDINET issuer code: E37584" in reference
+    assert "Securities code: 93480" in reference
+    assert "Document ID: S100Z0OT" in reference
+    assert "Filed: Sep 10, 2026" in reference
+    assert "DART issuer code" not in reference
+    assert "CIK" not in reference
+
+
+def test_official_filing_reference_dart_labels_never_say_edinet():
+    filing = _dart_filing("신규시설투자등 결정")
+    reference = filing_display.official_filing_reference(filing, "Aug 12, 2026")
+    assert "DART issuer code: 00126380" in reference
+    assert "Securities code: 005930" in reference
+    assert "Receipt number: 20260812000001" in reference
+    assert "EDINET" not in reference
+    assert "CIK" not in reference
+
+
+def test_official_filing_reference_edgar_labels_never_say_edinet():
+    filing = _edgar_filing("10-Q")
+    reference = filing_display.official_filing_reference(filing, "Aug 28, 2026")
+    assert "CIK: 0001045810" in reference
+    assert "Accession number: 0001045810-26-000001" in reference
+    assert "EDINET" not in reference
+    assert "DART issuer code" not in reference
+
+
+def test_official_filing_reference_omits_absent_fields():
+    filing = FilingEvent(
+        rcept_no="", corp_code="", corp_name="No Codes Corp.", stock_code="",
+        report_nm="有価証券報告書", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    reference = filing_display.official_filing_reference(filing, None)
+    assert reference == "Provider: EDINET"

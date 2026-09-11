@@ -1,14 +1,26 @@
-"""Public filing-card display helpers — title, Summary, and the raw-
-extraction quality gate. Pure functions only: no Streamlit, no I/O, no
-translation-provider calls, no state writes. Generic, deterministic
-heuristics only (regex-based structural signals) — never issuer- or
-filing-specific rules, never a fabricated or inferred claim.
+"""Public filing-card display helpers — title, Summary, the raw-
+extraction quality gate, an EDINET-only machine-artifact cleanup, an
+excerpt-completeness disclosure, and a compact official-filing-reference
+line. Pure functions only: no Streamlit, no I/O, no translation-provider
+calls, no state writes. Generic, deterministic heuristics only
+(regex-based structural signals) — never issuer- or filing-specific
+rules, never a fabricated or inferred claim.
 
 Fixes the raw-XBRL-in-the-public-card defect (some EDGAR filings, e.g. a
 Form 10-Q, store an extraction dominated by XML/XBRL tags, taxonomy
 namespace prefixes, and machine identifiers instead of readable prose —
 see `is_readable_extracted_text`) and the "8-K filing"-style non-title
 EDGAR `report_nm` defect (see `display_title`/`_edgar_display_title`).
+
+Filing-card machine-artifact / excerpt-honesty fix (design/DECISIONS.md):
+adds `strip_edinet_machine_artifacts` (start-anchored removal of
+EDINET's own leaked cover-page document-title-timestamp label and/or
+leading item-heading bracket — see that function's own comment),
+`excerpt_may_be_incomplete` (an honest, hedged signal that an excerpt may
+have been cut by the shared extraction cap), and
+`official_filing_reference` (a provider-accurate compact metadata line).
+None of these three call each other or `extractive_summary`/
+`is_readable_extracted_text` — the caller (radar_card.py) sequences them.
 """
 from __future__ import annotations
 
@@ -18,6 +30,7 @@ from src.data_access.edgar.edgar_rules import normalize_form_type
 from src.models.models import CandidateSignal, FilingEvent
 
 EDGAR_SOURCE_NAME = "SEC EDGAR"
+EDINET_SOURCE_NAME = "EDINET"
 
 # Deterministic, source-safe display titles for the SEC form types this
 # app already recognizes (see edgar_rules.FORM_TYPE_CATEGORIES/_FORM_
@@ -239,6 +252,139 @@ def extractive_summary(text: str) -> str:
         return normalized[:match.end()].strip()
 
     return ""
+
+
+# ============================================================
+# EDINET-only machine-artifact cleanup (D)
+# ============================================================
+
+# EDINET's inline-XBRL cover page embeds its own internal machine-
+# generated document-title cell (e.g. native "臨時報告書_20260909153311"
+# / translated "Extraordinary Report_20260909153311" — a short label
+# followed by "_" and a 14-digit YYYYMMDDHHMMSS timestamp) directly as
+# visible text. The shared, deliberately lenient HTML-to-text extractor
+# (dart/document_extractor.py's _LenientHtmlTextExtractor, reused by
+# EDINET's own extractor) has no cover-page awareness the way DART's own
+# SECTION-1 skip or EDGAR's own Item-header anchoring do, so this label
+# is captured verbatim into excerpt_original and, sitting at the very
+# front of the bounded excerpt, translated verbatim too. Evidenced live
+# for docID S100Z0OT — EDINET-specific, deliberately never applied to
+# DART/EDGAR, whose own extraction already keeps this class of artifact
+# out (see each provider's own document_extractor.py).
+#
+# Bounded to a short run of plain words with no embedded underscore or
+# punctuation of their own — specifically so this can never consume real
+# mid-sentence prose that merely happens to contain a "word_14digits"
+# shape somewhere later in the text. Only a genuine leading label, never
+# anything else, can ever match starting at position 0.
+_EDINET_TITLE_TIMESTAMP_PREFIX_RE = re.compile(r"^[^\W_]+(?: [^\W_]+){0,6}_\d{14}\s*")
+# EDINET's native item-heading convention numbers each disclosure item
+# and wraps its heading in full-width brackets (e.g. "１【提出理由】");
+# DeepL's English translation of that same heading typically renders as
+# an ASCII-bracketed "1 [Reason for Submission]". Both bracket styles are
+# handled by one pattern; \d here already matches EDINET's own full-width
+# numerals (e.g. "１") under Python's default Unicode \d behavior — no
+# ASCII-only restriction needed, the same principle dedup.py's own
+# Unicode-safe normalizer already relies on. Anchored to the very start
+# of the text only — a bracketed reference occurring anywhere else in
+# real prose (e.g. "[Note 1]" mid-sentence) can never match this pattern.
+_EDINET_ITEM_HEADING_PREFIX_RE = re.compile(r"^\d{1,2}\s*[\[【][^\]】]{1,80}[\]】]\s*")
+_EDINET_ARTIFACT_STRIP_MAX_ITERATIONS = 3
+
+
+def strip_edinet_machine_artifacts(text: str) -> str:
+    """Removes, from the START of `text` only, EDINET's own machine-
+    generated cover-page document-title-timestamp label and/or a leading
+    numbered item-heading bracket — never touching either shape wherever
+    it occurs elsewhere in the text. Runs in a small, bounded loop (never
+    unbounded) so a title-timestamp prefix immediately followed by a
+    heading prefix are both removed, in whichever order they appear. A
+    no-op (returns `text` unchanged) whenever neither pattern matches at
+    the current start — including every already-clean text, and any text
+    where a matching shape exists but not at position 0.
+
+    This function has no notion of source/provider — the caller decides
+    WHEN to call it (EDINET only; never DART or EDGAR, see this
+    function's own module-level comment above for why)."""
+    if not text:
+        return text
+    cleaned = text
+    for _ in range(_EDINET_ARTIFACT_STRIP_MAX_ITERATIONS):
+        match = _EDINET_TITLE_TIMESTAMP_PREFIX_RE.match(cleaned) or _EDINET_ITEM_HEADING_PREFIX_RE.match(cleaned)
+        if not match:
+            break
+        cleaned = cleaned[match.end():]
+    return cleaned
+
+
+# ============================================================
+# Excerpt-completeness disclosure (E)
+# ============================================================
+
+# Mirrors, rather than imports, the 600-char MAX_EXCERPT_CHARS constant
+# independently defined in dart/edgar/edinet's own document_extractor.py
+# modules (the same accepted duplication already used for that constant
+# across all three) — this module stays a pure presentation layer with
+# no dependency on extraction internals. An excerpt_original at or above
+# this length was almost certainly cut by that hard character-count
+# extraction cap; a real document's extractable content coincidentally
+# ending at exactly this length is not a realistic case.
+#
+# EDGAR's own 8-K item-anchored extraction path uses a separate, larger
+# cap (edgar/document_extractor.py's EIGHT_K_ITEM_EXCERPT_CHARS, 1200)
+# that this presentation layer has no way to know was used for any given
+# excerpt without a new extraction-side field (out of scope for this
+# batch). Checking only against the smaller, shared 600-char cap means
+# this can, in that one narrow EDGAR sub-case, under-flag a genuinely
+# complete excerpt rather than ever falsely asserting incompleteness as
+# an unqualified fact; the required wording is deliberately hedged ("may
+# be incomplete") for exactly this reason and must stay that way.
+_KNOWN_EXTRACTION_CAP_CHARS = 600
+
+
+def excerpt_may_be_incomplete(excerpt_original: str | None) -> bool:
+    """True only when `excerpt_original` (the ORIGINAL-language excerpt's
+    own length — never a translation's) is at or beyond the shared
+    extraction cap. Never call this with a translated string: translation
+    changes character count independent of whether the source itself was
+    truncated, so only the original's length is a meaningful signal."""
+    return len(excerpt_original or "") >= _KNOWN_EXTRACTION_CAP_CHARS
+
+
+# ============================================================
+# Official filing reference (F)
+# ============================================================
+
+
+def official_filing_reference(filing: FilingEvent, filed_label: str | None) -> str:
+    """A compact, labeled line of official identifying metadata for the
+    reference block shown near the card's source action — built only
+    from FilingEvent's own already-stored fields (see FilingEvent's own
+    docstring for the source_name-dependent meaning of corp_code/
+    stock_code/rcept_no), never a new fetch or an inferred value.
+
+    Provider-accurate labels only: EDINET's corp_code is genuinely its
+    own EDINET issuer code; DART's and EDGAR's corp_code are their own,
+    different provider-specific issuer identifiers and are never
+    mislabeled as an "EDINET" value. Any field that is empty/absent for
+    this filing is simply omitted, never shown as a placeholder."""
+    if filing.source_name == EDINET_SOURCE_NAME:
+        issuer_label, doc_label = "EDINET issuer code", "Document ID"
+    elif filing.source_name == EDGAR_SOURCE_NAME:
+        issuer_label, doc_label = "CIK", "Accession number"
+    else:
+        issuer_label, doc_label = "DART issuer code", "Receipt number"
+
+    parts = [f"Provider: {filing.source_name}"]
+    if filing.corp_code:
+        parts.append(f"{issuer_label}: {filing.corp_code}")
+    if filing.stock_code:
+        parts.append(f"Securities code: {filing.stock_code}")
+    if filing.rcept_no:
+        parts.append(f"{doc_label}: {filing.rcept_no}")
+    if filed_label:
+        parts.append(f"Filed: {filed_label}")
+    return " · ".join(parts)
 
 
 def metadata_only_summary(filing: FilingEvent, display_title_text: str, filed_label: str | None) -> str:
