@@ -534,6 +534,51 @@ def test_s100z0ot_leaked_machine_artifacts_never_appear_and_reference_block_is_c
     assert len(edinet_link_buttons) == 1  # source action still visible, both excerpts expanded
 
 
+def test_s100z0ot_leading_bom_no_longer_blocks_artifact_cleanup(tmp_path):
+    """Live regression found after PR #16 deployed: EDINET's exported
+    text carried a leading U+FEFF before the cover-page artifacts, which
+    blocked the existing start-anchored cleanup entirely — the card kept
+    showing "Extraordinary Report_20260909153311 1 [Reason for
+    Submission]" verbatim. Reproduces that exact leading-BOM shape
+    end-to-end through the real card and confirms it is now cleaned."""
+    filing = _s100z0ot_filing()
+    _seed_edinet_filing_events(tmp_path, [filing])
+    leaked_native = "\ufeff 臨時報告書_20260909153311 １【提出理由】" + ("当社の財政状態に重要な影響を与える事象が発生した。" * 15)
+    leaked_translation = (
+        "\ufeff Extraordinary Report_20260909153311 1 [Reason for Submission] "
+        "The Company resolved to borrow long-term funds from Shizuoka Bank "
+        "in the amount of three billion yen at a floating interest rate."
+    )
+    candidate = CandidateSignal(
+        id="edinet-cand-s100z0ot-bom", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=leaked_native,
+        excerpt_translation=Translation(
+            translated_text=leaked_translation, provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    for leaked in (
+        "Extraordinary Report_20260909153311", "[Reason for Submission]",
+        "臨時報告書_20260909153311", "１【提出理由】", "\ufeff",
+    ):
+        assert leaked not in all_text, leaked
+    assert "Shizuoka Bank" in all_text
+
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    for leaked in ("Extraordinary Report_20260909153311", "[Reason for Submission]", "\ufeff"):
+        assert leaked not in all_text, leaked
+
+
 def test_edinet_machine_artifact_cleanup_never_applies_to_dart_or_edgar(tmp_path):
     """The same leading artifact shape, seeded on a DART filing, must be
     preserved verbatim — the cleanup only ever runs for source_name ==

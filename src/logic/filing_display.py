@@ -290,18 +290,37 @@ _EDINET_TITLE_TIMESTAMP_PREFIX_RE = re.compile(r"^[^\W_]+(?: [^\W_]+){0,6}_\d{14
 # real prose (e.g. "[Note 1]" mid-sentence) can never match this pattern.
 _EDINET_ITEM_HEADING_PREFIX_RE = re.compile(r"^\d{1,2}\s*[\[【][^\]】]{1,80}[\]】]\s*")
 _EDINET_ARTIFACT_STRIP_MAX_ITERATIONS = 3
+# Live regression (docID S100Z0OT, found after PR #16): EDINET's exported
+# text can carry a leading U+FEFF (a zero-width, invisible Unicode BOM/
+# format character) before the cover-page artifacts above — e.g.
+# "\ufeff Extraordinary Report_20260909153311 1 [Reason for Submission]".
+# Neither _EDINET_TITLE_TIMESTAMP_PREFIX_RE nor _EDINET_ITEM_HEADING_
+# PREFIX_RE can match past it: U+FEFF is a Cf (format) character, neither
+# `\w` nor `\s` under Python's default Unicode regex behavior (verified
+# empirically), so their own `^` anchors land one character short of the
+# real artifact every time. This pattern removes ONLY a leading run of
+# U+FEFF and/or plain whitespace, and ONLY once, immediately before the
+# main loop below runs — never touching a U+FEFF or other format
+# character occurring anywhere else in the text, which is why this is a
+# separate, narrowly-scoped step rather than a body-wide
+# text.replace("\ufeff", "") (an interior U+FEFF is a legitimate Unicode
+# character in real prose and must never be altered).
+_LEADING_BOM_AND_WHITESPACE_RE = re.compile(r"^[\ufeff\s]+")
 
 
 def strip_edinet_machine_artifacts(text: str) -> str:
     """Removes, from the START of `text` only, EDINET's own machine-
     generated cover-page document-title-timestamp label and/or a leading
     numbered item-heading bracket — never touching either shape wherever
-    it occurs elsewhere in the text. Runs in a small, bounded loop (never
-    unbounded) so a title-timestamp prefix immediately followed by a
-    heading prefix are both removed, in whichever order they appear. A
-    no-op (returns `text` unchanged) whenever neither pattern matches at
-    the current start — including every already-clean text, and any text
-    where a matching shape exists but not at position 0.
+    it occurs elsewhere in the text. First strips a leading U+FEFF/
+    whitespace run (once, start-of-text only — see
+    _LEADING_BOM_AND_WHITESPACE_RE's own comment), then runs in a small,
+    bounded loop (never unbounded) so a title-timestamp prefix
+    immediately followed by a heading prefix are both removed, in
+    whichever order they appear. A no-op (returns `text` unchanged, past
+    the BOM/whitespace strip) whenever neither artifact pattern matches
+    at the current start — including every already-clean text, and any
+    text where a matching shape exists but not at position 0.
 
     This function has no notion of source/provider — the caller decides
     WHEN to call it (EDINET only; never DART or EDGAR, see this
@@ -309,6 +328,9 @@ def strip_edinet_machine_artifacts(text: str) -> str:
     if not text:
         return text
     cleaned = text
+    bom_match = _LEADING_BOM_AND_WHITESPACE_RE.match(cleaned)
+    if bom_match:
+        cleaned = cleaned[bom_match.end():]
     for _ in range(_EDINET_ARTIFACT_STRIP_MAX_ITERATIONS):
         match = _EDINET_TITLE_TIMESTAMP_PREFIX_RE.match(cleaned) or _EDINET_ITEM_HEADING_PREFIX_RE.match(cleaned)
         if not match:

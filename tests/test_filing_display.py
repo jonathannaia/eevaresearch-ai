@@ -283,6 +283,29 @@ def test_strip_edinet_machine_artifacts_handles_empty_and_none():
     assert filing_display.strip_edinet_machine_artifacts(None) is None
 
 
+def test_strip_edinet_machine_artifacts_removes_leading_bom_before_english_artifacts():
+    """Live regression (docID S100Z0OT, found after PR #16): a leading
+    U+FEFF (invisible Unicode BOM) sat in front of the title-timestamp
+    label and blocked the existing start-anchored regexes from matching
+    at all, since U+FEFF is neither \\w nor \\s. Must clean to the
+    substantive sentence with no title-timestamp or heading artifact."""
+    text = "\ufeff Extraordinary Report_20260909153311 1 [Reason for Submission] As an event has occurred..."
+    assert filing_display.strip_edinet_machine_artifacts(text) == "As an event has occurred..."
+
+
+def test_strip_edinet_machine_artifacts_removes_leading_bom_before_japanese_artifacts():
+    text = "\ufeff 臨時報告書_20260909153311 １【提出理由】当社の財政状態..."
+    assert filing_display.strip_edinet_machine_artifacts(text) == "当社の財政状態..."
+
+
+def test_strip_edinet_machine_artifacts_preserves_interior_bom():
+    """The leading-BOM fix must never become a body-wide replace — a
+    U+FEFF occurring anywhere other than the very start of the text is a
+    legitimate Unicode character and must be preserved untouched."""
+    text = "The Company noted\ufeffsomething here without further comment."
+    assert filing_display.strip_edinet_machine_artifacts(text) == text
+
+
 # ============================================================
 # E: excerpt_may_be_incomplete
 # ============================================================
