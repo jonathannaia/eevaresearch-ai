@@ -14,23 +14,31 @@ DECISIONS.md) — a minimal, read-only research-feed card showing exactly:
      neutral, factual "{Company} filed {title} on {date}." sentence —
      see src/logic/filing_display for the exact quality gate and
      fallback wording;
-  4) `View filing text` (English/EDGAR) or `Show English translation` /
-     `View original filing text` (Korean/Japanese) — compact,
-     display-only toggles, shown only when the corresponding stored text
-     exists and (for any original-language/extracted text) passes the
-     same quality gate Summary uses;
+  4) `View filing excerpt` (English/EDGAR) or `View translated filing
+     excerpt` / `View original filing excerpt` (Korean/Japanese) —
+     compact, display-only toggles, shown only when the corresponding
+     stored text exists and (for any original-language/extracted text)
+     passes the same quality gate Summary uses. Filing-card machine-
+     artifact / excerpt-honesty fix: labels now say "excerpt", not
+     "text"/"translation", so a reader understands this is a bounded
+     fragment, never the full document; an expanded toggle also shows an
+     "Excerpt may be incomplete..." notice whenever
+     filing_display.excerpt_may_be_incomplete(candidate.excerpt_original)
+     is true (see `_render_expandable_text`'s own docstring);
   5) `Open original filing ↗` — the card's sole action. EDINET is the
      one exception: it has no working direct document link (verified
      live — disclosure2.edinet-fsa.go.jp's per-row PDF action is a
      session-bound JS postback, not a derivable URL), so EDINET cards
      instead render `Search original EDINET filing ↗` linking to the
-     official search portal root, plus a non-clickable locator line
-     naming the fields (Japanese filer/submitter name, the native
-     Japanese report title, EDINET code, securities code, filed date)
-     needed to re-find the filing there. Built from `filing.flr_nm`/
-     `filing.report_nm` directly — never the shared display title above,
-     which may be a stored English translation; the locator never shows
-     translated text. See `_render_quiet_links`/`_edinet_locator_line`.
+     official search portal root, plus (unchanged call site, changed
+     body — see `_edinet_locator_line`'s own docstring) a fixed, concise
+     EDINET lookup-guidance sentence;
+  6) a compact "Official filing reference" block, for all three
+     providers, built by filing_display.official_filing_reference from
+     FilingEvent's own already-stored fields with provider-accurate
+     labels (EDINET issuer code / DART issuer code / CIK, Securities
+     code, Document ID / Receipt number / Accession number, Filed date)
+     — never an EDINET-only label applied to a DART/EDGAR filing.
 
 EDINET's title/Summary/toggle mechanism (items 2-4 above) is entirely
 shared with DART — no EDINET-specific branch exists in `display_title`,
@@ -152,39 +160,35 @@ def _public_source_url(filing: FilingEvent) -> str:
     return f"{filing.source_url}{filing.rcept_no}-index.htm"
 
 
+_EDINET_LOOKUP_GUIDANCE = (
+    "To find this filing on EDINET, search by EDINET issuer code or "
+    "securities code, then filter by filing date and type."
+)
+
+
 def _edinet_locator_line(filing: FilingEvent, filed_label: str | None) -> str | None:
     """EDINET has no working direct document link (disclosure2.edinet-
     fsa.go.jp's per-row "PDF表示" action is a session-bound JS postback
     keyed to an opaque per-render token, not a derivable URL — verified
-    live, see the EDINET original-source-link investigation). This line
-    gives a reader the exact fields to re-find the filing themselves on
-    the official search portal.
+    live, see the EDINET original-source-link investigation).
 
-    Deliberately reads `filing.flr_nm` (EDINET's own real, Japanese
-    filerName) and `filing.report_nm` (the native Japanese docDescription/
-    title) directly — NEVER the shared card's own display title (see
-    filing_display.display_title), which may be a stored English
-    title_translation. The locator must stay original-Japanese-only even
-    when the rest of the card is showing a translated title/excerpt, so
-    it is never built from a value that could be a translation. Every
-    other field (EDINET code, securities code) comes straight off
-    `filing` too — never queries an API, never infers a code, and omits
-    any item that's simply absent rather than showing a placeholder or
-    the private API URL."""
-    parts = []
-    if filing.flr_nm:
-        parts.append(html.escape(filing.flr_nm))
-    if filing.report_nm:
-        parts.append(html.escape(filing.report_nm))
-    if filing.corp_code:
-        parts.append(f"EDINET code {html.escape(filing.corp_code)}")
-    if filing.stock_code:
-        parts.append(f"Securities code {html.escape(filing.stock_code)}")
-    if filed_label:
-        parts.append(f"Filed {html.escape(filed_label)}")
-    if not parts:
-        return None
-    return "Official EDINET search: " + " · ".join(parts)
+    Filing-card machine-artifact / excerpt-honesty fix: this used to
+    build a field-listing locator line (filer name, native title, EDINET
+    code, securities code, filed date) from `filing` itself. Those code/
+    securities-code/filed-date fields now live in the shared, provider-
+    neutral `official_filing_reference` block instead (rendered
+    separately, for every provider, not just EDINET) — duplicating them
+    here too would be redundant. This function now returns the fixed,
+    concise EDINET lookup-guidance sentence instead: how to actually use
+    those fields on the official search portal. Kept as this same
+    function (name, signature, and `_render_quiet_links`'s one call site
+    below all unchanged) specifically so `_render_quiet_links` itself
+    needed no edit — see that function's own docstring. `filing`/
+    `filed_label` are accepted for signature stability but no longer
+    read; the guidance sentence is a fixed string true for every EDINET
+    filing, not built from this specific filing's own fields."""
+    del filing, filed_label
+    return _EDINET_LOOKUP_GUIDANCE
 
 
 def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> None:
@@ -218,7 +222,12 @@ def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> 
             st.link_button("Open original filing ↗", _public_source_url(filing), use_container_width=True)
 
 
-def _render_expandable_text(*, toggle_key: str, show_label: str, hide_label: str, section_label: str, text: str) -> None:
+_EXCERPT_MAY_BE_INCOMPLETE_NOTICE = "Excerpt may be incomplete. Open the official filing for the full document."
+
+
+def _render_expandable_text(
+    *, toggle_key: str, show_label: str, hide_label: str, section_label: str, text: str, may_be_incomplete: bool = False
+) -> None:
     """One compact, display-only show/hide toggle revealing `text` under
     `section_label` when expanded. `st.session_state` here is purely
     ephemeral client-side UI visibility state — never a write to
@@ -226,7 +235,16 @@ def _render_expandable_text(*, toggle_key: str, show_label: str, hide_label: str
     provider or any other service. The toggle is flipped via an
     on_click callback (not an inline check) so the button's own label
     updates on the same rerun it's clicked, matching every other toggle
-    in this app."""
+    in this app.
+
+    `may_be_incomplete` (filing-card excerpt-honesty fix): when True,
+    renders `_EXCERPT_MAY_BE_INCOMPLETE_NOTICE` directly below `text`,
+    only while this toggle is expanded — never as a standalone message,
+    never when collapsed. Driven by the caller's own
+    filing_display.excerpt_may_be_incomplete(candidate.excerpt_original)
+    check, shared across every excerpt toggle on one card since it is
+    always about the same underlying original-language extraction cap,
+    regardless of which excerpt (original or translated) is shown."""
     if toggle_key not in st.session_state:
         st.session_state[toggle_key] = False
 
@@ -241,6 +259,11 @@ def _render_expandable_text(*, toggle_key: str, show_label: str, hide_label: str
     if expanded:
         st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;"><strong>{html.escape(section_label)}</strong></div>', unsafe_allow_html=True)
         st.markdown(f'<div>{html.escape(text)}</div>', unsafe_allow_html=True)
+        if may_be_incomplete:
+            st.markdown(
+                f'<div class="er-muted" style="margin-top:0.3rem;">{html.escape(_EXCERPT_MAY_BE_INCOMPLETE_NOTICE)}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def candidate_row(item: RadarItem, comparison_record=None) -> None:
@@ -267,8 +290,16 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         title = filing_display.display_title(filing, candidate)
         st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(title)}</div>', unsafe_allow_html=True)
 
+        # Filing-card machine-artifact / excerpt-honesty fix: always
+        # driven by the ORIGINAL-language excerpt_original's own length —
+        # never a translation's — and shared across every excerpt toggle
+        # rendered on this one card below, since it is always the same
+        # underlying extraction cap regardless of which excerpt is shown.
+        excerpt_original = candidate.excerpt_original if candidate is not None else None
+        may_be_incomplete = filing_display.excerpt_may_be_incomplete(excerpt_original)
+
         if filing_display.is_english_native(filing):
-            readable_text = candidate.excerpt_original if candidate is not None else None
+            readable_text = excerpt_original
             passes_gate = bool(readable_text) and filing_display.is_readable_extracted_text(readable_text)
             summary = filing_display.extractive_summary(readable_text) if passes_gate else ""
             if not summary:
@@ -278,17 +309,37 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                 candidate.excerpt_translation.translated_text
                 if candidate is not None and candidate.excerpt_translation is not None else None
             )
+            native_text = excerpt_original
+            if filing.source_name == _EDINET_SOURCE_NAME:
+                # Filing-card machine-artifact / excerpt-honesty fix:
+                # EDINET's inline-XBRL cover page can leak a machine-
+                # generated document-title-timestamp label and/or a
+                # leading numbered item heading into excerpt_original/
+                # excerpt_translation — see filing_display.
+                # strip_edinet_machine_artifacts's own comment for the
+                # exact evidenced shapes. Applied BEFORE the readability
+                # gate and BEFORE extractive_summary(), to both the
+                # native and translated text, and EDINET only — DART's
+                # own extraction already keeps this class of artifact
+                # out (its SECTION-1 cover-page skip), so this cleanup is
+                # never invoked for DART, and never touches the stored
+                # CandidateSignal — only these two local variables.
+                if translation_text:
+                    translation_text = filing_display.strip_edinet_machine_artifacts(translation_text)
+                if native_text:
+                    native_text = filing_display.strip_edinet_machine_artifacts(native_text)
+
             # Filing-card summary/translation presentation fix: the same
             # readability gate now decides both the Summary source below
-            # AND the "Show English translation" toggle further down —
-            # previously the toggle rendered whenever translation_text
-            # existed at all, regardless of readability, exposing a raw/
-            # document-like block. extractive_summary() itself may still
-            # return "" (no clean sentence found even within its own
-            # bounded search window); that empty-return case, not just an
-            # unreadable-source case, also falls back to
-            # metadata_only_summary() here — this is the "existing
-            # caller" extractive_summary()'s own docstring refers to.
+            # AND the translated-excerpt toggle further down — previously
+            # the toggle rendered whenever translation_text existed at
+            # all, regardless of readability, exposing a raw/document-
+            # like block. extractive_summary() itself may still return ""
+            # (no clean sentence found even within its own bounded search
+            # window); that empty-return case, not just an unreadable-
+            # source case, also falls back to metadata_only_summary()
+            # here — this is the "existing caller" extractive_summary()'s
+            # own docstring refers to.
             translation_is_readable = bool(translation_text) and filing_display.is_readable_extracted_text(translation_text)
             summary_source = translation_text if translation_is_readable else None
             summary = filing_display.extractive_summary(summary_source) if summary_source else ""
@@ -302,23 +353,40 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             if passes_gate:
                 _render_expandable_text(
                     toggle_key=f"radar-filingtext-{filing.rcept_no}",
-                    show_label="View filing text", hide_label="Hide filing text",
-                    section_label="Filing text", text=readable_text,
+                    show_label="View filing excerpt", hide_label="Hide filing excerpt",
+                    section_label="Filing excerpt", text=readable_text,
+                    may_be_incomplete=may_be_incomplete,
                 )
         else:
             if translation_text and translation_is_readable:
                 _render_expandable_text(
                     toggle_key=f"radar-translation-expanded-{filing.rcept_no}",
-                    show_label="Show English translation", hide_label="Hide English translation",
-                    section_label="English translation", text=translation_text,
+                    show_label="View translated filing excerpt", hide_label="Hide translated filing excerpt",
+                    section_label="Translated filing excerpt", text=translation_text,
+                    may_be_incomplete=may_be_incomplete,
                 )
 
-            native_text = candidate.excerpt_original if candidate is not None else None
             if native_text and filing_display.is_readable_extracted_text(native_text):
                 _render_expandable_text(
                     toggle_key=f"radar-originaltext-{filing.rcept_no}",
-                    show_label="View original filing text", hide_label="Hide original filing text",
-                    section_label="Original filing text", text=native_text,
+                    show_label="View original filing excerpt", hide_label="Hide original filing excerpt",
+                    section_label="Original filing excerpt", text=native_text,
+                    may_be_incomplete=may_be_incomplete,
                 )
 
         _render_quiet_links(filing, filed_label)
+
+        # Filing-card machine-artifact / excerpt-honesty fix: a compact,
+        # provider-neutral reference block for all three providers.
+        # EDINET's own lookup-guidance sentence is NOT re-rendered here —
+        # _render_quiet_links above already renders it once, via its own
+        # existing, unedited call to _edinet_locator_line (whose body
+        # this fix changed, but whose call site inside
+        # _render_quiet_links stays untouched — see that function's own
+        # docstring). Rendering it again here would duplicate it.
+        reference = filing_display.official_filing_reference(filing, filed_label)
+        st.markdown(
+            '<div class="er-muted" style="margin-top:0.5rem;"><strong>Official filing reference</strong></div>'
+            f'<div class="er-muted">{html.escape(reference)}</div>',
+            unsafe_allow_html=True,
+        )

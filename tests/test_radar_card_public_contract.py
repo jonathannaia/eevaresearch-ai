@@ -11,7 +11,7 @@ card contract:
   c) `Summary` — always shown: a concise extractive summary grounded in
      stored, quality-gated readable text, or a neutral, factual
      "{Company} filed {title} on {date}." fallback otherwise;
-  d) `View filing text` (EDGAR) or `Show English translation`/`View
+  d) `View filing excerpt` (EDGAR) or `View translated filing excerpt`/`View
      original filing text` (DART/EDINET) — display-only toggles, shown
      only when the corresponding stored text exists and (for any
      original-language/extracted text) passes the quality gate;
@@ -178,28 +178,34 @@ def test_korean_fixture_shows_only_the_approved_fields(tmp_path):
     # Summary is grounded in the stored English translation, shown directly.
     assert "New facility investment related excerpt." in all_text
     assert "신규시설투자등 관련 원문 발췌." not in all_text  # native excerpt collapsed by default
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
     link_buttons = [b for b in at.get("link_button") if b.label == "Open original filing ↗"]
     assert len(link_buttons) == 1
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
+    # DART reference block: provider-accurate labels, no EDINET wording.
+    assert "Official filing reference" in all_text
+    assert "DART issuer code: 00126380" in all_text
+    assert "Receipt number: 20260812000001" in all_text
+    assert "EDINET issuer code" not in all_text
+    assert "To find this filing on EDINET" not in all_text
 
     original_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
     assert "신규시설투자등 관련 원문 발췌." in all_text  # now expanded
-    assert any(b.label == "Hide original filing text" for b in at.button)
+    assert any(b.label == "Hide original filing excerpt" for b in at.button)
 
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     translation_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
     assert "New facility investment related excerpt." in all_text  # still shown (Summary + expanded toggle)
-    assert any(b.label == "Hide English translation" for b in at.button)
-    assert any(b.label == "Hide original filing text" for b in at.button)  # first toggle stays expanded too
+    assert any(b.label == "Hide translated filing excerpt" for b in at.button)
+    assert any(b.label == "Hide original filing excerpt" for b in at.button)  # first toggle stays expanded too
 
 
 # ============================================================
@@ -235,9 +241,9 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     # Summary is grounded in the stored English translation, shown directly.
     assert "This is an excerpt from the annual securities report." in all_text
     assert "有価証券報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed by default
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
     # EDINET original-source-link fallback: no working direct document
     # link exists (verified live), so the card links to the official
@@ -248,9 +254,15 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert len(edinet_link_buttons) == 1
     assert edinet_link_buttons[0].url == "https://disclosure2.edinet-fsa.go.jp/"
     assert "api.edinet-fsa.go.jp" not in all_text
-    assert "Official EDINET search:" in all_text
-    assert "EDINET code E02778" in all_text
-    assert "Securities code 99840" in all_text
+    # Filing-card machine-artifact / excerpt-honesty fix: the old field-
+    # listing locator line is gone, replaced by the fixed lookup-guidance
+    # sentence plus the shared, provider-neutral reference block.
+    assert "Official EDINET search:" not in all_text
+    assert "To find this filing on EDINET, search by EDINET issuer code or securities code, then filter by filing date and type." in all_text
+    assert "Official filing reference" in all_text
+    assert "EDINET issuer code: E02778" in all_text
+    assert "Securities code: 99840" in all_text
+    assert "Document ID: S100YGH5" in all_text
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
     # EDINET-specific technical metadata (ordinance/form/docType codes)
@@ -263,7 +275,7 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     _rerun(at, tmp_path)
     all_text = _text(at)
     assert "有価証券報告書の記載内容の抜粋です。" in all_text  # now expanded
-    assert any(b.label == "Hide original filing text" for b in at.button)
+    assert any(b.label == "Hide original filing excerpt" for b in at.button)
 
 
 def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_summary(tmp_path):
@@ -314,7 +326,7 @@ def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_s
     assert "..." not in all_text
     assert raw_like_translation not in all_text
     # The unreadable translation must never render its toggle at all.
-    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
+    assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
     # The official EDINET source action remains visible regardless.
     edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
     assert len(edinet_link_buttons) == 1
@@ -361,7 +373,7 @@ def test_edinet_readable_translation_with_no_early_boundary_falls_back_to_metada
     assert "..." not in all_text
     assert late_boundary_translation not in all_text
     # Readable, just not summarizable in-window — the toggle still renders.
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
     edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
     assert len(edinet_link_buttons) == 1
@@ -399,7 +411,7 @@ def test_edinet_readable_translation_still_renders_the_toggle_regardless_of_summ
     all_text = _text(at)
 
     assert "The company entered into a loan agreement with a lender for working capital." in all_text
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
     edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
     assert len(edinet_link_buttons) == 1
@@ -407,10 +419,184 @@ def test_edinet_readable_translation_still_renders_the_toggle_regardless_of_summ
     translation_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
-    assert any(b.label == "Hide English translation" for b in at.button)
+    assert any(b.label == "Hide translated filing excerpt" for b in at.button)
     # The source action stays visible with the toggle expanded too.
     edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
     assert len(edinet_link_buttons) == 1
+
+
+# ============================================================
+# Filing-card machine-artifact / excerpt-honesty fix — S100Z0OT
+# acceptance proof, using the real evidenced identity and leaked shape.
+# ============================================================
+
+
+def _s100z0ot_filing() -> FilingEvent:
+    return FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E37584", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-09-10",
+        flr_nm="株式会社ispace", pblntf_ty="180000", pblntf_detail_ty="010", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+
+
+def test_s100z0ot_leaked_machine_artifacts_never_appear_and_reference_block_is_correct(tmp_path):
+    """Full acceptance proof for the live regression: the leaked cover-
+    page label and item-heading artifacts (both languages) never appear
+    anywhere on the card, the default Summary is a clean, complete
+    sentence, the excerpt toggles are honestly labeled and (since this
+    excerpt reaches the 600-char extraction cap) carry the completeness
+    disclosure when expanded, the source action stays visible throughout,
+    and the reference block plus the one EDINET lookup-guidance sentence
+    show exactly the real evidenced identity."""
+    filing = _s100z0ot_filing()
+    _seed_edinet_filing_events(tmp_path, [filing])
+    leaked_native = (
+        "臨時報告書_20260909153311 １【提出理由】本日開催の取締役会において、"
+        + ("資金を借り入れることを決議した。" * 40)
+    )
+    leaked_translation = (
+        "Extraordinary Report_20260909153311 1 [Reason for Submission] "
+        "The Company resolved to borrow long-term funds from Shizuoka Bank "
+        "in the amount of three billion yen at a floating interest rate "
+        "over a three-year term for working-capital and Mission-related "
+        "purposes, repayable in a lump sum, unsecured and unguaranteed."
+    )
+    assert len(leaked_native) >= 600  # exercises the completeness disclosure
+    candidate = CandidateSignal(
+        id="edinet-cand-s100z0ot", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=leaked_native,
+        excerpt_translation=Translation(
+            translated_text=leaked_translation, provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    for leaked in (
+        "Extraordinary Report_20260909153311", "[Reason for Submission]",
+        "臨時報告書_20260909153311", "１【提出理由】",
+    ):
+        assert leaked not in all_text, leaked
+
+    assert "ispace, inc." in all_text
+    assert "93480" in all_text
+    # Clean, complete, grounded summary — no leaked artifact prefix.
+    assert "Shizuoka Bank" in all_text
+    assert "three billion yen" in all_text
+
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    assert len(translation_toggle) == 1
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
+    assert len(original_toggle) == 1
+
+    # Source action visible before any toggle is opened.
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1
+
+    # Official filing reference — exact real evidenced identity.
+    assert "Official filing reference" in all_text
+    assert "EDINET issuer code: E37584" in all_text
+    assert "Securities code: 93480" in all_text
+    assert "Document ID: S100Z0OT" in all_text
+    assert "Filed: Sep 10, 2026" in all_text
+    assert (
+        "To find this filing on EDINET, search by EDINET issuer code or "
+        "securities code, then filter by filing date and type."
+    ) in all_text
+
+    # Completeness disclosure absent while every toggle is collapsed.
+    assert "Excerpt may be incomplete" not in all_text
+
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    for leaked in ("Extraordinary Report_20260909153311", "[Reason for Submission]"):
+        assert leaked not in all_text, leaked
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1  # source action still visible, translated excerpt expanded
+
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
+    original_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    for leaked in ("臨時報告書_20260909153311", "１【提出理由】"):
+        assert leaked not in all_text, leaked
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+    edinet_link_buttons = [b for b in at.get("link_button") if b.label == "Search original EDINET filing ↗"]
+    assert len(edinet_link_buttons) == 1  # source action still visible, both excerpts expanded
+
+
+def test_edinet_machine_artifact_cleanup_never_applies_to_dart_or_edgar(tmp_path):
+    """The same leading artifact shape, seeded on a DART filing, must be
+    preserved verbatim — the cleanup only ever runs for source_name ==
+    "EDINET". DART/EDGAR cards also receive no EDINET-only reference
+    label or lookup-guidance sentence."""
+    _seed_corp_codes(tmp_path)
+    dart_filing = FilingEvent(
+        rcept_no="20260812000099", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+        report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="삼성전자",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000099",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [dart_filing])
+    artifact_shaped_translation = "Extraordinary Report_20260909153311 1 [Reason for Submission] The Company borrowed funds."
+    dart_candidate = CandidateSignal(
+        id="cand-dart-artifact-shaped", filing=dart_filing, matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="신규시설투자등 관련 원문 발췌.",
+        excerpt_translation=Translation(
+            translated_text=artifact_shaped_translation, provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {dart_candidate.id: dart_candidate})
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    # DART's translated excerpt is NOT cleaned — the shape survives
+    # verbatim in the Summary (the whole thing is one sentence, no early
+    # terminator until the very end, so it is used whole).
+    assert "Extraordinary Report_20260909153311 1 [Reason for Submission] The Company borrowed funds." in all_text
+    assert "DART issuer code: 00126380" in all_text
+    assert "EDINET issuer code" not in all_text
+    assert "To find this filing on EDINET" not in all_text
+
+
+def test_edgar_card_receives_no_edinet_reference_label_or_lookup_guidance(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000002", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-08-28", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000002/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="nvda-8k.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+    candidate = CandidateSignal(
+        id="cand-edgar-no-edinet-1", filing=filing, matched_rules=["financing:new_debt:credit facility"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="The Company entered into a new credit facility for working capital purposes.",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "CIK: 0001045810" in all_text
+    assert "EDINET issuer code" not in all_text
+    assert "DART issuer code" not in all_text
+    assert "To find this filing on EDINET" not in all_text
 
 
 # ============================================================
@@ -446,10 +632,10 @@ def test_english_edgar_fixture_has_no_redundant_translation_block(tmp_path):
     assert "8-K filing" not in all_text  # the old non-title report_nm string itself is never shown
     assert "Item 2.02 Results of Operations. Revenue increased." in all_text  # grounded Summary, shown directly
     assert "<strong>Original</strong>" not in all_text
-    assert "<strong>English translation</strong>" not in all_text
-    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
-    assert not any(b.label in ("View original filing text", "Hide original filing text") for b in at.button)
-    view_filing_text_buttons = [b for b in at.button if b.label == "View filing text"]
+    assert "<strong>Translated filing excerpt</strong>" not in all_text
+    assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
+    assert not any(b.label in ("View original filing excerpt", "Hide original filing excerpt") for b in at.button)
+    view_filing_text_buttons = [b for b in at.button if b.label == "View filing excerpt"]
     assert len(view_filing_text_buttons) == 1  # readable excerpt passes the quality gate
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
@@ -608,66 +794,53 @@ _render_quiet_links(filing, "Jun 22, 2026")
     assert "Open original filing ↗" not in all_text
     assert "api.edinet-fsa.go.jp" not in all_text
     assert "S100YGH5" not in all_text  # docID/private token never leaked into the locator line either
+    # Filing-card machine-artifact / excerpt-honesty fix: the old field-
+    # listing locator line is gone; _edinet_locator_line now returns the
+    # fixed lookup-guidance sentence instead (see its own docstring for
+    # why the field-listing role moved to the shared, provider-neutral
+    # official_filing_reference block, rendered separately).
+    assert "Official EDINET search:" not in all_text
     assert (
-        "Official EDINET search: ソフトバンクグループ株式会社 · 有価証券報告書－第46期(2025/04/01－2026/03/31) "
-        "· EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026"
+        "To find this filing on EDINET, search by EDINET issuer code or "
+        "securities code, then filter by filing date and type."
     ) in all_text
 
 
-def test_edinet_locator_line_never_uses_the_shared_display_title_only_native_report_nm():
-    """`_edinet_locator_line` no longer takes a `title` argument at all —
-    it can only ever read `filing.report_nm`/`filing.flr_nm` directly,
-    structurally guaranteeing it can never echo a stored English
-    title_translation, regardless of what the rest of the card is
-    displaying for this same filing."""
+def test_edinet_locator_line_returns_the_fixed_guidance_sentence_regardless_of_filing_fields():
+    """Filing-card machine-artifact / excerpt-honesty fix: the old field-
+    listing locator (filer name, native title, codes, filed date) is
+    replaced by one fixed, concise guidance sentence — the field-listing
+    role now lives in filing_display.official_filing_reference instead
+    (rendered separately, for all three providers, not just EDINET).
+    `_edinet_locator_line` therefore can no longer echo a stored English
+    title_translation (it reads no filing field at all any more, so
+    there is structurally nothing left for it to leak), and it returns
+    the identical sentence whether every field is present or every field
+    is empty/absent — never a placeholder, never an omission decision to
+    get wrong."""
     from src.ui.components.radar_card import _edinet_locator_line
 
-    filing = FilingEvent(
+    expected = (
+        "To find this filing on EDINET, search by EDINET issuer code or "
+        "securities code, then filter by filing date and type."
+    )
+
+    full = FilingEvent(
         rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
         report_nm="有価証券報告書－第46期(2025/04/01－2026/03/31)", rcept_dt="2026-06-22",
         flr_nm="ソフトバンクグループ株式会社", retrieved_at=_now_iso(), source_name="EDINET",
     )
-    locator = _edinet_locator_line(filing, "Jun 22, 2026")
-    assert "有価証券報告書－第46期(2025/04/01－2026/03/31)" in locator
-    assert "ソフトバンクグループ株式会社" in locator
-    # Nothing resembling an English translated title/label ever appears.
+    locator = _edinet_locator_line(full, "Jun 22, 2026")
+    assert locator == expected
+    assert "有価証券報告書" not in locator
+    assert "ソフトバンクグループ株式会社" not in locator
     assert "Annual Securities Report" not in locator
-    assert "annual securities report" not in locator.lower()
 
-
-def test_edinet_locator_line_field_order_is_filer_title_code_seccode_date():
-    from src.ui.components.radar_card import _edinet_locator_line
-
-    full = FilingEvent(
-        rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
-        report_nm="有価証券報告書", rcept_dt="2026-06-22", flr_nm="ソフトバンクグループ株式会社",
-        retrieved_at=_now_iso(), source_name="EDINET",
-    )
-    assert _edinet_locator_line(full, "Jun 22, 2026") == (
-        "Official EDINET search: ソフトバンクグループ株式会社 · 有価証券報告書 · "
-        "EDINET code E02778 · Securities code 99840 · Filed Jun 22, 2026"
-    )
-
-
-def test_edinet_locator_line_omits_missing_fields_cleanly_never_a_placeholder():
-    from src.ui.components.radar_card import _edinet_locator_line
-
-    # Securities code and filed date both absent — omitted cleanly, no
-    # placeholder, no invented value, and never the private API URL.
-    partial = FilingEvent(
-        rcept_no="S100YGH6", corp_code="E09999", corp_name="No Sec Code Corp.", stock_code="",
-        report_nm="有価証券報告書", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
-    )
-    assert _edinet_locator_line(partial, None) == (
-        "Official EDINET search: 有価証券報告書 · EDINET code E09999"
-    )
-
-    # Nothing at all present — no line rendered, not an empty placeholder.
     empty = FilingEvent(
         rcept_no="S100YGH7", corp_code="", corp_name="No Codes Corp.", stock_code="",
         report_nm="", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
     )
-    assert _edinet_locator_line(empty, None) is None
+    assert _edinet_locator_line(empty, None) == expected
 
 
 def test_edgar_and_dart_render_quiet_links_unchanged_by_edinet_fallback():
@@ -762,34 +935,29 @@ def test_edinet_with_stored_title_and_excerpt_translation_matches_dart_default_a
 
     # Same two toggle labels DART uses — no EDINET-only "Translate"/"Show
     # original" control was introduced.
-    translation_toggle = [b for b in at.button if b.label == "Show English translation"]
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 
-    # The locator, however, stays original-Japanese-only regardless of
-    # the translated title/excerpt shown above — it must never echo the
-    # translated title.
-    assert "Official EDINET search:" in all_text
-    assert "信越化学工業株式会社" in all_text
-    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title, in the locator only
-    assert "Status Report of Purchase of Own Shares" not in _locator_line_text(all_text)
+    # Filing-card machine-artifact / excerpt-honesty fix: the locator is
+    # now a fixed guidance sentence, carrying no filing-specific text at
+    # all — it structurally cannot echo the translated title (or the
+    # native one either). The provider-neutral reference block supplies
+    # the actual identifying fields instead.
+    assert (
+        "To find this filing on EDINET, search by EDINET issuer code or "
+        "securities code, then filter by filing date and type."
+    ) in all_text
+    assert "Official filing reference" in all_text
+    assert "EDINET issuer code: E00776" in all_text
+    assert "Status Report of Purchase of Own Shares" not in all_text.split("Official filing reference")[-1]
 
     original_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
     assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text  # native excerpt now revealed
-    assert any(b.label == "Hide original filing text" for b in at.button)
-
-
-def _locator_line_text(all_text: str) -> str:
-    """Isolates just the "Official EDINET search: ..." locator line from
-    a page's full flattened text, so an assertion about what it does/
-    doesn't contain can't be satisfied by different text elsewhere on
-    the same page."""
-    marker = "Official EDINET search:"
-    idx = all_text.index(marker)
-    return all_text[idx : idx + 400]
+    assert any(b.label == "Hide original filing excerpt" for b in at.button)
 
 
 def test_edinet_with_no_stored_translation_shows_native_title_and_excerpt_matching_dart_untranslated_contract(tmp_path):
@@ -798,7 +966,7 @@ def test_edinet_with_no_stored_translation_shows_native_title_and_excerpt_matchi
     translation_shows_no_toggle_even_with_a_retry_scheduled below): the
     native title/report_nm is shown (display_title's own fallback), the
     Summary falls back to the neutral metadata sentence, and only the
-    original-text toggle appears — no "Show English translation" toggle
+    original-text toggle appears — no "View translated filing excerpt" toggle
     at all, since there is nothing translated to show."""
     filing = FilingEvent(
         rcept_no="S100Z0ID2", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
@@ -821,8 +989,8 @@ def test_edinet_with_no_stored_translation_shows_native_title_and_excerpt_matchi
     all_text = _text(at)
 
     assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title (no translation stored)
-    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 
 
@@ -869,8 +1037,8 @@ def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_p
     # its own quality-gated toggle.
     assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text
     assert "실적 관련 원문." not in all_text
-    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 
     original_toggle[0].click()
@@ -907,12 +1075,12 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text  # metadata-only Summary, no translation stored
     assert "실적 관련 원문 종결." not in all_text  # native excerpt collapsed behind its own toggle
     assert "English translation is being prepared." not in all_text
-    assert "English translation</strong>" not in all_text
+    assert "Translated filing excerpt</strong>" not in all_text
     assert "Translation unavailable" not in all_text
     assert "config_missing_key" not in all_text
     assert "not configured" not in all_text
-    assert not any(b.label in ("Show English translation", "Hide English translation") for b in at.button)
-    original_toggle = [b for b in at.button if b.label == "View original filing text"]
+    assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 
     original_toggle[0].click()
@@ -1097,7 +1265,7 @@ def test_mrvl_style_xbrl_extraction_is_rejected_and_never_shown(tmp_path):
     # The neutral, metadata-only Summary instead.
     assert "MARVELL TECHNOLOGY, INC. filed Quarterly Report — Form 10-Q on Aug 28, 2026." in all_text
     # No filing-text toggle — the rejected extraction has nothing to reveal.
-    assert not any(b.label in ("View filing text", "Hide filing text") for b in at.button)
+    assert not any(b.label in ("View filing excerpt", "Hide filing excerpt") for b in at.button)
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
         assert forbidden not in all_text, forbidden
 

@@ -243,7 +243,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     # collapsed, display-only toggle by default — its own expand/collapse
     # behavior is covered by test_radar_card_public_contract.py; this
     # test only confirms one is offered here.
-    assert any(b.label == "Show English translation" for b in at.button)
+    assert any(b.label == "View translated filing excerpt" for b in at.button)
 
 
 def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_path):
@@ -688,8 +688,8 @@ def test_radar_inbox_renders_stably_when_evidence_packet_fields_are_present(tmp_
     # behind its own quality-gated toggle by default now.
     assert "Body excerpt." in all_text
     assert "본문 발췌." not in all_text
-    assert any(b.label == "Show English translation" for b in at.button)
-    assert any(b.label == "View original filing text" for b in at.button)
+    assert any(b.label == "View translated filing excerpt" for b in at.button)
+    assert any(b.label == "View original filing excerpt" for b in at.button)
     assert "Matched a capital-increase financing keyword." not in all_text
     assert "Item 2.03" not in all_text
     assert "PublicDoc/0101.pdf" not in all_text

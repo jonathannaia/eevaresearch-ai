@@ -376,7 +376,7 @@ def test_existing_filtering_ordering_pagination_source_links_and_translation_unc
     # Filing-quality pass: Summary is grounded in the stored English
     # translation, shown directly (the toggle re-reveals it in full).
     assert "Body excerpt." in all_text
-    assert any(b.label == "Show English translation" for b in at.button)
+    assert any(b.label == "View translated filing excerpt" for b in at.button)
     assert any(b.label == "Open original filing ↗" for b in at.get("link_button"))
 
 
