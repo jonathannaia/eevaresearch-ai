@@ -250,6 +250,46 @@ def test_signals_page_edinet_pending_shows_native_only_honest_status(tmp_path):
         assert ":gray-badge[Sample]" not in all_text
 
 
+def test_signals_page_edinet_source_link_never_points_at_the_raw_api_host(tmp_path):
+    """EDINET-safety fix (design/DECISIONS.md): signal_card()'s "View
+    source document" link and the drawer's "Open filing" link must both
+    resolve to the public disclosure portal root, never the raw,
+    key-required api.edinet-fsa.go.jp endpoint."""
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E37584", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-09-10", flr_nm="株式会社ispace",
+        theme_slug="space", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    candidate = CandidateSignal(
+        id="edinet-cand-safety", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="臨時報告書の内容です。", translation_state=TranslationState.PENDING,
+        state_history=[StateTransition(status=CandidateStatus.PUBLISHED, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    settings = Settings(cache_dir=tmp_path)
+    with patch("src.data_access.container.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+        assert not at.exception
+        all_text = " ".join(m.value for m in at.markdown)
+        assert "api.edinet-fsa.go.jp" not in all_text
+        assert "https://disclosure2.edinet-fsa.go.jp/" in all_text
+
+        drawer_buttons = [b for b in at.button if (b.key or "").startswith("open-drawer-")]
+        assert len(drawer_buttons) == 1
+        drawer_buttons[0].click().run()
+        assert not at.exception
+
+        link_buttons = at.get("link_button")
+        assert len(link_buttons) == 1
+        assert link_buttons[0].proto.url == "https://disclosure2.edinet-fsa.go.jp/"
+        assert link_buttons[0].proto.label == "Open filing"
+
+
 def test_signals_page_unmatched_issuer_shows_plain_name_no_exchange_claim(tmp_path):
     filing = FilingEvent(
         rcept_no="20260812000300", corp_code="00999999", corp_name="Unlisted Test Corp", stock_code="999999",

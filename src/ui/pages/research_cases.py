@@ -41,6 +41,7 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.backend_factory import ResearchCaseRepositoryProtocol
+from src.logic.source_link import public_source_url
 from src.models.research_case import (
     AssertionStatus,
     DependencyAssertion,
@@ -87,13 +88,18 @@ def _safe_source_url(url: object) -> str | None:
     """Only an `http://`/`https://` URL is ever rendered as a clickable
     link. Anything else — empty, malformed, or an unsafe scheme such as
     `javascript:`/`data:` — returns None, so the caller renders plain
-    escaped text instead of a link."""
+    escaped text instead of a link. EDINET-safety fix (design/
+    DECISIONS.md): also passed through public_source_url(), so a raw,
+    key-required EDINET API URL is rewritten to the public disclosure
+    portal root rather than ever rendered as a clickable link that would
+    return an HTTP 401 to a reader — every other source's URL is
+    returned unchanged."""
     if not isinstance(url, str):
         return None
     stripped = url.strip()
     lowered = stripped.lower()
     if lowered.startswith("https://") or lowered.startswith("http://"):
-        return stripped
+        return public_source_url(stripped)
     return None
 
 
@@ -264,9 +270,14 @@ def _render_evidence_item(item) -> None:
             st.markdown(f'<div>{_esc(item.excerpt_translated)}</div>', unsafe_allow_html=True)
         safe_url = _safe_source_url(item.source_url)
         if safe_url:
+            # EDINET-safety fix (design/DECISIONS.md): the displayed link
+            # text must match `safe_url`, not the raw stored `item.
+            # source_url` — otherwise an EDINET link would show the
+            # original api.edinet-fsa.go.jp text while actually pointing
+            # at the rewritten public portal URL.
             st.markdown(
                 f'<div style="margin-top:0.2rem;"><a href="{html.escape(safe_url, quote=True)}" '
-                f'target="_blank" rel="noopener noreferrer">{_esc(item.source_url)}</a></div>',
+                f'target="_blank" rel="noopener noreferrer">{_esc(safe_url)}</a></div>',
                 unsafe_allow_html=True,
             )
         elif item.source_url:

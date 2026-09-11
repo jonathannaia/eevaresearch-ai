@@ -240,6 +240,35 @@ def test_priority_signals_shows_full_provenance_for_a_real_signal(tmp_path, monk
     assert "www.sec.gov/example-filing" in all_text
 
 
+def test_priority_signals_edinet_source_link_never_points_at_the_raw_api_host(tmp_path, monkeypatch):
+    """EDINET-safety fix (design/DECISIONS.md): priority_signal_row()'s
+    "Original source" link must resolve to the public disclosure portal
+    root, never the raw, key-required api.edinet-fsa.go.jp endpoint."""
+    settings = _settings(tmp_path)
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E37584", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-09-10", flr_nm="株式会社ispace", source_name="EDINET",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        retrieved_at="2026-09-10T01:00:00+00:00", original_language="Japanese", theme_slug="space",
+    )
+    candidate = CandidateSignal(
+        id="edinet-cand-safety", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="High", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="臨時報告書の内容です。",
+        state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at="2026-09-10T00:00:00+00:00")],
+    )
+    backend_factory.get_candidate_repository(settings, "EDINET").upsert_new_candidates([candidate])
+    _patch_dashboard_settings(monkeypatch, settings)
+
+    at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
+    at.run()
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Priority Signals" in all_text
+    assert "api.edinet-fsa.go.jp" not in all_text
+    assert "https://disclosure2.edinet-fsa.go.jp/" in all_text
+
+
 def test_priority_signals_has_no_demo_or_sample_wording(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     _seed_real_signal(settings)

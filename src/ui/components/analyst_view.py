@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.logic.source_link import public_source_url
 from src.models.models import CandidateSignal, ClaimType, ExtractionState, FilingEvent, TranslationState
 from src.ui.components.evidence_chips import evidence_chip_html
 
@@ -200,9 +201,13 @@ def render_analyst_view(filing: FilingEvent, candidate: CandidateSignal) -> None
                 st.markdown(f'<div style="margin-top:0.1rem; margin-left:0.8rem;">• {phrase}</div>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div style="margin-top:0.15rem;">{_INSUFFICIENT_EXCERPT_TEXT}</div>', unsafe_allow_html=True)
-    if filing.source_url:
+    # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites
+    # a raw, key-required EDINET API URL to the public disclosure portal
+    # root; every other source's URL passes through unchanged.
+    safe_source_url = public_source_url(filing.source_url)
+    if safe_source_url:
         st.markdown(
-            f'<div style="margin-top:0.15rem;"><a href="{filing.source_url}" target="_blank">Open original filing ↗</a></div>',
+            f'<div style="margin-top:0.15rem;"><a href="{safe_source_url}" target="_blank">Open original filing ↗</a></div>',
             unsafe_allow_html=True,
         )
 

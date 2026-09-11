@@ -11,6 +11,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.logic.formatting import fmt_date
+from src.logic.source_link import public_source_url
 from src.models.models import ClaimType, Signal
 from src.ui.components.badges import direction_dot_html
 from src.ui.components.evidence_chips import evidence_chip
@@ -105,8 +106,13 @@ def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
         st.write(signal.invalidation_criteria)
 
         st.divider()
-        if signal.source_url:
-            st.link_button("Open filing", signal.source_url, width="stretch")
+        # EDINET-safety fix (design/DECISIONS.md): public_source_url()
+        # rewrites a raw, key-required EDINET API URL to the public
+        # disclosure portal root; every other source's URL passes through
+        # unchanged.
+        safe_signal_url = public_source_url(signal.source_url)
+        if safe_signal_url:
+            st.link_button("Open filing", safe_signal_url, width="stretch")
         else:
             st.button(
                 "Open filing", key=f"drawer-filing-{signal.id}", width="stretch", disabled=True,

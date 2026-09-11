@@ -2,9 +2,10 @@
 with daily_news.get_settings monkeypatched to a tmp cache_dir seeded
 with fixture data. Zero network calls; the real data/cache/ (gitignored
 live pilot cache) is never touched. Proves the public card renders
-exactly the five approved fields, the single company selector and
-rolling-7-day freshness filter behave as approved, and none of the
-internal/Radar detail that daily_news_admin.py alone shows ever
+exactly the six approved fields — including the source-attribution pass's
+visible source-type label (design/DECISIONS.md) — the single company
+selector and rolling-7-day freshness filter behave as approved, and none
+of the internal/Radar detail that daily_news_admin.py alone shows ever
 appears.
 
 Exact-boundary and UTC-vs-display timezone correctness are proven as
@@ -31,7 +32,15 @@ from src.models.daily_news_models import (
     NewsStoryStatus,
     SourceClass,
 )
-from src.ui.pages.daily_news import _elapsed_seconds, _is_recent, _recent_stories
+from src.ui.pages.daily_news import (
+    _MIXED_SUBTITLE,
+    _OFFICIAL_SUBTITLE,
+    _SOURCE_CLASS_LABELS,
+    _elapsed_seconds,
+    _is_recent,
+    _page_subtitle,
+    _recent_stories,
+)
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "daily_news_page.py"
 
@@ -100,6 +109,43 @@ def test_story_one_second_past_seven_times_twenty_four_hours_is_excluded():
     assert not _is_recent(story, now)
 
 
+# --- Source-attribution pass: label mapping / subtitle strategy ----------
+
+
+def test_every_source_class_maps_to_its_exact_approved_label():
+    assert _SOURCE_CLASS_LABELS[SourceClass.OFFICIAL_COMPANY] == "Official company source"
+    assert _SOURCE_CLASS_LABELS[SourceClass.REGULATORY_FILING] == "Regulatory filing"
+    assert _SOURCE_CLASS_LABELS[SourceClass.PRESS_RELEASE_WIRE] == "Press-release wire"
+    assert _SOURCE_CLASS_LABELS[SourceClass.INDEPENDENT_JOURNALISM] == "Independent journalism"
+    # Every real SourceClass member has an approved label — no category
+    # silently falls back to its raw enum value.
+    assert set(_SOURCE_CLASS_LABELS) == set(SourceClass)
+
+
+def test_page_subtitle_is_official_only_when_every_visible_story_is_official():
+    stories = [_story(company_name="NVIDIA"), _story(id="newsitem-amd", company_name="Advanced Micro Devices")]
+    assert _page_subtitle(stories) == _OFFICIAL_SUBTITLE
+
+
+def test_page_subtitle_is_mixed_when_any_visible_story_is_non_official():
+    official = _story(company_name="NVIDIA")
+    non_official = _story(
+        id="newsitem-cnbc-x", company_name="NVIDIA",
+        sources=(NewsSourceReference(
+            publisher="CNBC", source_class=SourceClass.INDEPENDENT_JOURNALISM,
+            url="https://www.cnbc.com/x", title="H", published_at=official.sources[0].published_at,
+            retrieved_at=official.sources[0].published_at, original_language="English",
+        ),),
+    )
+    assert _page_subtitle([official, non_official]) == _MIXED_SUBTITLE
+
+
+def test_page_subtitle_defaults_to_official_only_with_no_visible_stories():
+    """The conservative default: an empty visible set contains nothing
+    that contradicts the official-only claim."""
+    assert _page_subtitle([]) == _OFFICIAL_SUBTITLE
+
+
 def test_freshness_gate_uses_utc_regardless_of_what_local_calendar_date_it_falls_on():
     # A timestamp that is safely within the 7-day UTC window but would
     # render as a *different* calendar date once converted to Eastern
@@ -148,7 +194,7 @@ def test_subtitle_and_scope_line_render_exactly(tmp_path):
     all_text = " ".join(m.value for m in at.markdown)
     assert "Company updates from official sources." in all_text
     assert "Autonomously discovered company updates" not in all_text
-    assert "Showing official company updates from the past 7 days." in all_text
+    assert "Showing tracked coverage from the past 7 days." in all_text
 
 
 def test_public_card_shows_exactly_the_five_approved_fields(tmp_path):
@@ -166,7 +212,12 @@ def test_public_card_shows_exactly_the_five_approved_fields(tmp_path):
     assert "https://nvidianews.nvidia.com/news/results" in markdown_text
 
 
-def test_public_card_never_shows_source_class_or_radar_terminology(tmp_path):
+def test_public_card_shows_the_source_type_label_but_never_radar_terminology(tmp_path):
+    """Source-attribution pass (design/DECISIONS.md): supersedes the
+    former test of the same shape, which asserted "Official company
+    source" was never shown — that was the pre-attribution-pass design;
+    the approved behavior now is the opposite, the source-type label is
+    always visible. Radar-internal jargon must still never appear."""
     daily_news_store.upsert_new_stories(tmp_path, [_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -175,11 +226,56 @@ def test_public_card_never_shows_source_class_or_radar_terminology(tmp_path):
 
     content_only = [m.value for m in at.markdown if not m.value.strip().startswith("<style")]
     all_text = " ".join(content_only) + " ".join(str(c.value) for c in at.caption)
-    for forbidden in (
-        "Official company source", "RETRIEVAL_FAILED", "EXTRACTED", "PENDING",
-        "confidence", "matched_rules", "Review processing",
-    ):
+    assert "Official company source" in all_text
+    for forbidden in ("RETRIEVAL_FAILED", "EXTRACTED", "PENDING", "confidence", "matched_rules", "Review processing"):
         assert forbidden not in all_text
+
+
+def test_official_only_visible_stories_render_the_official_subtitle(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    all_text = " ".join(m.value for m in at.markdown)
+    assert _OFFICIAL_SUBTITLE in all_text
+    assert _MIXED_SUBTITLE not in all_text
+    # EDINET-safety-review correction (design/DECISIONS.md): the static
+    # freshness caption must read as a neutral coverage statement, not a
+    # second, contradictory official-only claim.
+    assert "Showing tracked coverage from the past 7 days." in all_text
+    assert "Showing official company updates from the past 7 days." not in all_text
+
+
+def test_mixed_source_classes_render_the_generalized_subtitle(tmp_path):
+    official = _story(id="newsitem-nvidia-abc123", company_name="NVIDIA")
+    non_official = _story(
+        id="newsitem-cnbc-xyz", company_name="NVIDIA", headline="CNBC coverage of NVIDIA",
+        sources=(NewsSourceReference(
+            publisher="CNBC", source_class=SourceClass.INDEPENDENT_JOURNALISM,
+            url="https://www.cnbc.com/x", title="CNBC coverage of NVIDIA",
+            published_at=official.sources[0].published_at, retrieved_at=official.sources[0].published_at,
+            original_language="English",
+        ),),
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [official, non_official])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    all_text = " ".join(m.value for m in at.markdown)
+    assert _MIXED_SUBTITLE in all_text
+    assert _OFFICIAL_SUBTITLE not in all_text
+    # Category distinction preserved per-card — never a blanket "editorial" claim.
+    assert "Official company source" in all_text
+    assert "Independent journalism" in all_text
+    # EDINET-safety-review correction (design/DECISIONS.md): the static
+    # freshness caption must read as a neutral coverage statement, not a
+    # second, contradictory official-only claim.
+    assert "Showing tracked coverage from the past 7 days." in all_text
+    assert "Showing official company updates from the past 7 days." not in all_text
 
 
 def test_fallback_summary_story_renders_the_exact_fallback_sentence(tmp_path):

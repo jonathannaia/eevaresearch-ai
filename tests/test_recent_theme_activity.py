@@ -248,6 +248,42 @@ def test_dashboard_recent_theme_activity_row_shows_all_required_fields(tmp_path)
     assert "f\"Explore " not in component_source
 
 
+def test_dashboard_view_link_never_points_at_the_raw_edinet_api_host(tmp_path):
+    """EDINET-safety fix (design/DECISIONS.md): an EDINET-sourced item's
+    "View ->" button must never resolve to the raw, key-required
+    api.edinet-fsa.go.jp endpoint — it must resolve to the public
+    disclosure portal root instead. One EDINET filing fixture renders on
+    three Dashboard sections at once (Recently Updated, Recent Theme
+    Activity, Regional Brief's Japan tab), so this single test proves
+    all three surfaces consistently — the global `all_text` check below
+    would fail if any of them leaked the raw API host, and the explicit
+    per-surface anchor checks confirm each one specifically."""
+    filing = FilingEvent(
+        rcept_no="S100Z0OT", corp_code="E37584", corp_name="ispace, inc.", stock_code="93480",
+        report_nm="臨時報告書", rcept_dt="2026-09-10", flr_nm="株式会社ispace",
+        source_name="EDINET", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT",
+        theme_slug="space", filed_at=_now_iso(timedelta(days=1)), original_language="Japanese",
+    )
+    _seed_filing_event(tmp_path, filing, "edinet_filing_events.json")
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+    assert "api.edinet-fsa.go.jp" not in all_text
+
+    # Recent Theme Activity's own "View ->" button.
+    view_buttons = [b for b in at.get("link_button") if b.label == "View →"]
+    assert len(view_buttons) == 1
+    assert view_buttons[0].url == "https://disclosure2.edinet-fsa.go.jp/"
+
+    # Recently Updated's own anchor ("View source ↗") and Regional
+    # Brief's own anchor ("View source document ↗") are plain markdown
+    # <a> tags, not link_button widgets — confirmed directly in the
+    # rendered markdown HTML.
+    assert 'href="https://disclosure2.edinet-fsa.go.jp/"' in all_text
+
+
 def test_dashboard_view_link_absent_without_a_source_url(tmp_path):
     story = _news_story("SK Hynix", "memory", "Headline text", _now_iso(timedelta(days=1)), source_url="")
     daily_news_backend.get_daily_news_repository(_settings(tmp_path)).upsert_new_stories([story])

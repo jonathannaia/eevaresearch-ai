@@ -625,6 +625,28 @@ def test_esc_and_enum_label_and_safe_url_unit_behavior():
     assert research_cases._safe_source_url("data:text/html,x") is None
     assert research_cases._safe_source_url("") is None
     assert research_cases._safe_source_url(None) is None
+    # EDINET-safety fix (design/DECISIONS.md): a raw, key-required
+    # EDINET API URL is rewritten to the public disclosure portal root,
+    # never returned unchanged.
+    assert research_cases._safe_source_url(
+        "https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT"
+    ) == "https://disclosure2.edinet-fsa.go.jp/"
+
+
+def test_edinet_api_source_url_renders_the_public_portal_root_not_the_raw_api(monkeypatch):
+    """EDINET-safety fix (design/DECISIONS.md): a raw, key-required
+    api.edinet-fsa.go.jp evidence URL must never be rendered as a
+    clickable link — it must be rewritten to the public disclosure
+    portal root, and the displayed link text must match, never showing
+    the original API URL text while pointing elsewhere."""
+    case = _case()
+    item = _evidence_item(case_id=case.id, source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT")
+    repo = _FakeRepo(cases=[case], evidence_by_case={case.id: (item,)})
+    at = _run_with_repo(monkeypatch, repo, case_id=case.id)
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "api.edinet-fsa.go.jp" not in all_html
+    assert 'href="https://disclosure2.edinet-fsa.go.jp/"' in all_html
+    assert ">https://disclosure2.edinet-fsa.go.jp/<" in all_html
 
 
 # ============================================================

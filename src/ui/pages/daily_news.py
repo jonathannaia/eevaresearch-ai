@@ -6,13 +6,21 @@ src.data_access.daily_news.daily_news_backend.get_daily_news_repository()
 the Daily News durability workstream) — never CandidateSignal/
 FilingEvent or any Radar-owned file.
 
-The default card shows exactly five fields, per the approved scope:
-company name; official source/publisher and local publication time;
+The default card shows exactly six fields, per the approved scope:
+company name; publisher; a visible source-type label (design/
+DECISIONS.md, source-attribution pass — see _SOURCE_CLASS_LABELS below)
+resolved from the story's own already-typed NewsSourceReference.
+source_class, never inferred or guessed; local publication time;
 headline; a short Eeva-authored summary (or nothing, for an original-
 language story — see below); and a direct "Read original source" link.
-Deliberately excluded from this page: source-class labels, ranking/
-dedup data, internal status, technical failures, and any Radar
-terminology — that detail lives only in daily_news_admin.py.
+Every story produced by this pipeline today is still
+SourceClass.OFFICIAL_COMPANY (see daily_news_pipeline.py — no non-
+official source is wired in by this pass), so the source-type label
+reads "Official company source" on every currently-real card; the label
+itself is what keeps this honest once/if that ever changes. Deliberately
+still excluded from this page: ranking/dedup data, internal status,
+technical failures, and any Radar terminology — that detail lives only
+in daily_news_admin.py.
 
 The public page shows only stories published within a rolling, inclusive
 7*24-hour window (compared in UTC; naive timestamps treated as UTC,
@@ -45,12 +53,24 @@ import streamlit as st
 from src.config.settings import Settings, get_settings
 from src.data_access.daily_news import daily_news_backend
 from src.logic.formatting import fmt_datetime_local
-from src.models.daily_news_models import NewsStory, NewsStoryStatus
+from src.models.daily_news_models import NewsStory, NewsStoryStatus, SourceClass
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
 
 _FRESHNESS_WINDOW_DAYS = 7
 _ALL_COMPANIES_OPTION = "All companies"
+
+# Source-attribution pass (design/DECISIONS.md): exact, approved
+# user-facing labels for each existing SourceClass value — no new
+# category invented, no wording beyond what was explicitly approved.
+_SOURCE_CLASS_LABELS: dict[SourceClass, str] = {
+    SourceClass.OFFICIAL_COMPANY: "Official company source",
+    SourceClass.REGULATORY_FILING: "Regulatory filing",
+    SourceClass.PRESS_RELEASE_WIRE: "Press-release wire",
+    SourceClass.INDEPENDENT_JOURNALISM: "Independent journalism",
+}
+_OFFICIAL_SUBTITLE = "Company updates from official sources."
+_MIXED_SUBTITLE = "Tracked-company and thematic coverage from official and editorial sources."
 
 
 def _published_stories(settings: Settings) -> list[NewsStory]:
@@ -103,10 +123,16 @@ def _render_card(story: NewsStory) -> None:
     # daily_news_models.NewsSourceReference).
     source = story.sources[0]
     local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
+    # Source-attribution pass (design/DECISIONS.md): resolved only from
+    # the story's own already-typed source_class — an unrecognized
+    # enum-shaped value (should never occur; every SourceClass member is
+    # mapped above) degrades to the raw stored value rather than
+    # inventing a label or crashing the card.
+    source_type_label = _SOURCE_CLASS_LABELS.get(source.source_class, source.source_class.value)
 
     with st.container(border=True):
         st.markdown(
-            f'<div class="er-muted">{story.company_name} · {source.publisher} · {local_time}</div>',
+            f'<div class="er-muted">{story.company_name} · {source.publisher} · {source_type_label} · {local_time}</div>',
             unsafe_allow_html=True,
         )
         headline = story.original_title if story.translation_unavailable else story.headline
@@ -120,20 +146,37 @@ def _render_card(story: NewsStory) -> None:
         st.markdown(f"[Read original source →]({source.url})")
 
 
-def render() -> None:
-    st.markdown('<div class="er-page-title">Daily News</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="er-muted">Company updates from official sources.</div>',
-        unsafe_allow_html=True,
+def _page_subtitle(recent_stories: list[NewsStory]) -> str:
+    """Source-attribution pass (design/DECISIONS.md), future-safe
+    subtitle strategy: computed from the same 7-day, all-companies
+    `recent_stories` set the default view itself shows — an empty set is
+    treated as official-only (the conservative default; nothing visible
+    contradicts it). Never claims every non-official category is
+    "editorial" — the per-card source-type label above is what carries
+    the actual category distinction; this subtitle only ever picks
+    between the two approved, generic sentences."""
+    all_official = all(
+        source.source_class == SourceClass.OFFICIAL_COMPANY
+        for story in recent_stories for source in story.sources
     )
+    return _OFFICIAL_SUBTITLE if all_official else _MIXED_SUBTITLE
 
+
+def render() -> None:
     settings = get_settings()
     all_stories = _published_stories(settings)
+    recent_for_subtitle = _recent_stories(all_stories)
+
+    st.markdown('<div class="er-page-title">Daily News</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="er-muted">{_page_subtitle(recent_for_subtitle)}</div>',
+        unsafe_allow_html=True,
+    )
 
     selected_company = st.selectbox("Companies", options=_company_options(all_stories), index=0)
 
     st.markdown(
-        '<div class="er-muted">Showing official company updates from the past 7 days.</div>',
+        '<div class="er-muted">Showing tracked coverage from the past 7 days.</div>',
         unsafe_allow_html=True,
     )
 

@@ -16,6 +16,7 @@ import streamlit as st
 from src.logic.evidence import source_label
 from src.logic.formatting import fmt_date, fmt_pct
 from src.logic.market_map import jurisdiction_for_source
+from src.logic.source_link import public_source_url
 from src.models.models import CapitalRotationMetric, Catalyst, EvidenceItem, Signal, Theme
 from src.ui.components.badges import demo_badge, direction_dot_html, direction_rail_class, freshness_badge
 from src.ui.components.evidence_chips import evidence_chip
@@ -252,10 +253,15 @@ def signal_card(
             # per-ticker detail route to link to today.
             tickers = ", ".join(signal.related_tickers)
             st.markdown(f'<div class="er-muted" style="font-size:0.78rem;">Related: {tickers}</div>', unsafe_allow_html=True)
-        if signal.source_url:
+        # EDINET-safety fix (design/DECISIONS.md): public_source_url()
+        # rewrites a raw, key-required EDINET API URL to the public
+        # disclosure portal root; every other source's URL passes through
+        # unchanged.
+        safe_signal_source_url = public_source_url(signal.source_url)
+        if safe_signal_source_url:
             st.markdown(
                 f'<div class="er-muted" style="font-size:0.78rem;">'
-                f'<a href="{signal.source_url}" target="_blank" rel="noopener noreferrer" '
+                f'<a href="{safe_signal_source_url}" target="_blank" rel="noopener noreferrer" '
                 f'style="color:var(--text-2); text-decoration:underline;">View source document ↗</a></div>',
                 unsafe_allow_html=True,
             )
@@ -349,7 +355,12 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
                     f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">{_esc(" · ".join(provenance))}</div>',
                     unsafe_allow_html=True,
                 )
-            safe_url = _safe_url(signal.source_url)
+            # EDINET-safety fix (design/DECISIONS.md): applied after the
+            # existing scheme-safety check — public_source_url() rewrites a
+            # raw, key-required EDINET API URL to the public disclosure
+            # portal root; every other source's URL passes through
+            # unchanged.
+            safe_url = public_source_url(_safe_url(signal.source_url))
             if safe_url:
                 st.markdown(
                     f'<div style="margin-top:0.1rem;"><a href="{html.escape(safe_url, quote=True)}" '

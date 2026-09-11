@@ -91,6 +91,7 @@ from datetime import datetime
 import streamlit as st
 
 from src.logic import filing_display
+from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
 from src.ui.components.radar_status import RadarItem
 
@@ -127,7 +128,6 @@ def _identity_line(filing: FilingEvent) -> str:
 
 _EDGAR_SOURCE_NAME = "SEC EDGAR"
 _EDINET_SOURCE_NAME = "EDINET"
-_EDINET_SEARCH_URL = "https://disclosure2.edinet-fsa.go.jp/"
 
 
 def _public_source_url(filing: FilingEvent) -> str:
@@ -151,13 +151,28 @@ def _public_source_url(filing: FilingEvent) -> str:
     accession number every EDGAR FilingEvent already stores, never
     guessed). Still never the bare directory listing.
 
-    DART/EDINET are untouched: neither source's `source_url` ends with
-    "/", so both fall through to the unmodified `filing.source_url`."""
-    if filing.source_name != _EDGAR_SOURCE_NAME or not filing.source_url.endswith("/"):
-        return filing.source_url
-    if filing.primary_document:
-        return filing.source_url + filing.primary_document
-    return f"{filing.source_url}{filing.rcept_no}-index.htm"
+    DART is untouched: its own `source_url` never ends with "/", so it
+    falls through to the unmodified `filing.source_url`. EDINET-safety
+    fix (design/DECISIONS.md): every branch's result — including DART's
+    and EDGAR's own unmodified `filing.source_url` fall-throughs — is
+    finally passed through src.logic.source_link.public_source_url()
+    below, consolidating what used to be this file's own separate,
+    bespoke `_EDINET_SEARCH_URL`-based branch in `_render_quiet_links`
+    into the one shared helper every other source-link rendering surface
+    in this app now also uses. For EDINET, `filing.source_url` is always
+    the raw, key-required api.edinet-fsa.go.jp document endpoint (see
+    EdinetClient.document_index_url()'s own docstring), so this line is
+    what actually rewrites it to the public portal root today — the
+    EDGAR-specific rewriting above never applies to an EDINET URL, since
+    api.edinet-fsa.go.jp URLs never end in "/"."""
+    if filing.source_name == _EDGAR_SOURCE_NAME and filing.source_url.endswith("/"):
+        if filing.primary_document:
+            resolved = filing.source_url + filing.primary_document
+        else:
+            resolved = f"{filing.source_url}{filing.rcept_no}-index.htm"
+    else:
+        resolved = filing.source_url
+    return public_source_url(resolved) or resolved
 
 
 _EDINET_LOOKUP_GUIDANCE = (
@@ -202,15 +217,17 @@ def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> 
     EDINET carries no working direct document link (see
     `_edinet_locator_line`'s docstring), so it renders a different,
     honest action instead: a link to the official public search portal
-    root, plus a locator line naming the fields a reader needs to find
-    this exact filing there. `filing.source_url`/api.edinet-fsa.go.jp is
-    never rendered as a clickable EDINET link, and no credential, query
+    root (via `_public_source_url`, which now consolidates the EDINET
+    URL-safety rewrite — see that function's own docstring), plus a
+    locator line naming the fields a reader needs to find this exact
+    filing there. `filing.source_url`/api.edinet-fsa.go.jp is never
+    rendered as a clickable EDINET link, and no credential, query
     parameter, or document token is ever attached to the portal link."""
     if filing.source_name == _EDINET_SOURCE_NAME:
         link_cols = st.columns([2, 7])
         with link_cols[0]:
             with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
-                st.link_button("Search original EDINET filing ↗", _EDINET_SEARCH_URL, use_container_width=True)
+                st.link_button("Search original EDINET filing ↗", _public_source_url(filing), use_container_width=True)
         locator = _edinet_locator_line(filing, filed_label)
         if locator:
             st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{locator}</div>', unsafe_allow_html=True)

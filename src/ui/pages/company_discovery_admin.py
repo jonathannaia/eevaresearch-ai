@@ -18,6 +18,7 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access.company_discovery.company_discovery_backend import get_candidate_issuer_repository
 from src.data_access.state_db.candidate_issuer_repository import WORKER_STATUS_KEY
+from src.logic.source_link import public_source_url
 from src.ui.components.section import section_header
 
 
@@ -101,4 +102,11 @@ def render() -> None:
                             f"({row['source_type']}, {row['source_name']})"
                         )
                         st.caption(row["source_snippet"])
-                        st.write(f"[source]({row['source_url']})")
+                        # EDINET-safety fix (design/DECISIONS.md):
+                        # public_source_url() rewrites a raw, key-required
+                        # EDINET API URL to the public disclosure portal
+                        # root; every other source's URL passes through
+                        # unchanged.
+                        safe_evidence_url = public_source_url(row["source_url"])
+                        if safe_evidence_url:
+                            st.write(f"[source]({safe_evidence_url})")

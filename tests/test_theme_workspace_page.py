@@ -609,6 +609,25 @@ def test_theme_not_found_renders_empty_state(monkeypatch, tmp_path):
 
 
 # ============================================================
+# EDINET-safety fix (design/DECISIONS.md)
+# ============================================================
+
+
+def test_safe_source_url_rewrites_the_raw_edinet_api_host_to_the_public_portal():
+    """A raw, key-required EDINET API URL is never returned unchanged —
+    it is rewritten to the public disclosure portal root, the same fix
+    applied identically at every other source-link rendering surface in
+    the app."""
+    assert theme_workspace._safe_source_url(
+        "https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0OT"
+    ) == "https://disclosure2.edinet-fsa.go.jp/"
+    # Non-EDINET URLs remain unchanged, exactly as before this fix.
+    assert theme_workspace._safe_source_url("https://example.com/f") == "https://example.com/f"
+    assert theme_workspace._safe_source_url("javascript:alert(1)") is None
+    assert theme_workspace._safe_source_url(None) is None
+
+
+# ============================================================
 # Scope guard — no other unexpected file touched
 # ============================================================
 
