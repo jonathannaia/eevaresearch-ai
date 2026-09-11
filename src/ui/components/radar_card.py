@@ -223,6 +223,14 @@ def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> 
 
 
 _EXCERPT_MAY_BE_INCOMPLETE_NOTICE = "Excerpt may be incomplete. Open the official filing for the full document."
+# Excerpt-display-trim fix (design/DECISIONS.md): shown in place of the
+# raw excerpt only when may_be_incomplete is True AND
+# filing_display.trim_excerpt_for_display() found no safe complete-
+# sentence boundary anywhere in the text — never a fabricated claim
+# about the filing's content, just an honest statement that no safe
+# excerpt could be shown. The existing "Excerpt may be incomplete..."
+# notice still renders directly below this, unchanged.
+_NO_SAFE_EXCERPT_BOUNDARY_FALLBACK = "A complete excerpt could not be safely determined for this filing."
 
 
 def _render_expandable_text(
@@ -237,14 +245,25 @@ def _render_expandable_text(
     updates on the same rerun it's clicked, matching every other toggle
     in this app.
 
-    `may_be_incomplete` (filing-card excerpt-honesty fix): when True,
-    renders `_EXCERPT_MAY_BE_INCOMPLETE_NOTICE` directly below `text`,
-    only while this toggle is expanded — never as a standalone message,
-    never when collapsed. Driven by the caller's own
-    filing_display.excerpt_may_be_incomplete(candidate.excerpt_original)
-    check, shared across every excerpt toggle on one card since it is
-    always about the same underlying original-language extraction cap,
-    regardless of which excerpt (original or translated) is shown."""
+    `may_be_incomplete` (filing-card excerpt-honesty fix, extended by the
+    excerpt-display-trim fix): when True, the displayed `text` is first
+    passed through filing_display.trim_excerpt_for_display(), which cuts
+    it back to its own last complete sentence boundary — discarding only
+    a trailing partial-sentence fragment, never a complete sentence,
+    never `text` itself (the caller's own stored CandidateSignal is
+    never touched, only this local render). When no safe boundary exists
+    at all, `_NO_SAFE_EXCERPT_BOUNDARY_FALLBACK` is shown instead of the
+    raw, possibly-fragmentary text. `_EXCERPT_MAY_BE_INCOMPLETE_NOTICE`
+    still renders directly below either outcome, only while this toggle
+    is expanded — never as a standalone message, never when collapsed.
+    When `may_be_incomplete` is False, `text` is rendered completely
+    unchanged, even if it happens to lack terminal punctuation — trimming
+    only ever applies to an excerpt already believed possibly cut by the
+    shared extraction cap (see
+    filing_display.excerpt_may_be_incomplete(candidate.excerpt_original)),
+    shared across every excerpt toggle on one card since it is always
+    about the same underlying cap, regardless of which excerpt (original
+    or translated) is shown."""
     if toggle_key not in st.session_state:
         st.session_state[toggle_key] = False
 
@@ -258,7 +277,10 @@ def _render_expandable_text(
 
     if expanded:
         st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;"><strong>{html.escape(section_label)}</strong></div>', unsafe_allow_html=True)
-        st.markdown(f'<div>{html.escape(text)}</div>', unsafe_allow_html=True)
+        display_text = text
+        if may_be_incomplete:
+            display_text = filing_display.trim_excerpt_for_display(text) or _NO_SAFE_EXCERPT_BOUNDARY_FALLBACK
+        st.markdown(f'<div>{html.escape(display_text)}</div>', unsafe_allow_html=True)
         if may_be_incomplete:
             st.markdown(
                 f'<div class="er-muted" style="margin-top:0.3rem;">{html.escape(_EXCERPT_MAY_BE_INCOMPLETE_NOTICE)}</div>',

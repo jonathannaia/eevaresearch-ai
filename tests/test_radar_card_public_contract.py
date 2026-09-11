@@ -579,6 +579,222 @@ def test_s100z0ot_leading_bom_no_longer_blocks_artifact_cleanup(tmp_path):
         assert leaked not in all_text, leaked
 
 
+# ============================================================
+# Excerpt-display-trim fix \u2014 S100Z0OT, DART, EDGAR, no-safe-boundary,
+# display-only, and Summary-regression coverage.
+# ============================================================
+
+
+def test_s100z0ot_translated_excerpt_trims_trailing_unterminated_clause(tmp_path):
+    """Live regression: the displayed "Translated filing excerpt" ended
+    "...(3) Details of Financial Covenants As of the end of each fiscal
+    year, the consolidated" \u2014 a mid-sentence fragment. The panel must now
+    end at the last real sentence boundary, dropping that whole
+    unterminated tail, while the Summary line (built independently via
+    extractive_summary(), unaffected by this fix) still renders
+    correctly on the same card."""
+    filing = _s100z0ot_filing()
+    _seed_edinet_filing_events(tmp_path, [filing])
+    leaked_translation = (
+        "The Company hereby submits this report. "
+        "(2) Overview of the loan agreement is as follows: the Company "
+        "borrowed funds from Shizuoka Bank. "
+        "(3) Details of Financial Covenants As of the end of each fiscal "
+        "year, the consolidated"
+    )
+    excerpt_original = "\u81e8\u6642\u5831\u544a\u66f8\u306e\u672c\u6587\u3067\u3059\u3002" + ("\u3053\u308c\u306f\u88dc\u8db3\u306e\u8a18\u8f09\u3067\u3059\u3002" * 55)
+    assert len(excerpt_original) >= 600  # exercises the completeness disclosure/trim path
+    candidate = CandidateSignal(
+        id="edinet-cand-s100z0ot-trim", filing=filing, matched_rules=["extraordinary_report:010:180000:010"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=excerpt_original,
+        excerpt_translation=Translation(
+            translated_text=leaked_translation, provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+    stored_translation_before = candidate.excerpt_translation.translated_text
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    # Summary regression: extractive_summary() runs on the same
+    # (untrimmed) translated text and is unaffected by this fix.
+    assert "The Company hereby submits this report." in all_text
+
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+
+    assert "the consolidated" not in all_text
+    assert "As of the end of each fiscal year" not in all_text
+    assert "(2) Overview of the loan agreement is as follows: the Company borrowed funds from Shizuoka Bank." in all_text
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+    # Display-only: the stored translation itself is never mutated.
+    assert candidate.excerpt_translation.translated_text == stored_translation_before == leaked_translation
+
+
+def test_dart_translated_excerpt_trims_when_capped_and_stays_verbatim_when_short(tmp_path):
+    """Same trimming behavior for DART, plus the companion proof of
+    requirement 6: an excerpt UNDER the extraction cap is rendered
+    completely unchanged, even lacking terminal punctuation, because
+    may_be_incomplete is only ever True at/above the cap."""
+    _seed_corp_codes(tmp_path)
+    capped_filing = FilingEvent(
+        rcept_no="20260812000201", corp_code="00126380", corp_name="\uc0bc\uc131\uc804\uc790", stock_code="005930",
+        report_nm="\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790\ub4f1 \uacb0\uc815", rcept_dt="20260812", flr_nm="\uc0bc\uc131\uc804\uc790",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000201",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [capped_filing])
+    capped_translation = (
+        "The Board resolved to approve the new facility investment. "
+        "The investment will proceed in phases starting with site preparation"
+    )
+    capped_original = "\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790\ub4f1 \uad00\ub828 \uc6d0\ubb38." + ("\ucd94\uac00 \uc124\uba85\uc785\ub2c8\ub2e4." * 70)
+    assert len(capped_original) >= 600
+    capped_candidate = CandidateSignal(
+        id="cand-dart-trim-capped", filing=capped_filing, matched_rules=["capex_or_facility_investment:facility_investment:\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=capped_original,
+        excerpt_translation=Translation(
+            translated_text=capped_translation, provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {capped_candidate.id: capped_candidate})
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "starting with site preparation" not in all_text
+    assert "The Board resolved to approve the new facility investment." in all_text
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+
+
+def test_dart_short_uncapped_excerpt_renders_unchanged_without_terminal_punctuation(tmp_path):
+    _seed_corp_codes(tmp_path)
+    short_filing = FilingEvent(
+        rcept_no="20260812000202", corp_code="00126380", corp_name="\uc0bc\uc131\uc804\uc790", stock_code="005930",
+        report_nm="\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790\ub4f1 \uacb0\uc815", rcept_dt="20260812", flr_nm="\uc0bc\uc131\uc804\uc790",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000202",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [short_filing])
+    short_translation = "Loan amount stated without a terminating period"
+    short_candidate = CandidateSignal(
+        id="cand-dart-trim-short", filing=short_filing, matched_rules=["capex_or_facility_investment:facility_investment:\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="\uc9e7\uc740 \uc6d0\ubb38",
+        excerpt_translation=Translation(
+            translated_text=short_translation, provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {short_candidate.id: short_candidate})
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert short_translation in all_text  # rendered byte-identical, no trimming applied
+    assert "Excerpt may be incomplete" not in all_text
+
+
+def test_edgar_capped_excerpt_trims_trailing_unterminated_clause(tmp_path):
+    _seed_edgar_ciks(tmp_path)
+    filing = FilingEvent(
+        rcept_no="0001045810-26-000003", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="8-K filing", rcept_dt="2026-08-28", flr_nm="NVIDIA", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000003/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="nvda-8k.htm",
+    )
+    _seed_edgar_filing_events(tmp_path, filing)
+    capped_excerpt = (
+        "Item 2.03 Creation of a Direct Financial Obligation. "
+        + ("The Company continues normal operations. " * 12)
+        + "The facility bears interest at a rate determined by reference to the "
+        "outstanding principal balance and applicable margin as"
+    )
+    assert len(capped_excerpt) >= 600
+    candidate = CandidateSignal(
+        id="cand-edgar-trim-1", filing=filing, matched_rules=["financing:new_debt:credit facility"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=capped_excerpt,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    filing_toggle = [b for b in at.button if b.label == "View filing excerpt"]
+    filing_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "applicable margin as" not in all_text
+    assert "The Company continues normal operations." in all_text
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+
+
+def test_no_safe_sentence_boundary_shows_the_approved_fallback(tmp_path):
+    """A capped excerpt with zero sentence-ending punctuation anywhere
+    must show the approved honest fallback instead of a raw fragment,
+    with the existing incomplete-excerpt notice still directly below it.
+
+    is_readable_extracted_text()'s own sentence-check only applies past
+    200 characters, so to reach _render_expandable_text() at all with
+    zero terminators the TRANSLATED text itself must stay at or under
+    that length while excerpt_original (a separate, longer field) is the
+    one that actually trips may_be_incomplete at >=600 \u2014 a real, if
+    narrow, shape: a short, terse, punctuation-free translation of a
+    much longer capped original."""
+    _seed_corp_codes(tmp_path)
+    filing = FilingEvent(
+        rcept_no="20260812000203", corp_code="00126380", corp_name="\uc0bc\uc131\uc804\uc790", stock_code="005930",
+        report_nm="\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790\ub4f1 \uacb0\uc815", rcept_dt="20260812", flr_nm="\uc0bc\uc131\uc804\uc790",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000203",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [filing])
+    no_punctuation_translation = "word " * 30  # 150 chars: under the 200-char readability sentence-check floor, zero terminators
+    assert len(no_punctuation_translation) <= 200
+    no_punctuation_original = "\uc6d0\ubb38 " * 210
+    assert len(no_punctuation_original) >= 600
+    candidate = CandidateSignal(
+        id="cand-dart-no-boundary", filing=filing, matched_rules=["capex_or_facility_investment:facility_investment:\uc2e0\uaddc\uc2dc\uc124\ud22c\uc790"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=no_punctuation_original,
+        excerpt_translation=Translation(
+            translated_text=no_punctuation_translation, provider="DeepL", source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
+    translation_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert "A complete excerpt could not be safely determined for this filing." in all_text
+    assert "Excerpt may be incomplete. Open the official filing for the full document." in all_text
+    # The raw punctuation-free text legitimately still appears once, as
+    # the Summary (extractive_summary() returns short text verbatim when
+    # it already fits under its own target — unrelated, unaffected,
+    # pre-existing behavior) — but never as the excerpt panel's own body.
+    excerpt_panel_start = all_text.index("Translated filing excerpt</strong>")
+    assert no_punctuation_translation.strip() not in all_text[excerpt_panel_start:]
+
+
 def test_edinet_machine_artifact_cleanup_never_applies_to_dart_or_edgar(tmp_path):
     """The same leading artifact shape, seeded on a DART filing, must be
     preserved verbatim — the cleanup only ever runs for source_name ==
