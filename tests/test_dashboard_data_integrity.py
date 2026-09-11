@@ -302,12 +302,32 @@ def test_public_theme_evidence_row_shows_jurisdiction(tmp_path, monkeypatch):
 
 
 # ============================================================
-# Market Map "view all in Themes" link — gated on real published-Theme
-# count (navigation/empty-state pass, design/DECISIONS.md)
+# "view all in Themes" link — gated on real published-Theme count
+# (navigation/empty-state pass, design/DECISIONS.md)
+#
+# Dashboard triage redesign (design/DECISIONS.md): this section
+# originally also covered the Market Map tile grid's own "+N more —
+# view all in Themes →" link, which showed whenever at least one
+# published Theme existed at all (regardless of company-group overflow).
+# That link no longer exists — the Market Map component was deleted from
+# the Dashboard render path. The absence case below is unchanged and
+# still holds (neither Theme Health's own "+N more" link, gated on more
+# than 5 published Themes, nor Recent Theme Activity's own link ever use
+# this exact phrase — Recent Theme Activity renders exactly one generic
+# "Browse all themes →" link for the whole component, routing to the
+# unfiltered Themes index; it is generic, never per-theme, because no
+# validated route from a taxonomy theme_slug to a specific Themes-page
+# destination exists — see recent_theme_activity.py's own "Corrective
+# pass" docstring note). The presence case previously asserted here was
+# Market-Map-specific — a
+# single published Theme is not enough to trigger Theme Health's own
+# distinct ">5 published Themes" gate — and is deliberately removed
+# rather than left to fail silently now that the feature it proved is
+# gone.
 # ============================================================
 
 
-def test_market_map_view_all_in_themes_link_absent_with_zero_published_themes(tmp_path, monkeypatch):
+def test_view_all_in_themes_link_absent_with_zero_published_themes(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     _patch_dashboard_settings(monkeypatch, settings)
     at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
@@ -315,23 +335,3 @@ def test_market_map_view_all_in_themes_link_absent_with_zero_published_themes(tm
     assert not at.exception
     all_text = " ".join(m.value for m in at.main.get("markdown") if not m.value.startswith("<style>"))
     assert "view all in Themes" not in all_text
-
-
-def test_market_map_view_all_in_themes_link_present_with_a_real_published_theme(tmp_path, monkeypatch):
-    """get_page("themes") only resolves to a real Page object when run
-    through app.py's real st.navigation entry point — an isolated
-    per-page AppTest harness never populates st.session_state["_pages"]
-    (same limitation documented elsewhere in this test suite), so this
-    test runs through app.py instead of DASHBOARD_HARNESS. Mandatory
-    Google sign-in gate (design/DECISIONS.md): see the sibling test above
-    for why sign-in must be simulated here too."""
-    settings = _settings(tmp_path)
-    _publish_theme(settings)
-    _patch_dashboard_settings(monkeypatch, settings)
-    _sign_in_as(monkeypatch)
-    at = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=15)
-    at.run()
-    at.run()  # second run: dashboard becomes the default page
-    assert not at.exception
-    page_links = [pl for pl in at.main.get("page_link") if "view all in Themes" in (pl.label or "")]
-    assert len(page_links) >= 1

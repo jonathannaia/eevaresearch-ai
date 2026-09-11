@@ -83,16 +83,6 @@
     --accent-hover: #163E68;
     --focus: #2563EB;
     --link: #1D4ED8;
-    /* Market Map grouped-tile-mosaic pass (design/DECISIONS.md): four
-       purely decorative zone tints, cycled by theme-section enumeration
-       order (src/ui/components/market_map.py) — never tied to company
-       count, theme importance, or any size/value signal. All four stay
-       close in lightness to --bg/--surface-2 so the white tile cards on
-       top remain the dominant visual element. */
-    --mm-tint-0: #F4F8FF;
-    --mm-tint-1: #F5F7F2;
-    --mm-tint-2: #FBF6F2;
-    --mm-tint-3: #F6F5FB;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
@@ -589,52 +579,6 @@ a:hover { color: var(--accent-hover); }
    marking it as the page's lead element. No new fill, gradient, or
    one-off visual system — one border-side on the existing card shape. */
 .st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
-
-/* ---------- Market Map: grouped tile mosaic ----------
-   Grouped-tile-mosaic pass (design/DECISIONS.md) — see
-   src/ui/components/market_map.py's own module docstring. Each theme's
-   tiles render inside one extra st.container(key="mm-zone-tint{N}-
-   {slug}") wrapper, turned here into a dense, responsive CSS Grid via
-   the same [class*="st-key-..."] attribute-selector hook this file
-   already uses for .st-key-card-*. Tiles are always equal-sized;
-   grid-template-columns/auto-fill governs wrapping only, never implying
-   market cap, returns, momentum, or importance. The four tint rules
-   below are a decorative enumeration cycle (see --mm-tint-* above) —
-   which zone gets which tint depends only on its position among the
-   rendered theme sections, not on anything about its companies. */
-[class*="st-key-mm-zone-tint"] {
-    display: grid !important;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: var(--r-md);
-    margin-bottom: var(--space-2);
-}
-[class*="st-key-mm-zone-tint0-"] { background: var(--mm-tint-0); }
-[class*="st-key-mm-zone-tint1-"] { background: var(--mm-tint-1); }
-[class*="st-key-mm-zone-tint2-"] { background: var(--mm-tint-2); }
-[class*="st-key-mm-zone-tint3-"] { background: var(--mm-tint-3); }
-
-@media (max-width: 860px) {
-    [class*="st-key-mm-zone-tint"] { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-}
-
-/* Ticker/code label + region badge share one row per tile. */
-.er-mm-tile-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; flex-wrap: wrap; }
-/* Region badge: the visible "US"/"KR"/"JP" text is the actual signal and
-   is always present regardless of color support/rendering — the
-   per-region border tint just below is optional reinforcement layered
-   on top of that same text, never a replacement for it. */
-.er-mm-region-badge {
-    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em;
-    padding: 1px 6px; border-radius: 999px;
-    border: 1px solid var(--hairline-2);
-    color: var(--text-2); background: var(--surface);
-    white-space: nowrap;
-}
-.er-mm-region-us { border-color: #93A9C7; }
-.er-mm-region-kr { border-color: #9BBFA3; }
-.er-mm-region-jp { border-color: #C9A6A0; }
 
 /* ---------- theme icon motifs ---------- */
 .er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }

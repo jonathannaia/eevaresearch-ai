@@ -1,12 +1,27 @@
-"""Phase E1 — Dashboard Market Map (design/DASHBOARD_MARKET_MAP_PHASE_E.md):
-a theme-grouped company navigator (not a price heatmap — no quote/price
-capability exists anywhere in this build), a compact Regional Brief of
-real tracked-issuer filing titles for US/KR/JP with an explicit "not
-connected" state for China, and Capital Rotation demoted to a secondary,
-truthfully-labeled collapsed expander. Every test here is a pure
-rendering/content/source-inspection check via AppTest or direct unit
-calls — no network call, worker, scheduler, or database migration is
-exercised by this phase, and this file itself proves none was introduced.
+"""Phase E1 — Regional Brief (design/DASHBOARD_MARKET_MAP_PHASE_E.md): a
+compact Regional Brief of real tracked-issuer filing titles for US/KR/JP
+with an explicit "not connected" state for China. Every test here is a
+pure rendering/content/source-inspection check via AppTest or direct
+unit calls — no network call, worker, scheduler, or database migration
+is exercised by this phase, and this file itself proves none was
+introduced.
+
+Dashboard triage redesign (design/DECISIONS.md): this file originally
+also covered the Market Map tile grid's Dashboard-rendering behavior and
+its src/logic/market_map.py grouping/selection functions
+(group_companies_by_theme, company_selection_key,
+find_company_by_selection_key). Those tests are deliberately removed
+here, not left to fail silently — the Market Map component
+(src/ui/components/market_map.py) was deleted from the Dashboard render
+path (superseding commit ee685cb cleanly) in favor of Recent Theme
+Activity, and the three grouping/selection functions it alone depended
+on were removed as dead code from src/logic/market_map.py in the same
+change. Recent Theme Activity's own equivalent coverage — Dashboard
+rendering, ordering, "no new integration," and no-fabricated-language
+guards — lives in tests/test_recent_theme_activity.py, not here.
+REGION_SOURCE/jurisdiction_for_source (also in src/logic/market_map.py)
+are unrelated to that removal — genuinely still used by several other,
+unchanged modules — so their own coverage below is unchanged.
 """
 from __future__ import annotations
 
@@ -17,23 +32,12 @@ from unittest.mock import patch
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
-from src.config.tracked_companies import TRACKED_COMPANIES, get_tracked_companies
-from src.logic.market_map import (
-    REGION_SOURCE,
-    company_selection_key,
-    find_company_by_selection_key,
-    group_companies_by_theme,
-)
+from src.logic.market_map import REGION_SOURCE
 from src.models.models import FilingEvent
 from src.ui.components import regional_brief
 
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
 REPO_ROOT = Path(__file__).parent.parent
-_NEW_FILES = (
-    REPO_ROOT / "src" / "logic" / "market_map.py",
-    REPO_ROOT / "src" / "ui" / "components" / "market_map.py",
-    REPO_ROOT / "src" / "ui" / "components" / "regional_brief.py",
-)
 
 
 def _run_dashboard():
@@ -46,168 +50,18 @@ def _text(at) -> str:
     return " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
 
 
-# ============================== MARKET MAP RENDERING ==============================
-
-def test_dashboard_market_map_has_no_price_coverage_copy():
-    """Navigation/empty-state pass (design/DECISIONS.md): "Price coverage
-    not connected" was removed rather than kept as implementation-status
-    language — no price data exists, so cards simply omit price
-    entirely instead of naming its absence."""
-    at = _run_dashboard()
-    assert not at.exception
-    all_text = _text(at)
-    assert "Market Map" in all_text
-    assert "Company and theme map" in all_text
-    assert "Price coverage not connected" not in all_text
-    assert "price coverage" not in all_text.lower()
-
-
-def test_market_map_never_uses_live_today_or_heatmap_language():
-    at = _run_dashboard()
-    all_text = _text(at)
-    market_map_start = all_text.index("Market Map")
-    regional_brief_start = all_text.index("Regional Brief")
-    market_map_chunk = all_text[market_map_start:regional_brief_start]
-    for forbidden in ("live", "today", "market performance", "heatmap", "market movement"):
-        assert forbidden not in market_map_chunk.lower()
-
-
-# ============================== GROUPED TILE MOSAIC (design/DECISIONS.md) ==============================
-
-
-def test_market_map_still_shows_every_theme_and_multi_theme_duplication_on_the_rendered_page():
-    """Grouped-tile-mosaic pass: the visual layout changed (CSS Grid
-    zones instead of a fixed 3-column st.columns), but the underlying
-    company/theme membership shown on the actual rendered page must be
-    byte-identical to before — including a company appearing under every
-    theme it belongs to (Samsung Electronics and SK Hynix are both
-    "memory" and "ai-buildout", per src/config/tracked_companies.py)."""
-    at = _run_dashboard()
-    assert not at.exception
-    all_text = _text(at)
-    for theme_name in ("AI Buildout", "Humanoids", "Space", "Memory"):
-        assert theme_name in all_text
-    assert all_text.count("Samsung Electronics") >= 2
-    assert all_text.count("SK Hynix") >= 2
-
-
-def test_market_map_tile_shows_name_ticker_and_text_region_badge():
-    """Every tile must show its company name, the existing per-source
-    ticker/code label (unchanged _ticker_label formatting), and a plain
-    text region badge — required to be readable without color, per the
-    approved design."""
-    at = _run_dashboard()
-    all_text = _text(at)
-    market_map_start = all_text.index("Market Map")
-    market_map_chunk = all_text[market_map_start:]
-
-    nvidia_start = market_map_chunk.index("NVIDIA")
-    chunk = market_map_chunk[nvidia_start:nvidia_start + 200]
-    assert "NVDA" in chunk
-    assert "US" in chunk
-
-    sk_hynix_start = market_map_chunk.index("SK Hynix")
-    kr_chunk = market_map_chunk[sk_hynix_start:sk_hynix_start + 200]
-    assert "KRX 000660" in kr_chunk
-    assert "KR" in kr_chunk
-
-    fanuc_start = market_map_chunk.index("FANUC CORPORATION")
-    jp_chunk = market_map_chunk[fanuc_start:fanuc_start + 200]
-    assert "EDINET code" in jp_chunk
-    assert "JP" in jp_chunk
-
-
-def test_market_map_investigate_button_label_includes_the_company_name():
-    """Approved design: "Investigate [Company name] →" — descriptive for
-    screen readers and dense-grid legibility, not the old bare
-    "Investigate →" repeated on every tile."""
-    at = _run_dashboard()
-    labels = {b.label for b in at.button}
-    assert "Investigate NVIDIA →" in labels
-    assert "Investigate SK Hynix →" in labels
-    assert "Investigate →" not in labels  # the old, non-descriptive label must be gone
-
-
-def test_market_map_investigate_click_still_opens_the_existing_selected_detail_panel():
-    """Pure CSS/layout change only — the click-to-investigate mechanism
-    (company_selection_key/find_company_by_selection_key round-trip,
-    _render_selected_detail's own content) must be completely unchanged.
-    The "Related filings / Open Radar Inbox ->" link itself isn't
-    assertable through this isolated per-page harness — get_page(...)
-    only resolves a real Page object when run through app.py's own
-    st.navigation entry point (same documented limitation as the
-    "view all in Themes" tests in tests/test_dashboard_data_integrity.py)
-    — so this test covers everything _render_selected_detail renders
-    that IS observable here."""
-    at = _run_dashboard()
-    investigate = next(b for b in at.button if b.label == "Investigate NVIDIA →")
-    investigate.click().run()
-    assert not at.exception
-    all_text = _text(at)
-    assert "Theme membership:" in all_text
-    assert "Listing exchange: NASDAQ · NVDA" in all_text
-    assert "What may explain recent activity" in all_text
-    assert any(b.label == "Close" for b in at.button)
-
-
-# ============================== GROUPING LOGIC ==============================
-
-def test_group_companies_by_theme_has_no_second_mapping_and_preserves_multi_theme():
-    themes = sorted({slug for c in TRACKED_COMPANIES for slug in c.themes})
-    grouped = group_companies_by_theme(themes)
-    samsung = next(c for c in TRACKED_COMPANIES if c.name == "Samsung Electronics")
-    sk_hynix = next(c for c in TRACKED_COMPANIES if c.name == "SK Hynix")
-    for company in (samsung, sk_hynix):
-        assert set(company.themes) == {"memory", "ai-buildout"}
-        for slug in company.themes:
-            assert company in grouped[slug]
-    # Every company returned actually exists in the one authoritative
-    # registry — nothing invented, nothing from a second list.
-    for slug, companies in grouped.items():
-        for c in companies:
-            assert c in TRACKED_COMPANIES
-            assert slug in c.themes
-
-
-def test_company_selection_key_round_trips():
-    for company in get_tracked_companies(active_only=True):
-        key = company_selection_key(company)
-        assert find_company_by_selection_key(key) == company
-
-
-def test_market_map_component_reads_only_tracked_companies_no_duplicate_registry():
-    """src/logic/market_map.py and src/ui/components/market_map.py must
-    read src.config.tracked_companies exclusively — never construct their
-    own TrackedCompany/company list."""
-    for path in (REPO_ROOT / "src" / "logic" / "market_map.py", REPO_ROOT / "src" / "ui" / "components" / "market_map.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "TrackedCompany(" not in source  # no new instances constructed
-        assert "src.config.tracked_companies" in source or "from src.config.tracked_companies" in source
-
-
 # ============================== NO NEW INTEGRATIONS ==============================
 
-def test_phase_e1_introduces_no_quote_provider_network_or_secret_dependency():
+def test_regional_brief_introduces_no_quote_provider_network_or_secret_dependency():
     forbidden_substrings = (
         "yfinance", "alpha_vantage", "alphavantage", "polygon.io", "iexcloud", "finnhub",
         "marketstack", "twelvedata", "tiingo", "requests.get(", "requests.post(", "httpx.",
         "urllib.request", "boto3", "threading.Thread", "subprocess", "multiprocessing",
         "EDGE_RADAR_LIVE_SCAN_ENABLED", "os.environ",
     )
-    for path in _NEW_FILES:
-        source = path.read_text(encoding="utf-8")
-        for forbidden in forbidden_substrings:
-            assert forbidden not in source, f"{path.name} unexpectedly contains {forbidden!r}"
-
-
-def test_phase_e1_market_map_files_compute_no_price_or_return_values():
-    """No fmt_pct/fmt_currency call anywhere in the new Market Map files —
-    there is no real number to format, since no price/return field exists
-    on TrackedCompany at all (Phase E report, section A)."""
-    for path in (REPO_ROOT / "src" / "logic" / "market_map.py", REPO_ROOT / "src" / "ui" / "components" / "market_map.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "fmt_pct(" not in source
-        assert "fmt_currency(" not in source
+    source = (REPO_ROOT / "src" / "ui" / "components" / "regional_brief.py").read_text(encoding="utf-8")
+    for forbidden in forbidden_substrings:
+        assert forbidden not in source, f"regional_brief.py unexpectedly contains {forbidden!r}"
 
 
 # ============================== REGIONAL BRIEF ==============================
@@ -293,14 +147,3 @@ def test_dashboard_has_no_capital_rotation_catalysts_or_todays_read():
     for heading in ("Today's Read", "Capital Rotation", "Next Catalysts", "Watchlist Changes"):
         assert heading not in all_text
     assert at.expander == []
-
-
-def test_market_map_open_radar_handoff_uses_the_existing_route():
-    """The "Open company"/"Ask Research" handoff links were removed
-    (reader-facing data-integrity pass, design/DECISIONS.md) along with
-    the Company and Research pages, neither of which had live real data
-    — only the Radar Inbox handoff remains, no new route invented."""
-    source = (REPO_ROOT / "src" / "ui" / "components" / "market_map.py").read_text(encoding="utf-8")
-    assert 'get_page("radar_inbox")' in source
-    assert 'get_page("company")' not in source
-    assert 'get_page("research")' not in source
