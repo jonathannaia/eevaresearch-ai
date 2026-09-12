@@ -15,6 +15,7 @@ from src.data_access.daily_news import feed_registry
 from src.data_access.daily_news.source_registry import (
     EXPANSION_BATCH_1_SOURCE_REGISTRY,
     EXPANSION_BATCH_2_SOURCE_REGISTRY,
+    EXPANSION_BATCH_3_SOURCE_REGISTRY,
     PILOT_SOURCE_REGISTRY,
     RUNTIME_SOURCE_REGISTRY,
     DailyNewsSourceEntry,
@@ -399,11 +400,13 @@ def test_expansion_batch_1_has_exactly_seven_entries_in_the_given_order():
 
 def test_runtime_source_registry_is_the_twelve_then_the_seven_then_the_one_in_order():
     # Was "twelve then seven" (19 total) through expansion batch 1; batch
-    # 2 (2026-09-04) appended exactly one more entry (19 + 1 = 20).
-    assert len(RUNTIME_SOURCE_REGISTRY) == 20
+    # 2 (2026-09-04) appended exactly one more entry (19 + 1 = 20); batch
+    # 3 (2026-09-11) appended exactly four more (20 + 4 = 24).
+    assert len(RUNTIME_SOURCE_REGISTRY) == 24
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[19:] == EXPANSION_BATCH_2_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[20:] == EXPANSION_BATCH_3_SOURCE_REGISTRY
 
 
 def test_pilot_source_registry_has_zero_validation_violations():
@@ -421,7 +424,7 @@ def test_runtime_source_registry_has_zero_validation_violations():
 
 def test_runtime_source_registry_source_ids_are_all_unique():
     ids = [e.source_id for e in RUNTIME_SOURCE_REGISTRY]
-    assert len(ids) == len(set(ids)) == 20
+    assert len(ids) == len(set(ids)) == 24
 
 
 def test_pilot_source_registry_covers_the_same_twelve_companies_as_pilot_feeds():
@@ -437,15 +440,16 @@ def test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order():
     field-for-field equal to adapting PILOT_SOURCE_REGISTRY directly,
     and are the first 12 entries of the real, live PILOT_FEEDS."""
     adapted_original_twelve = tuple(to_daily_news_feed_source(e) for e in PILOT_SOURCE_REGISTRY)
-    assert len(feed_registry.PILOT_FEEDS) == 20
+    assert len(feed_registry.PILOT_FEEDS) == 24
     assert feed_registry.PILOT_FEEDS[:12] == adapted_original_twelve
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[:12]) == _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER
 
 
 def test_final_runtime_feed_list_has_exactly_twenty_entries():
     # Was exactly 19 through expansion batch 1; batch 2 (2026-09-04)
-    # appended exactly one more entry (19 + 1 = 20).
-    assert len(feed_registry.PILOT_FEEDS) == 20
+    # appended exactly one more entry (19 + 1 = 20); batch 3
+    # (2026-09-11) appended exactly four more (20 + 4 = 24).
+    assert len(feed_registry.PILOT_FEEDS) == 24
 
 
 def test_final_runtime_feed_list_appends_expansion_batch_1_after_the_original_twelve():
@@ -454,9 +458,21 @@ def test_final_runtime_feed_list_appends_expansion_batch_1_after_the_original_tw
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[12:19]) == _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
 
 
+_EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER = (
+    "Qualcomm Incorporated", "Corning Inc.", "Synopsys, Inc.", "Cadence Design Systems, Inc.",
+)
+
+
+def test_final_runtime_feed_list_appends_expansion_batch_3_after_batch_2():
+    adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_3_SOURCE_REGISTRY)
+    assert feed_registry.PILOT_FEEDS[20:] == adapted_expansion
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[20:]) == _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER
+
+
 def test_final_runtime_feed_list_company_order_is_exactly_the_twenty_expected():
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS) == (
-        _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER + _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER + ("Meta Platforms, Inc.",)
+        _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER + _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
+        + ("Meta Platforms, Inc.",) + _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER
     )
 
 
@@ -562,10 +578,11 @@ def test_meta_ir_rss_remains_present_enabled_and_unchanged():
 
 
 def test_runtime_source_registry_is_nineteen_then_the_one_new_entry():
-    assert len(RUNTIME_SOURCE_REGISTRY) == 20
+    assert len(RUNTIME_SOURCE_REGISTRY) == 24
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[19:] == EXPANSION_BATCH_2_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[20:] == EXPANSION_BATCH_3_SOURCE_REGISTRY
 
 
 def test_runtime_source_registry_has_zero_violations_after_batch_2():
@@ -573,7 +590,7 @@ def test_runtime_source_registry_has_zero_violations_after_batch_2():
 
 
 def test_final_runtime_feed_list_has_exactly_twenty_entries():
-    assert len(feed_registry.PILOT_FEEDS) == 20
+    assert len(feed_registry.PILOT_FEEDS) == 24
 
 
 def test_original_nineteen_runtime_feeds_retain_their_exact_relative_order():
@@ -583,10 +600,13 @@ def test_original_nineteen_runtime_feeds_retain_their_exact_relative_order():
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[:19]) == expected_first_nineteen_companies
 
 
-def test_meta_newsroom_rss_is_appended_last():
-    assert feed_registry.PILOT_FEEDS[-1].company_name == "Meta Platforms, Inc."
-    assert feed_registry.PILOT_FEEDS[-1].feed_url == "https://about.fb.com/feed/"
-    assert feed_registry.PILOT_FEEDS[-1].canonical_domains == ("about.fb.com",)
+def test_meta_newsroom_rss_is_at_index_nineteen():
+    # Was PILOT_FEEDS[-1] through batch 2; batch 3 (2026-09-11) appended
+    # 4 more entries after it, so its fixed position is now index 19,
+    # not -1 — the old assertion would otherwise be silently false.
+    assert feed_registry.PILOT_FEEDS[19].company_name == "Meta Platforms, Inc."
+    assert feed_registry.PILOT_FEEDS[19].feed_url == "https://about.fb.com/feed/"
+    assert feed_registry.PILOT_FEEDS[19].canonical_domains == ("about.fb.com",)
 
 
 def test_no_other_company_or_source_was_added_or_changed_by_batch_2():
@@ -608,6 +628,78 @@ def test_no_other_company_or_source_was_added_or_changed_by_batch_2():
     assert runtime_companies.count("Meta Platforms, Inc.") == 2  # meta-ir-rss + meta-newsroom-rss, never more
     for name in ("Bloom Energy Corp", "Rockwell Automation", "nVent Electric plc", "Arista Networks, Inc.", "Oracle Corporation"):
         assert runtime_companies.count(name) == 1  # unchanged, still exactly one entry each
+
+
+# ============================================================
+# Daily News source-expansion batch 3 (2026-09-11) — 4 official issuer
+# IR RSS feeds for tracked companies with no prior Daily News source,
+# each independently live-verified this batch. Appended after batch 2,
+# never replacing or altering any existing entry.
+# ============================================================
+
+
+_EXPANSION_BATCH_3_EXPECTED_FIELDS = {
+    "qualcomm-ir-rss": dict(
+        canonical_url="https://investor.qualcomm.com/rss/pressrelease.aspx", domains=("investor.qualcomm.com",),
+        attribution_label="Qualcomm Incorporated", issuer_name="Qualcomm Incorporated",
+    ),
+    "corning-ir-rss": dict(
+        canonical_url="https://investor.corning.com/rss/pressrelease.aspx", domains=("investor.corning.com",),
+        attribution_label="Corning Incorporated", issuer_name="Corning Inc.",
+    ),
+    "synopsys-ir-rss": dict(
+        canonical_url="https://investor.synopsys.com/rss/pressrelease.aspx", domains=("investor.synopsys.com",),
+        attribution_label="Synopsys, Inc.", issuer_name="Synopsys, Inc.",
+    ),
+    "cadence-ir-rss": dict(
+        canonical_url="https://investor.cadence.com/rss/pressrelease.aspx", domains=("investor.cadence.com",),
+        attribution_label="Cadence Design Systems, Inc.", issuer_name="Cadence Design Systems, Inc.",
+    ),
+}
+
+
+def test_expansion_batch_3_has_exactly_four_entries_in_the_given_order():
+    assert len(EXPANSION_BATCH_3_SOURCE_REGISTRY) == 4
+    assert tuple(e.source_id for e in EXPANSION_BATCH_3_SOURCE_REGISTRY) == (
+        "qualcomm-ir-rss", "corning-ir-rss", "synopsys-ir-rss", "cadence-ir-rss",
+    )
+
+
+def test_expansion_batch_3_entries_have_the_exact_verified_fields():
+    for entry in EXPANSION_BATCH_3_SOURCE_REGISTRY:
+        expected = _EXPANSION_BATCH_3_EXPECTED_FIELDS[entry.source_id]
+        assert entry.canonical_url == expected["canonical_url"]
+        assert entry.domains == expected["domains"]
+        assert entry.attribution_label == expected["attribution_label"]
+        assert entry.issuer_name == expected["issuer_name"]
+        assert entry.category == SourceCategory.OFFICIAL_IR
+        assert entry.format == SourceFormat.RSS_ATOM
+        assert entry.jurisdiction == "United States"
+        assert entry.enabled is True
+        assert entry.health_state == SourceHealthState.VERIFIED
+        assert entry.priority == 1
+        assert entry.issuer_agnostic is False
+        assert entry.last_verified_at == "2026-09-11"
+
+
+def test_expansion_batch_3_licensing_classification_matches_the_pilot_constant():
+    pilot_entry_licensing = PILOT_SOURCE_REGISTRY[0].licensing_classification
+    for entry in EXPANSION_BATCH_3_SOURCE_REGISTRY:
+        assert entry.licensing_classification == pilot_entry_licensing
+
+
+def test_expansion_batch_3_has_zero_validation_violations():
+    assert find_registry_violations(EXPANSION_BATCH_3_SOURCE_REGISTRY) == ()
+    for entry in EXPANSION_BATCH_3_SOURCE_REGISTRY:
+        assert validate_source_entry(entry) == ()
+
+
+def test_expansion_batch_3_entries_validate_against_the_feed_adapter():
+    for entry in EXPANSION_BATCH_3_SOURCE_REGISTRY:
+        feed = to_daily_news_feed_source(entry)
+        assert feed.feed_url == entry.canonical_url
+        assert feed.canonical_domains == entry.domains
+        assert feed.company_name == entry.issuer_name
 
 
 def test_to_daily_news_feed_source_rejects_a_non_rss_atom_format():
