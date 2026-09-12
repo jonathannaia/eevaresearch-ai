@@ -118,3 +118,42 @@ def test_pre_existing_persisted_story_without_image_fields_still_loads(tmp_path)
 
     assert loaded["newsitem-legacy-1"].sources[0].image_url is None
     assert loaded["newsitem-legacy-1"].sources[0].image_alt is None
+
+
+def test_first_discovered_at_round_trips(tmp_path):
+    from dataclasses import replace
+
+    story = _story()
+    story = replace(story, sources=(replace(story.sources[0], first_discovered_at="2026-08-24T12:05:00+00:00"),))
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    loaded = daily_news_store.load_stories(tmp_path)
+    assert loaded["newsitem-nvidia-abc123"].sources[0].first_discovered_at == "2026-08-24T12:05:00+00:00"
+
+
+def test_pre_existing_persisted_story_without_first_discovered_at_still_loads(tmp_path):
+    # Backward compatibility: a story written to disk before
+    # first_discovered_at existed has no such key in its source dict at
+    # all — must still load cleanly with the field defaulting to None.
+    import json
+
+    tmp_path.mkdir(exist_ok=True)
+    legacy_payload = {
+        "newsitem-legacy-2": {
+            "id": "newsitem-legacy-2", "company_name": "NVIDIA", "ticker": "NVDA", "theme_slug": "ai-buildout",
+            "headline": "Legacy headline", "eeva_summary": "Legacy summary.", "is_fallback_summary": False,
+            "translation_unavailable": False, "original_title": None,
+            "sources": [{
+                "publisher": "NVIDIA", "source_class": "Official company source",
+                "url": "https://nvidianews.nvidia.com/news/legacy2", "title": "Legacy headline",
+                "published_at": "2026-08-24T12:00:00+00:00", "retrieved_at": "2026-08-24T12:05:00+00:00",
+                "original_language": "English", "excerpt_original": "Legacy summary.",
+            }],
+            "status": "Published", "state_history": [],
+        }
+    }
+    (tmp_path / "daily_news_stories.json").write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    loaded = daily_news_store.load_stories(tmp_path)
+
+    assert loaded["newsitem-legacy-2"].sources[0].first_discovered_at is None

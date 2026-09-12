@@ -332,6 +332,111 @@ def test_v12_daily_news_worker_status_single_row_by_worker_key():
     assert row["last_reconciliation_at"] is None
 
 
+# --- Daily News worker observability, Part A: schema version 16 ---
+
+
+def test_v15_database_upgrades_to_v16():
+    """Simulates a database that was already at v15 before the Daily
+    News worker observability Part A workstream — applies exactly
+    migrations 1..15, confirms it really is recorded at v15, then calls
+    migrate() and confirms v16's own new column and new table are
+    present and usable. Compares against schema.CURRENT_SCHEMA_VERSION
+    dynamically, same discipline as the other version-upgrade tests
+    above."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 15)
+    assert schema.get_schema_version(conn) == 15
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s1', 'NVIDIA', 'Headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, "
+        "retrieved_at, original_language) VALUES ('s1', 'NVIDIA', 'Official company source', "
+        "'https://example.com/pre-migration', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+
+    result = schema.migrate(conn)
+
+    assert result == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    assert "daily_news_source_status" in tables
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(daily_news_sources)").fetchall()}
+    assert "first_discovered_at" in columns
+    # Backward compatibility: a pre-migration row gets NULL, never backfilled.
+    row = conn.execute("SELECT first_discovered_at FROM daily_news_sources WHERE story_id = 's1'").fetchone()
+    assert row["first_discovered_at"] is None
+
+
+def test_v16_daily_news_source_status_starts_empty_and_is_usable():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_source_status").fetchone()["n"] == 0
+
+
+def test_v16_daily_news_source_status_round_trips_and_upserts():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-ir-rss', 'Meta Platforms, Inc.', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-newsroom-rss', 'Meta Platforms, Inc.', 'now', 'now')"
+    )
+    conn.commit()
+    # Two sources, one company — independent rows, proving the whole
+    # point of this table (daily_news_scan_status would have collapsed
+    # these into one company_name-keyed row).
+    rows = conn.execute(
+        "SELECT * FROM daily_news_source_status WHERE company_name = 'Meta Platforms, Inc.'"
+    ).fetchall()
+    assert {r["source_id"] for r in rows} == {"meta-ir-rss", "meta-newsroom-rss"}
+    assert rows[0]["items_discovered_last_run"] == 0
+
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-ir-rss', 'Meta Platforms, Inc.', 'later', 'later') "
+        "ON CONFLICT (source_id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, "
+        "updated_at = excluded.updated_at"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_source_status WHERE source_id = 'meta-ir-rss'").fetchone()
+    assert row["last_attempt_at"] == "later"
+    assert conn.execute("SELECT COUNT(*) AS n FROM daily_news_source_status").fetchone()["n"] == 2
+
+
+def test_v16_daily_news_source_status_accepts_http_status_and_duration():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        """
+        INSERT INTO daily_news_source_status (
+            source_id, company_name, updated_at, last_http_status, last_request_duration_ms
+        ) VALUES ('nvent-electric-ir-rss', 'nVent Electric plc', 'now', 403, 187.5)
+        """
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM daily_news_source_status WHERE source_id = 'nvent-electric-ir-rss'"
+    ).fetchone()
+    assert row["last_http_status"] == 403
+    assert row["last_request_duration_ms"] == 187.5
+
+
+def test_v16_daily_news_scan_status_unchanged_after_migration():
+    """The legacy/aggregate company-keyed table must be completely
+    unaffected by this migration — same columns, same behavior."""
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    columns_before = {row["name"] for row in conn.execute("PRAGMA table_info(daily_news_scan_status)").fetchall()}
+    assert "source_id" not in columns_before
+    assert "last_result_at" not in columns_before
+
+
 def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():
     conn = connection.connect_in_memory()
     schema.migrate(conn)

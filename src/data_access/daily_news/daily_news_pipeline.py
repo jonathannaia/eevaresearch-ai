@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -65,6 +65,16 @@ class DailyNewsScanReport:
     source_failures: dict[str, str]  # company_name -> sanitized failure_code
     suppressed_items: tuple[tuple[str, str, str], ...]  # (company_name, title, reason) — admin view only
     warnings: tuple[str, ...]
+    # Daily News worker observability, Part A (design/DECISIONS.md) —
+    # every source's own raw FeedFetchResult (entries excluded from this
+    # dict's practical use, only duration_ms/http_status/failure_code
+    # matter to the caller — but the whole result is kept, not just those
+    # fields, so nothing here needs to change shape if a future
+    # observability field is added to FeedFetchResult itself), keyed by
+    # DailyNewsFeedSource.source_id. Purely additive: populated
+    # unconditionally alongside the existing per-entry loop below, never
+    # read by any gate/dedup/cap decision in this function.
+    fetch_results: dict[str, "rss_atom_client.FeedFetchResult"] = field(default_factory=dict)
 
 
 def _story_id(company_name: str, canonical_link: str) -> str:
@@ -115,6 +125,7 @@ def run_discovery(
     newly_published: list[NewsStory] = []
     source_failures: dict[str, str] = {}
     warnings: list[str] = []
+    fetch_results: dict[str, rss_atom_client.FeedFetchResult] = {}
 
     for source in feed_sources:
         company = tracked_company_for(source.company_name)
@@ -123,6 +134,7 @@ def run_discovery(
             continue
 
         fetch_result = rss_atom_client.fetch_entries(source.feed_url)
+        fetch_results[source.source_id] = fetch_result
         if fetch_result.failure_code is not None:
             source_failures[source.company_name] = fetch_result.failure_code
             continue
@@ -162,6 +174,14 @@ def run_discovery(
                 original_language="Non-Latin script" if summary_result.translation_unavailable else "English",
                 excerpt_original=entry.summary,
                 image_url=image_url, image_alt=image_alt,
+                # Set once, at this exact construction site only — an
+                # already-known story_id short-circuits above (`if
+                # story_id in store: ... continue`) before this branch is
+                # ever reached again for the same story, so this value is
+                # structurally write-once. See NewsSourceReference's own
+                # docstring for the exact distinction from published_at/
+                # retrieved_at.
+                first_discovered_at=retrieved_at,
             )
 
             story = NewsStory(
@@ -190,4 +210,5 @@ def run_discovery(
         items_discovered=items_discovered, items_suppressed_no_url=sum(1 for *_, reason in suppressed_items if reason == "No valid canonical source URL"),
         items_deduplicated=items_deduplicated, items_already_seen=items_already_seen, stories_published=len(newly_published),
         source_failures=source_failures, suppressed_items=tuple(suppressed_items), warnings=tuple(warnings),
+        fetch_results=fetch_results,
     )

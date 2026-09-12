@@ -264,6 +264,91 @@ def test_v13_schema_upgrades_to_v14(pg_isolated_connection):
     assert row["items_suppressed_no_url_last_run"] == 0
 
 
+def test_v16_schema_upgrades_to_v17(pg_isolated_connection):
+    """Simulates a schema that was already at v16 before the Daily News
+    worker observability Part A workstream — applies exactly migrations
+    1..16, confirms it really is recorded at v16, then calls migrate()
+    and confirms v17's own new column and new table are present and
+    usable. Compares against postgres_schema.CURRENT_SCHEMA_VERSION
+    dynamically, same discipline as the other version-upgrade tests
+    above."""
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 16)
+    assert postgres_schema.get_schema_version(conn) == 16
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s1', 'NVIDIA', 'Headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, "
+        "retrieved_at, original_language) VALUES ('s1', 'NVIDIA', 'Official company source', "
+        "'https://example.com/pre-migration', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+
+    result = postgres_schema.migrate(conn)
+
+    assert result == postgres_schema.CURRENT_SCHEMA_VERSION
+    assert postgres_schema.get_schema_version(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
+    tables = conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+    ).fetchall()
+    assert "daily_news_source_status" in {row["table_name"] for row in tables}
+    columns = conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'daily_news_sources'"
+    ).fetchall()
+    assert "first_discovered_at" in {row["column_name"] for row in columns}
+    row = conn.execute("SELECT first_discovered_at FROM daily_news_sources WHERE story_id = 's1'").fetchone()
+    assert row["first_discovered_at"] is None
+
+
+def test_v17_daily_news_source_status_round_trips_and_upserts(pg_isolated_connection):
+    conn = pg_isolated_connection
+    postgres_schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-ir-rss', 'Meta Platforms, Inc.', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-newsroom-rss', 'Meta Platforms, Inc.', 'now', 'now')"
+    )
+    conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM daily_news_source_status WHERE company_name = 'Meta Platforms, Inc.'"
+    ).fetchall()
+    assert {r["source_id"] for r in rows} == {"meta-ir-rss", "meta-newsroom-rss"}
+
+    conn.execute(
+        "INSERT INTO daily_news_source_status (source_id, company_name, last_attempt_at, updated_at) "
+        "VALUES ('meta-ir-rss', 'Meta Platforms, Inc.', 'later', 'later') "
+        "ON CONFLICT (source_id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, "
+        "updated_at = excluded.updated_at"
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM daily_news_source_status WHERE source_id = 'meta-ir-rss'").fetchone()
+    assert row["last_attempt_at"] == "later"
+
+
+def test_v17_daily_news_source_status_accepts_http_status_and_duration(pg_isolated_connection):
+    conn = pg_isolated_connection
+    postgres_schema.migrate(conn)
+    conn.execute(
+        """
+        INSERT INTO daily_news_source_status (
+            source_id, company_name, updated_at, last_http_status, last_request_duration_ms
+        ) VALUES ('nvent-electric-ir-rss', 'nVent Electric plc', 'now', 403, 187.5)
+        """
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM daily_news_source_status WHERE source_id = 'nvent-electric-ir-rss'"
+    ).fetchone()
+    assert row["last_http_status"] == 403
+    assert row["last_request_duration_ms"] == 187.5
+
+
 def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connection):
     """A no-hidden-state proof mirroring the SQLite suite's own
     discipline: after migrate() returns, ordinary reads on the same
