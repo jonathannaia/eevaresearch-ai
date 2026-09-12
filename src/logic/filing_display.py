@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 
 from src.data_access.edgar.edgar_rules import normalize_form_type
-from src.models.models import CandidateSignal, FilingEvent
+from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
 
 EDGAR_SOURCE_NAME = "SEC EDGAR"
 EDINET_SOURCE_NAME = "EDINET"
@@ -99,17 +99,22 @@ def _edgar_display_title(filing: FilingEvent) -> str:
     return description or "Filing"
 
 
-def display_title(filing: FilingEvent, candidate: CandidateSignal | None) -> str:
+def display_title(filing: FilingEvent, candidate: CandidateSignal | None, prefer_translated: bool = True) -> str:
     """The public card's one title line.
 
     EDGAR (English-native): a deterministic, source-safe mapping from
-    the official SEC form type — see _edgar_display_title. DART/EDINET:
-    unchanged from the pre-existing behavior — the stored title
-    translation when one exists, otherwise the filing's own native
-    official title verbatim. Never a fabricated or inferred title."""
+    the official SEC form type — see _edgar_display_title; `prefer_
+    translated` has no effect here (EDGAR never requests a translation).
+    DART/EDINET: the stored title translation when `prefer_translated` is
+    True AND one exists, otherwise the filing's own native official title
+    verbatim. `prefer_translated` defaults to True (the original,
+    pre-toggle behavior every existing call site relied on) — the
+    Dashboard/Filings usability pass's own per-card Original/English
+    toggle (radar_card.py) is the only caller that ever passes False.
+    Never a fabricated or inferred title."""
     if is_english_native(filing):
         return _edgar_display_title(filing)
-    if candidate is not None and candidate.title_translation is not None:
+    if prefer_translated and candidate is not None and candidate.title_translation is not None:
         return candidate.title_translation.translated_text
     return filing.report_nm
 
@@ -252,6 +257,44 @@ def extractive_summary(text: str) -> str:
         return normalized[:match.end()].strip()
 
     return ""
+
+
+def prefer_metadata_only_summary(evidence_location: EvidenceLocation | None) -> bool:
+    """Filing-card summary/boilerplate fix (design/DECISIONS.md): True
+    only when a pipeline has already, reliably, recorded that a
+    candidate's document excerpt was extracted WITHOUT a known Item-
+    header anchor (evidence_location.kind == UNAVAILABLE) — the
+    documented "8-K cover-page prefix" failure mode (see
+    document_extractor.py's own module docstring), which
+    is_readable_extracted_text() alone cannot detect since a cover page
+    is grammatically ordinary prose, not markup.
+
+    Deliberately conservative: evidence_location is set exactly once, at
+    a candidate's first successful extraction (edgar_pipeline.py), and is
+    never retroactively computed for a candidate whose one-and-only
+    extraction ran before this field existed. `evidence_location is None`
+    is therefore never treated as "confirmed unanchored" here — it is
+    genuinely unknown for that historic case, and this function returns
+    False for it, leaving is_readable_extracted_text() as the sole,
+    unchanged decision exactly as before this fix. Only a real, stored
+    UNAVAILABLE value (a positive, already-recorded fact) ever returns
+    True — never an absence, never a guess, never a new fetch/parse."""
+    return evidence_location is not None and evidence_location.kind == LocationKind.UNAVAILABLE
+
+
+def item_anchor_label(evidence_location: EvidenceLocation | None) -> str | None:
+    """"Item X.XX" only when the pipeline already recorded a genuine
+    Item-header anchor for this excerpt (evidence_location.kind ==
+    SECTION with a non-empty section) — read directly from already-
+    persisted evidence metadata, never derived or inferred from raw
+    excerpt text at display time. None otherwise (including the unknown/
+    historic-candidate case, same conservative discipline as
+    prefer_metadata_only_summary above)."""
+    if evidence_location is None or evidence_location.kind != LocationKind.SECTION:
+        return None
+    if not evidence_location.section:
+        return None
+    return f"Item {evidence_location.section}"
 
 
 def trim_excerpt_for_display(text: str) -> str:

@@ -33,7 +33,30 @@ Company name, title, and source URL are real, external-sourced strings
 (filer/publisher-supplied) — escaped via html.escape() before being
 placed inside unsafe_allow_html, matching the discipline
 src/ui/components/radar_card.py and src/ui/pages/themes_research.py
-already establish for the same category of data."""
+already establish for the same category of data.
+
+On-demand title translation (Dashboard/Filings usability pass, design/
+DECISIONS.md): a filing row whose FilingEvent.original_language is a
+non-English language this app's existing translation_service.py already
+supports ("Korean"/"Japanese" — the same two values every DART/EDINET
+FilingEvent already carries) shows a `Translate to English` action. The
+original title is always the initial/default display — nothing is
+translated automatically on page load, and no Daily News row ever gets
+this control (original_language is deliberately left None for Daily News
+rows below; Daily News issuer translation is out of scope for this pass,
+design/DECISIONS.md). On click, this calls the existing
+translation_service.translate_cached_with_outcome() exactly once,
+through the same DeepLProvider/cache_dir/cache-file convention
+src.data_access.dart.radar_service._translation_provider and
+src.data_access.edinet.edinet_service._translation_provider already use
+(duplicated here rather than imported, matching this codebase's own
+established precedent of each module keeping its own copy of that tiny
+private helper) — no new provider, secret, dependency, worker, or
+migration. A successful translation is cached in st.session_state (never
+persisted to any store) and offers an `Original`/`English` toggle for
+that row only; a failed/unavailable attempt shows one concise,
+non-blocking status line and leaves the original title as the only
+thing shown — never a raw error, category, or retry mechanics."""
 from __future__ import annotations
 
 import html
@@ -45,6 +68,8 @@ import streamlit as st
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import daily_news_backend
+from src.data_access.translation import translation_service
+from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
@@ -59,6 +84,17 @@ _FILING_SOURCE_LABEL = {
     "EDINET": "Japan EDINET",
 }
 
+# The same source-language-name -> DeepL source_lang mapping
+# translation_service.py's own _LANGUAGE_CODE_BY_NAME already defines —
+# duplicated (not imported) here since that name is module-private
+# there, matching this file's own existing precedent of keeping its own
+# copy of a small shared helper rather than reaching across a module
+# boundary for a private symbol (see _parse_filing_date's own comment).
+# Deliberately only the two languages FilingEvent.original_language ever
+# actually carries for a non-English source (Korean for DART, Japanese
+# for EDINET) — English/unmapped values never show a translate action.
+_LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE = {"Korean": "KO", "Japanese": "JA"}
+
 
 @dataclass(frozen=True)
 class _Row:
@@ -68,6 +104,13 @@ class _Row:
     source_label: str
     display_date: str
     source_url: str | None
+    # None for every Daily News row (translation out of scope there) and
+    # for any filing whose original_language isn't one of the two known,
+    # supported values above — in both cases no translate action renders.
+    original_language: str | None = None
+    # Stable per-row cache/session key — the filing's own (source_name,
+    # corp_code, rcept_no) dedup key for a filing row; None for Daily News.
+    translation_document_id: str | None = None
 
 
 def _esc(value: object) -> str:
@@ -149,6 +192,8 @@ def _load_filing_rows(settings: Settings) -> list[_Row]:
                 # public disclosure portal root; every other source's URL
                 # passes through unchanged.
                 source_url=public_source_url(filing.source_url) or None,
+                original_language=filing.original_language,
+                translation_document_id=f"recently-updated:{filing.source_name}:{filing.corp_code}:{filing.rcept_no}",
             ))
     return rows
 
@@ -177,7 +222,54 @@ def _load_daily_news_rows(settings: Settings) -> list[_Row]:
     return rows
 
 
-def _render_row(row: _Row) -> None:
+def _can_translate(row: _Row) -> bool:
+    return bool(row.translation_document_id) and row.original_language in _LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE
+
+
+def _translated_text_key(row: _Row) -> str:
+    return f"ru-translated-text-{row.translation_document_id}"
+
+
+def _translate_failed_key(row: _Row) -> str:
+    return f"ru-translate-failed-{row.translation_document_id}"
+
+
+def _show_english_key(row: _Row) -> str:
+    return f"ru-show-english-{row.translation_document_id}"
+
+
+def _translation_provider(settings: Settings) -> DeepLProvider:
+    return DeepLProvider(settings.translation_api_key)
+
+
+def _do_translate(row: _Row, settings: Settings) -> None:
+    """The one and only place this component ever calls the translation
+    provider — inside a button's on_click handler, never during a plain
+    render/page-load. Reuses translation_service.translate_cached_with_
+    outcome() exactly as DART/EDINET's own pipelines do (same cache file
+    convention, keyed by document_id + text hash) — a repeat click for
+    the same row/title is a cache hit, not a second live call. Never
+    raises: a failure is recorded as a concise, non-blocking flag; the
+    original title remains the only thing shown."""
+    provider = _translation_provider(settings)
+    source_lang = _LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE[row.original_language]
+    attempt = translation_service.translate_cached_with_outcome(
+        provider, document_id=row.translation_document_id, text=row.title,
+        cache_dir=settings.cache_dir, source_lang=source_lang,
+    )
+    if attempt.translation is not None:
+        st.session_state[_translated_text_key(row)] = attempt.translation.translated_text
+        st.session_state[_show_english_key(row)] = True
+    else:
+        st.session_state[_translate_failed_key(row)] = True
+
+
+def _toggle_show_english(row: _Row) -> None:
+    key = _show_english_key(row)
+    st.session_state[key] = not st.session_state.get(key, False)
+
+
+def _render_row(row: _Row, settings: Settings) -> None:
     """Visual restyle only (design/DECISIONS.md) — `row` is already fully
     computed by the unchanged loading/sort logic above; this function
     only decides how to display it. Metadata (company, source, date)
@@ -190,7 +282,21 @@ def _render_row(row: _Row) -> None:
     source ↗" is a visible text affordance inside that same anchor, not
     an independent link. A row with no real source URL renders the
     identical content without any anchor wrapper or affordance — never a
-    fabricated or dead link."""
+    fabricated or dead link.
+
+    On-demand translation (Dashboard/Filings usability pass, design/
+    DECISIONS.md): the title displayed inside the anchor/content block is
+    the original filing title unless a translation was already
+    successfully fetched this session AND the row's own toggle is
+    currently set to English — the original title is always what a fresh
+    page load shows. The translate action/toggle itself renders as a
+    separate widget below the row (an <a> block cannot contain a nested
+    <button>), matching the same st.button-below-content pattern
+    radar_card.py's own toggles already use."""
+    translated_text = st.session_state.get(_translated_text_key(row))
+    show_english = st.session_state.get(_show_english_key(row), False)
+    display_title = translated_text if (translated_text and show_english) else row.title
+
     company_html = f"{_esc(row.company_name)} " if row.company_name else ""
     metadata_html = (
         f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.2rem; display:flex; align-items:center; '
@@ -200,7 +306,7 @@ def _render_row(row: _Row) -> None:
     )
     content_html = (
         f'<div style="flex:1; min-width:0;">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{_esc(row.title)}</div>'
+        f'<div class="er-card-title" style="font-size:0.88rem;">{_esc(display_title)}</div>'
         f"{metadata_html}"
         f"</div>"
     )
@@ -224,6 +330,22 @@ def _render_row(row: _Row) -> None:
             unsafe_allow_html=True,
         )
 
+    if not _can_translate(row):
+        return
+
+    if translated_text:
+        label = "Original" if show_english else "English"
+        with st.container(key=f"cta-tertiary-{row.translation_document_id}"):
+            st.button(label, key=f"ru-toggle-{row.translation_document_id}-btn", on_click=_toggle_show_english, args=(row,))
+    elif st.session_state.get(_translate_failed_key(row)):
+        st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable.</div>', unsafe_allow_html=True)
+    else:
+        with st.container(key=f"cta-tertiary-translate-{row.translation_document_id}"):
+            st.button(
+                "Translate to English", key=f"ru-translate-{row.translation_document_id}-btn",
+                on_click=_do_translate, args=(row, settings),
+            )
+
 
 def render_recently_updated(settings: Settings) -> None:
     st.markdown('<div class="er-section-label">Recently Updated</div>', unsafe_allow_html=True)
@@ -240,7 +362,7 @@ def render_recently_updated(settings: Settings) -> None:
             )
         else:
             for row in shown:
-                _render_row(row)
+                _render_row(row, settings)
 
     link_cols = st.columns(2)
     with link_cols[0]:
