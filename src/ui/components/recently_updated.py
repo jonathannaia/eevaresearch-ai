@@ -222,6 +222,26 @@ def _load_daily_news_rows(settings: Settings) -> list[_Row]:
     return rows
 
 
+def _row_identity_key(row: _Row) -> str:
+    """A stable, content-derived identifier for this row — used only as
+    the per-row Streamlit container key (visual/CSS grouping), never for
+    translation cache/session-state (those already key exclusively off
+    row.translation_document_id, unchanged by this function). `shown`'s
+    order/membership can shift between reruns as new filings/stories are
+    discovered, so a positional index would not reliably identify "the
+    same row" across reruns the way this does. Every filing row already
+    has a real translation_document_id (set unconditionally in
+    _load_filing_rows regardless of language); only Daily News rows can
+    reach the fallbacks, and a real story's source_url is effectively
+    always present in practice — the final fallback exists only as a
+    deterministic, collision-safe last resort, never expected to fire."""
+    if row.translation_document_id:
+        return row.translation_document_id
+    if row.source_url:
+        return row.source_url
+    return f"{row.company_name}|{row.title}|{row.display_date}"
+
+
 def _can_translate(row: _Row) -> bool:
     return bool(row.translation_document_id) and row.original_language in _LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE
 
@@ -338,7 +358,7 @@ def _render_row(row: _Row, settings: Settings) -> None:
         with st.container(key=f"cta-tertiary-{row.translation_document_id}"):
             st.button(label, key=f"ru-toggle-{row.translation_document_id}-btn", on_click=_toggle_show_english, args=(row,))
     elif st.session_state.get(_translate_failed_key(row)):
-        st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable</div>', unsafe_allow_html=True)
     else:
         with st.container(key=f"cta-tertiary-translate-{row.translation_document_id}"):
             st.button(
@@ -361,8 +381,20 @@ def render_recently_updated(settings: Settings) -> None:
                 unsafe_allow_html=True,
             )
         else:
+            # Detached-translation-control fix (design/DECISIONS.md): each
+            # row's own markdown content and its (optional) translate
+            # action/toggle/status render inside one shared, stable
+            # per-row container — assets/styles.css moves the row divider
+            # onto this wrapper (and suppresses .er-row's own) so the
+            # divider always falls after a row's translation control,
+            # never between the row and its own control. Keyed by
+            # _row_identity_key(row) — a content-derived identifier, not
+            # list position — so a row keeps the same container identity
+            # across reruns even if `shown`'s order/membership shifts
+            # (e.g. a new filing/story is discovered between reruns).
             for row in shown:
-                _render_row(row, settings)
+                with st.container(key=f"card-recently-updated-row-{_row_identity_key(row)}"):
+                    _render_row(row, settings)
 
     link_cols = st.columns(2)
     with link_cols[0]:
