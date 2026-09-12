@@ -680,11 +680,130 @@ EXPANSION_BATCH_2_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News source-expansion batch 3 (2026-09-11) — 4 official issuer
+# IR RSS feeds, each independently live-verified this batch (real
+# fetch, HTTP 200, parseable RSS 2.0, on-domain per-article item links
+# — not a homepage/search redirect) AND independently proven, via a
+# bounded local run_discovery() smoke test against a temp cache
+# directory (no production state touched), to actually publish real
+# stories under the existing, unmodified pipeline/gates. Selected from
+# the tracked-company roster's coverage gap (companies with no existing
+# Daily News source), prioritized for AI Buildout/Memory/Photonics
+# theme relevance and material-news likelihood (earnings, product
+# announcements, capacity/capex updates). Company-agnostic editorial or
+# government sources (CNBC, Korea Herald, Yonhap, White House,
+# Commerce/BIS, DOE) were explicitly out of scope for this batch — see
+# design/DECISIONS.md.
+#
+# Attempted and excluded this same batch, with the specific reason —
+# never silently dropped:
+#   - Micron Technology (investors.micron.com): feed is live, parses,
+#     and its item links looked correct on inspection, but the smoke
+#     test proved every one of its 10 items is suppressed by the
+#     existing, unmodified canonical_url.validate_canonical_url() gate
+#     with reason "No valid canonical source URL" — Micron's own feed
+#     emits plain-http:// (not https://) <link> values, and that gate
+#     requires parsed.scheme == "https" unconditionally. Zero stories
+#     would ever publish from this feed as configured; adding it would
+#     have been a dead, misleading entry. This is a data-safety gate
+#     already relied on everywhere else in Daily News, not a defect
+#     introduced here, and is explicitly not weakened by this batch.
+#     Revisit only if Micron's own feed later serves https:// links.
+#   - Credo Technology Group Holding Ltd (investors.credosemi.com):
+#     feed is live and parses, but its one item carries no <link>
+#     element at all — canonical_url.validate_canonical_url() would
+#     reject every item outright, so no story could ever publish from
+#     it. Revisit only if Credo's own feed later adds real per-article
+#     links.
+#   - Microsoft Corporation (news.microsoft.com/feed/): feed is live
+#     and parses, but its newest item is dated 2025-05-07 — over a year
+#     stale relative to this verification — so it would surface as a
+#     permanently-empty/stale source under the existing 7-day freshness
+#     window, not a real material-news feed. This is Microsoft's own
+#     general "Stories" feed, not a dedicated press-release feed; no
+#     working press-release-specific feed was found this batch.
+#   - Broadcom Inc., Texas Instruments Incorporated, Analog Devices
+#     Inc., Vertiv Holdings Co, CoreWeave, Inc., Teradyne, Inc,
+#     Constellation Energy Corporation, GlobalFoundries Inc., Coherent
+#     Corp, Skyworks Solutions Inc., Monolithic Power Systems Inc.,
+#     Entegris Inc., Amkor Technology Inc., Onto Innovation Inc.,
+#     Axcelis Technologies Inc., MKS Inc: no working RSS/Atom feed
+#     confirmed this batch — either the fetch attempt timed out/was
+#     blocked, the guessed conventional feed path 404'd, or the
+#     company's own IR site (confirmed via direct page fetch, not
+#     guessed) offers only email alerts, no RSS. None of these was
+#     added on a guess; each needs its own separate, successful live
+#     verification before it can be proposed again.
+EXPANSION_BATCH_3_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="qualcomm-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.qualcomm.com/rss/pressrelease.aspx",
+        domains=("investor.qualcomm.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Qualcomm Incorporated", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Qualcomm Incorporated", last_verified_at="2026-09-11",
+        notes=(
+            "Daily News source-expansion batch 3 (2026-09-11) — live-verified official IR RSS "
+            "feed, HTTP 200, dated items (newest 2026-09-08), each with a real per-article "
+            "investor.qualcomm.com/news-events/press-releases/... link, on-domain. Bounded local "
+            "run_discovery() smoke test (temp cache dir, no production state touched) confirmed "
+            "8 real stories published from this feed."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="corning-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.corning.com/rss/pressrelease.aspx",
+        domains=("investor.corning.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Corning Incorporated", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Corning Inc.", last_verified_at="2026-09-11",
+        notes=(
+            "Daily News source-expansion batch 3 (2026-09-11) — live-verified official IR RSS "
+            "feed, HTTP 200, dated items (newest 2026-07-28), each with a real per-article "
+            "investor.corning.com/news-and-events/news/... link, on-domain. Bounded local "
+            "run_discovery() smoke test (temp cache dir, no production state touched) confirmed "
+            "9 real stories published from this feed."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="synopsys-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.synopsys.com/rss/pressrelease.aspx",
+        domains=("investor.synopsys.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Synopsys, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Synopsys, Inc.", last_verified_at="2026-09-11",
+        notes=(
+            "Daily News source-expansion batch 3 (2026-09-11) — live-verified official IR RSS "
+            "feed, HTTP 200, dated items (newest 2026-08-26), each with a real per-article "
+            "investor.synopsys.com/news/news-details/... link, on-domain. Bounded local "
+            "run_discovery() smoke test (temp cache dir, no production state touched) confirmed "
+            "10 real stories published from this feed."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="cadence-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.cadence.com/rss/pressrelease.aspx",
+        domains=("investor.cadence.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Cadence Design Systems, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Cadence Design Systems, Inc.", last_verified_at="2026-09-11",
+        notes=(
+            "Daily News source-expansion batch 3 (2026-09-11) — live-verified official IR RSS "
+            "feed, HTTP 200, dated items (newest 2026-09-02), each with a real per-article "
+            "investor.cadence.com/news/news-details/... link, on-domain. Bounded local "
+            "run_discovery() smoke test (temp cache dir, no production state touched) confirmed "
+            "10 real stories published from this feed."
+        ),
+    ),
+)
+
 # The real, live runtime feed list — original 12 pilot sources first
-# (byte-identical, same order), then expansion batch 1's 7 sources, then
-# expansion batch 2's 1 source, in the exact order given (19 + 1 = 20).
+# (byte-identical, same order), then expansion batch 1's 7 sources,
+# then expansion batch 2's 1 source, then expansion batch 3's 4
+# sources, in the exact order given (19 + 1 + 4 = 24).
 # feed_registry.PILOT_FEEDS is generated from this tuple via
 # to_daily_news_feed_source(); see that module's own updated docstring.
 RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
+    + EXPANSION_BATCH_3_SOURCE_REGISTRY
 )
