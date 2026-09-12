@@ -46,7 +46,7 @@ from src.logic.source_link import public_source_url
 from src.models.theme_research import CompanyRole, ResearchTheme
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
-from src.ui.ui import get_page
+from src.ui.ui import get_page, is_admin
 
 _PAGE_TITLE = "Themes"
 _SCOPE_STATEMENT = (
@@ -61,6 +61,20 @@ _EMPTY_STATE_DETAIL = (
     "EevaResearch is monitoring official company disclosures for evidence of emerging bottlenecks, "
     "demand shifts, and second-order company impacts. Themes are published when multiple official "
     "sources support a specific, testable research question."
+)
+
+# Beta UI polish pass (design/DECISIONS.md): this route is no longer
+# linked from the public sidebar (see src/ui/ui.py's HIDDEN_FROM_NAV),
+# but a direct/deep URL must still resolve to something deliberate, not
+# a possibly-sparse real index. Gated the same way admin_users.py gates
+# its own hidden page — is_admin() checked before any settings/
+# repository access, so a non-admin visitor never triggers a theme
+# query. Internal/admin access (and the separate theme_workspace.py
+# authoring tool) is completely unaffected.
+_BETA_EXPANDING_TITLE = "Themes are being expanded"
+_BETA_EXPANDING_DETAIL = (
+    "We're still building out this section for the beta. Check back soon, or head to the Dashboard "
+    "for the latest tracked filings and news."
 )
 
 _COMPANY_ROLE_SECTION_ORDER: tuple[CompanyRole, ...] = (
@@ -118,6 +132,14 @@ def _footer_disclaimer() -> None:
 
 
 def render() -> None:
+    if not is_admin():
+        st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
+        empty_state(
+            _BETA_EXPANDING_TITLE, _BETA_EXPANDING_DETAIL,
+            action_label="Go to Dashboard", action_page=get_page("dashboard"), key="themes-beta-expanding",
+        )
+        return
+
     settings = get_settings()
     theme_id = st.query_params.get("theme_id", "").strip()
 

@@ -440,6 +440,16 @@ a:hover { color: var(--accent-hover); }
     box-shadow: 0 0 0 1px rgba(22,62,104,.45), 0 0 26px rgba(22,62,104,.32), 0 4px 16px rgba(22,62,104,.24) !important;
     background: var(--accent-hover) !important;
 }
+/* Restrained pressed state (beta UI polish pass) — a flatter, tighter
+   shadow than hover's glow (no added blur/elevation on press), same
+   --accent-hover fill and same rgba(22,62,104,...) hue already used
+   above, just a smaller ring and no glow — reads as "pressed down,"
+   not "still hovering." No new color, no animation. */
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:active,
+[class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:active {
+    box-shadow: 0 0 0 1px rgba(22,62,104,.55) !important;
+    background: var(--accent-hover) !important;
+}
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--invert-fg) !important; }
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:disabled {
@@ -455,6 +465,14 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:hover {
     border-color: var(--text-2) !important; background: var(--surface) !important;
+}
+/* Restrained pressed state (beta UI polish pass) — one step darker than
+   hover's --surface fill (the existing --surface-2 token, already used
+   elsewhere as the next elevation step, e.g. the shared card hover
+   rule above), same --text-2 border as hover. No new color. */
+[class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:active,
+[class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:active {
+    border-color: var(--text-2) !important; background: var(--surface-2) !important;
 }
 /* Priority Signals' Review Evidence sits in a tight compact row inside a
    narrow column — shrink its footprint so it doesn't overpower the row
@@ -599,6 +617,22 @@ a:hover { color: var(--accent-hover); }
    marking it as the page's lead element. No new fill, gradient, or
    one-off visual system — one border-side on the existing card shape. */
 .st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
+
+/* Daily News card consistency (beta UI polish pass, design/DECISIONS.md):
+   the issuer feed card (src/ui/pages/daily_news.py) and the editorial
+   feed card (src/ui/components/editorial_coverage.py) share the same
+   base card-* treatment above, but this app's global card rule
+   deliberately has no border ("Panels have no outer border; separation
+   is by surface value"). Scoped ONLY to these two feed-card key
+   prefixes — not the global rule above, which stays untouched for every
+   other card in the app — so both card types in the unified Daily News
+   feed get one consistent, subtle boundary using the same functional-
+   border token already used elsewhere (--hairline-2). Source-type
+   distinction stays badge-only (each card's own existing status-tag
+   label), never an outer-card treatment difference. */
+[class*="st-key-card-issuer-"], [class*="st-key-card-editorial-"] {
+    border: 1px solid var(--hairline-2) !important;
+}
 
 /* ---------- theme icon motifs ---------- */
 .er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }

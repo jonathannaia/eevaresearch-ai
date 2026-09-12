@@ -21,25 +21,15 @@ METHODOLOGY_STATEMENT = (
 )
 
 # Primary sidebar nav ("WORKSPACE" group), in order — navigation-cleanup
-# pass (design/DECISIONS.md): exactly the four core destinations. Home and
-# Company are deliberately excluded (Home is first-visit-only with no
-# sidebar at all; Company is reached only by clicking a ticker). Coverage,
-# Themes, Signals, and Research are intentionally NOT here any more — see
+# pass (design/DECISIONS.md): the core destinations. Home and Company are
+# deliberately excluded (Home is first-visit-only with no sidebar at all;
+# Company is reached only by clicking a ticker). Coverage, Themes,
+# Signals, and Research are intentionally NOT here any more — see
 # HIDDEN_FROM_NAV below; their pages/routes/data are untouched, they are
 # simply no longer linked from any visible sidebar group.
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
     ("radar_inbox", "Filings"),
-    # Themes (Evidence-First Themes MVP, design/DECISIONS.md) — the
-    # public, curated cross-company research narrative surface. Placed
-    # directly beneath Filings: Filings surfaces individual captured
-    # filings, Themes connects official evidence across companies into
-    # a testable thesis. The legacy demo ticker/theme/subtheme browser
-    # that previously occupied this url_path/nav slot was removed
-    # entirely (reader-facing data-integrity pass, design/DECISIONS.md)
-    # rather than kept as a hidden route — it had no live real data of
-    # its own.
-    ("themes", "Themes"),
     # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
     # scoped autonomous discovery surface, not a Filings view (see the
     # Radar-vs-Daily-News product clarification the same document records).
@@ -68,10 +58,21 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 # pass, design/DECISIONS.md) rather than kept as hidden routes — neither
 # had any live real data of its own; likewise Company, previously
 # reachable only via query params, not this list.
+#
+# Themes (beta UI polish pass, design/DECISIONS.md) — moved here from
+# PRIMARY_NAV: the public Themes page has no content-readiness gate of
+# its own, so a beta launch should not link to it from the sidebar until
+# there is enough published content to justify it. The route, its data,
+# repository, and the separate internal authoring workflow
+# (theme_workspace.py) are all completely untouched — see
+# src/ui/pages/themes_research.py's own render()-level guard for what a
+# non-admin visitor who reaches this route directly sees instead of the
+# real (possibly sparse) index.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
     ("signals", "Signals"),
     ("methodology", "Methodology"),
     ("about", "About"),
+    ("themes", "Themes"),
 ]
 
 # Session-state keys for unread/last-seen tracking (brief §10) — defined

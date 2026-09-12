@@ -45,15 +45,20 @@ def _sidebar_page_links(at: AppTest):
     return list(at.sidebar.get("page_link"))
 
 
-def test_workspace_shows_exactly_dashboard_filings_themes_daily_news(monkeypatch):
+def test_workspace_shows_exactly_dashboard_filings_daily_news(monkeypatch):
     # Watchlists was removed entirely (reader-facing data-integrity
     # pass, design/DECISIONS.md) — session-only, seeded from illustrative
-    # data, no live real data of its own.
+    # data, no live real data of its own. Themes (beta UI polish pass,
+    # design/DECISIONS.md) is deliberately absent here too — moved back
+    # to HIDDEN_FROM_NAV until there's enough published content for a
+    # beta launch; see test_coverage_signals_research_are_not_visible_
+    # sidebar_items below for the corresponding negative assertion.
     at = _run_to_dashboard(monkeypatch)
     labels = [pl.label for pl in _sidebar_page_links(at)]
-    for expected in ("Dashboard", "Filings", "Themes", "Daily News"):
+    for expected in ("Dashboard", "Filings", "Daily News"):
         assert expected in labels
     assert "Watchlists" not in labels
+    assert "Themes" not in labels
 
 
 def test_filings_label_is_filings_not_radar_or_radar_inbox_in_the_sidebar(monkeypatch):
@@ -64,22 +69,27 @@ def test_filings_label_is_filings_not_radar_or_radar_inbox_in_the_sidebar(monkey
     assert "Radar Inbox" not in labels
 
 
-def test_coverage_signals_research_are_not_visible_sidebar_items(monkeypatch):
-    """"Themes" is deliberately excluded from this list as of the
-    Evidence-First Themes MVP (design/DECISIONS.md) — that step
-    reintroduced a "Themes" sidebar entry on purpose, pointing at a new
-    public research page, not the legacy demo browser this original
-    navigation-cleanup pass had removed from visible nav. The legacy
-    demo page itself (moved to a hidden "Theme Browser" route by that
-    step) was later removed entirely, not just hidden (reader-facing
-    data-integrity pass, design/DECISIONS.md) — it had no live real
-    data."""
+def test_coverage_signals_research_themes_are_not_visible_sidebar_items(monkeypatch):
+    """The Evidence-First Themes MVP (design/DECISIONS.md) had
+    reintroduced a "Themes" sidebar entry pointing at a new public
+    research page, distinct from the legacy demo ticker/theme/subtheme
+    browser this original navigation-cleanup pass had removed from
+    visible nav (that legacy page — once moved to a hidden "Theme
+    Browser" route — was later removed entirely, not just hidden;
+    reader-facing data-integrity pass, design/DECISIONS.md, no live
+    real data of its own). The beta UI polish pass (design/DECISIONS.md)
+    moved "Themes" back out of the visible sidebar: the public index has
+    no content-readiness gate of its own, so it stays unlinked until
+    there's enough published content for a beta launch. Its route/data/
+    repository/internal-authoring-workflow are unaffected — only sidebar
+    visibility changed (see test_coverage_themes_signals_routes_remain_
+    registered below)."""
     at = _run_to_dashboard(monkeypatch)
     labels = {pl.label for pl in _sidebar_page_links(at)}
     # Exact-label check, not substring — "Methodology & Coverage" legitimately
     # contains "Coverage" as a substring, so a naive "not in joined text"
     # check would false-fail on the one entry that's supposed to remain.
-    for removed_label in ("Coverage", "Signals", "Research"):
+    for removed_label in ("Coverage", "Signals", "Research", "Themes"):
         assert removed_label not in labels
     assert "Theme Browser" not in labels
 

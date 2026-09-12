@@ -109,3 +109,26 @@ def test_coverage_page_has_no_action_buttons():
     for label in button_labels:
         lowered = label.lower()
         assert not any(f in lowered for f in forbidden_substrings), f"unexpected action button: {label!r}"
+
+
+def test_coverage_page_shows_static_coverage_and_freshness_panel():
+    # Beta UI polish pass (design/DECISIONS.md) — exactly the three
+    # pre-approved sentences, static text only, no live status/timestamp.
+    at = _run()
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Coverage & Freshness" in all_text
+    assert (
+        "Filing Radar" in all_text
+        and "SEC EDGAR (U.S.)" in all_text and "EDINET (Japan)" in all_text and "DART (Korea)" in all_text
+        and "scheduled hourly" in all_text
+    )
+    assert (
+        "Daily News" in all_text
+        and "curated official company news and investor-relations sources" in all_text
+        and "scheduled every 30 minutes" in all_text
+    )
+    assert (
+        "Translations" in all_text
+        and "machine-generated English translations for supported short" in all_text
+        and "original sources remain authoritative" in all_text
+    )
