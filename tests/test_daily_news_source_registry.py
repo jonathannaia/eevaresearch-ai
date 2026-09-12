@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from src.data_access.daily_news import feed_registry
 from src.data_access.daily_news.source_registry import (
+    EDITORIAL_SOURCE_REGISTRY,
     EXPANSION_BATCH_1_SOURCE_REGISTRY,
     EXPANSION_BATCH_2_SOURCE_REGISTRY,
     EXPANSION_BATCH_3_SOURCE_REGISTRY,
@@ -700,6 +701,76 @@ def test_expansion_batch_3_entries_validate_against_the_feed_adapter():
         assert feed.feed_url == entry.canonical_url
         assert feed.canonical_domains == entry.domains
         assert feed.company_name == entry.issuer_name
+
+
+# ============================================================
+# Editorial Daily News v1 (design/DECISIONS.md) — a SEPARATE registry
+# from RUNTIME_SOURCE_REGISTRY: 9 CNBC feeds + 1 Korea Herald feed,
+# every one issuer_agnostic=True, each independently live-verified.
+# Never merged into RUNTIME_SOURCE_REGISTRY/PILOT_FEEDS — read only by
+# editorial_pipeline.py.
+# ============================================================
+
+
+def test_editorial_source_registry_has_exactly_ten_entries():
+    assert len(EDITORIAL_SOURCE_REGISTRY) == 10
+    assert tuple(e.source_id for e in EDITORIAL_SOURCE_REGISTRY) == (
+        "cnbc-top-news-rss", "cnbc-business-rss", "cnbc-finance-rss", "cnbc-economy-rss",
+        "cnbc-technology-rss", "cnbc-earnings-rss", "cnbc-energy-rss", "cnbc-politics-policy-rss",
+        "cnbc-asia-rss", "korea-herald-business-rss",
+    )
+
+
+def test_editorial_source_registry_has_zero_validation_violations():
+    assert find_registry_violations(EDITORIAL_SOURCE_REGISTRY) == ()
+    for entry in EDITORIAL_SOURCE_REGISTRY:
+        assert validate_source_entry(entry) == ()
+
+
+def test_every_editorial_entry_is_issuer_agnostic_independent_news_allowlisted():
+    for entry in EDITORIAL_SOURCE_REGISTRY:
+        assert entry.category == SourceCategory.INDEPENDENT_NEWS, entry.source_id
+        assert entry.issuer_agnostic is True, entry.source_id
+        assert entry.issuer_name is None, entry.source_id
+        assert entry.allowlisted is True, entry.source_id
+        assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
+        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+
+
+def test_every_cnbc_entry_uses_the_search_cnbc_rss_endpoint_and_www_cnbc_domain():
+    cnbc_entries = [e for e in EDITORIAL_SOURCE_REGISTRY if e.attribution_label == "CNBC"]
+    assert len(cnbc_entries) == 9
+    for entry in cnbc_entries:
+        assert entry.canonical_url.startswith(
+            "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id="
+        )
+        assert entry.domains == ("www.cnbc.com",)
+        assert "device/rss/rss.html" not in entry.canonical_url  # the legacy, now-403 URL shape
+
+
+def test_korea_herald_entry_is_business_only_on_its_own_domain():
+    korea_herald = next(e for e in EDITORIAL_SOURCE_REGISTRY if e.attribution_label == "The Korea Herald")
+    assert korea_herald.canonical_url == "https://www.koreaherald.com/rss/kh_Business"
+    assert korea_herald.domains == ("www.koreaherald.com",)
+    assert korea_herald.jurisdiction == "South Korea"
+
+
+def test_editorial_source_registry_never_appears_in_runtime_source_registry():
+    editorial_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY}
+    runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
+    assert not (editorial_ids & runtime_ids)
+    assert len(RUNTIME_SOURCE_REGISTRY) == 24  # unchanged by this batch
+
+
+def test_to_daily_news_feed_source_rejects_every_editorial_entry():
+    # Structural proof: an issuer_agnostic entry is exactly the shape
+    # to_daily_news_feed_source() already refuses — editorial sources
+    # can never leak into feed_registry.PILOT_FEEDS through that adapter.
+    import pytest
+
+    for entry in EDITORIAL_SOURCE_REGISTRY:
+        with pytest.raises(SourceRegistryValidationError):
+            to_daily_news_feed_source(entry)
 
 
 def test_to_daily_news_feed_source_rejects_a_non_rss_atom_format():

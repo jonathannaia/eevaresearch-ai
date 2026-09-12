@@ -807,3 +807,131 @@ RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
     + EXPANSION_BATCH_3_SOURCE_REGISTRY
 )
+
+_EDITORIAL_LICENSING_CLASSIFICATION = (
+    "Independent journalism (publisher-owned RSS feed) — public headline/metadata content; "
+    "headline, publisher-provided excerpt, and direct link only, never full article-body "
+    "reproduction, per this project's existing no-full-article-reproduction policy (see "
+    "src/data_access/daily_news/summary_grounding.py)."
+)
+
+# Editorial Daily News v1 (design/DECISIONS.md) — a SEPARATE registry
+# from RUNTIME_SOURCE_REGISTRY, deliberately never merged into it:
+# these 10 sources are issuer_agnostic=True (category=INDEPENDENT_NEWS),
+# a shape feed_registry.to_daily_news_feed_source() explicitly rejects
+# (see that function's own docstring) — they are read by
+# editorial_pipeline.py, never by daily_news_pipeline.run_discovery()
+# or the issuer-IR feed_registry.PILOT_FEEDS list. Every entry
+# independently live-verified this batch: real fetch, HTTP 200,
+# parseable RSS 2.0, real dated per-article item links on the domain
+# listed. CNBC's real, currently-working RSS mechanism is
+# search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=
+# <id> — the legacy cnbc.com/id/.../device/rss/rss.html URLs return
+# HTTP 403 and are never used. Every CNBC item's own <link> resolves to
+# www.cnbc.com (confirmed live, not search.cnbc.com, the feed host
+# itself) — domains is set accordingly, never the feed host. Korea
+# Herald Business is the only section with a real feed (no separate
+# Technology feed exists on koreaherald.com/rss, confirmed live).
+# Yonhap was attempted and excluded: unreachable from this session's own
+# tooling both times it was tried — not silently added.
+EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="cnbc-top-news-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes=(
+            "Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel "
+            "title 'US Top News and Analysis'. Item links confirmed on www.cnbc.com (e.g. "
+            "cnbc.com/2026/09/11/cpi-inflation-breakdown-august-2026.html)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-business-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Business News'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-finance-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Finance'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-economy-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Economy'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-technology-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Tech'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-earnings-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Earnings'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-energy-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19836768",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Energy'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-politics-policy-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000113",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Politics & Policy'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="cnbc-asia-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19832390",
+        domains=("www.cnbc.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="CNBC", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes="Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS 2.0, channel title 'Asia News'.",
+    ),
+    DailyNewsSourceEntry(
+        source_id="korea-herald-business-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.koreaherald.com/rss/kh_Business",
+        domains=("www.koreaherald.com",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Korea Herald", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-11",
+        notes=(
+            "Editorial Daily News v1 (2026-09-11) — live-verified, HTTP 200, RSS, channel title "
+            "'The korea Herald News Rss'. Item links confirmed on www.koreaherald.com/article/... "
+            "(e.g. koreaherald.com/article/10870958). No separate Technology feed exists on "
+            "koreaherald.com/rss (confirmed live) — Business is the only available section."
+        ),
+    ),
+)
