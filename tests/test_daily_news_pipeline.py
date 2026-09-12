@@ -356,3 +356,91 @@ def test_run_discovery_supplied_repository_skips_already_seen_story_ids(tmp_path
     assert second.stories_published == 0  # already-seen id — idempotent no-op
     assert second.items_already_seen == 1  # counted, not silently dropped — same repository-backed path
     assert len(daily_news_repository.load_stories(conn)) == 1
+
+
+# --- Daily News worker observability, Part A ---
+
+_NVDA_SOURCE_WITH_ID = DailyNewsFeedSource(
+    company_name="NVIDIA", feed_url="https://nvidianews.nvidia.com/releases.xml",
+    feed_format="rss", canonical_domains=("nvidianews.nvidia.com",),
+    source_id="nvidia-newsroom-rss",
+)
+
+
+def test_first_discovered_at_is_set_on_first_publish(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    stories = daily_news_store.load_stories(tmp_path)
+    story = next(iter(stories.values()))
+    assert story.sources[0].first_discovered_at is not None
+    assert story.sources[0].first_discovered_at == story.sources[0].retrieved_at  # same moment, first run
+
+
+def test_first_discovered_at_is_never_overwritten_on_a_later_rediscovery(tmp_path, monkeypatch):
+    """The set-once invariant: a second discovery run for the exact same
+    item (same story_id) must leave the originally-persisted
+    first_discovered_at value untouched, even though a later run's own
+    retrieved_at would be a different, later timestamp."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    first_story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    original_first_discovered_at = first_story.sources[0].first_discovered_at
+    assert original_first_discovered_at is not None
+
+    # Re-run discovery for the identical entry (same canonical link ->
+    # same deterministic story_id) — already_seen short-circuit fires,
+    # so no NewsSourceReference is ever reconstructed for it.
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    assert report.items_already_seen == 1
+    assert report.stories_published == 0
+
+    reloaded_story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert reloaded_story.sources[0].first_discovered_at == original_first_discovered_at
+
+
+def test_fetch_results_populated_per_source_id(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE_WITH_ID.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None, duration_ms=123.4, http_status=200,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE_WITH_ID,))
+
+    assert "nvidia-newsroom-rss" in report.fetch_results
+    fetch_result = report.fetch_results["nvidia-newsroom-rss"]
+    assert fetch_result.duration_ms == 123.4
+    assert fetch_result.http_status == 200
+    assert fetch_result.failure_code is None
+    # Existing fields completely unaffected by this additive dict.
+    assert report.items_discovered == 1
+    assert report.stories_published == 1
+
+
+def test_fetch_results_populated_even_on_source_failure(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE_WITH_ID.feed_url: FeedFetchResult(
+            entries=(), failure_code="HTTPError:403", duration_ms=88.0, http_status=403,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE_WITH_ID,))
+
+    assert report.source_failures == {"NVIDIA": "HTTPError:403"}
+    fetch_result = report.fetch_results["nvidia-newsroom-rss"]
+    assert fetch_result.http_status == 403
+    assert fetch_result.duration_ms == 88.0

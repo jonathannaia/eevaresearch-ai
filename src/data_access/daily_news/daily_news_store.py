@@ -46,6 +46,7 @@ def _story_from_dict(data: dict) -> NewsStory:
             title=s["title"], published_at=s["published_at"], retrieved_at=s["retrieved_at"],
             original_language=s["original_language"], excerpt_original=s.get("excerpt_original"),
             image_url=s.get("image_url"), image_alt=s.get("image_alt"),
+            first_discovered_at=s.get("first_discovered_at"),
         )
         for s in data.get("sources", [])
     )

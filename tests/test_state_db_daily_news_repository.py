@@ -294,3 +294,43 @@ def test_concurrent_upsert_of_the_same_new_story_id_is_safe(monkeypatch):
     daily_news_repository.upsert_new_stories(conn, [story])
     assert call_count["n"] == 1
     assert len(daily_news_repository.load_stories(conn)) == 1
+
+
+# --- Daily News worker observability, Part A: first_discovered_at ---
+
+
+def test_first_discovered_at_round_trips():
+    conn = _conn()
+    source = _source(first_discovered_at="2026-09-01T12:05:00+00:00")
+    story = _story(sources=(source,))
+    daily_news_repository.upsert_new_stories(conn, [story])
+    reloaded = daily_news_repository.get_story(conn, story.id)
+    assert reloaded.sources[0].first_discovered_at == "2026-09-01T12:05:00+00:00"
+
+
+def test_first_discovered_at_is_none_when_not_supplied():
+    conn = _conn()
+    story = _story()  # default _source() leaves first_discovered_at unset (None)
+    daily_news_repository.upsert_new_stories(conn, [story])
+    reloaded = daily_news_repository.get_story(conn, story.id)
+    assert reloaded.sources[0].first_discovered_at is None
+
+
+def test_first_discovered_at_is_none_for_a_pre_migration_row():
+    """Backward compatibility: a row written directly against the
+    pre-V16 column set (no first_discovered_at value supplied to the
+    INSERT at all) reads back as None, never an error, never a
+    fabricated value."""
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s-legacy', 'NVIDIA', 'Legacy headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, "
+        "retrieved_at, original_language) VALUES ('s-legacy', 'NVIDIA', 'Official company source', "
+        "'https://example.com/legacy', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+    reloaded = daily_news_repository.get_story(conn, "s-legacy")
+    assert reloaded.sources[0].first_discovered_at is None

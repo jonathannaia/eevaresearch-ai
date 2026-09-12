@@ -382,3 +382,75 @@ def test_channel_level_image_logo_is_never_used_as_an_item_image(monkeypatch):
     result = rss_atom_client.fetch_entries("https://example.com/rss")
 
     assert result.entries[0].image_url is None
+
+
+# --- Daily News worker observability, Part A ---
+
+
+def test_duration_ms_and_http_status_populated_on_success(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_FIXTURE, status_code=200))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.failure_code is None
+    assert result.http_status == 200
+    assert result.duration_ms is not None
+    assert result.duration_ms >= 0.0
+
+
+def test_duration_ms_and_http_status_populated_on_http_failure(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(b"", status_code=403))
+
+    result = rss_atom_client.fetch_entries("https://example.com/blocked.xml")
+
+    assert result.failure_code == "HTTPError:403"
+    assert result.http_status == 403
+    assert result.duration_ms is not None
+
+
+def test_http_status_is_none_for_a_non_http_failure(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(rss_atom_client.requests, "get", _raise)
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert result.failure_code == "ConnectionError"
+    assert result.http_status is None
+    assert result.duration_ms is not None  # timing still captured even though no HTTP response existed
+
+
+def test_duration_ms_and_http_status_populated_on_malformed_feed(monkeypatch):
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_MALFORMED_FIXTURE, status_code=200))
+
+    result = rss_atom_client.fetch_entries("https://example.com/broken")
+
+    assert result.failure_code == "MalformedFeed"
+    assert result.http_status == 200  # the HTTP request itself succeeded; parsing failed afterward
+    assert result.duration_ms is not None
+
+
+def test_fetch_entries_makes_exactly_one_requests_get_call(monkeypatch):
+    """No retry, no second request of any kind in Part A — Part B's
+    bounded retry is a separate, not-yet-approved change."""
+    call_count = {"n": 0}
+
+    def _counted_get(*args, **kwargs):
+        call_count["n"] += 1
+        return _mock_response(_RSS_FIXTURE)
+
+    monkeypatch.setattr(rss_atom_client.requests, "get", _counted_get)
+
+    rss_atom_client.fetch_entries("https://example.com/rss")
+
+    assert call_count["n"] == 1
+
+
+def test_failure_code_behavior_is_unchanged_by_the_new_fields(monkeypatch):
+    """Regression: existing failure_code semantics (§ Preserve the
+    current failure_code behavior) are byte-for-byte unaffected by the
+    duration_ms/http_status additions."""
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(b"", status_code=429))
+    result = rss_atom_client.fetch_entries("https://example.com/rate-limited.xml")
+    assert result.failure_code == "HTTPError:429"

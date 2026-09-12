@@ -602,3 +602,137 @@ def test_worker_uses_the_real_registered_pilot_feeds_by_default():
     from src.data_access.daily_news import feed_registry
 
     assert daily_news_worker.PILOT_FEEDS == feed_registry.PILOT_FEEDS
+
+
+# --- Daily News worker observability, Part A ---
+
+
+def test_tick_completion_log_line_includes_duration(tmp_path, monkeypatch, capsys):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if "tick completed in" in line]
+    assert len(lines) == 1
+    assert "s (started" in lines[0] and "completed" in lines[0]
+
+
+def test_source_status_written_on_successful_fetch(tmp_path, monkeypatch):
+    _mock_fetch({
+        _META_IR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Update", "https://investor.atmeta.com/news/update"),),
+            failure_code=None, duration_ms=145.2, http_status=200,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    source_status = scan_status_repository.get_source_status("meta-ir-rss")
+    assert source_status is not None
+    assert source_status.company_name == "Meta Platforms, Inc."
+    assert source_status.last_http_status == 200
+    assert source_status.last_request_duration_ms == 145.2
+    assert source_status.last_failure_code is None
+    assert source_status.last_fetch_success_at is not None
+    assert source_status.last_story_published_at is not None
+    assert source_status.items_discovered_last_run == 1
+    assert source_status.stories_published_last_run == 1
+    assert source_status.last_result_at is not None
+
+
+def test_source_status_written_on_http_failure(tmp_path, monkeypatch):
+    _mock_fetch({
+        _META_IR_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:403", duration_ms=88.0, http_status=403),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    source_status = scan_status_repository.get_source_status("meta-ir-rss")
+    assert source_status.last_failure_code == "HTTPError:403"
+    assert source_status.last_http_status == 403
+    assert source_status.last_request_duration_ms == 88.0
+    assert source_status.last_fetch_success_at is None
+    assert source_status.last_story_published_at is None
+
+
+def test_source_status_written_on_unexpected_exception(tmp_path, monkeypatch):
+    def _raise(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(daily_news_pipeline, "run_discovery", _raise)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    source_status = scan_status_repository.get_source_status("meta-ir-rss")
+    assert source_status is not None
+    assert source_status.last_failure_code == "RuntimeError"
+    assert source_status.last_http_status is None
+    assert source_status.last_request_duration_ms is None
+    assert source_status.items_discovered_last_run == 0
+
+
+def test_two_sources_sharing_a_company_get_independent_source_status_rows(tmp_path, monkeypatch):
+    """The entire point of this table: meta-ir-rss (blocked) and
+    meta-newsroom-rss (healthy) must never collide, unlike the legacy
+    company_name-keyed daily_news_scan_status row they both still also
+    write to (last-write-wins there, unchanged)."""
+    _mock_fetch({
+        _META_IR_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:403", http_status=403),
+        _META_NEWSROOM_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Update", "https://about.fb.com/news/update"),), failure_code=None, http_status=200,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_META_IR_SOURCE, _META_NEWSROOM_SOURCE))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    ir_status = scan_status_repository.get_source_status("meta-ir-rss")
+    newsroom_status = scan_status_repository.get_source_status("meta-newsroom-rss")
+    assert ir_status.last_http_status == 403
+    assert newsroom_status.last_http_status == 200
+    assert newsroom_status.stories_published_last_run == 1
+    assert ir_status.stories_published_last_run == 0
+
+    all_source_statuses = scan_status_repository.get_all_source_statuses()
+    assert set(all_source_statuses) == {"meta-ir-rss", "meta-newsroom-rss"}
+
+
+def test_source_with_no_source_id_never_gets_a_source_status_row(tmp_path, monkeypatch):
+    """A feed_registry entry with an empty source_id (the pre-existing
+    default, still valid) must not produce a spurious row keyed by the
+    sentinel "(no source_id)" label used only for log lines."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    assert _NVDA_SOURCE.source_id == ""
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    assert scan_status_repository.get_all_source_statuses() == {}
+    # The legacy company-keyed table is completely unaffected either way.
+    assert scan_status_repository.get_feed_status("NVIDIA") is not None

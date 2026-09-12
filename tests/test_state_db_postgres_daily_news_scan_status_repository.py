@@ -10,11 +10,15 @@ from __future__ import annotations
 from src.data_access.postgres_state_db.daily_news_scan_status_repository import (
     WORKER_STATUS_KEY,
     DailyNewsFeedScanStatus,
+    DailyNewsSourceScanStatus,
     DailyNewsWorkerStatus,
     get_all_feed_statuses,
+    get_all_source_statuses,
     get_feed_status,
+    get_source_status,
     get_worker_status,
     upsert_feed_status,
+    upsert_source_status,
     upsert_worker_status,
 )
 
@@ -34,6 +38,28 @@ def _feed_status(**overrides) -> DailyNewsFeedScanStatus:
     )
     fields.update(overrides)
     return DailyNewsFeedScanStatus(**fields)
+
+
+def _source_status(**overrides) -> DailyNewsSourceScanStatus:
+    fields = dict(
+        source_id="meta-ir-rss",
+        company_name="Meta Platforms, Inc.",
+        last_attempt_at="2026-01-01T00:00:00+00:00",
+        last_result_at="2026-01-01T00:00:00.400000+00:00",
+        last_fetch_success_at=None,
+        last_story_published_at=None,
+        last_failure_code="HTTPError:403",
+        last_http_status=403,
+        last_request_duration_ms=187.5,
+        items_discovered_last_run=0,
+        stories_published_last_run=0,
+        items_already_seen_last_run=0,
+        items_deduplicated_last_run=0,
+        items_suppressed_no_url_last_run=0,
+        updated_at="2026-01-01T00:00:00.400000+00:00",
+    )
+    fields.update(overrides)
+    return DailyNewsSourceScanStatus(**fields)
 
 
 def _worker_status(**overrides) -> DailyNewsWorkerStatus:
@@ -135,3 +161,56 @@ def test_upsert_worker_status_overwrites_single_row_no_duplicate(pg_conn):
     assert loaded.last_reconciliation_at == "2026-01-02T00:00:00+00:00"
     row = pg_conn.execute("SELECT COUNT(*) AS n FROM daily_news_worker_status").fetchone()
     assert row["n"] == 1
+
+
+# --- Daily News worker observability, Part A: source_id-keyed status ---
+
+
+def test_get_source_status_returns_none_when_absent(pg_conn):
+    assert get_source_status(pg_conn, "meta-ir-rss") is None
+
+
+def test_upsert_and_get_source_status_round_trip(pg_conn):
+    status = _source_status()
+    upsert_source_status(pg_conn, status)
+    assert get_source_status(pg_conn, "meta-ir-rss") == status
+
+
+def test_upsert_source_status_overwrites_by_source_id_no_duplicate_row(pg_conn):
+    upsert_source_status(pg_conn, _source_status(items_discovered_last_run=2))
+    upsert_source_status(pg_conn, _source_status(items_discovered_last_run=5))
+    loaded = get_source_status(pg_conn, "meta-ir-rss")
+    assert loaded.items_discovered_last_run == 5
+
+
+def test_two_sources_for_one_company_are_independent_rows(pg_conn):
+    upsert_source_status(pg_conn, _source_status(
+        source_id="meta-ir-rss", last_failure_code="HTTPError:403", last_http_status=403,
+    ))
+    upsert_source_status(pg_conn, _source_status(
+        source_id="meta-newsroom-rss", last_failure_code=None, last_http_status=200,
+        last_fetch_success_at="2026-01-01T00:00:00.400000+00:00",
+    ))
+    ir_status = get_source_status(pg_conn, "meta-ir-rss")
+    newsroom_status = get_source_status(pg_conn, "meta-newsroom-rss")
+    assert ir_status.last_http_status == 403
+    assert newsroom_status.last_http_status == 200
+
+    all_statuses = get_all_source_statuses(pg_conn)
+    assert set(all_statuses) == {"meta-ir-rss", "meta-newsroom-rss"}
+
+
+def test_source_status_last_result_at_distinct_from_updated_at(pg_conn):
+    status = _source_status(
+        last_result_at="2026-01-01T00:00:00.100000+00:00",
+        updated_at="2026-01-01T00:00:00.900000+00:00",
+    )
+    upsert_source_status(pg_conn, status)
+    loaded = get_source_status(pg_conn, "meta-ir-rss")
+    assert loaded.last_result_at == "2026-01-01T00:00:00.100000+00:00"
+    assert loaded.updated_at == "2026-01-01T00:00:00.900000+00:00"
+
+
+def test_daily_news_scan_status_unaffected_by_source_status_writes(pg_conn):
+    upsert_source_status(pg_conn, _source_status())
+    assert get_feed_status(pg_conn, "Meta Platforms, Inc.") is None

@@ -112,6 +112,7 @@ from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_
 from src.data_access.state_db.daily_news_scan_status_repository import (
     WORKER_STATUS_KEY,
     DailyNewsFeedScanStatus,
+    DailyNewsSourceScanStatus,
     DailyNewsWorkerStatus,
 )
 
@@ -225,6 +226,8 @@ def _run_feed_tick(
     started_at = datetime.now(timezone.utc).isoformat()
     previous = scan_status_repository.get_feed_status(company_name)
 
+    previous_source = scan_status_repository.get_source_status(source_id) if source_id != "(no source_id)" else None
+
     try:
         report = daily_news_pipeline.run_discovery(
             worker_settings.cache_dir, feed_sources=(feed_source,), daily_news_repository=repository,
@@ -248,6 +251,23 @@ def _run_feed_tick(
             items_deduplicated_last_run=0,
             items_suppressed_no_url_last_run=0,
         ))
+        # Daily News worker observability, Part A (design/DECISIONS.md) —
+        # additive, source_id-keyed row alongside the unchanged
+        # company_name-keyed write above. No FeedFetchResult exists for
+        # this tick (the whole run_discovery() call itself raised), so
+        # last_http_status/last_request_duration_ms stay None — never
+        # guessed.
+        if source_id != "(no source_id)":
+            scan_status_repository.upsert_source_status(DailyNewsSourceScanStatus(
+                source_id=source_id, company_name=company_name,
+                last_attempt_at=started_at, last_result_at=now,
+                last_fetch_success_at=previous_source.last_fetch_success_at if previous_source else None,
+                last_story_published_at=previous_source.last_story_published_at if previous_source else None,
+                last_failure_code=type(exc).__name__, last_http_status=None, last_request_duration_ms=None,
+                items_discovered_last_run=0, stories_published_last_run=0,
+                items_already_seen_last_run=0, items_deduplicated_last_run=0, items_suppressed_no_url_last_run=0,
+                updated_at=now,
+            ))
         print(f"{source_id} ({company_name}): tick failed ({type(exc).__name__}) — skipped.")
         return
 
@@ -278,6 +298,32 @@ def _run_feed_tick(
         items_deduplicated_last_run=report.items_deduplicated,
         items_suppressed_no_url_last_run=report.items_suppressed_no_url,
     ))
+
+    # Daily News worker observability, Part A (design/DECISIONS.md) —
+    # additive, source_id-keyed row alongside the unchanged
+    # company_name-keyed write above. fetch_result is this exact source's
+    # own FeedFetchResult from this tick's report — already computed by
+    # run_discovery(), never a second request.
+    if source_id != "(no source_id)":
+        fetch_result = report.fetch_results.get(source_id)
+        scan_status_repository.upsert_source_status(DailyNewsSourceScanStatus(
+            source_id=source_id, company_name=company_name,
+            last_attempt_at=started_at, last_result_at=now,
+            last_fetch_success_at=now if fetch_succeeded else (previous_source.last_fetch_success_at if previous_source else None),
+            last_story_published_at=(
+                now if report.stories_published > 0 else (previous_source.last_story_published_at if previous_source else None)
+            ),
+            last_failure_code=failure_code,
+            last_http_status=fetch_result.http_status if fetch_result else None,
+            last_request_duration_ms=fetch_result.duration_ms if fetch_result else None,
+            items_discovered_last_run=report.items_discovered,
+            stories_published_last_run=report.stories_published,
+            items_already_seen_last_run=report.items_already_seen,
+            items_deduplicated_last_run=report.items_deduplicated,
+            items_suppressed_no_url_last_run=report.items_suppressed_no_url,
+            updated_at=now,
+        ))
+
     if fetch_succeeded:
         print(
             f"{source_id} ({company_name}): ok — items_discovered={report.items_discovered} "
@@ -345,6 +391,11 @@ def _run_tick_body(
         last_failure_code=None,
         updated_at=completed_at,
     ))
+    # Daily News worker observability, Part A (design/DECISIONS.md) — a
+    # plain log line computed from the two timestamps just persisted
+    # above; no new persisted field, no change to scheduling/sleep.
+    duration_seconds = (datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at)).total_seconds()
+    print(f"Daily News worker: tick completed in {duration_seconds:.1f}s (started {started_at}, completed {completed_at}).")
 
 
 def run_one_tick(worker_settings: Settings, scan_status_repository: DailyNewsScanStatusRepositoryProtocol) -> None:

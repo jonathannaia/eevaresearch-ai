@@ -47,7 +47,11 @@ from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import daily_news_repository as sqlite_daily_news
 from src.data_access.state_db import daily_news_scan_status_repository as sqlite_daily_news_scan_status
 from src.data_access.state_db import schema as state_db_schema
-from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsFeedScanStatus, DailyNewsWorkerStatus
+from src.data_access.state_db.daily_news_scan_status_repository import (
+    DailyNewsFeedScanStatus,
+    DailyNewsSourceScanStatus,
+    DailyNewsWorkerStatus,
+)
 from src.models.daily_news_models import EditorialStory, NewsStory
 
 
@@ -215,6 +219,14 @@ class DailyNewsScanStatusRepositoryProtocol(Protocol):
     def get_feed_status(self, company_name: str) -> DailyNewsFeedScanStatus | None: ...
     def get_all_feed_statuses(self) -> dict[str, DailyNewsFeedScanStatus]: ...
     def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None: ...
+    # Daily News worker observability, Part A (design/DECISIONS.md) —
+    # source_id-keyed methods, additive alongside the company_name-keyed
+    # methods above (which stay exactly as they are — the legacy/
+    # aggregate view). See daily_news_scan_status_repository.py's own
+    # module docstring for the full rationale.
+    def get_source_status(self, source_id: str) -> DailyNewsSourceScanStatus | None: ...
+    def get_all_source_statuses(self) -> dict[str, DailyNewsSourceScanStatus]: ...
+    def upsert_source_status(self, status: DailyNewsSourceScanStatus) -> None: ...
     def get_worker_status(self) -> DailyNewsWorkerStatus | None: ...
     def upsert_worker_status(self, status: DailyNewsWorkerStatus) -> None: ...
 
@@ -231,6 +243,15 @@ class SqliteDailyNewsScanStatusRepository:
 
     def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None:
         sqlite_daily_news_scan_status.upsert_feed_status(self.conn, status)
+
+    def get_source_status(self, source_id: str) -> DailyNewsSourceScanStatus | None:
+        return sqlite_daily_news_scan_status.get_source_status(self.conn, source_id)
+
+    def get_all_source_statuses(self) -> dict[str, DailyNewsSourceScanStatus]:
+        return sqlite_daily_news_scan_status.get_all_source_statuses(self.conn)
+
+    def upsert_source_status(self, status: DailyNewsSourceScanStatus) -> None:
+        sqlite_daily_news_scan_status.upsert_source_status(self.conn, status)
 
     def get_worker_status(self) -> DailyNewsWorkerStatus | None:
         return sqlite_daily_news_scan_status.get_worker_status(self.conn)
@@ -251,6 +272,15 @@ class PostgresDailyNewsScanStatusRepository:
 
     def upsert_feed_status(self, status: DailyNewsFeedScanStatus) -> None:
         postgres_daily_news_scan_status.upsert_feed_status(self.conn, status)
+
+    def get_source_status(self, source_id: str) -> DailyNewsSourceScanStatus | None:
+        return postgres_daily_news_scan_status.get_source_status(self.conn, source_id)
+
+    def get_all_source_statuses(self) -> dict[str, DailyNewsSourceScanStatus]:
+        return postgres_daily_news_scan_status.get_all_source_statuses(self.conn)
+
+    def upsert_source_status(self, status: DailyNewsSourceScanStatus) -> None:
+        postgres_daily_news_scan_status.upsert_source_status(self.conn, status)
 
     def get_worker_status(self) -> DailyNewsWorkerStatus | None:
         return postgres_daily_news_scan_status.get_worker_status(self.conn)

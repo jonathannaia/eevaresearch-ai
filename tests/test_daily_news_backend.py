@@ -246,6 +246,53 @@ def test_scan_status_postgres_repository_round_trips_through_protocol_methods(pg
     assert repo.get_worker_status() == status
 
 
+# --- Daily News worker observability, Part A: source_id-keyed status wiring ---
+
+
+def _source_status(**overrides):
+    from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsSourceScanStatus
+
+    fields = dict(
+        source_id="meta-ir-rss", company_name="Meta Platforms, Inc.",
+        last_attempt_at="2026-01-01T00:00:00+00:00", last_result_at="2026-01-01T00:00:00.400000+00:00",
+        last_fetch_success_at=None, last_story_published_at=None,
+        last_failure_code="HTTPError:403", last_http_status=403, last_request_duration_ms=187.5,
+        items_discovered_last_run=0, stories_published_last_run=0, items_already_seen_last_run=0,
+        items_deduplicated_last_run=0, items_suppressed_no_url_last_run=0,
+        updated_at="2026-01-01T00:00:00.400000+00:00",
+    )
+    fields.update(overrides)
+    return DailyNewsSourceScanStatus(**fields)
+
+
+def test_scan_status_sqlite_source_status_round_trips_through_protocol_methods(tmp_path):
+    from src.data_access.daily_news.daily_news_backend import (
+        SqliteDailyNewsScanStatusRepository,
+        get_daily_news_scan_status_repository,
+    )
+
+    settings = _settings("sqlite", state_db_path=str(tmp_path / "state.db"))
+    repo = get_daily_news_scan_status_repository(settings)
+    assert isinstance(repo, SqliteDailyNewsScanStatusRepository)
+    assert repo.get_source_status("meta-ir-rss") is None
+
+    status = _source_status()
+    repo.upsert_source_status(status)
+    assert repo.get_source_status("meta-ir-rss") == status
+    assert repo.get_all_source_statuses() == {"meta-ir-rss": status}
+
+
+def test_scan_status_postgres_source_status_round_trips_through_protocol_methods(pg_conn):
+    from src.data_access.daily_news.daily_news_backend import PostgresDailyNewsScanStatusRepository
+
+    repo = PostgresDailyNewsScanStatusRepository(conn=pg_conn)
+    assert repo.get_source_status("meta-ir-rss") is None
+
+    status = _source_status()
+    repo.upsert_source_status(status)
+    assert repo.get_source_status("meta-ir-rss") == status
+
+
 # --- Editorial Daily News — Postgres persistence fix: repository
 # factory selection (design/DECISIONS.md). Storage only — no feed
 # fetching, no matching/dedup/cap logic is exercised here.

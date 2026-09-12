@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -602,6 +602,38 @@ _V16_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_editorial_stories_source_feed ON editorial_stories (source_feed_id)",
 )
 
+# Daily News worker observability, Part A (design/DECISIONS.md) —
+# isolated Postgres counterpart to state_db/schema.py's own
+# _V16_STATEMENTS (see that module's comment for the full rationale,
+# including the last_result_at vs. updated_at distinction and why the
+# existing company_name-keyed daily_news_scan_status table is left
+# untouched and becomes the legacy/aggregate view for a multi-source
+# company). Two wholly additive changes: a nullable column on
+# daily_news_sources, and one new, source_id-keyed table.
+_V17_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE daily_news_sources ADD COLUMN first_discovered_at TEXT",
+    """
+    CREATE TABLE daily_news_source_status (
+        source_id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        last_attempt_at TEXT,
+        last_result_at TEXT,
+        last_fetch_success_at TEXT,
+        last_story_published_at TEXT,
+        last_failure_code TEXT,
+        last_http_status INTEGER,
+        last_request_duration_ms REAL,
+        items_discovered_last_run INTEGER NOT NULL DEFAULT 0,
+        stories_published_last_run INTEGER NOT NULL DEFAULT 0,
+        items_already_seen_last_run INTEGER NOT NULL DEFAULT 0,
+        items_deduplicated_last_run INTEGER NOT NULL DEFAULT 0,
+        items_suppressed_no_url_last_run INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_daily_news_source_status_company ON daily_news_source_status (company_name)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -623,6 +655,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (14, _V14_STATEMENTS),
     (15, _V15_STATEMENTS),
     (16, _V16_STATEMENTS),
+    (17, _V17_STATEMENTS),
 )
 
 

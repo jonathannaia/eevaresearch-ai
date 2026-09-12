@@ -53,7 +53,8 @@ class UpdateOutcome:
 def _row_to_story(conn: sqlite3.Connection, row: sqlite3.Row) -> NewsStory:
     source_rows = conn.execute(
         "SELECT publisher, source_class, url, title, published_at, retrieved_at, original_language, "
-        "excerpt_original, image_url, image_alt FROM daily_news_sources WHERE story_id = ? ORDER BY id ASC",
+        "excerpt_original, image_url, image_alt, first_discovered_at FROM daily_news_sources "
+        "WHERE story_id = ? ORDER BY id ASC",
         (row["id"],),
     ).fetchall()
     sources = tuple(
@@ -62,6 +63,7 @@ def _row_to_story(conn: sqlite3.Connection, row: sqlite3.Row) -> NewsStory:
             title=s["title"], published_at=s["published_at"], retrieved_at=s["retrieved_at"],
             original_language=s["original_language"], excerpt_original=s["excerpt_original"],
             image_url=s["image_url"], image_alt=s["image_alt"],
+            first_discovered_at=s["first_discovered_at"],
         )
         for s in source_rows
     )
@@ -103,13 +105,13 @@ def _insert_source(conn: sqlite3.Connection, story_id: str, source: NewsSourceRe
         """
         INSERT INTO daily_news_sources (
             story_id, publisher, source_class, url, title, published_at, retrieved_at,
-            original_language, excerpt_original, image_url, image_alt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            original_language, excerpt_original, image_url, image_alt, first_discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             story_id, source.publisher, source.source_class.value, source.url, source.title,
             source.published_at, source.retrieved_at, source.original_language,
-            source.excerpt_original, source.image_url, source.image_alt,
+            source.excerpt_original, source.image_url, source.image_alt, source.first_discovered_at,
         ),
     )
 

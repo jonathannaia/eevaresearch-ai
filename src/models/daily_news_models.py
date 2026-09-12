@@ -57,6 +57,23 @@ class NewsSourceReference:
     # exact-hostname gate applied before either is ever populated here.
     image_url: str | None = None
     image_alt: str | None = None  # source alt text if present, else the item's own title — accessibility text, never a factual caption
+    # Daily News worker observability, Part A (design/DECISIONS.md): the
+    # UTC time at which EevaResearch first persisted this deterministic
+    # story ID during Daily News discovery. Distinct from published_at
+    # (the source's own claimed publication time), retrieved_at (the
+    # timestamp of THIS particular fetch — identical to
+    # first_discovered_at only on the run that first discovered the
+    # story), and the underlying real-world event time (never captured
+    # anywhere in this app). Set once, at construction, in
+    # daily_news_pipeline.run_discovery()'s new-item branch only —
+    # never touched again: an already-known story_id short-circuits
+    # before a new NewsSourceReference is ever constructed for it (see
+    # run_discovery()'s own `if story_id in store: ... continue`), so
+    # this field can only ever be written once per story, by
+    # construction of the pipeline's own control flow, not by a
+    # separate runtime guard. None for every pre-migration/pre-this-
+    # field record — never backfilled.
+    first_discovered_at: str | None = None
 
 
 @dataclass

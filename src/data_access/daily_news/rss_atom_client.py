@@ -24,6 +24,7 @@ applied downstream before any image URL is ever rendered."""
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -52,6 +53,12 @@ class RawFeedEntry:
 class FeedFetchResult:
     entries: tuple[RawFeedEntry, ...]
     failure_code: str | None  # sanitized: exception class name or "MalformedFeed" only
+    # Daily News worker observability, Part A (design/DECISIONS.md) —
+    # purely descriptive of the one request fetch_entries() already
+    # makes; adding these two fields introduces no second request, no
+    # retry, and no change to failure_code's own existing behavior.
+    duration_ms: float | None = None  # wall-clock time of the single GET, in milliseconds
+    http_status: int | None = None  # the response's real HTTP status code, success or failure, when known
 
 
 def _parse_published_at(entry: dict) -> str:
@@ -134,6 +141,22 @@ def _to_raw_entry(entry: dict) -> RawFeedEntry:
     )
 
 
+def _http_status_from_exception(exc: requests.RequestException) -> int | None:
+    """The real HTTP status code carried by an HTTPError, when available
+    — never the response body, headers, cookies, or the exception's own
+    message/str(). None for every other RequestException subclass
+    (ConnectionError, Timeout, TooManyRedirects, etc.), which never
+    reached an HTTP response at all. Shared by _failure_code() (the
+    existing sanitized-string diagnostic) and fetch_entries() (the new
+    FeedFetchResult.http_status field, Daily News worker observability
+    Part A, design/DECISIONS.md) so both read the exact same value."""
+    if isinstance(exc, requests.HTTPError):
+        status_code = getattr(exc.response, "status_code", None)
+        if isinstance(status_code, int):
+            return status_code
+    return None
+
+
 def _failure_code(exc: requests.RequestException) -> str:
     """Sanitized failure identifier — the exception class name only
     (`type(exc).__name__`), except for `requests.HTTPError`, where the
@@ -142,33 +165,40 @@ def _failure_code(exc: requests.RequestException) -> str:
     blocked), 404 (moved/gone), 429 (rate-limited), and a 5xx (origin
     outage) into one indistinguishable string, which is exactly what
     made a real production diagnosis (design/DECISIONS.md, Daily News
-    operational-fix workstream) unable to tell those cases apart.
-    `HTTPError.response` is the `requests.Response` object
-    `raise_for_status()` raised from — `status_code` is read from it
-    only; never the response body, headers, cookies, the exception's own
-    message/str(), or anything else. Every other `RequestException`
-    subclass (ConnectionError, Timeout, TooManyRedirects, etc.) is
-    completely unaffected — returns exactly `type(exc).__name__`, same
-    as before this change."""
-    if isinstance(exc, requests.HTTPError):
-        status_code = getattr(exc.response, "status_code", None)
-        if isinstance(status_code, int):
-            return f"HTTPError:{status_code}"
+    operational-fix workstream) unable to tell those cases apart. Every
+    other `RequestException` subclass is completely unaffected — returns
+    exactly `type(exc).__name__`, same as before this change."""
+    status_code = _http_status_from_exception(exc)
+    if status_code is not None:
+        return f"HTTPError:{status_code}"
     return type(exc).__name__
 
 
 def fetch_entries(feed_url: str) -> FeedFetchResult:
     """One bounded fetch of one feed. Never a loop over many feeds — a
-    caller wanting several calls this once per feed, deliberately."""
+    caller wanting several calls this once per feed, deliberately.
+    Exactly one `requests.get` call, unconditionally — no retry, no
+    second validation request (Daily News worker observability Part A,
+    design/DECISIONS.md, adds only `duration_ms`/`http_status` as
+    descriptive facts about this same single request; Part B's bounded
+    retry is a separate, not-yet-approved change)."""
+    start = time.monotonic()
     try:
         response = requests.get(feed_url, timeout=_TIMEOUT_SECONDS, headers={"User-Agent": _USER_AGENT})
         response.raise_for_status()
     except requests.RequestException as exc:
-        return FeedFetchResult(entries=(), failure_code=_failure_code(exc))
+        duration_ms = (time.monotonic() - start) * 1000
+        return FeedFetchResult(
+            entries=(), failure_code=_failure_code(exc),
+            duration_ms=duration_ms, http_status=_http_status_from_exception(exc),
+        )
+    duration_ms = (time.monotonic() - start) * 1000
 
     parsed = feedparser.parse(response.content)
     if parsed.bozo and not parsed.entries:
-        return FeedFetchResult(entries=(), failure_code="MalformedFeed")
+        return FeedFetchResult(
+            entries=(), failure_code="MalformedFeed", duration_ms=duration_ms, http_status=response.status_code,
+        )
 
     entries = tuple(_to_raw_entry(entry) for entry in parsed.entries)
-    return FeedFetchResult(entries=entries, failure_code=None)
+    return FeedFetchResult(entries=entries, failure_code=None, duration_ms=duration_ms, http_status=response.status_code)
