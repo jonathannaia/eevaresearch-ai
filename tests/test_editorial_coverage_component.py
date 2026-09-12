@@ -85,7 +85,11 @@ def test_one_story_renders_the_exact_required_anatomy(tmp_path, monkeypatch):
     assert not at.exception
     all_text = _main_text(at)
 
-    assert "Editorial Coverage" in all_text
+    # Unified Daily News feed (design/DECISIONS.md): no separate
+    # "Editorial Coverage" section heading — a compact "Market news"
+    # item-type label carries the provenance distinction per-card instead.
+    assert "Editorial Coverage" not in all_text
+    assert "Market news" in all_text
     assert "Oracle Corporation reports strong AI cloud demand" in all_text
     assert "CNBC" in all_text
     assert "Editorial" in all_text
@@ -120,7 +124,7 @@ def test_theme_only_story_renders_with_no_company_tag(tmp_path, monkeypatch):
     theme_only = _story(matched_companies=(), matched_themes=("memory",))
     at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-abc": theme_only})
     all_text = _main_text(at)
-    assert "Editorial Coverage" in all_text
+    assert "Market news" in all_text
     assert "Memory" in all_text
 
 
@@ -136,27 +140,37 @@ def test_multi_company_multi_theme_tags_all_render(tmp_path, monkeypatch):
 
 def test_never_shows_investment_or_why_it_matters_framing(tmp_path, monkeypatch):
     at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-abc": _story()})
-    section_text = _main_text(at)
-    section_text = section_text[section_text.index("Editorial Coverage"):].lower()
+    section_text = _main_text(at).lower()
     for forbidden in ("why it matters", "recommend", "forecast", "we believe", "outlook is"):
         assert forbidden not in section_text
 
 
-# --- Placement and issuer-lane coexistence -----------------------------
+# --- Placement and issuer-lane coexistence (unified Daily News feed,
+# design/DECISIONS.md) -----------------------------------------------
 
 
-def test_editorial_coverage_renders_after_issuer_section(tmp_path, monkeypatch):
+def test_daily_news_heading_renders_once_before_any_editorial_card(tmp_path, monkeypatch):
+    """Exactly one "Daily News" heading — no separate "Editorial
+    Coverage" heading exists any more — and it renders before the
+    editorial card content that follows it in the unified feed."""
     daily_news_store.upsert_new_stories(tmp_path, [])  # ensure cache_dir exists, issuer side stays empty
     at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-abc": _story()})
     assert not at.exception
     all_text = _main_text(at)
+    assert "Editorial Coverage" not in all_text
     daily_news_title_index = all_text.index("Daily News")
-    editorial_index = all_text.index("Editorial Coverage")
-    assert daily_news_title_index < editorial_index
+    headline_index = all_text.index("Oracle Corporation reports strong AI cloud demand")
+    assert daily_news_title_index < headline_index
 
 
-def test_issuer_section_still_renders_its_own_empty_state_with_editorial_present(tmp_path, monkeypatch):
+def test_editorial_only_content_suppresses_the_issuer_empty_state(tmp_path, monkeypatch):
+    """Unified feed (design/DECISIONS.md): when there are zero issuer
+    stories but at least one visible editorial story, the page must show
+    that editorial content directly — never the issuer-specific "No
+    recent company updates" empty state, which would incorrectly imply
+    there is nothing to show at all."""
     at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-abc": _story()})
     all_text = _main_text(at)
-    assert "No recent company updates in the last 7 days." in all_text
-    assert "Editorial Coverage" in all_text
+    assert "No recent company updates in the last 7 days." not in all_text
+    assert "Editorial Coverage" not in all_text
+    assert "Oracle Corporation reports strong AI cloud demand" in all_text
