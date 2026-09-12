@@ -37,7 +37,7 @@ import psycopg
 
 from src.config.settings import Settings
 from src.data_access.backend_factory import BackendConfigurationError
-from src.data_access.daily_news import daily_news_store
+from src.data_access.daily_news import daily_news_store, editorial_story_store
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import daily_news_repository as postgres_daily_news
 from src.data_access.postgres_state_db import daily_news_scan_status_repository as postgres_daily_news_scan_status
@@ -47,7 +47,7 @@ from src.data_access.state_db import daily_news_repository as sqlite_daily_news
 from src.data_access.state_db import daily_news_scan_status_repository as sqlite_daily_news_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.daily_news_scan_status_repository import DailyNewsFeedScanStatus, DailyNewsWorkerStatus
-from src.models.daily_news_models import NewsStory
+from src.models.daily_news_models import EditorialStory, NewsStory
 
 
 def _normalized_backend(settings: Settings) -> str:
@@ -275,3 +275,36 @@ def get_daily_news_scan_status_repository(settings: Settings) -> DailyNewsScanSt
         f'db_backend of "sqlite" or "postgres" (got {backend!r}). JSON is not supported here — '
         "this table is only ever read/written by scripts/daily_news_worker.py."
     )
+
+
+# --- Editorial Daily News v1 (design/DECISIONS.md) — JSON-only,
+# deliberately no sqlite/postgres branch tonight (that would require a
+# new schema/migration, explicitly out of scope for this batch). Wraps
+# editorial_story_store.py exactly as-is — a separate cache file from
+# the issuer NewsStory store, zero change to JsonDailyNewsRepository or
+# any other class above. ---
+
+
+class EditorialStoryRepositoryProtocol(Protocol):
+    def load_stories(self) -> dict[str, EditorialStory]: ...
+    def upsert_new_stories(self, new_stories: list[EditorialStory]) -> dict[str, EditorialStory]: ...
+
+
+@dataclass(frozen=True)
+class JsonEditorialStoryRepository:
+    cache_dir: Path
+
+    def load_stories(self) -> dict[str, EditorialStory]:
+        return editorial_story_store.load_stories(self.cache_dir)
+
+    def upsert_new_stories(self, new_stories: list[EditorialStory]) -> dict[str, EditorialStory]:
+        return editorial_story_store.upsert_new_stories(self.cache_dir, new_stories)
+
+
+def get_editorial_story_repository(settings: Settings) -> EditorialStoryRepositoryProtocol:
+    """JSON-only in v1 — editorial persistence does not yet follow
+    settings.db_backend the way get_daily_news_repository() does for
+    issuer stories; that would require its own new sqlite/postgres
+    schema, which this batch's own approved scope explicitly excludes
+    ("no migrations"). Always returns the JSON-backed repository."""
+    return JsonEditorialStoryRepository(cache_dir=settings.cache_dir)

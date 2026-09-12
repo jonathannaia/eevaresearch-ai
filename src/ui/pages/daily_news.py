@@ -54,6 +54,7 @@ from src.config.settings import Settings, get_settings
 from src.data_access.daily_news import daily_news_backend
 from src.logic.formatting import fmt_datetime_local
 from src.models.daily_news_models import NewsStory, NewsStoryStatus, SourceClass
+from src.ui.components.editorial_coverage import render_editorial_coverage
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
 
@@ -163,6 +164,17 @@ def _page_subtitle(recent_stories: list[NewsStory]) -> str:
 
 
 def render() -> None:
+    _render_issuer_section()
+    render_editorial_coverage()
+
+
+def _render_issuer_section() -> None:
+    """Exact, unmodified issuer-lane rendering logic — extracted from
+    render() itself (Editorial Daily News v1, design/DECISIONS.md) only
+    so a new, additive editorial section can be appended after it
+    regardless of which of this function's own several early-return
+    branches fires below. Zero behavior change: same code, same control
+    flow, same four exit points, just now callable as its own function."""
     settings = get_settings()
     all_stories = _published_stories(settings)
     recent_for_subtitle = _recent_stories(all_stories)

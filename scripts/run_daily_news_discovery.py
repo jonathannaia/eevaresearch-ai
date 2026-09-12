@@ -14,16 +14,25 @@ Never imports anything from src.data_access.dart/edgar/edinet or
 scripts/radar_worker.py. Only prints DailyNewsScanReport's own safe,
 already-sanitized fields — never a raw exception, feed content, or
 credential (this pipeline uses no credentials at all).
+
+Editorial Daily News v1 (design/DECISIONS.md): an explicit
+--editorial-only flag, reusing this exact same command, runs
+editorial_pipeline.run_editorial_discovery() instead — a completely
+separate pipeline/store from the issuer discovery above. Default
+behavior (no flag) is byte-for-byte unchanged: still issuer-only, same
+as before this flag existed. The two pipelines are never both run in
+one invocation, by design — keeps each run's own report simple and
+keeps this narrow addition from touching the issuer branch at all.
 """
 from __future__ import annotations
 
 import sys
 
 from src.config.settings import get_settings
-from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, editorial_pipeline
 
 
-def main() -> int:
+def _run_issuer_discovery() -> int:
     settings = get_settings()
     # Daily News durability workstream: storage only — this remains the
     # exact same one-shot manual trigger; which backend it reads/writes
@@ -52,6 +61,35 @@ def main() -> int:
             print(f"    [{company_name}] {title!r} — {reason}")
 
     return 0
+
+
+def _run_editorial_discovery() -> int:
+    settings = get_settings()
+    repository = daily_news_backend.get_editorial_story_repository(settings)
+    report = editorial_pipeline.run_editorial_discovery(settings.cache_dir, editorial_repository=repository)
+
+    print(f"Editorial Daily News discovery — {report.scan_id}")
+    print(f"  sources polled:        {report.sources_polled}")
+    print(f"  items fetched:         {report.items_fetched}")
+    print(f"  stories published:     {report.stories_published}")
+    print(f"  no valid URL:          {report.items_no_valid_url}")
+    print(f"  stale (>72h):          {report.items_stale}")
+    print(f"  no company/theme match:{report.items_no_match}")
+    print(f"  duplicate:             {report.items_duplicate}")
+    print(f"  capped (>5 per feed):  {report.items_capped}")
+    print(f"  already seen:          {report.items_already_seen}")
+    if report.source_failures:
+        print("  source failures:")
+        for source_id, failure_code in report.source_failures.items():
+            print(f"    {source_id}: {failure_code}")
+
+    return 0
+
+
+def main() -> int:
+    if "--editorial-only" in sys.argv[1:]:
+        return _run_editorial_discovery()
+    return _run_issuer_discovery()
 
 
 if __name__ == "__main__":

@@ -83,3 +83,36 @@ class NewsStory:
     sources: tuple[NewsSourceReference, ...]
     status: NewsStoryStatus
     state_history: list[NewsStateTransition] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class EditorialStory:
+    """Editorial Daily News v1 (design/DECISIONS.md) — a parallel,
+    additive model for issuer-agnostic editorial feed items (CNBC,
+    Korea Herald). Deliberately NOT a NewsStory: NewsStory's own
+    `company_name: str` is a single required field (exactly one issuer,
+    always present) — editorial coverage genuinely supports zero, one,
+    or many matched companies and one-or-many matched themes, a
+    different shape this project's own established "never force an
+    existing type to loosely fit a new shape" discipline says deserves
+    its own type rather than a NewsStory with invented/optional fields.
+    Zero change to NewsStory/NewsSourceReference/NewsStoryStatus/
+    SourceClass above.
+
+    Every instance already passed src.data_access.daily_news.
+    editorial_matching's fail-closed gate before construction — at least
+    one of matched_companies/matched_themes is always non-empty; there is
+    no "unmatched" or "suppressed" EditorialStory, mirroring this
+    project's established "don't construct what can't be shown" pattern
+    (see e.g. the Federal Register Policy Monitor Pilot)."""
+
+    id: str  # deterministic, from (canonical source_url) or (normalized headline, publisher) — see editorial_pipeline.py
+    headline: str  # the source's own title, verbatim — never rewritten
+    publisher: str  # e.g. "CNBC", "The Korea Herald"
+    source_url: str  # canonical https link, validated before construction
+    published_at: str  # ISO 8601, source-claimed
+    retrieved_at: str  # ISO 8601, when EevaResearch fetched it
+    excerpt: str | None  # bounded extractive excerpt from the feed's own description field only; None means omit entirely — never a fallback sentence, never invented
+    matched_companies: tuple[str, ...]  # zero-to-many real TrackedCompany.name values
+    matched_themes: tuple[str, ...]  # one-to-many theme slugs
+    source_feed_id: str  # the DailyNewsSourceEntry.source_id this item came from — for per-source cap/failure-isolation bookkeeping
