@@ -1,31 +1,48 @@
 """Radar Inbox's per-item card (Radar simplicity + translation reliability
-workstream; layout correction pass; filing-quality pass — design/
-DECISIONS.md) — a minimal, read-only research-feed card showing exactly:
+workstream; layout correction pass; filing-quality pass; Dashboard/
+Filings usability pass — design/DECISIONS.md) — a minimal, read-only
+research-feed card showing exactly:
 
   1) company name and ticker/security code (when available), with the
      filing's own official filed date at the top-right, when known;
   2) a clean, deterministic, source-safe display title (see
      src/logic/filing_display.display_title — for EDGAR, a readable
      mapping from the official SEC form type, e.g. "Quarterly Report —
-     Form 10-Q"; for DART/EDINET, unchanged: the stored title
-     translation when one exists, otherwise the native official title);
-  3) `Summary` — a concise extractive summary grounded only in stored,
-     quality-gated readable text, or (whenever no such text exists) a
-     neutral, factual "{Company} filed {title} on {date}." sentence —
-     see src/logic/filing_display for the exact quality gate and
-     fallback wording;
-  4) `View filing excerpt` (English/EDGAR) or `View translated filing
+     Form 10-Q"; for DART/EDINET, the stored title translation or the
+     native official title, selected by each card's own Original/English
+     toggle state — see below);
+  3) `Filing summary` — a concise extractive summary grounded only in
+     stored, quality-gated readable text (original or translated,
+     following the same Original/English toggle state as the title), or
+     (whenever no such text exists) a neutral, factual "{Company} filed
+     {title} on {date}." sentence — see src/logic/filing_display for the
+     exact quality gate and fallback wording. A compact `Item X.XX` label
+     renders beside the heading only when candidate.evidence_location
+     already, reliably records a genuine Item-header anchor for this
+     EDGAR excerpt (filing_display.item_anchor_label) — read from
+     already-persisted evidence metadata only, never derived from raw
+     text here;
+  4) for DART/EDINET only, an `Original`/`English` toggle for the title +
+     Filing summary pair — rendered only when a title translation is
+     actually stored. DART defaults to English (unchanged from before
+     this pass); EDINET defaults to Original (changed by this pass — see
+     module-level default_show_translated below). SEC/EDGAR cards never
+     request a translation and never show this toggle;
+  5) `View filing excerpt` (English/EDGAR) or `View translated filing
      excerpt` / `View original filing excerpt` (Korean/Japanese) —
      compact, display-only toggles, shown only when the corresponding
      stored text exists and (for any original-language/extracted text)
-     passes the same quality gate Summary uses. Filing-card machine-
-     artifact / excerpt-honesty fix: labels now say "excerpt", not
-     "text"/"translation", so a reader understands this is a bounded
-     fragment, never the full document; an expanded toggle also shows an
-     "Excerpt may be incomplete..." notice whenever
+     passes the same quality gate Filing summary uses. These are
+     independent of the item-4 title/summary language toggle — both the
+     translated and original full excerpts stay separately reachable
+     regardless of which language the title/summary currently show.
+     Filing-card machine-artifact / excerpt-honesty fix: labels say
+     "excerpt", not "text"/"translation", so a reader understands this is
+     a bounded fragment, never the full document; an expanded toggle also
+     shows an "Excerpt may be incomplete..." notice whenever
      filing_display.excerpt_may_be_incomplete(candidate.excerpt_original)
      is true (see `_render_expandable_text`'s own docstring);
-  5) `Open original filing ↗` — the card's sole action. EDINET is the
+  6) `Open original filing ↗` — the card's sole action. EDINET is the
      one exception: it has no working direct document link (verified
      live — disclosure2.edinet-fsa.go.jp's per-row PDF action is a
      session-bound JS postback, not a derivable URL), so EDINET cards
@@ -33,28 +50,40 @@ DECISIONS.md) — a minimal, read-only research-feed card showing exactly:
      official search portal root, plus (unchanged call site, changed
      body — see `_edinet_locator_line`'s own docstring) a fixed, concise
      EDINET lookup-guidance sentence;
-  6) a compact "Official filing reference" block, for all three
+  7) a compact "Official filing reference" block, for all three
      providers, built by filing_display.official_filing_reference from
      FilingEvent's own already-stored fields with provider-accurate
      labels (EDINET issuer code / DART issuer code / CIK, Securities
      code, Document ID / Receipt number / Accession number, Filed date)
      — never an EDINET-only label applied to a DART/EDGAR filing.
 
-EDINET's title/Summary/toggle mechanism (items 2-4 above) is entirely
-shared with DART — no EDINET-specific branch exists in `display_title`,
-the Summary logic, or the toggles below; both sources already go through
-the exact same `is_english_native(filing)`-gated code path in
-`candidate_row`. The only EDINET-specific rendering is item 5's
-original-source-link fallback.
+Dashboard/Filings usability pass (design/DECISIONS.md): DART and EDINET
+share the exact same title/Filing-summary/toggle mechanism (items 2-4
+above) — no EDINET-specific branch beyond which language is the default
+(`default_show_translated`); both sources already go through the exact
+same `is_english_native(filing)`-gated code path in `candidate_row`. This
+toggle is purely a client-side, `st.session_state`-keyed display switch
+over ALREADY-STORED title_translation/excerpt_translation — it never
+calls the translation provider, never writes to CandidateSignal/the
+database, and never triggers a new translation attempt; DART/EDINET's
+own pipelines still translate automatically at document-processing time,
+completely unchanged. The only EDINET-specific rendering beyond the
+default is item 6's original-source-link fallback.
 
-Filing-quality pass (design/DECISIONS.md): some EDGAR filings store an
-extraction dominated by raw XML/XBRL markup, taxonomy namespace prefixes,
-and machine identifiers instead of readable prose (e.g. a Marvell-style
-Form 10-Q) — that text must never reach a reader. Every place this card
-would have shown stored extracted text verbatim now goes through
+Filing-quality pass (design/DECISIONS.md), extended by the Dashboard/
+Filings usability pass: some EDGAR filings store an extraction dominated
+by raw XML/XBRL markup, taxonomy namespace prefixes, and machine
+identifiers instead of readable prose (e.g. a Marvell-style Form 10-Q) —
+that text must never reach a reader. Every place this card would have
+shown stored extracted text verbatim now goes through
 src.logic.filing_display.is_readable_extracted_text first; text that
-fails degrades to the neutral metadata-only Summary and no filing-text
-toggle, never a raw dump.
+fails degrades to the neutral metadata-only Filing summary and no
+filing-text toggle, never a raw dump. A second, narrower case — a
+gate-passing but non-substantive 8-K cover-page prefix — is handled by
+filing_display.prefer_metadata_only_summary(candidate.evidence_location),
+gated strictly on a positive, already-persisted "confirmed unanchored"
+signal (never on the mere absence of one — see that function's own
+docstring for why).
 
 Removed entirely (Radar simplicity workstream): Why this matters,
 Memory/theme labels, detection confidence, Evidence status, Fact/
@@ -68,20 +97,22 @@ still independently unit-tested; they are simply never called from this
 public card any more.
 
 Layout correction pass (design/DECISIONS.md), extended by the filing-
-quality pass to a second toggle, and further extended by the filing-card
-summary/translation presentation fix: every text-reveal toggle on this
-card is purely a client-side visibility switch, keyed off
-`st.session_state` only — none of them ever calls a translation
-provider, writes to CandidateSignal/the database, or queues/retries
-anything. `Show English translation`, `View filing text`, and `View
-original filing text` are now ALL only ever rendered when the
-corresponding stored text exists AND passes the same quality gate
-(`is_readable_extracted_text`) — a raw/document-like stored translation
-no longer bypasses this gate the way it previously did. When no such
-text/translation is stored, or it fails the gate, this card renders no
-toggle and no messaging beyond the Summary and the source link — no
-"Translation unavailable", no "being prepared", no retry/status/error
-wording of any kind.
+quality pass to a second toggle, further extended by the filing-card
+summary/translation presentation fix, and further extended by the
+Dashboard/Filings usability pass's own title/summary language toggle:
+every text-reveal/language toggle on this card is purely a client-side
+visibility switch, keyed off `st.session_state` only — none of them ever
+calls a translation provider, writes to CandidateSignal/the database, or
+queues/retries anything. `View filing excerpt`, `View translated filing
+excerpt`/`View original filing excerpt`, and the title/summary
+`Original`/`English` toggle are ALL only ever rendered when the
+corresponding stored text/translation exists AND (for the excerpt
+toggles) passes the same quality gate (`is_readable_extracted_text`) — a
+raw/document-like stored translation no longer bypasses this gate the
+way it previously did. When no such text/translation is stored, or it
+fails the gate, this card renders no toggle and no messaging beyond the
+Filing summary and the source link — no "Translation unavailable", no
+"being prepared", no retry/status/error wording of any kind.
 """
 from __future__ import annotations
 
@@ -305,6 +336,11 @@ def _render_expandable_text(
             )
 
 
+def _toggle_title_language(rcept_no: str) -> None:
+    key = f"radar-titlelang-{rcept_no}"
+    st.session_state[key] = not st.session_state.get(key, True)
+
+
 def candidate_row(item: RadarItem, comparison_record=None) -> None:
     """`comparison_record` is accepted for call-site compatibility with
     radar_inbox.py (which still computes a per-page comparison-record bulk
@@ -326,7 +362,34 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         else:
             st.markdown(f'<div class="er-muted">{_identity_line(filing)}</div>', unsafe_allow_html=True)
 
-        title = filing_display.display_title(filing, candidate)
+        # Dashboard/Filings usability pass (design/DECISIONS.md): DART/
+        # EDINET's Original/English title+Filing-summary toggle state.
+        # SEC/EDGAR never requests a translation, so has_translation is
+        # always False there and this control never renders for it.
+        is_english = filing_display.is_english_native(filing)
+        # Title and excerpt translations are tracked, and can succeed/fail,
+        # completely independently (CandidateSignal's own docstring) —
+        # the shared toggle below renders whenever EITHER exists, but
+        # display_title()/the Summary-source selection each still check
+        # their own specific translation field, so a title-only or
+        # excerpt-only translation degrades correctly on its own half.
+        has_title_translation = candidate is not None and candidate.title_translation is not None
+        has_excerpt_translation = candidate is not None and candidate.excerpt_translation is not None
+        has_any_translation = has_title_translation or has_excerpt_translation
+        title_toggle_key = f"radar-titlelang-{filing.rcept_no}"
+        if not is_english:
+            # DART preserves its existing English-first default; EDINET's
+            # default flips to original-language-first (approved product
+            # decision) — the one deliberate difference between the two
+            # sources in this whole card.
+            default_show_translated = filing.source_name != _EDINET_SOURCE_NAME
+            if title_toggle_key not in st.session_state:
+                st.session_state[title_toggle_key] = default_show_translated
+            show_translated = st.session_state[title_toggle_key] if has_any_translation else False
+        else:
+            show_translated = True  # irrelevant: display_title() ignores this for an English-native filing
+
+        title = filing_display.display_title(filing, candidate, prefer_translated=show_translated)
         st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(title)}</div>', unsafe_allow_html=True)
 
         # Filing-card machine-artifact / excerpt-honesty fix: always
@@ -337,12 +400,22 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         excerpt_original = candidate.excerpt_original if candidate is not None else None
         may_be_incomplete = filing_display.excerpt_may_be_incomplete(excerpt_original)
 
-        if filing_display.is_english_native(filing):
+        item_label = None
+        if is_english:
             readable_text = excerpt_original
             passes_gate = bool(readable_text) and filing_display.is_readable_extracted_text(readable_text)
-            summary = filing_display.extractive_summary(readable_text) if passes_gate else ""
+            # Filing-card boilerplate fix: a gate-passing but reliably-
+            # confirmed-unanchored 8-K excerpt (see filing_display.
+            # prefer_metadata_only_summary's own docstring) prefers the
+            # neutral fallback even though it would otherwise pass the
+            # readability gate — never based on the mere absence of an
+            # anchor, only a positive, already-persisted signal.
+            evidence_location = candidate.evidence_location if candidate is not None else None
+            prefer_fallback = filing_display.prefer_metadata_only_summary(evidence_location)
+            summary = filing_display.extractive_summary(readable_text) if (passes_gate and not prefer_fallback) else ""
             if not summary:
                 summary = filing_display.metadata_only_summary(filing, title, filed_label)
+            item_label = filing_display.item_anchor_label(evidence_location)
         else:
             translation_text = (
                 candidate.excerpt_translation.translated_text
@@ -368,27 +441,55 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                 if native_text:
                     native_text = filing_display.strip_edinet_machine_artifacts(native_text)
 
-            # Filing-card summary/translation presentation fix: the same
-            # readability gate now decides both the Summary source below
-            # AND the translated-excerpt toggle further down — previously
-            # the toggle rendered whenever translation_text existed at
-            # all, regardless of readability, exposing a raw/document-
-            # like block. extractive_summary() itself may still return ""
-            # (no clean sentence found even within its own bounded search
-            # window); that empty-return case, not just an unreadable-
-            # source case, also falls back to metadata_only_summary()
-            # here — this is the "existing caller" extractive_summary()'s
-            # own docstring refers to.
+            # Filing-card summary/translation presentation fix, extended
+            # by the Dashboard/Filings usability pass: the Filing summary
+            # source now follows the same Original/English toggle state
+            # as the title — `show_translated` True (DART's default, or
+            # EDINET after an explicit toggle) prefers the translated
+            # excerpt exactly as before this pass; False (EDINET's new
+            # default, or DART after an explicit toggle) prefers the
+            # native excerpt instead, its own mirror-image behavior.
+            # extractive_summary() itself may still return "" (no clean
+            # sentence found even within its own bounded search window);
+            # that empty-return case, not just an unreadable-source case,
+            # also falls back to metadata_only_summary() here.
             translation_is_readable = bool(translation_text) and filing_display.is_readable_extracted_text(translation_text)
-            summary_source = translation_text if translation_is_readable else None
+            native_is_readable = bool(native_text) and filing_display.is_readable_extracted_text(native_text)
+            if not has_any_translation:
+                # No stored translation at all (neither title nor
+                # excerpt) — unchanged pre-existing behavior: the Filing
+                # summary never shows the raw native excerpt directly,
+                # only a translated summary or the neutral fallback (the
+                # native excerpt stays reachable only via its own
+                # separate, explicit "View original filing excerpt"
+                # toggle below). The new native-as-summary preference
+                # only applies once some translation exists and the
+                # toggle is explicitly set to Original.
+                summary_source = None
+            elif show_translated:
+                summary_source = translation_text if translation_is_readable else None
+            else:
+                summary_source = native_text if native_is_readable else None
             summary = filing_display.extractive_summary(summary_source) if summary_source else ""
             if not summary:
                 summary = filing_display.metadata_only_summary(filing, title, filed_label)
 
-        st.markdown('<div class="er-muted" style="margin-top:0.5rem;"><strong>Summary</strong></div>', unsafe_allow_html=True)
+        summary_label_html = '<div class="er-muted" style="margin-top:0.5rem; display:flex; align-items:center; gap:0.4rem;"><strong>Filing summary</strong>'
+        if item_label:
+            summary_label_html += f'<span class="er-status-tag er-tag-neutral">{html.escape(item_label)}</span>'
+        summary_label_html += "</div>"
+        st.markdown(summary_label_html, unsafe_allow_html=True)
         st.markdown(f'<div>{html.escape(summary)}</div>', unsafe_allow_html=True)
 
-        if filing_display.is_english_native(filing):
+        if not is_english and has_any_translation:
+            toggle_label = "Original" if show_translated else "English"
+            with st.container(key=f"cta-tertiary-titlelang-{filing.rcept_no}"):
+                st.button(
+                    toggle_label, key=f"radar-titlelang-{filing.rcept_no}-btn",
+                    on_click=_toggle_title_language, args=(filing.rcept_no,),
+                )
+
+        if is_english:
             if passes_gate:
                 _render_expandable_text(
                     toggle_key=f"radar-filingtext-{filing.rcept_no}",
@@ -405,7 +506,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     may_be_incomplete=may_be_incomplete,
                 )
 
-            if native_text and filing_display.is_readable_extracted_text(native_text):
+            if native_text and native_is_readable:
                 _render_expandable_text(
                     toggle_key=f"radar-originaltext-{filing.rcept_no}",
                     show_label="View original filing excerpt", hide_label="Hide original filing excerpt",

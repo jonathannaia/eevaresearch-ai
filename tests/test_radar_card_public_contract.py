@@ -238,9 +238,22 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert "SoftBank Group Corp." in all_text
     assert "99840" in all_text
     assert "Filed Jun 22, 2026" in all_text  # rcept_dt == "2026-06-22"
-    # Summary is grounded in the stored English translation, shown directly.
+    # Dashboard/Filings usability pass (design/DECISIONS.md): EDINET now
+    # defaults to original-language-first — the Filing summary is grounded
+    # in the readable native excerpt by default, not the stored translation.
+    assert "有価証券報告書の記載内容の抜粋です。" in all_text
+    assert "This is an excerpt from the annual securities report." not in all_text
+    english_toggle = [b for b in at.button if b.label == "English"]
+    assert len(english_toggle) == 1
+
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    # After the explicit English toggle, the Filing summary switches to
+    # the stored translation instead.
     assert "This is an excerpt from the annual securities report." in all_text
-    assert "有価証券報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed by default
+    assert any(b.label == "Original" for b in at.button)  # toggle now offers switching back
+
     translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
@@ -319,6 +332,14 @@ def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_s
 
     assert "ispace, inc." in all_text
     assert "93480" in all_text
+    # EDINET now defaults to original-language-first — the readable
+    # native excerpt is the default Filing summary; switch to English to
+    # exercise the unreadable-translation fallback this test is about.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+
     # Summary must be the honest metadata-only fallback — never the raw
     # translation, never an ellipsis, never a partial sentence.
     assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
@@ -368,6 +389,13 @@ def test_edinet_readable_translation_with_no_early_boundary_falls_back_to_metada
     assert not at.exception
     all_text = _text(at)
 
+    # EDINET now defaults to original-language-first; switch to English
+    # to exercise the no-early-boundary translated-summary fallback.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+
     assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
     assert "…" not in all_text
     assert "..." not in all_text
@@ -408,6 +436,13 @@ def test_edinet_readable_translation_still_renders_the_toggle_regardless_of_summ
 
     at = _run_radar(tmp_path)
     assert not at.exception
+    all_text = _text(at)
+
+    # EDINET now defaults to original-language-first; switch to English
+    # to see this candidate's own readable translated summary.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
     all_text = _text(at)
 
     assert "The company entered into a loan agreement with a lender for working capital." in all_text
@@ -487,6 +522,20 @@ def test_s100z0ot_leaked_machine_artifacts_never_appear_and_reference_block_is_c
 
     assert "ispace, inc." in all_text
     assert "93480" in all_text
+
+    # EDINET now defaults to original-language-first; switch to English
+    # to check the cleaned, grounded TRANSLATED summary this test is
+    # specifically about (the native artifact-cleanup sweep above already
+    # covers the default Original view regardless of which mode is active).
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    for leaked in (
+        "Extraordinary Report_20260909153311", "[Reason for Submission]",
+        "臨時報告書_20260909153311", "１【提出理由】",
+    ):
+        assert leaked not in all_text, leaked
     # Clean, complete, grounded summary — no leaked artifact prefix.
     assert "Shizuoka Bank" in all_text
     assert "three billion yen" in all_text
@@ -569,6 +618,18 @@ def test_s100z0ot_leading_bom_no_longer_blocks_artifact_cleanup(tmp_path):
         "臨時報告書_20260909153311", "１【提出理由】", "\ufeff",
     ):
         assert leaked not in all_text, leaked
+
+    # EDINET now defaults to original-language-first; switch to English
+    # to check the cleaned translated summary specifically.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    for leaked in (
+        "Extraordinary Report_20260909153311", "[Reason for Submission]",
+        "臨時報告書_20260909153311", "１【提出理由】", "\ufeff",
+    ):
+        assert leaked not in all_text, leaked
     assert "Shizuoka Bank" in all_text
 
     translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
@@ -618,6 +679,13 @@ def test_s100z0ot_translated_excerpt_trims_trailing_unterminated_clause(tmp_path
 
     at = _run_radar(tmp_path)
     assert not at.exception
+    all_text = _text(at)
+
+    # EDINET now defaults to original-language-first; switch to English
+    # to exercise the translated-summary regression this test is about.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
     all_text = _text(at)
 
     # Summary regression: extractive_summary() runs on the same
@@ -1153,18 +1221,19 @@ _render_quiet_links(dart_filing, "Aug 12, 2026")
 
 
 # ============================================================
-# EDINET shares DART's exact title/Summary/translation-toggle mechanism
-# — no EDINET-only translation control, label, or card mode. Confirms
-# byte-for-byte parity with test_korean_fixture_shows_only_the_approved_
-# fields above: same toggle labels, same default-shows-translation-when-
-# stored / original-behind-a-toggle contract, and (this section's own
-# addition) the same title_translation-by-default behavior, which the
-# pre-existing Japanese fixture test above never exercised (it left
-# title_translation unset).
+# Dashboard/Filings usability pass (design/DECISIONS.md): EDINET defaults
+# to original-language-first (title + Filing summary), unlike DART's own
+# preserved English-first default (test_korean_fixture_shows_only_the_
+# approved_fields) — the one deliberate difference between the two
+# sources on this card. Both still share the identical toggle mechanism:
+# an explicit "English"/"Original" control switches title + Filing
+# summary together, independent of the separate raw-excerpt reveal
+# toggles ("View translated/original filing excerpt"), which are
+# unaffected by this default and stay reachable in either mode.
 # ============================================================
 
 
-def test_edinet_with_stored_title_and_excerpt_translation_matches_dart_default_and_toggle_contract(tmp_path):
+def test_edinet_with_stored_title_and_excerpt_translation_defaults_to_original_with_english_toggle(tmp_path):
     filing = FilingEvent(
         rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
         report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
@@ -1187,21 +1256,21 @@ def test_edinet_with_stored_title_and_excerpt_translation_matches_dart_default_a
     assert not at.exception
     all_text = _text(at)
 
-    # Default state: translated title + translated excerpt shown, exactly
-    # like DART's own default (test_korean_fixture_shows_only_the_
-    # approved_fields) — no EDINET-only "default to original" behavior.
-    # The card's own title element specifically (er-card-title) must be
-    # the translated title — not just "present somewhere on the page",
-    # since the native title legitimately also appears in the locator
-    # line below (checked separately further down).
+    # Default state: native title + native excerpt summary shown — the
+    # translated versions exist but are not shown until the user
+    # explicitly switches to English. The card's own title element
+    # specifically (er-card-title) must be the native title.
     card_title = next(m.value for m in at.markdown if 'class="er-card-title"' in m.value)
-    assert "Status Report of Purchase of Own Shares" in card_title
-    assert "自己株券買付状況報告書" not in card_title
-    assert "This is an excerpt from the status report of purchase of own shares." in all_text
-    assert "自己株券買付状況報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed by default
+    assert "自己株券買付状況報告書" in card_title
+    assert "Status Report of Purchase of Own Shares" not in card_title
+    assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text
+    assert "This is an excerpt from the status report of purchase of own shares." not in all_text
 
-    # Same two toggle labels DART uses — no EDINET-only "Translate"/"Show
-    # original" control was introduced.
+    # The shared Original/English toggle offers "English" from this
+    # default state; the two raw-excerpt reveal toggles are independent
+    # of it and both already exist regardless of the current language.
+    english_toggle = [b for b in at.button if b.label == "English"]
+    assert len(english_toggle) == 1
     translation_toggle = [b for b in at.button if b.label == "View translated filing excerpt"]
     assert len(translation_toggle) == 1
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
@@ -1218,12 +1287,25 @@ def test_edinet_with_stored_title_and_excerpt_translation_matches_dart_default_a
     ) in all_text
     assert "Official filing reference" in all_text
     assert "EDINET issuer code: E00776" in all_text
+
+    english_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    # After the explicit switch: translated title + translated Filing
+    # summary shown; the toggle now offers switching back to Original.
+    card_title = next(m.value for m in at.markdown if 'class="er-card-title"' in m.value)
+    assert "Status Report of Purchase of Own Shares" in card_title
+    assert "自己株券買付状況報告書" not in card_title
+    assert "This is an excerpt from the status report of purchase of own shares." in all_text
+    assert "自己株券買付状況報告書の記載内容の抜粋です。" not in all_text  # native excerpt collapsed again
+    assert any(b.label == "Original" for b in at.button)
     assert "Status Report of Purchase of Own Shares" not in all_text.split("Official filing reference")[-1]
 
+    original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     original_toggle[0].click()
     _rerun(at, tmp_path)
     all_text = _text(at)
-    assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text  # native excerpt now revealed
+    assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text  # native raw excerpt now revealed
     assert any(b.label == "Hide original filing excerpt" for b in at.button)
 
 
@@ -1552,3 +1634,146 @@ def test_edgar_10q_uses_quarterly_report_title(tmp_path):
     all_text = _text(at)
     assert "Quarterly Report — Form 10-Q" in all_text
     assert "10-Q" not in all_text.replace("Form 10-Q", "")  # the bare, non-title form code never stands alone
+
+
+# ============================================================
+# Filing-card boilerplate fix (design/DECISIONS.md): evidence_location-
+# gated Filing summary fallback and the Item X.XX label — both read only
+# from an already-persisted, reliable signal, never derived from raw
+# text at display time.
+# ============================================================
+
+
+def _qualcomm_8k_filing(rcept_no: str = "0000804328-26-000055") -> FilingEvent:
+    return FilingEvent(
+        rcept_no=rcept_no, corp_code="0000804328", corp_name="QUALCOMM INCORPORATED", stock_code="QCOM",
+        report_nm="8-K", rcept_dt="2026-09-01", flr_nm="QUALCOMM INCORPORATED", pblntf_ty="8-K",
+        source_url="https://www.sec.gov/Archives/edgar/data/804328/000080432826000055/",
+        retrieved_at=_now_iso(), source_name="SEC EDGAR", original_language="English", primary_document="qcom-8k.htm",
+    )
+
+
+def test_unanchored_8k_cover_page_prefers_metadata_fallback_when_evidence_location_confirms_unanchored(tmp_path):
+    """The documented boilerplate-cover-page defect: a gate-passing (real,
+    ordinary English prose — not raw XBRL/XML) but non-substantive 8-K
+    cover-page excerpt must show the neutral metadata-only fallback, not
+    the cover-page text itself, whenever evidence_location has already,
+    reliably recorded that this excerpt's extraction found no Item
+    anchor (kind == UNAVAILABLE) — a real, positive, already-persisted
+    signal, not an inference from the text."""
+    from src.models.models import EvidenceLocation, LocationKind
+
+    _seed_edgar_ciks(tmp_path)
+    filing = _qualcomm_8k_filing()
+    _seed_edgar_filing_events(tmp_path, filing)
+    cover_page_text = (
+        "UNITED STATES SECURITIES AND EXCHANGE COMMISSION Washington D.C. Current Report "
+        "pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934. "
+        "Qualcomm Incorporated a Delaware corporation with its principal executive offices "
+        "located in San Diego California."
+    )
+    candidate = CandidateSignal(
+        id="edgar-cand-qcom-8k-unanchored", filing=filing, matched_rules=["material_event_8k_pending_items:8-K"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=cover_page_text,
+        evidence_location=EvidenceLocation(kind=LocationKind.UNAVAILABLE),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "QUALCOMM INCORPORATED" in all_text
+    # Neutral, factual fallback — never the raw cover-page prefix, never
+    # an invented event.
+    assert "QUALCOMM INCORPORATED filed Current Report — Form 8-K on Sep 1, 2026." in all_text
+    assert cover_page_text not in all_text
+    assert "principal executive offices" not in all_text
+    # No Item label — evidence_location confirms UNAVAILABLE, not a
+    # section anchor.
+    assert "Item " not in all_text.split("Official filing reference")[0].split("filed ")[-1]
+    # The raw excerpt is still honestly reachable behind its own toggle —
+    # this fix only changes what the default Filing summary shows.
+    filing_toggle = [b for b in at.button if b.label == "View filing excerpt"]
+    assert len(filing_toggle) == 1
+    filing_toggle[0].click()
+    _rerun(at, tmp_path)
+    all_text = _text(at)
+    assert cover_page_text in all_text
+    for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
+        assert forbidden not in all_text, forbidden
+
+
+def test_item_anchored_8k_shows_grounded_summary_and_item_label(tmp_path):
+    """The mirror-image, confirmed-anchored case: evidence_location ==
+    SECTION with a real section value shows both a compact "Item X.XX"
+    label and the grounded, content-derived Filing summary — the label
+    is read directly from already-persisted evidence metadata, never
+    derived from the excerpt text itself at display time."""
+    from src.models.models import EvidenceLocation, LocationKind
+
+    _seed_edgar_ciks(tmp_path)
+    filing = _qualcomm_8k_filing(rcept_no="0000804328-26-000056")
+    _seed_edgar_filing_events(tmp_path, filing)
+    anchored_text = (
+        "Item 5.02 Departure of Directors or Certain Officers. "
+        "On September 1, 2026, the Board of Directors appointed a new Chief Financial Officer effective immediately."
+    )
+    candidate = CandidateSignal(
+        id="edgar-cand-qcom-8k-anchored", filing=filing, matched_rules=["executive_change:8-K item 5.02"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=anchored_text,
+        evidence_location=EvidenceLocation(kind=LocationKind.SECTION, section="5.02"),
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "QUALCOMM INCORPORATED" in all_text
+    assert "Item 5.02" in all_text
+    assert "appointed a new Chief Financial Officer" in all_text
+    for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
+        assert forbidden not in all_text, forbidden
+
+
+def test_no_evidence_location_leaves_existing_readability_gate_as_the_sole_decision(tmp_path):
+    """The genuinely-unknown case (evidence_location is None — a non-8-K
+    candidate, or a historic candidate whose one-time extraction predates
+    this field): behavior must stay byte-for-byte identical to before
+    this fix — the existing is_readable_extracted_text() gate alone
+    decides, and no Item label is ever shown, even when the excerpt text
+    happens to contain an "Item X.XX"-shaped string — the label is never
+    derived from raw text, only read from persisted evidence metadata."""
+    _seed_edgar_ciks(tmp_path)
+    filing = _qualcomm_8k_filing(rcept_no="0000804328-26-000057")
+    _seed_edgar_filing_events(tmp_path, filing)
+    readable_text = (
+        "Item 2.02 Results of Operations and Financial Condition. "
+        "The Company announced quarterly revenue results in a press release furnished as an exhibit."
+    )
+    candidate = CandidateSignal(
+        id="edgar-cand-qcom-8k-no-evidence-location", filing=filing, matched_rules=["earnings:8-K item 2.02"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original=readable_text,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    assert candidate.evidence_location is None
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edgar_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    # The existing gate alone decided this is readable — grounded Summary
+    # shown exactly as before this fix existed.
+    assert "The Company announced quarterly revenue results" in all_text
+    # No Item label anywhere — never derived from the raw excerpt text,
+    # only ever read from a persisted evidence_location.
+    assert "er-tag-neutral" not in "".join(
+        m.value for m in at.markdown if "Filing summary" in m.value
+    )
