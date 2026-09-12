@@ -24,8 +24,9 @@ from unittest.mock import patch
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
-from src.data_access.daily_news import daily_news_store
+from src.data_access.daily_news import daily_news_store, editorial_story_store
 from src.models.daily_news_models import (
+    EditorialStory,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -68,6 +69,195 @@ def _story(published_at_offset: timedelta = timedelta(hours=1), **overrides) -> 
     )
     defaults.update(overrides)
     return NewsStory(**defaults)
+
+
+def _editorial_story(published_at_offset: timedelta = timedelta(hours=1), **overrides) -> EditorialStory:
+    published_at = (datetime.now(timezone.utc) - published_at_offset).isoformat()
+    defaults = dict(
+        id="editorial-oracle-abc", headline="Oracle Corporation reports strong AI cloud demand", publisher="CNBC",
+        source_url="https://www.cnbc.com/2026/09/11/oracle-ai-cloud.html", published_at=published_at,
+        retrieved_at=published_at, excerpt="Oracle Corporation said AI cloud demand drove revenue higher.",
+        matched_companies=("Oracle Corporation",), matched_themes=("ai-buildout",),
+        source_feed_id="cnbc-technology-rss",
+    )
+    defaults.update(overrides)
+    return EditorialStory(**defaults)
+
+
+# --- Unified Daily News feed (design/DECISIONS.md): issuer + editorial ---
+# stories interleaved into one reverse-chronological list. Both fixtures
+# are seeded into the same tmp_path cache_dir (daily_news_store for
+# issuer, editorial_story_store for editorial) since get_settings() is
+# patched to the same Settings(cache_dir=tmp_path) for both lanes.
+
+
+def test_mixed_fixture_renders_as_one_globally_newest_first_list(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(id="s-newest", company_name="NVIDIA", published_at_offset=timedelta(hours=1)),
+        _story(id="s-oldest", company_name="Intel Corp.", headline="Intel Reports Quarterly Results", published_at_offset=timedelta(hours=3)),
+    ])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(published_at_offset=timedelta(hours=2)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    newest_idx = markdown_text.index("NVIDIA Announces Financial Results")
+    middle_idx = markdown_text.index("Oracle Corporation reports strong AI cloud demand")
+    oldest_idx = markdown_text.index("Intel Reports Quarterly Results")
+    assert newest_idx < middle_idx < oldest_idx
+
+
+def test_both_item_types_appear_in_one_page_render(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+    editorial_story_store.upsert_new_stories(tmp_path, [_editorial_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+
+
+def test_company_news_and_market_news_labels_appear_on_the_correct_card_types(tmp_path):
+    mixed_dir = tmp_path / "mixed"
+    daily_news_store.upsert_new_stories(mixed_dir, [_story()])
+    editorial_story_store.upsert_new_stories(mixed_dir, [_editorial_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(mixed_dir)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Company news" in markdown_text
+    assert "Market news" in markdown_text
+
+    # Bound to the correct card: an issuer-only fixture (separate cache
+    # dir, no editorial content at all) must never show "Market news".
+    issuer_only_dir = tmp_path / "issuer_only"
+    daily_news_store.upsert_new_stories(issuer_only_dir, [_story()])
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(issuer_only_dir)):
+        issuer_only_at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        issuer_only_at.run()
+    issuer_only_text = " ".join(m.value for m in issuer_only_at.markdown)
+    assert "Company news" in issuer_only_text
+    assert "Market news" not in issuer_only_text
+
+
+def test_editorial_coverage_heading_never_renders_in_the_unified_feed(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+    editorial_story_store.upsert_new_stories(tmp_path, [_editorial_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Editorial Coverage" not in all_text
+
+
+def test_translation_unavailable_issuer_story_stays_intact_alongside_an_editorial_story(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(
+        id="newsitem-korean-1", eeva_summary=None,
+        translation_unavailable=True, original_title="삼성전자 신규시설투자 결정",
+    )])
+    editorial_story_store.upsert_new_stories(tmp_path, [_editorial_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    caption_text = " ".join(str(c.value) for c in at.caption)
+    assert "삼성전자 신규시설투자 결정" in markdown_text
+    assert "Translation unavailable" in caption_text
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+
+
+def test_all_companies_includes_a_valid_theme_only_editorial_story(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(id="editorial-theme-only", matched_companies=(), matched_themes=("memory",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+
+
+def test_selected_company_includes_matching_issuer_and_editorial_stories(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(id="s-nvidia", company_name="NVIDIA"),
+        _story(id="s-intel", company_name="Intel Corp.", headline="Intel Reports Quarterly Results"),
+    ])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(id="editorial-nvidia-match", matched_companies=("NVIDIA",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("NVIDIA").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+    assert "Intel Reports Quarterly Results" not in markdown_text
+
+
+def test_selected_company_excludes_editorial_stories_matching_only_another_company_or_theme(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(id="s-nvidia", company_name="NVIDIA")])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(id="editorial-other-company", matched_companies=("Corning Inc.",), matched_themes=()),
+        _editorial_story(id="editorial-theme-only", headline="Memory market-wide coverage", matched_companies=(), matched_themes=("memory",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("NVIDIA").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "Oracle Corporation reports strong AI cloud demand" not in markdown_text
+    assert "Memory market-wide coverage" not in markdown_text
+
+
+def test_issuer_fallback_is_issuer_only_and_never_waives_editorial_freshness(tmp_path):
+    """The issuer stale-feed fallback (a company with persisted issuer
+    stories older than 7 days) must never be satisfied or widened by
+    editorial stories: a stale (>72h) editorial story matching that same
+    company must stay hidden even while the issuer fallback is active."""
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results", published_at_offset=timedelta(days=30)),
+    ])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(id="editorial-intel-stale", headline="Old Intel market coverage",
+                          matched_companies=("Intel Corp.",), published_at_offset=timedelta(days=10)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert (
+        "No Intel Corp. official updates were published in the last 7 days. "
+        "Showing the latest available official updates."
+    ) in markdown_text
+    assert "Intel Reports Quarterly Results" in markdown_text
+    assert "Old Intel market coverage" not in markdown_text  # stale editorial, never surfaced by the issuer fallback
 
 
 # --- Pure-function boundary/timezone tests -------------------------------
