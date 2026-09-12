@@ -104,12 +104,83 @@ class _RaisingRepo:
 
 
 def _run_with_repo(monkeypatch, repo, theme_id=None):
+    # Beta UI polish pass (design/DECISIONS.md): render() now gates on
+    # is_admin() before any settings/repository access (mirroring
+    # admin_users.py's own pattern) — every existing test in this file
+    # exercises the real index/detail view, which is now the admin-only
+    # path, so it signs in as an admin here, the same patch-where-used
+    # convention tests/test_admin_users_page.py already established.
+    # The non-admin/public beta-gate path has its own dedicated tests
+    # below (see "Beta visibility gate for a non-admin/public visitor").
+    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: True)
     monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", lambda settings: repo)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     if theme_id is not None:
         at.query_params["theme_id"] = theme_id
     at.run()
     return at
+
+
+# ============================================================
+# Beta visibility gate for a non-admin/public visitor
+# ============================================================
+
+
+def test_non_admin_sees_beta_expanding_state_and_repository_is_never_constructed(monkeypatch):
+    repo_constructed = False
+
+    def _construct(settings):
+        nonlocal repo_constructed
+        repo_constructed = True
+        return _FakeRepo(themes=[_theme()])
+
+    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: False)
+    monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", _construct)
+    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
+    at.run()
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Themes are being expanded" in all_html
+    assert "Test theme" not in all_html  # the real (possibly sparse) index content never renders
+    assert repo_constructed is False
+
+
+def test_non_admin_beta_expanding_state_links_to_dashboard_wired_at_source_level():
+    """get_page("dashboard") only resolves to a real Page object when run
+    through app.py's real entry point — the isolated per-page AppTest
+    harness never populates st.session_state["_pages"], the same
+    limitation test_ui_audit_phase_d.py's own Signals-page tests already
+    document for get_page("themes")/get_page("radar_inbox"). Checked at
+    the source level instead, following that same established
+    convention."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
+    assert 'action_label="Go to Dashboard"' in source
+    assert 'action_page=get_page("dashboard")' in source
+
+
+def test_non_admin_direct_theme_id_url_also_sees_beta_expanding_state(monkeypatch):
+    # The gate runs before render() even inspects st.query_params, so a
+    # non-admin deep-linking straight to a specific theme_id sees the
+    # same beta state, never the real detail view.
+    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: False)
+    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
+    at.query_params["theme_id"] = "some-theme-id"
+    at.run()
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Themes are being expanded" in all_html
+
+
+def test_admin_still_sees_real_index_not_the_beta_expanding_state(monkeypatch):
+    # Complements _run_with_repo's own admin sign-in used by every other
+    # test in this file — an explicit end-to-end check that admin access
+    # is genuinely preserved, not just assumed from the shared helper.
+    theme = _theme()
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]))
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Test theme" in all_html
+    assert "Themes are being expanded" not in all_html
 
 
 # ============================================================
@@ -408,6 +479,7 @@ def test_repository_construction_failure_renders_restrained_message(monkeypatch)
     def _boom(settings):
         raise RuntimeError("connection boom - must never reach the UI")
 
+    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: True)
     monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", _boom)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     at.run()

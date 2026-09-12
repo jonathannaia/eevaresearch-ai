@@ -159,6 +159,28 @@ def _render_discovery_queue() -> None:
         st.dataframe([_discovery_row(i) for i in DISCOVERY_STUBS], hide_index=True, width="stretch")
 
 
+def _render_coverage_freshness_panel() -> None:
+    """Beta UI polish pass (design/DECISIONS.md) — three static,
+    pre-approved sentences only. Deliberately no repository call, no
+    timestamp, no health/live-status indicator: no current UI data path
+    exists for that without a change to data fetching, which is out of
+    scope for this presentation-only pass."""
+    section_header("Coverage & Freshness")
+    with st.container(border=True, key="card-coverage-freshness"):
+        st.markdown(
+            "**Filing Radar** — selected issuers across SEC EDGAR (U.S.), EDINET (Japan), "
+            "and DART (Korea); scheduled hourly."
+        )
+        st.markdown(
+            "**Daily News** — curated official company news and investor-relations sources; "
+            "scheduled every 30 minutes."
+        )
+        st.markdown(
+            "**Translations** — machine-generated English translations for supported short "
+            "Japanese and Korean content; original sources remain authoritative."
+        )
+
+
 def _render_coverage_notes() -> None:
     section_header(
         "Coverage notes",
@@ -202,6 +224,7 @@ def render() -> None:
     )
 
     _render_summary()
+    _render_coverage_freshness_panel()
     _render_seed_coverage()
     _render_discovery_queue()
     _render_coverage_notes()

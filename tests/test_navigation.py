@@ -110,21 +110,26 @@ def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter(monkeypatch)
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order(monkeypatch):
     """Regression guard for the navigation-cleanup pass (design/DECISIONS.md)
     — asserts the exact visible WORKSPACE/SYSTEM nav tables app.py reads
-    from, that Coverage/Signals/Methodology/About are still registered
-    (just no longer linked from any visible sidebar group), and that
-    every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "themes", "daily_news"]
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Themes", "Daily News"]
+    from, that Coverage/Signals/Methodology/About/Themes are still
+    registered (just no longer linked from any visible sidebar group),
+    and that every expected dict key exists post-registration."""
+    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news"]
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Daily News"]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
-    # Evidence-First Themes MVP (design/DECISIONS.md): "themes" moved
-    # from here into PRIMARY_NAV above (now the new public research
-    # page). The legacy demo ticker/theme/subtheme browser that used to
-    # occupy this slot, and Watchlists/Research (canned-demo-answer
-    # chat)/Company, were removed entirely (reader-facing data-integrity
-    # pass, design/DECISIONS.md) rather than kept as hidden routes — none
-    # had any live real data of their own.
-    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about"]
+    # Beta UI polish pass (design/DECISIONS.md): "themes" moved back out
+    # of PRIMARY_NAV into here — the public Themes index has no content-
+    # readiness gate of its own, so it's unlinked from the sidebar until
+    # there's enough published content for a beta launch. Its route,
+    # data, repository, and the separate internal authoring workflow are
+    # unaffected (see src/ui/pages/themes_research.py's own render()
+    # guard for what a non-admin direct visit sees instead). The legacy
+    # demo ticker/theme/subtheme browser that used to occupy this slot,
+    # and Watchlists/Research (canned-demo-answer chat)/Company, were
+    # removed entirely (reader-facing data-integrity pass, design/
+    # DECISIONS.md) rather than kept as hidden routes — none had any
+    # live real data of their own.
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about", "themes"]
 
     _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)

@@ -184,7 +184,7 @@ def _render_card(story: NewsStory) -> None:
     # inventing a label or crashing the card.
     source_type_label = _SOURCE_CLASS_LABELS.get(source.source_class, source.source_class.value)
 
-    with st.container(border=True):
+    with st.container(border=True, key=f"card-issuer-{story.id}"):
         st.markdown('<span class="er-status-tag er-tag-neutral">Company news</span>', unsafe_allow_html=True)
         st.markdown(
             f'<div class="er-muted" style="margin-top:0.3rem;">{story.company_name} · {source.publisher} · {source_type_label} · {local_time}</div>',
