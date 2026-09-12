@@ -161,11 +161,152 @@ def test_translate_action_failure_shows_concise_status_and_keeps_original_title(
     mock_translate.assert_called_once()
     all_text = _text(at)
     assert "신규시설투자등 결정" in all_text  # original title stays the only thing shown
-    assert "Translation unavailable." in all_text
+    assert "Translation unavailable" in all_text
+    assert "Try again" not in all_text  # no unbuilt/untested retry affordance
     assert "provider_error" not in all_text
     assert "DeepL returned HTTP 500." not in all_text
     assert not any(b.label in ("Original", "English") for b in at.button)
     assert not any(b.label == "Translate to English" for b in at.button)  # no retry affordance
+
+
+def test_daily_news_row_never_shows_a_translate_action(tmp_path):
+    from src.data_access.daily_news import daily_news_store
+    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+
+    story = NewsStory(
+        id="newsitem-apple-abc123", company_name="Apple Inc.", ticker="AAPL", theme_slug="ai-buildout",
+        headline="Apple announces new product", eeva_summary="Summary text.", is_fallback_summary=False,
+        translation_unavailable=False, original_title=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Apple Inc.", source_class=SourceClass.OFFICIAL_COMPANY, url="https://example.invalid/apple",
+                title="Apple announces new product", published_at="2026-09-01T00:00:00+00:00",
+                retrieved_at="2026-09-01T00:00:00+00:00", original_language="English",
+            ),
+        ),
+        status=NewsStoryStatus.PUBLISHED,
+        state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at="2026-09-01T00:00:00+00:00")],
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+    assert "Apple announces new product" in all_text
+    assert not any(b.label == "Translate to English" for b in at.button)
+
+
+def test_translation_control_renders_inside_the_same_per_row_container_as_its_row_content(tmp_path, monkeypatch):
+    """Detached-translation-control fix (design/DECISIONS.md) regression
+    guard: a row's own markdown content and its translate action must be
+    rendered while the SAME per-row container key is the innermost active
+    container — proving they share one stable wrapper, not two unrelated
+    top-level siblings. Exercises _render_row() directly against fake
+    st.container/markdown/button/session_state doubles (no real
+    ScriptRunContext needed) rather than introspecting AppTest's DOM,
+    which exposes no public container-membership API."""
+    from contextlib import contextmanager
+
+    from src.ui.components import recently_updated
+
+    _seed_filing_event(tmp_path, _dart_filing(), "dart_filing_events.json")
+    settings = _settings(tmp_path)
+    rows = recently_updated._load_filing_rows(settings)
+    assert len(rows) == 1
+    row = rows[0]
+
+    events: list[tuple[str, str, tuple]] = []
+    container_stack: list[str | None] = []
+
+    @contextmanager
+    def fake_container(*args, key=None, **kwargs):
+        container_stack.append(key)
+        try:
+            yield None
+        finally:
+            container_stack.pop()
+
+    def fake_markdown(value, *args, **kwargs):
+        events.append(("markdown", value, tuple(container_stack)))
+
+    def fake_button(label, *args, **kwargs):
+        events.append(("button", label, tuple(container_stack)))
+        return False
+
+    monkeypatch.setattr(recently_updated.st, "container", fake_container)
+    monkeypatch.setattr(recently_updated.st, "markdown", fake_markdown)
+    monkeypatch.setattr(recently_updated.st, "button", fake_button)
+    monkeypatch.setattr(recently_updated.st, "session_state", {})
+
+    # The per-row container key is a stable, content-derived identifier
+    # (recently_updated._row_identity_key), not a list position — this
+    # test uses the real function so it stays correct if that derivation
+    # ever changes, rather than hardcoding today's exact key string.
+    row_key = f"card-recently-updated-row-{recently_updated._row_identity_key(row)}"
+    with fake_container(key=row_key):
+        recently_updated._render_row(row, settings)
+
+    row_events = [e for e in events if row_key in e[2]]
+    title_markdown = [e for e in row_events if e[0] == "markdown" and row.title in e[1]]
+    translate_button = [e for e in row_events if e[0] == "button" and e[1] == "Translate to English"]
+    assert title_markdown, "row content markdown not found inside the per-row container"
+    assert translate_button, "translate action not found inside the same per-row container"
+    # Both share the same outermost per-row container as their innermost
+    # active container's first entry — the button's own nested
+    # cta-tertiary sub-container sits inside it, never outside/after it.
+    assert title_markdown[0][2][0] == row_key
+    assert translate_button[0][2][0] == row_key
+
+
+def test_row_identity_key_is_derived_from_content_not_list_position(tmp_path):
+    """The per-row container key must not be a positional index — it
+    must stay attached to the same filing/story even if `shown`'s order
+    or membership shifts between reruns (e.g. a new filing discovered
+    concurrently). Proven directly against the pure key-derivation
+    function: deterministic per row, distinct across different rows, and
+    keyed by translation_document_id (never affected by where the row
+    sits in any list)."""
+    from src.ui.components import recently_updated
+
+    _seed_filing_event(tmp_path, _dart_filing(rcept_no="20260901000001"), "dart_filing_events.json")
+    settings = _settings(tmp_path)
+    rows = recently_updated._load_filing_rows(settings)
+    assert len(rows) == 1
+    row = rows[0]
+
+    # Every filing row already carries a real translation_document_id
+    # (set unconditionally in _load_filing_rows, regardless of language)
+    # — that, not position, is what identifies this row's container.
+    assert row.translation_document_id is not None
+    assert recently_updated._row_identity_key(row) == row.translation_document_id
+
+    # Deterministic: calling it again for the identical row yields the
+    # identical key, independent of any surrounding list.
+    assert recently_updated._row_identity_key(row) == recently_updated._row_identity_key(row)
+
+    # A second, distinct filing gets a distinct key — no collision.
+    other_settings_dir = tmp_path / "other"
+    _seed_filing_event(other_settings_dir, _dart_filing(rcept_no="20260902000002"), "dart_filing_events.json")
+    other_row = recently_updated._load_filing_rows(_settings(other_settings_dir))[0]
+    assert recently_updated._row_identity_key(other_row) != recently_updated._row_identity_key(row)
+
+
+def test_row_identity_key_falls_back_to_source_url_when_no_translation_document_id(tmp_path):
+    """Daily News rows never carry translation_document_id — the
+    fallback must still be stable and content-derived (source_url),
+    never a list position."""
+    from src.ui.components import recently_updated
+
+    from datetime import datetime, timezone
+
+    row = recently_updated._Row(
+        sort_key=datetime(2026, 9, 1, tzinfo=timezone.utc), company_name="Apple Inc.",
+        title="Apple announces new product", source_label="Daily News",
+        display_date="Sep 1, 2026", source_url="https://example.invalid/apple",
+    )
+    assert row.translation_document_id is None
+    assert recently_updated._row_identity_key(row) == "https://example.invalid/apple"
 
 
 def test_preserves_source_issuer_date_and_link_unchanged_after_translation(tmp_path):

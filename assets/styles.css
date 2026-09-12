@@ -245,6 +245,26 @@ a:hover { color: var(--accent-hover); }
 /* ---------- rows (catalyst timeline etc.) ---------- */
 .er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; }
 .er-row:last-child { border-bottom: none; }
+/* Recently Updated detached-translation-control fix (design/DECISIONS.md):
+   each row's markdown content and its own (optional) translate action/
+   toggle/status now share one stable per-row container
+   (card-recently-updated-row-N, from src/ui/components/recently_updated.py).
+   The divider moves onto that wrapper — after a row's translation control,
+   never between the row and its own control — and .er-row's own divider is
+   suppressed only inside this wrapper (its base rule above is untouched,
+   still used as-is by regional_brief.py/cards.py elsewhere). */
+[class*="st-key-card-recently-updated-row-"] .er-row { border-bottom: none; }
+[class*="st-key-card-recently-updated-row-"] { border-bottom: 1px solid var(--hairline); }
+[class*="st-key-card-recently-updated-row-"]:last-child { border-bottom: none; }
+/* Narrowly targeted override, same pattern as .st-key-cta-tertiary-clear-
+   watchlist-filter above: this row's own translate action/toggle sits
+   directly beneath its metadata line, not stacked under a new paragraph
+   with the general cta-tertiary top margin — scoped to only the
+   cta-tertiary controls nested inside a Recently Updated row wrapper, so
+   every other page's cta-tertiary spacing is unaffected. */
+[class*="st-key-card-recently-updated-row-"] [class*="st-key-cta-tertiary-"] {
+    margin-top: 0.2rem !important;
+}
 /* Fixed-width date badge so catalyst titles/types start at a consistent
    x-position across rows, regardless of "Sep 5" vs "Dec 25" width. */
 .er-date-badge {
