@@ -41,6 +41,7 @@ from src.data_access.daily_news import daily_news_store, editorial_story_store
 from src.data_access.postgres_state_db import connection as postgres_state_db_connection
 from src.data_access.postgres_state_db import daily_news_repository as postgres_daily_news
 from src.data_access.postgres_state_db import daily_news_scan_status_repository as postgres_daily_news_scan_status
+from src.data_access.postgres_state_db import editorial_story_repository as postgres_editorial_story
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.state_db import connection as state_db_connection
 from src.data_access.state_db import daily_news_repository as sqlite_daily_news
@@ -277,12 +278,16 @@ def get_daily_news_scan_status_repository(settings: Settings) -> DailyNewsScanSt
     )
 
 
-# --- Editorial Daily News v1 (design/DECISIONS.md) — JSON-only,
-# deliberately no sqlite/postgres branch tonight (that would require a
-# new schema/migration, explicitly out of scope for this batch). Wraps
-# editorial_story_store.py exactly as-is — a separate cache file from
-# the issuer NewsStory store, zero change to JsonDailyNewsRepository or
-# any other class above. ---
+# --- Editorial Daily News — Postgres persistence fix (design/
+# DECISIONS.md). JSON remains the local-development fallback only,
+# wrapping editorial_story_store.py exactly as-is (a separate cache file
+# from the issuer NewsStory store, zero change to JsonDailyNewsRepository
+# or any other class above). Whenever EDGE_DB_BACKEND=postgres, this now
+# selects a real Postgres-backed repository the same way
+# get_daily_news_repository() already does for issuer stories —
+# deliberately no sqlite branch, since no caller needs one: matches this
+# fix's own approved scope of "durable Postgres, JSON local-dev fallback
+# only." ---
 
 
 class EditorialStoryRepositoryProtocol(Protocol):
@@ -301,10 +306,25 @@ class JsonEditorialStoryRepository:
         return editorial_story_store.upsert_new_stories(self.cache_dir, new_stories)
 
 
+@dataclass(frozen=True)
+class PostgresEditorialStoryRepository:
+    conn: psycopg.Connection
+
+    def load_stories(self) -> dict[str, EditorialStory]:
+        return postgres_editorial_story.load_stories(self.conn)
+
+    def upsert_new_stories(self, new_stories: list[EditorialStory]) -> dict[str, EditorialStory]:
+        return postgres_editorial_story.upsert_new_stories(self.conn, new_stories)
+
+
 def get_editorial_story_repository(settings: Settings) -> EditorialStoryRepositoryProtocol:
-    """JSON-only in v1 — editorial persistence does not yet follow
-    settings.db_backend the way get_daily_news_repository() does for
-    issuer stories; that would require its own new sqlite/postgres
-    schema, which this batch's own approved scope explicitly excludes
-    ("no migrations"). Always returns the JSON-backed repository."""
+    """Follows settings.db_backend the same way get_daily_news_repository()
+    does for issuer stories: EDGE_DB_BACKEND=postgres selects a durable
+    Postgres-backed repository via the existing
+    _require_postgres_connection() helper (which already runs
+    postgres_schema.migrate() unconditionally); every other value
+    (unset/blank/unrecognized/"sqlite") falls back to the JSON-backed
+    repository, which remains the local-development-only path."""
+    if _normalized_backend(settings) == "postgres":
+        return PostgresEditorialStoryRepository(conn=_require_postgres_connection(settings))
     return JsonEditorialStoryRepository(cache_dir=settings.cache_dir)
