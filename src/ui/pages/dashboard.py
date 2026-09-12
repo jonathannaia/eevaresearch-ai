@@ -67,6 +67,7 @@ from src.data_access import backend_factory
 from src.data_access.container import get_repositories
 from src.logic.unread import is_unread
 from src.ui.components.cards import priority_signal_row
+from src.ui.components.policy_developments import render_policy_developments
 from src.ui.components.recent_theme_activity import render_recent_theme_activity
 from src.ui.components.recently_updated import render_recently_updated
 from src.ui.components.regional_brief import render_regional_brief
@@ -185,3 +186,11 @@ def render() -> None:
     _render_regional_brief(settings)
     _render_theme_health(settings)
     _render_priority_signals(ctx)
+
+    # Federal Register Policy Monitor Pilot (design/DECISIONS.md) — a
+    # self-contained, source-specific pilot, deliberately not a Daily
+    # News expansion. render_policy_developments() takes no dashboard
+    # context/settings: it is a live, read-time, in-memory Federal
+    # Register fetch with its own fail-closed matching, entirely
+    # decoupled from ctx/settings and from everything above.
+    render_policy_developments()
