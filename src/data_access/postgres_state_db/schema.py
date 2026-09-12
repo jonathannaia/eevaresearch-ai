@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -575,6 +575,33 @@ _V15_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Editorial Daily News production-readiness fix (design/DECISIONS.md) —
+# isolated Postgres counterpart to state_db/schema.py's own
+# _V16_STATEMENTS (see that module's comment for the full rationale). One
+# new, wholly additive table. EditorialStory has no nested 1-to-many
+# collections (unlike NewsStory's sources/state_history), so a single flat
+# table is sufficient — matched_companies/matched_themes are flat string
+# tuples stored as JSON-TEXT columns, the same convention already used by
+# candidates.matched_rules_json above.
+_V16_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE editorial_stories (
+        id TEXT PRIMARY KEY,
+        headline TEXT NOT NULL,
+        publisher TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        excerpt TEXT,
+        matched_companies_json TEXT NOT NULL DEFAULT '[]',
+        matched_themes_json TEXT NOT NULL DEFAULT '[]',
+        source_feed_id TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX idx_editorial_stories_url ON editorial_stories (source_url)",
+    "CREATE INDEX idx_editorial_stories_source_feed ON editorial_stories (source_feed_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -595,6 +622,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (13, _V13_STATEMENTS),
     (14, _V14_STATEMENTS),
     (15, _V15_STATEMENTS),
+    (16, _V16_STATEMENTS),
 )
 
 

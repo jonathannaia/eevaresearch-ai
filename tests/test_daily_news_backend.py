@@ -26,7 +26,7 @@ from src.data_access.daily_news.daily_news_backend import (
 from src.data_access.state_db import connection as sqlite_connection
 from src.data_access.state_db import daily_news_repository as sqlite_daily_news_repository
 from src.data_access.state_db import schema as sqlite_schema
-from src.models.daily_news_models import NewsSourceReference, NewsStory, NewsStoryStatus, SourceClass
+from src.models.daily_news_models import EditorialStory, NewsSourceReference, NewsStory, NewsStoryStatus, SourceClass
 
 from tests._postgres_test_support import pg_conn, pg_isolated_connection  # noqa: F401
 
@@ -244,3 +244,115 @@ def test_scan_status_postgres_repository_round_trips_through_protocol_methods(pg
     )
     repo.upsert_worker_status(status)
     assert repo.get_worker_status() == status
+
+
+# --- Editorial Daily News — Postgres persistence fix: repository
+# factory selection (design/DECISIONS.md). Storage only — no feed
+# fetching, no matching/dedup/cap logic is exercised here.
+
+
+def _editorial_story(story_id: str = "editorial-abc") -> EditorialStory:
+    now = "2026-09-11T12:00:00+00:00"
+    return EditorialStory(
+        id=story_id, headline="Oracle Corporation reports strong AI cloud demand", publisher="CNBC",
+        source_url="https://www.cnbc.com/2026/09/11/oracle-ai-cloud.html", published_at=now, retrieved_at=now,
+        excerpt="Oracle Corporation said AI cloud demand drove revenue higher.",
+        matched_companies=("Oracle Corporation",), matched_themes=("ai-buildout",),
+        source_feed_id="cnbc-technology-rss",
+    )
+
+
+def test_editorial_backend_factory_json_returns_json_repository(tmp_path):
+    from src.data_access.daily_news.daily_news_backend import JsonEditorialStoryRepository, get_editorial_story_repository
+
+    settings = _settings("json", cache_dir=tmp_path)
+    repo = get_editorial_story_repository(settings)
+    assert isinstance(repo, JsonEditorialStoryRepository)
+    assert repo.cache_dir == tmp_path
+
+
+def test_editorial_backend_factory_unrecognized_backend_defaults_to_json(tmp_path):
+    from src.data_access.daily_news.daily_news_backend import JsonEditorialStoryRepository, get_editorial_story_repository
+
+    settings = _settings("not-a-real-backend", cache_dir=tmp_path)
+    repo = get_editorial_story_repository(settings)
+    assert isinstance(repo, JsonEditorialStoryRepository)
+
+
+def test_editorial_backend_factory_postgres_requires_configured_url():
+    from src.data_access.daily_news.daily_news_backend import get_editorial_story_repository
+
+    settings = _settings("postgres")
+    with pytest.raises(BackendConfigurationError):
+        get_editorial_story_repository(settings)
+
+
+def test_editorial_backend_factory_postgres_selected_when_configured(pg_conn, monkeypatch):
+    from src.data_access.daily_news import daily_news_backend
+    from src.data_access.daily_news.daily_news_backend import PostgresEditorialStoryRepository, get_editorial_story_repository
+
+    monkeypatch.setattr(daily_news_backend, "_require_postgres_connection", lambda settings: pg_conn)
+    settings = _settings("postgres", state_db_url="postgres://unused-because-monkeypatched")
+    repo = get_editorial_story_repository(settings)
+    assert isinstance(repo, PostgresEditorialStoryRepository)
+    assert repo.conn is pg_conn
+
+
+def test_editorial_postgres_repository_migrates_the_database_to_current_version(pg_conn):
+    from src.data_access.postgres_state_db import schema as postgres_schema
+
+    assert postgres_schema.get_schema_version(pg_conn) == postgres_schema.CURRENT_SCHEMA_VERSION
+
+
+def test_editorial_postgres_repository_wires_through_to_real_module(pg_conn):
+    from src.data_access.daily_news.daily_news_backend import PostgresEditorialStoryRepository
+    from src.data_access.postgres_state_db import editorial_story_repository as postgres_editorial_story_repository
+
+    repo = PostgresEditorialStoryRepository(conn=pg_conn)
+    story = _editorial_story()
+    postgres_editorial_story_repository.upsert_new_stories(pg_conn, [story])
+    loaded = repo.load_stories()
+    assert loaded[story.id].headline == story.headline
+    assert loaded[story.id].matched_companies == ("Oracle Corporation",)
+
+
+def test_editorial_postgres_repository_upsert_is_idempotent(pg_conn):
+    from src.data_access.daily_news.daily_news_backend import PostgresEditorialStoryRepository
+
+    repo = PostgresEditorialStoryRepository(conn=pg_conn)
+    story = _editorial_story()
+    repo.upsert_new_stories([story])
+    repo.upsert_new_stories([story])
+    assert len(repo.load_stories()) == 1
+
+
+def test_editorial_repository_returned_by_the_same_factory_call_the_ui_and_discovery_script_both_use_sees_persisted_rows(pg_conn, monkeypatch):
+    """editorial_coverage.py's render_editorial_coverage() and
+    scripts/run_daily_news_discovery.py's --editorial-only both call
+    daily_news_backend.get_editorial_story_repository(get_settings())
+    directly — this proves that once the factory returns a Postgres
+    repository, rows persisted through it are visible through a fresh
+    call to that same factory, the same way the live page's own call
+    would see them."""
+    from src.data_access.daily_news import daily_news_backend
+    from src.data_access.daily_news.daily_news_backend import get_editorial_story_repository
+
+    monkeypatch.setattr(daily_news_backend, "_require_postgres_connection", lambda settings: pg_conn)
+    settings = _settings("postgres", state_db_url="postgres://unused-because-monkeypatched")
+
+    writer_repo = get_editorial_story_repository(settings)
+    story = _editorial_story()
+    writer_repo.upsert_new_stories([story])
+
+    reader_repo = get_editorial_story_repository(settings)
+    assert story.id in reader_repo.load_stories()
+
+
+def test_json_editorial_story_repository_delegates_to_editorial_story_store(tmp_path):
+    from src.data_access.daily_news import editorial_story_store
+    from src.data_access.daily_news.daily_news_backend import JsonEditorialStoryRepository
+
+    story = _editorial_story()
+    editorial_story_store.upsert_new_stories(tmp_path, [story])
+    repo = JsonEditorialStoryRepository(cache_dir=tmp_path)
+    assert story.id in repo.load_stories()
