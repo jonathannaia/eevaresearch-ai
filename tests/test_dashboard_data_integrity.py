@@ -183,6 +183,24 @@ def test_theme_health_link_targets_the_specific_published_theme(tmp_path, monkey
     assert len(explore_links) == 1
 
 
+def test_dashboard_has_exactly_one_small_secondary_feedback_link(tmp_path, monkeypatch):
+    """Open-beta feedback (design/DECISIONS.md): Dashboard gets one small
+    secondary entry-point link to the hidden feedback page — never the
+    form itself. Same APP_PATH-not-harness requirement as
+    test_theme_health_link_targets_the_specific_published_theme above,
+    for the same get_page()/_pages reason."""
+    settings = _settings(tmp_path)
+    _patch_dashboard_settings(monkeypatch, settings)
+    _sign_in_as(monkeypatch)
+
+    at = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=15)
+    at.run()
+    at.run()  # second run: dashboard becomes the default page
+    assert not at.exception
+    feedback_links = [pl for pl in at.main.get("page_link") if pl.label == "Share feedback"]
+    assert len(feedback_links) == 1
+
+
 def test_theme_health_never_reads_internal_or_unpublished_themes(tmp_path, monkeypatch):
     """Only backend_factory.get_theme_repository() (the published-only
     protocol) is ever used — an internal (never-published) theme must

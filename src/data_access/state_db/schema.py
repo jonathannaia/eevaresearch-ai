@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -794,6 +794,31 @@ _V16_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_daily_news_source_status_company ON daily_news_source_status (company_name)",
 )
 
+# Open-beta feedback (design/DECISIONS.md) — one new, wholly additive
+# table, same minimalism convention as V15's user_accounts: normalized
+# email (unique, the natural primary key), an optional display name
+# sourced only from st.user's own "name" claim, one submitted_at
+# timestamp, three closed-choice answers, one conditional free-text
+# detail, and one optional free-text field. Deliberately no IP, device,
+# page-view, event, token, or role/status-beyond-the-feedback-itself
+# column — see src/ui/pages/feedback.py and src/models/
+# feedback_submission.py. Upsert-on-email (see the repository module):
+# a signed-in user has at most one row, always their latest answer.
+_V17_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE feedback_submissions (
+        email TEXT PRIMARY KEY,
+        display_name TEXT,
+        submitted_at TEXT NOT NULL,
+        role TEXT NOT NULL,
+        tracking_workflow TEXT NOT NULL,
+        tracking_workflow_other TEXT,
+        primary_interest TEXT NOT NULL,
+        weekly_value_feedback TEXT
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -815,6 +840,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (14, _V14_STATEMENTS),
     (15, _V15_STATEMENTS),
     (16, _V16_STATEMENTS),
+    (17, _V17_STATEMENTS),
 )
 
 

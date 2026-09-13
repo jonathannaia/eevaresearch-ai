@@ -194,3 +194,13 @@ def render() -> None:
     # Register fetch with its own fail-closed matching, entirely
     # decoupled from ctx/settings and from everything above.
     render_policy_developments()
+
+    # Open-beta feedback (design/DECISIONS.md) — one small, secondary
+    # entry-point link to the hidden feedback page (never the form
+    # itself, which stays off Dashboard entirely). Placed last, below
+    # every real content module above.
+    feedback_page = get_page("feedback")
+    if feedback_page is not None:
+        st.divider()
+        with st.container(key="cta-tertiary-dashboard-feedback"):
+            st.page_link(feedback_page, label="Share feedback")

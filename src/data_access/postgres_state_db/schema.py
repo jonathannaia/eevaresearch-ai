@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -634,6 +634,25 @@ _V17_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX idx_daily_news_source_status_company ON daily_news_source_status (company_name)",
 )
 
+# Open-beta feedback (design/DECISIONS.md) — isolated Postgres
+# counterpart to state_db/schema.py's own _V17_STATEMENTS (see that
+# module's comment for the full rationale). One new, wholly additive
+# table.
+_V18_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE feedback_submissions (
+        email TEXT PRIMARY KEY,
+        display_name TEXT,
+        submitted_at TEXT NOT NULL,
+        role TEXT NOT NULL,
+        tracking_workflow TEXT NOT NULL,
+        tracking_workflow_other TEXT,
+        primary_interest TEXT NOT NULL,
+        weekly_value_feedback TEXT
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -656,6 +675,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (15, _V15_STATEMENTS),
     (16, _V16_STATEMENTS),
     (17, _V17_STATEMENTS),
+    (18, _V18_STATEMENTS),
 )
 
 
