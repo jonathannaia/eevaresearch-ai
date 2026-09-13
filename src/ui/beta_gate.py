@@ -1,9 +1,11 @@
-"""Private-beta access foundation, Phase 1 — pure decision logic only (see
+"""Beta-access decision foundation — pure decision logic only (see
 design/DECISIONS.md). No Streamlit import, no I/O, no network calls: this
 module only turns a Settings snapshot + an optional email into an allow/deny
-decision. There is no identity/sign-in wiring yet this phase — callers pass
-`email=None` today; the `email` parameter exists so a later phase can supply
-a real signed-in identity without changing this function's contract.
+decision. app.py supplies this function with a real signed-in email today;
+EevaResearch runs as an open beta, and app.py's own call site — not this
+function — treats an empty allowlist as "allow" (see app.py's own comment),
+distinct from this module's own EMPTY_ALLOWLIST="deny" contract, which
+tests/test_beta_gate.py exercises directly and is left unchanged here.
 
 The allowlist is authorization only, never authentication — this module
 cannot verify that a caller-supplied email actually belongs to the caller.

@@ -128,7 +128,7 @@ def test_user_rejected_by_nonempty_allowlist_never_records_sign_in_or_reaches_na
     at.run()
 
     assert not at.exception
-    assert [t.value for t in at.title] == ["Private beta"]
+    assert [t.value for t in at.title] == ["Access restricted"]
     assert construct.call_count == 0
     assert "_pages" not in at.session_state
     assert "_user_account_recorded" not in at.session_state
