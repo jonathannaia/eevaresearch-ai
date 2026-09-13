@@ -35,16 +35,18 @@ def _story(
     excerpt: str | None = "Oracle Corporation said AI cloud demand drove revenue higher.",
     matched_companies: tuple[str, ...] = ("Oracle Corporation",),
     matched_themes: tuple[str, ...] = ("ai-buildout",),
+    source_feed_id: str = "cnbc-technology-rss",
+    publisher: str = "CNBC",
 ) -> EditorialStory:
     import datetime
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return EditorialStory(
-        id=story_id, headline=headline, publisher="CNBC",
+        id=story_id, headline=headline, publisher=publisher,
         source_url="https://www.cnbc.com/2026/09/11/oracle-ai-cloud.html",
         published_at=now, retrieved_at=now, excerpt=excerpt,
         matched_companies=matched_companies, matched_themes=matched_themes,
-        source_feed_id="cnbc-technology-rss",
+        source_feed_id=source_feed_id,
     )
 
 
@@ -174,3 +176,76 @@ def test_editorial_only_content_suppresses_the_issuer_empty_state(tmp_path, monk
     assert "No recent company updates in the last 7 days." not in all_text
     assert "Editorial Coverage" not in all_text
     assert "Oracle Corporation reports strong AI cloud demand" in all_text
+
+
+# ============================================================
+# Government / Public Sector Daily News lane (design/DECISIONS.md) —
+# badge label derived from source_feed_id at render time.
+# ============================================================
+
+
+def test_spaceforce_source_renders_public_sector_badge(tmp_path, monkeypatch):
+    story = _story(
+        story_id="editorial-sf", headline="US Space Force selects Texas as preferred location for third DARC site",
+        excerpt=None, matched_companies=(), matched_themes=(),
+        source_feed_id="spaceforce-news-rss", publisher="U.S. Space Force",
+    )
+    at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-sf": story})
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Public sector" in all_text
+    assert "Market news" not in all_text
+    assert "Policy" not in all_text
+
+
+def test_nist_source_renders_policy_badge(tmp_path, monkeypatch):
+    story = _story(
+        story_id="editorial-nist", headline="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        excerpt=None, matched_companies=(), matched_themes=(),
+        source_feed_id="nist-news-rss", publisher="National Institute of Standards and Technology (NIST)",
+    )
+    at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-nist": story})
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Policy" in all_text
+    assert "Market news" not in all_text
+    assert "Public sector" not in all_text
+
+
+def test_existing_cnbc_source_still_renders_market_news_badge(tmp_path, monkeypatch):
+    at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-abc": _story()})
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Market news" in all_text
+    assert "Public sector" not in all_text
+    assert "Policy" not in all_text
+
+
+def test_unknown_source_feed_id_defaults_to_market_news_badge(tmp_path, monkeypatch):
+    story = _story(story_id="editorial-unknown", source_feed_id="some-future-source-rss")
+    at = _run_daily_news_page(tmp_path, monkeypatch, {"editorial-unknown": story})
+    assert not at.exception
+    assert "Market news" in _main_text(at)
+
+
+def test_all_three_badges_render_distinctly_in_one_mixed_feed(tmp_path, monkeypatch):
+    cnbc_story = _story(story_id="editorial-cnbc")
+    spaceforce_story = _story(
+        story_id="editorial-sf", headline="US Space Force selects Texas as preferred location for third DARC site",
+        excerpt=None, matched_companies=(), matched_themes=(), source_feed_id="spaceforce-news-rss",
+        publisher="U.S. Space Force",
+    )
+    nist_story = _story(
+        story_id="editorial-nist", headline="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        excerpt=None, matched_companies=(), matched_themes=(), source_feed_id="nist-news-rss",
+        publisher="National Institute of Standards and Technology (NIST)",
+    )
+    at = _run_daily_news_page(
+        tmp_path, monkeypatch,
+        {"editorial-cnbc": cnbc_story, "editorial-sf": spaceforce_story, "editorial-nist": nist_story},
+    )
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Market news" in all_text
+    assert "Public sector" in all_text
+    assert "Policy" in all_text

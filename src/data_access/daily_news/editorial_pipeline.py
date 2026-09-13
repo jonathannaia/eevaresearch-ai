@@ -27,7 +27,24 @@ select_visible_editorial_stories() below, which applies its own
 separate, always-current per-source/total DISPLAY cap against the full
 store contents for exactly that reason. The overall 20-card total cap
 remains display-only (a cross-feed presentation limit, not an ingestion
-one)."""
+one).
+
+Government / Public Sector Daily News lane (design/DECISIONS.md) — two
+specific, hardcoded exceptions to the fail-closed company-or-theme
+matching gate below, for exactly `_SPACEFORCE_SOURCE_ID` and
+`_NIST_SOURCE_ID`. Deliberately NOT a category-based or generically-
+extensible bypass (e.g. no `_ALWAYS_ELIGIBLE_SOURCE_IDS` frozenset) —
+every other existing and future editorial source, including any other
+entry that happens to use SourceCategory.GOVERNMENT_POLICY, still goes
+through the exact same matched_companies_and_themes() gate unchanged.
+`_SPACEFORCE_SOURCE_ID` may publish with zero company/theme matches
+(every item in that feed is inherently in-scope). `_NIST_SOURCE_ID` may
+publish only when `_matches_nist_allow_list()` returns True — a pure,
+source-scoped, strict CHIPS/semiconductor allow-list, checked only
+against the item's own real title/summary, never a fetched article
+body. matched_companies/matched_themes are still computed and stored
+for both sources (harmless, usually empty; correctly tags the rare item
+that does name a tracked company)."""
 from __future__ import annotations
 
 import hashlib
@@ -51,6 +68,30 @@ _MAX_EXCERPT_CHARS = 400
 _PER_SOURCE_CAP = 5  # enforced both at persistence time (run_editorial_discovery) and display time (select_visible_editorial_stories)
 _TOTAL_DISPLAY_CAP = 20
 _FRESHNESS_WINDOW_HOURS = 72
+
+# Government / Public Sector Daily News lane (design/DECISIONS.md) — see
+# this module's own docstring for why these are two named, hardcoded
+# source_ids, not a generic/extensible mechanism.
+_SPACEFORCE_SOURCE_ID = "spaceforce-news-rss"
+_NIST_SOURCE_ID = "nist-news-rss"
+
+# Strict, source-scoped allow-list for _NIST_SOURCE_ID only — approved
+# terms exactly, never broadened without a separate proposal (same
+# discipline editorial_matching.THEME_KEYWORDS' own docstring
+# establishes for that separate, general-purpose table, which this list
+# is deliberately kept apart from). Deliberately excludes "advanced
+# manufacturing" (too broad — NIST publishes general-manufacturing
+# content unrelated to semiconductors), bare "chip" (ambiguous), and
+# bare "CHIPS" alone without "Act"/"for America" (collides with NIST's
+# own generic navigation/boilerplate text).
+_NIST_ALLOW_LIST_TERMS: tuple[str, ...] = (
+    "CHIPS Act", "CHIPS for America", "semiconductor", "semiconductors",
+    "semiconductor manufacturing", "semiconductor fabrication",
+    "wafer fabrication", "microelectronics",
+)
+_NIST_ALLOW_LIST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE) for term in _NIST_ALLOW_LIST_TERMS
+)
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -128,6 +169,18 @@ def _is_fresh(published_at: str, now: datetime, window_hours: int = _FRESHNESS_W
     return (now - dt).total_seconds() <= window_hours * 3600
 
 
+def _matches_nist_allow_list(title: str, summary: str | None) -> bool:
+    """Pure, source-scoped (see _NIST_SOURCE_ID) allow-list check —
+    word-boundary, case-insensitive, against only the item's own real
+    title and summary, never a fetched article body. Fails closed: an
+    empty/None title and summary, or any text matching none of
+    _NIST_ALLOW_LIST_TERMS, returns False."""
+    combined = title if not summary else f"{title}\n{summary}"
+    if not combined.strip():
+        return False
+    return any(pattern.search(combined) for pattern in _NIST_ALLOW_LIST_PATTERNS)
+
+
 def run_editorial_discovery(
     cache_dir: Path,
     source_entries: tuple[DailyNewsSourceEntry, ...] = EDITORIAL_SOURCE_REGISTRY,
@@ -199,7 +252,20 @@ def run_editorial_discovery(
                 continue
 
             matched_companies, matched_themes = matched_companies_and_themes(entry.title, entry.summary)
-            if not matched_companies and not matched_themes:
+            # Government / Public Sector Daily News lane (design/DECISIONS.md):
+            # two named, hardcoded source_id exceptions to the general
+            # fail-closed gate below — see this module's own docstring
+            # for why this is deliberately not a category-based or
+            # generically-extensible mechanism. Every other source_id,
+            # including any future one, falls through to the unchanged
+            # company-or-theme check exactly as today.
+            if source.source_id == _SPACEFORCE_SOURCE_ID:
+                pass
+            elif source.source_id == _NIST_SOURCE_ID:
+                if not _matches_nist_allow_list(entry.title, entry.summary):
+                    items_no_match += 1
+                    continue
+            elif not matched_companies and not matched_themes:
                 items_no_match += 1
                 continue
 

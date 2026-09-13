@@ -708,16 +708,23 @@ def test_expansion_batch_3_entries_validate_against_the_feed_adapter():
 # from RUNTIME_SOURCE_REGISTRY: 9 CNBC feeds + 1 Korea Herald feed,
 # every one issuer_agnostic=True, each independently live-verified.
 # Never merged into RUNTIME_SOURCE_REGISTRY/PILOT_FEEDS — read only by
-# editorial_pipeline.py.
+# editorial_pipeline.py. Government / Public Sector Daily News lane
+# (design/DECISIONS.md) adds 2 more entries (Space Force, NIST) — see
+# the dedicated section below for their own category-specific tests.
 # ============================================================
 
+_INDEPENDENT_NEWS_SOURCE_IDS = (
+    "cnbc-top-news-rss", "cnbc-business-rss", "cnbc-finance-rss", "cnbc-economy-rss",
+    "cnbc-technology-rss", "cnbc-earnings-rss", "cnbc-energy-rss", "cnbc-politics-policy-rss",
+    "cnbc-asia-rss", "korea-herald-business-rss",
+)
+_GOVERNMENT_POLICY_SOURCE_IDS = ("spaceforce-news-rss", "nist-news-rss")
 
-def test_editorial_source_registry_has_exactly_ten_entries():
-    assert len(EDITORIAL_SOURCE_REGISTRY) == 10
+
+def test_editorial_source_registry_has_exactly_twelve_entries():
+    assert len(EDITORIAL_SOURCE_REGISTRY) == 12
     assert tuple(e.source_id for e in EDITORIAL_SOURCE_REGISTRY) == (
-        "cnbc-top-news-rss", "cnbc-business-rss", "cnbc-finance-rss", "cnbc-economy-rss",
-        "cnbc-technology-rss", "cnbc-earnings-rss", "cnbc-energy-rss", "cnbc-politics-policy-rss",
-        "cnbc-asia-rss", "korea-herald-business-rss",
+        _INDEPENDENT_NEWS_SOURCE_IDS + _GOVERNMENT_POLICY_SOURCE_IDS
     )
 
 
@@ -727,14 +734,52 @@ def test_editorial_source_registry_has_zero_validation_violations():
         assert validate_source_entry(entry) == ()
 
 
-def test_every_editorial_entry_is_issuer_agnostic_independent_news_allowlisted():
-    for entry in EDITORIAL_SOURCE_REGISTRY:
+def test_every_independent_news_editorial_entry_is_issuer_agnostic_allowlisted():
+    independent_news_entries = [
+        e for e in EDITORIAL_SOURCE_REGISTRY if e.source_id in _INDEPENDENT_NEWS_SOURCE_IDS
+    ]
+    assert len(independent_news_entries) == len(_INDEPENDENT_NEWS_SOURCE_IDS)
+    for entry in independent_news_entries:
         assert entry.category == SourceCategory.INDEPENDENT_NEWS, entry.source_id
         assert entry.issuer_agnostic is True, entry.source_id
         assert entry.issuer_name is None, entry.source_id
         assert entry.allowlisted is True, entry.source_id
         assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
         assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+
+
+def test_every_government_policy_editorial_entry_is_issuer_agnostic_verified():
+    # Government / Public Sector Daily News lane (design/DECISIONS.md) —
+    # allowlisted=True is NOT required here: validate_source_entry()'s
+    # allowlisted gate is scoped only to SourceCategory.INDEPENDENT_NEWS
+    # (source_registry.py's own validator), never GOVERNMENT_POLICY.
+    government_entries = [
+        e for e in EDITORIAL_SOURCE_REGISTRY if e.source_id in _GOVERNMENT_POLICY_SOURCE_IDS
+    ]
+    assert len(government_entries) == len(_GOVERNMENT_POLICY_SOURCE_IDS)
+    for entry in government_entries:
+        assert entry.category == SourceCategory.GOVERNMENT_POLICY, entry.source_id
+        assert entry.issuer_agnostic is True, entry.source_id
+        assert entry.issuer_name is None, entry.source_id
+        assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
+        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+        assert entry.jurisdiction == "United States", entry.source_id
+
+
+def test_spaceforce_entry_uses_the_expected_feed_and_domain():
+    spaceforce = next(e for e in EDITORIAL_SOURCE_REGISTRY if e.source_id == "spaceforce-news-rss")
+    assert spaceforce.canonical_url == (
+        "https://www.spaceforce.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=1060&max=10"
+    )
+    assert spaceforce.domains == ("www.spaceforce.mil",)
+    assert spaceforce.attribution_label == "U.S. Space Force"
+
+
+def test_nist_entry_uses_the_expected_feed_and_domain():
+    nist = next(e for e in EDITORIAL_SOURCE_REGISTRY if e.source_id == "nist-news-rss")
+    assert nist.canonical_url == "https://www.nist.gov/news-events/news/rss.xml"
+    assert nist.domains == ("www.nist.gov",)
+    assert nist.attribution_label == "National Institute of Standards and Technology (NIST)"
 
 
 def test_every_cnbc_entry_uses_the_search_cnbc_rss_endpoint_and_www_cnbc_domain():
