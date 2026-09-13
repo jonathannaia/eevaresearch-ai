@@ -457,8 +457,9 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
     # distinct company names below is unaffected, since both Meta
     # entries share the same company_name). Expansion batch 3
     # (2026-09-11) then appended 4 more entries, each a genuinely new
-    # company (20 + 4 = 24).
-    assert len(PILOT_FEEDS) == 24
+    # company (20 + 4 = 24). Expansion batch 4 (2026-09-13) then
+    # appended 3 more entries, each a genuinely new company (24 + 3 = 27).
+    assert len(PILOT_FEEDS) == 27
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
@@ -466,6 +467,7 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
         "Amazon.com, Inc.", "Meta Platforms, Inc.", "Oracle Corporation", "Applied Materials, Inc.",
         "Lam Research Corp", "KLA Corp", "Arm Holdings plc",
         "Qualcomm Incorporated", "Corning Inc.", "Synopsys, Inc.", "Cadence Design Systems, Inc.",
+        "Samsung Electronics", "Murata Manufacturing Co., Ltd.", "Microchip Technology Incorporated",
     }
 
 

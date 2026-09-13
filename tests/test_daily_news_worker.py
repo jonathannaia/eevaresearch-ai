@@ -1126,3 +1126,75 @@ def test_worker_mode_editorial_repository_is_real_postgres_not_local_json_fallba
     assert isinstance(constructed_repositories[0], PostgresEditorialStoryRepository)
     stories = constructed_repositories[0].load_stories()
     assert any(s.source_feed_id == "spaceforce-news-rss" for s in stories.values())
+
+
+# ============================================================
+# Daily News source-expansion batch 4 (2026-09-13) — Samsung Electronics,
+# Murata Manufacturing, Microchip Technology. scripts/daily_news_worker.py
+# itself is completely unmodified by this batch: it already iterates
+# feed_registry.PILOT_FEEDS generically, so the three new real registry
+# entries participate in the normal worker tick without any worker code
+# change. These tests prove that participation directly, using the real
+# PILOT_FEEDS entries (not synthetic ones), and that per-source failure
+# isolation still applies to them exactly as it does to every existing
+# issuer source.
+# ============================================================
+
+from src.data_access.daily_news.feed_registry import PILOT_FEEDS as _REAL_PILOT_FEEDS
+
+_SAMSUNG_SOURCE = next(f for f in _REAL_PILOT_FEEDS if f.company_name == "Samsung Electronics")
+_MURATA_SOURCE = next(f for f in _REAL_PILOT_FEEDS if f.company_name == "Murata Manufacturing Co., Ltd.")
+_MICROCHIP_SOURCE = next(f for f in _REAL_PILOT_FEEDS if f.company_name == "Microchip Technology Incorporated")
+
+
+def test_samsung_murata_microchip_participate_in_the_normal_issuer_loop_with_failure_isolation(
+    tmp_path, monkeypatch,
+):
+    article_url = "https://www.murata.com/en-global/news/emc/emifil/2026/0910"
+    _mock_fetch({
+        _SAMSUNG_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:503"),
+        _MURATA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Murata Launches Common Mode Choke Coils", article_url),), failure_code=None,
+        ),
+        # Microchip left unmocked -> zero entries, zero failure (same _mock_fetch default every other test uses).
+    }, monkeypatch)
+    monkeypatch.setattr(
+        daily_news_worker, "PILOT_FEEDS", (_SAMSUNG_SOURCE, _MURATA_SOURCE, _MICROCHIP_SOURCE),
+    )
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    samsung_status = scan_status_repository.get_feed_status("Samsung Electronics")
+    assert samsung_status.last_failure_code == "HTTPError:503"
+    assert samsung_status.stories_published_last_run == 0
+
+    murata_status = scan_status_repository.get_feed_status("Murata Manufacturing Co., Ltd.")
+    assert murata_status.last_failure_code is None
+    assert murata_status.stories_published_last_run == 1
+
+    microchip_status = scan_status_repository.get_feed_status("Microchip Technology Incorporated")
+    assert microchip_status.last_failure_code is None
+    assert microchip_status.stories_published_last_run == 0
+
+    # Samsung's failure never blocked Murata's or Microchip's own attempt.
+    worker_status = scan_status_repository.get_worker_status()
+    assert worker_status.last_tick_completed_at is not None
+
+
+def test_issuer_source_additions_do_not_change_the_registry_derived_editorial_aggregate(tmp_path, monkeypatch, capsys):
+    # Proves the editorial aggregate's sources_polled is derived from
+    # EDITORIAL_SOURCE_REGISTRY alone (unchanged by this batch), not from
+    # PILOT_FEEDS/RUNTIME_SOURCE_REGISTRY (which grew by 3 in this batch).
+    from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY
+
+    _mock_fetch({}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_SAMSUNG_SOURCE, _MURATA_SOURCE, _MICROCHIP_SOURCE))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output

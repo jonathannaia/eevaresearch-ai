@@ -797,15 +797,79 @@ EXPANSION_BATCH_3_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News source-expansion batch 4 (2026-09-13) — 3 official issuer
+# newsroom RSS feeds, each independently live-verified this batch (real
+# fetch, HTTP 200, parseable RSS 2.0, on-domain per-article item links),
+# closing coverage gaps for three already-tracked issuers that had no
+# existing Daily News source (Samsung Electronics and Murata Manufacturing
+# were the only two of 28 tracked Japan/Korea issuers with a pre-existing
+# gap this batch specifically targeted; only Samsung and Murata had a
+# working feed found — see design/DECISIONS.md for the read-only
+# discovery pass and the 21 other candidates checked with no working
+# feed found, none of which are added here). Classified OFFICIAL_NEWSROOM,
+# not OFFICIAL_IR, matching this registry's own established pattern
+# (investor.*/ir.* dedicated subdomains get OFFICIAL_IR; a general
+# corporate-domain newsroom/press feed gets OFFICIAL_NEWSROOM — see
+# nvidia-newsroom-rss/sk-hynix-newsroom-rss above for the same
+# distinction). No new category, format, matching exception, or
+# eligibility rule — these are issuer-lane entries, resolved via the
+# existing feed_registry.tracked_company_for() lookup exactly like
+# every other OFFICIAL_NEWSROOM entry above.
+EXPANSION_BATCH_4_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="samsung-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://news.samsung.com/global/feed",
+        domains=("news.samsung.com",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Samsung Electronics", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Samsung Electronics", last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 4 (2026-09-13) — live-verified official newsroom "
+            "RSS feed, HTTP 200, dated items (newest 2026-09-09), each with a real per-article "
+            "news.samsung.com/global/... link, on-domain (no www. prefix — confirmed live, not "
+            "guessed)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="murata-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.murata.com/en-global/news/rssfeed",
+        domains=("www.murata.com",),
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Murata Manufacturing Co., Ltd.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Murata Manufacturing Co., Ltd.", last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 4 (2026-09-13) — live-verified official newsroom "
+            "RSS feed (\"Product News\"), HTTP 200, dated items (newest 2026-09-10), each with a "
+            "real per-article www.murata.com/en-global/news/... link, on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="microchip-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.microchip.com/RSS/recent-PRCorporate.xml",
+        domains=("www.microchip.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Microchip Technology Incorporated", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Microchip Technology Incorporated", last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 4 (2026-09-13) — live-verified official "
+            "\"Corporate Press Releases\" RSS feed, HTTP 200, dated items (newest 2026-09-03), "
+            "each with a real per-article www.microchip.com/en-us/about/news-releases/corporate/... "
+            "link, on-domain. Low cadence confirmed live — roughly monthly, not stale/broken "
+            "(newest item well within the existing 7-day freshness window at verification time)."
+        ),
+    ),
+)
+
 # The real, live runtime feed list — original 12 pilot sources first
 # (byte-identical, same order), then expansion batch 1's 7 sources,
 # then expansion batch 2's 1 source, then expansion batch 3's 4
-# sources, in the exact order given (19 + 1 + 4 = 24).
+# sources, then expansion batch 4's 3 sources, in the exact order given
+# (19 + 1 + 4 + 3 = 27).
 # feed_registry.PILOT_FEEDS is generated from this tuple via
 # to_daily_news_feed_source(); see that module's own updated docstring.
 RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
-    + EXPANSION_BATCH_3_SOURCE_REGISTRY
+    + EXPANSION_BATCH_3_SOURCE_REGISTRY + EXPANSION_BATCH_4_SOURCE_REGISTRY
 )
 
 _EDITORIAL_LICENSING_CLASSIFICATION = (

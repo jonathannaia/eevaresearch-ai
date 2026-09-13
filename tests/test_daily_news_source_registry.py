@@ -17,6 +17,7 @@ from src.data_access.daily_news.source_registry import (
     EXPANSION_BATCH_1_SOURCE_REGISTRY,
     EXPANSION_BATCH_2_SOURCE_REGISTRY,
     EXPANSION_BATCH_3_SOURCE_REGISTRY,
+    EXPANSION_BATCH_4_SOURCE_REGISTRY,
     PILOT_SOURCE_REGISTRY,
     RUNTIME_SOURCE_REGISTRY,
     DailyNewsSourceEntry,
@@ -402,12 +403,14 @@ def test_expansion_batch_1_has_exactly_seven_entries_in_the_given_order():
 def test_runtime_source_registry_is_the_twelve_then_the_seven_then_the_one_in_order():
     # Was "twelve then seven" (19 total) through expansion batch 1; batch
     # 2 (2026-09-04) appended exactly one more entry (19 + 1 = 20); batch
-    # 3 (2026-09-11) appended exactly four more (20 + 4 = 24).
-    assert len(RUNTIME_SOURCE_REGISTRY) == 24
+    # 3 (2026-09-11) appended exactly four more (20 + 4 = 24); batch 4
+    # (2026-09-13) appended exactly three more (24 + 3 = 27).
+    assert len(RUNTIME_SOURCE_REGISTRY) == 27
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[20:] == EXPANSION_BATCH_3_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[20:24] == EXPANSION_BATCH_3_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[24:] == EXPANSION_BATCH_4_SOURCE_REGISTRY
 
 
 def test_pilot_source_registry_has_zero_validation_violations():
@@ -425,7 +428,7 @@ def test_runtime_source_registry_has_zero_validation_violations():
 
 def test_runtime_source_registry_source_ids_are_all_unique():
     ids = [e.source_id for e in RUNTIME_SOURCE_REGISTRY]
-    assert len(ids) == len(set(ids)) == 24
+    assert len(ids) == len(set(ids)) == 27
 
 
 def test_pilot_source_registry_covers_the_same_twelve_companies_as_pilot_feeds():
@@ -441,7 +444,7 @@ def test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order():
     field-for-field equal to adapting PILOT_SOURCE_REGISTRY directly,
     and are the first 12 entries of the real, live PILOT_FEEDS."""
     adapted_original_twelve = tuple(to_daily_news_feed_source(e) for e in PILOT_SOURCE_REGISTRY)
-    assert len(feed_registry.PILOT_FEEDS) == 24
+    assert len(feed_registry.PILOT_FEEDS) == 27
     assert feed_registry.PILOT_FEEDS[:12] == adapted_original_twelve
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[:12]) == _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER
 
@@ -449,8 +452,9 @@ def test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order():
 def test_final_runtime_feed_list_has_exactly_twenty_entries():
     # Was exactly 19 through expansion batch 1; batch 2 (2026-09-04)
     # appended exactly one more entry (19 + 1 = 20); batch 3
-    # (2026-09-11) appended exactly four more (20 + 4 = 24).
-    assert len(feed_registry.PILOT_FEEDS) == 24
+    # (2026-09-11) appended exactly four more (20 + 4 = 24); batch 4
+    # (2026-09-13) appended exactly three more (24 + 3 = 27).
+    assert len(feed_registry.PILOT_FEEDS) == 27
 
 
 def test_final_runtime_feed_list_appends_expansion_batch_1_after_the_original_twelve():
@@ -466,14 +470,25 @@ _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER = (
 
 def test_final_runtime_feed_list_appends_expansion_batch_3_after_batch_2():
     adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_3_SOURCE_REGISTRY)
-    assert feed_registry.PILOT_FEEDS[20:] == adapted_expansion
-    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[20:]) == _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER
+    assert feed_registry.PILOT_FEEDS[20:24] == adapted_expansion
+
+
+_EXPECTED_EXPANSION_BATCH_4_COMPANY_ORDER = (
+    "Samsung Electronics", "Murata Manufacturing Co., Ltd.", "Microchip Technology Incorporated",
+)
+
+
+def test_final_runtime_feed_list_appends_expansion_batch_4_after_batch_3():
+    adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_4_SOURCE_REGISTRY)
+    assert feed_registry.PILOT_FEEDS[24:] == adapted_expansion
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[24:]) == _EXPECTED_EXPANSION_BATCH_4_COMPANY_ORDER
 
 
 def test_final_runtime_feed_list_company_order_is_exactly_the_twenty_expected():
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS) == (
         _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER + _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
         + ("Meta Platforms, Inc.",) + _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER
+        + _EXPECTED_EXPANSION_BATCH_4_COMPANY_ORDER
     )
 
 
@@ -579,19 +594,16 @@ def test_meta_ir_rss_remains_present_enabled_and_unchanged():
 
 
 def test_runtime_source_registry_is_nineteen_then_the_one_new_entry():
-    assert len(RUNTIME_SOURCE_REGISTRY) == 24
+    assert len(RUNTIME_SOURCE_REGISTRY) == 27
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[20:] == EXPANSION_BATCH_3_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[20:24] == EXPANSION_BATCH_3_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[24:] == EXPANSION_BATCH_4_SOURCE_REGISTRY
 
 
 def test_runtime_source_registry_has_zero_violations_after_batch_2():
     assert find_registry_violations(RUNTIME_SOURCE_REGISTRY) == ()
-
-
-def test_final_runtime_feed_list_has_exactly_twenty_entries():
-    assert len(feed_registry.PILOT_FEEDS) == 24
 
 
 def test_original_nineteen_runtime_feeds_retain_their_exact_relative_order():
@@ -704,6 +716,88 @@ def test_expansion_batch_3_entries_validate_against_the_feed_adapter():
 
 
 # ============================================================
+# Daily News source-expansion batch 4 (2026-09-13) — 3 official issuer
+# newsroom feeds closing coverage gaps for already-tracked issuers
+# (Samsung Electronics, Murata Manufacturing, Microchip Technology).
+# ============================================================
+
+_EXPANSION_BATCH_4_EXPECTED_FIELDS = {
+    "samsung-newsroom-rss": dict(
+        canonical_url="https://news.samsung.com/global/feed", domains=("news.samsung.com",),
+        attribution_label="Samsung Electronics", issuer_name="Samsung Electronics", jurisdiction="South Korea",
+    ),
+    "murata-newsroom-rss": dict(
+        canonical_url="https://www.murata.com/en-global/news/rssfeed", domains=("www.murata.com",),
+        attribution_label="Murata Manufacturing Co., Ltd.", issuer_name="Murata Manufacturing Co., Ltd.",
+        jurisdiction="Japan",
+    ),
+    "microchip-newsroom-rss": dict(
+        canonical_url="https://www.microchip.com/RSS/recent-PRCorporate.xml", domains=("www.microchip.com",),
+        attribution_label="Microchip Technology Incorporated", issuer_name="Microchip Technology Incorporated",
+        jurisdiction="United States",
+    ),
+}
+
+
+def test_expansion_batch_4_has_exactly_three_entries_in_the_given_order():
+    assert len(EXPANSION_BATCH_4_SOURCE_REGISTRY) == 3
+    assert tuple(e.source_id for e in EXPANSION_BATCH_4_SOURCE_REGISTRY) == (
+        "samsung-newsroom-rss", "murata-newsroom-rss", "microchip-newsroom-rss",
+    )
+
+
+def test_expansion_batch_4_entries_have_the_exact_verified_fields():
+    for entry in EXPANSION_BATCH_4_SOURCE_REGISTRY:
+        expected = _EXPANSION_BATCH_4_EXPECTED_FIELDS[entry.source_id]
+        assert entry.canonical_url == expected["canonical_url"]
+        assert entry.domains == expected["domains"]
+        assert entry.attribution_label == expected["attribution_label"]
+        assert entry.issuer_name == expected["issuer_name"]
+        assert entry.jurisdiction == expected["jurisdiction"]
+        assert entry.category == SourceCategory.OFFICIAL_NEWSROOM
+        assert entry.format == SourceFormat.RSS_ATOM
+        assert entry.enabled is True
+        assert entry.health_state == SourceHealthState.VERIFIED
+        assert entry.priority == 1
+        assert entry.issuer_agnostic is False
+        assert entry.last_verified_at == "2026-09-13"
+
+
+def test_expansion_batch_4_licensing_classification_matches_the_pilot_constant():
+    pilot_entry_licensing = PILOT_SOURCE_REGISTRY[0].licensing_classification
+    for entry in EXPANSION_BATCH_4_SOURCE_REGISTRY:
+        assert entry.licensing_classification == pilot_entry_licensing
+
+
+def test_expansion_batch_4_has_zero_validation_violations():
+    assert find_registry_violations(EXPANSION_BATCH_4_SOURCE_REGISTRY) == ()
+    for entry in EXPANSION_BATCH_4_SOURCE_REGISTRY:
+        assert validate_source_entry(entry) == ()
+
+
+def test_expansion_batch_4_entries_validate_against_the_feed_adapter():
+    for entry in EXPANSION_BATCH_4_SOURCE_REGISTRY:
+        feed = to_daily_news_feed_source(entry)
+        assert feed.feed_url == entry.canonical_url
+        assert feed.canonical_domains == entry.domains
+        assert feed.company_name == entry.issuer_name
+
+
+def test_expansion_batch_4_source_ids_and_domains_do_not_collide_with_any_existing_entry():
+    # Explicit collision-freedom proof, per the approval's own pre-editing
+    # requirement — every batch-4 source_id/canonical_url/domain is
+    # unique across the entire runtime registry.
+    other_entries = [e for e in RUNTIME_SOURCE_REGISTRY if e not in EXPANSION_BATCH_4_SOURCE_REGISTRY]
+    other_ids = {e.source_id for e in other_entries}
+    other_urls = {e.canonical_url for e in other_entries}
+    other_domains = {d for e in other_entries for d in e.domains}
+    for entry in EXPANSION_BATCH_4_SOURCE_REGISTRY:
+        assert entry.source_id not in other_ids
+        assert entry.canonical_url not in other_urls
+        assert not (set(entry.domains) & other_domains)
+
+
+# ============================================================
 # Editorial Daily News v1 (design/DECISIONS.md) — a SEPARATE registry
 # from RUNTIME_SOURCE_REGISTRY: 9 CNBC feeds + 1 Korea Herald feed,
 # every one issuer_agnostic=True, each independently live-verified.
@@ -804,7 +898,10 @@ def test_editorial_source_registry_never_appears_in_runtime_source_registry():
     editorial_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY}
     runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
     assert not (editorial_ids & runtime_ids)
-    assert len(RUNTIME_SOURCE_REGISTRY) == 24  # unchanged by this batch
+    # Daily News source-expansion batch 4 (2026-09-13) added 3 more
+    # issuer-lane entries (24 -> 27) — this test's own point (editorial
+    # and runtime source_ids never collide) is unaffected by that count.
+    assert len(RUNTIME_SOURCE_REGISTRY) == 27
 
 
 def test_to_daily_news_feed_source_rejects_every_editorial_entry():
