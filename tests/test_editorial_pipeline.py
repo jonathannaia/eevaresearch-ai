@@ -387,3 +387,218 @@ def test_select_visible_sorts_newest_first():
 
 def test_select_visible_empty_store_returns_empty_tuple():
     assert editorial_pipeline.select_visible_editorial_stories({}) == ()
+
+
+# ============================================================
+# Government / Public Sector Daily News lane (design/DECISIONS.md) —
+# _SPACEFORCE_SOURCE_ID bypasses the company/theme gate entirely;
+# _NIST_SOURCE_ID is gated by _matches_nist_allow_list() instead of
+# matched_companies_and_themes(). Every other source_id (including a
+# plain CNBC/Korea Herald one) keeps the exact existing gate — proven
+# by test_no_match_item_is_not_published above, which is untouched by
+# this batch, plus the mixed-run test below.
+# ============================================================
+
+_GOVERNMENT_LICENSING = "U.S. federal government work test fixture."
+
+
+def _spaceforce_source(source_id: str = "spaceforce-news-rss") -> DailyNewsSourceEntry:
+    return DailyNewsSourceEntry(
+        source_id=source_id, category=SourceCategory.GOVERNMENT_POLICY, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.spaceforce.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=1060&max=10",
+        domains=("www.spaceforce.mil",), jurisdiction="United States", enabled=True,
+        health_state=SourceHealthState.VERIFIED, attribution_label="U.S. Space Force",
+        licensing_classification=_GOVERNMENT_LICENSING, priority=1, issuer_agnostic=True,
+    )
+
+
+def _nist_source(source_id: str = "nist-news-rss") -> DailyNewsSourceEntry:
+    return DailyNewsSourceEntry(
+        source_id=source_id, category=SourceCategory.GOVERNMENT_POLICY, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.nist.gov/news-events/news/rss.xml",
+        domains=("www.nist.gov",), jurisdiction="United States", enabled=True,
+        health_state=SourceHealthState.VERIFIED,
+        attribution_label="National Institute of Standards and Technology (NIST)",
+        licensing_classification=_GOVERNMENT_LICENSING, priority=1, issuer_agnostic=True,
+    )
+
+
+def test_spaceforce_item_with_no_company_or_theme_match_still_publishes(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    no_match_item = _entry(
+        title="US Space Force selects Texas as preferred location for third DARC site",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+        summary="The USSF has approved a preferred alternative for its third Deep Space Advanced Radar Capability site.",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(no_match_item,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    assert report.items_no_match == 0
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.matched_companies == ()
+    assert story.matched_themes == ()
+    assert story.source_feed_id == "spaceforce-news-rss"
+
+
+def test_spaceforce_stale_item_is_still_excluded(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    stale = _entry(
+        title="US Space Force selects Texas as preferred location for third DARC site",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+        published_at=(datetime.now(timezone.utc) - timedelta(hours=73)).isoformat(),
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(stale,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+
+
+def test_spaceforce_off_domain_link_is_still_rejected(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    off_domain = _entry(
+        title="US Space Force selects Texas as preferred location for third DARC site",
+        link="https://example.com/not-spaceforce",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(off_domain,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_spaceforce_duplicate_within_one_run_is_still_deduplicated(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    item = _entry(
+        title="US Space Force selects Texas as preferred location for third DARC site",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(item, item), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_spaceforce_failed_fetch_is_recorded_and_never_published(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(), failure_code="HTTPError:503")})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.source_failures == {"spaceforce-news-rss": "HTTPError:503"}
+
+
+def test_nist_item_matching_allow_list_publishes(tmp_path, monkeypatch):
+    source = _nist_source()
+    matching = _entry(
+        title="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        link="https://www.nist.gov/news-events/news/2026/09/chips-funding",
+        summary="The award, made under the CHIPS Act, supports new semiconductor fabrication capacity.",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(matching,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    assert report.items_no_match == 0
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.source_feed_id == "nist-news-rss"
+
+
+def test_nist_off_topic_item_does_not_publish(tmp_path, monkeypatch):
+    source = _nist_source()
+    off_topic = _entry(
+        title="NIST-Developed Quantum Sensors Improve Nuclear Monitoring",
+        link="https://www.nist.gov/news-events/news/2026/09/quantum-sensors",
+        summary="New X-ray measurements will allow scientists to more accurately monitor nuclear material.",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(off_topic,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1
+    assert load_stories(tmp_path) == {}
+
+
+def test_nist_stale_matching_item_is_still_excluded(tmp_path, monkeypatch):
+    source = _nist_source()
+    stale = _entry(
+        title="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        link="https://www.nist.gov/news-events/news/2026/09/chips-funding",
+        published_at=(datetime.now(timezone.utc) - timedelta(hours=73)).isoformat(),
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(stale,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+
+
+def test_nist_off_domain_matching_item_is_still_rejected(tmp_path, monkeypatch):
+    source = _nist_source()
+    off_domain = _entry(
+        title="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        link="https://example.com/not-nist",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(off_domain,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_nist_duplicate_within_one_run_is_still_deduplicated(tmp_path, monkeypatch):
+    source = _nist_source()
+    item = _entry(
+        title="NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+        link="https://www.nist.gov/news-events/news/2026/09/chips-funding",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(item, item), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_mixed_run_cnbc_gate_is_unaffected_by_government_sources(tmp_path, monkeypatch):
+    # Proves the CNBC (INDEPENDENT_NEWS) source_id still goes through
+    # the exact, unmodified company-or-theme gate in the same run that
+    # also processes Space Force (always-eligible) and NIST (allow-list
+    # gated) sources — the three eligibility paths never interfere.
+    cnbc = _source()
+    spaceforce = _spaceforce_source()
+    nist = _nist_source()
+
+    cnbc_off_topic = _entry(title="Record U.S. cyclosporiasis outbreak is over, CDC says", summary=None)
+    spaceforce_item = _entry(
+        title="US Space Force selects Texas as preferred location for third DARC site",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+    )
+    nist_off_topic = _entry(
+        title="NIST-Developed Quantum Sensors Improve Nuclear Monitoring",
+        link="https://www.nist.gov/news-events/news/2026/09/quantum-sensors",
+    )
+    _patch_fetch(monkeypatch, {
+        cnbc.canonical_url: FeedFetchResult(entries=(cnbc_off_topic,), failure_code=None),
+        spaceforce.canonical_url: FeedFetchResult(entries=(spaceforce_item,), failure_code=None),
+        nist.canonical_url: FeedFetchResult(entries=(nist_off_topic,), failure_code=None),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(cnbc, spaceforce, nist))
+
+    assert report.stories_published == 1  # only the Space Force item
+    assert report.items_no_match == 2  # the CNBC and NIST off-topic items
+    stories = load_stories(tmp_path)
+    assert len(stories) == 1
+    assert next(iter(stories.values())).source_feed_id == "spaceforce-news-rss"

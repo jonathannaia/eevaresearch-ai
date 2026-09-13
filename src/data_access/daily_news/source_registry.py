@@ -815,6 +815,21 @@ _EDITORIAL_LICENSING_CLASSIFICATION = (
     "src/data_access/daily_news/summary_grounding.py)."
 )
 
+# Government / Public Sector Daily News lane (design/DECISIONS.md) —
+# distinct from _EDITORIAL_LICENSING_CLASSIFICATION above: these are
+# U.S. federal government works (public domain, 17 U.S.C. section 105), not
+# publisher-owned independent journalism. Same "headline, excerpt, and
+# direct link only" reproduction discipline as every other Daily News
+# source, stated in its own accurate terms rather than reusing the
+# "independent journalism" wording, which does not describe a .gov/.mil
+# source.
+_GOVERNMENT_LICENSING_CLASSIFICATION = (
+    "U.S. federal government work (public domain) — public headline/metadata content; "
+    "headline, publisher-provided excerpt, and direct link only, never full article-body "
+    "reproduction, per this project's existing no-full-article-reproduction policy (see "
+    "src/data_access/daily_news/summary_grounding.py)."
+)
+
 # Editorial Daily News v1 (design/DECISIONS.md) — a SEPARATE registry
 # from RUNTIME_SOURCE_REGISTRY, deliberately never merged into it:
 # these 10 sources are issuer_agnostic=True (category=INDEPENDENT_NEWS),
@@ -932,6 +947,47 @@ EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
             "'The korea Herald News Rss'. Item links confirmed on www.koreaherald.com/article/... "
             "(e.g. koreaherald.com/article/10870958). No separate Technology feed exists on "
             "koreaherald.com/rss (confirmed live) — Business is the only available section."
+        ),
+    ),
+    # Government / Public Sector Daily News lane (design/DECISIONS.md) —
+    # the first two entries in EDITORIAL_SOURCE_REGISTRY that are real
+    # U.S. federal government sources rather than independent
+    # journalism. Both use the already-defined, previously-unused
+    # SourceCategory.GOVERNMENT_POLICY value (see this module's own
+    # SourceCategory docstring) — no new enum member added. Eligibility
+    # for these two specific source_ids is handled by two explicit,
+    # hardcoded rules in editorial_pipeline.py's own eligibility check
+    # (not a category-based or generically-extensible bypass) — see that
+    # module's own docstring for exactly why.
+    DailyNewsSourceEntry(
+        source_id="spaceforce-news-rss", category=SourceCategory.GOVERNMENT_POLICY, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.spaceforce.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=1060&max=10",
+        domains=("www.spaceforce.mil",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="U.S. Space Force", licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-12",
+        notes=(
+            "Government / Public Sector Daily News lane (2026-09-12) — live-verified, HTTP 200, "
+            "RSS 2.0, channel title 'United States Space Force News'. Item links confirmed on "
+            "www.spaceforce.mil/News/Article-Display/Article/..., real <category> tags present. "
+            "No `allowlisted` flag required — that gate applies only to SourceCategory."
+            "INDEPENDENT_NEWS, not GOVERNMENT_POLICY."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="nist-news-rss", category=SourceCategory.GOVERNMENT_POLICY, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.nist.gov/news-events/news/rss.xml",
+        domains=("www.nist.gov",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="National Institute of Standards and Technology (NIST)",
+        licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-12",
+        notes=(
+            "Government / Public Sector Daily News lane (2026-09-12) — live-verified, HTTP 200, "
+            "RSS 2.0, channel title 'NIST News'. Item links confirmed on "
+            "www.nist.gov/news-events/news/..., real <dc:creator> present. Restricted to a strict, "
+            "source-scoped CHIPS/semiconductor allow-list in editorial_pipeline.py — general NIST "
+            "science news (the majority of this feed) is deliberately excluded, not published."
         ),
     ),
 )

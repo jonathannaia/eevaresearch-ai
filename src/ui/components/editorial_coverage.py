@@ -43,6 +43,23 @@ _THEME_DISPLAY_NAMES: dict[str, str] = {
     "humanoids": "Humanoids",
 }
 
+_DEFAULT_BADGE_LABEL = "Market news"
+
+# Government / Public Sector Daily News lane (design/DECISIONS.md) —
+# badge label derived at render time from the story's own already-
+# persisted source_feed_id; no new EditorialStory field, no migration.
+# Every source_id not listed here (every existing CNBC/Korea Herald id,
+# and any future/unknown one) falls through to _DEFAULT_BADGE_LABEL —
+# the exact same "Market news" text every editorial card shows today.
+_SOURCE_BADGE_LABELS: dict[str, str] = {
+    "spaceforce-news-rss": "Public sector",
+    "nist-news-rss": "Policy",
+}
+
+
+def _badge_label(source_feed_id: str) -> str:
+    return _SOURCE_BADGE_LABELS.get(source_feed_id, _DEFAULT_BADGE_LABEL)
+
 
 def _esc(value: object) -> str:
     if value is None:
@@ -77,13 +94,19 @@ def get_visible_editorial_stories(settings: Settings) -> tuple[EditorialStory, .
 def render_editorial_card(story: EditorialStory) -> None:
     """One editorial card's content — extracted, unchanged in substance,
     from the former render_editorial_coverage()'s own per-item loop body.
-    Only addition: a compact 'Market news' item-type label (unified Daily
-    News feed, design/DECISIONS.md), styled with the same neutral
-    er-status-tag/er-tag-neutral pattern already used elsewhere in this
-    app — no new CSS, no change to the excerpt/attribution/tag content
-    below it."""
+    A compact item-type label (unified Daily News feed, design/
+    DECISIONS.md), styled with the same neutral er-status-tag/
+    er-tag-neutral pattern already used elsewhere in this app — no new
+    CSS, no change to the excerpt/attribution/tag content below it.
+    Government / Public Sector Daily News lane (design/DECISIONS.md):
+    the label itself is now derived from story.source_feed_id via
+    _badge_label() rather than a hardcoded literal — every existing
+    source still renders exactly 'Market news', unchanged."""
     with st.container(border=True, key=f"card-editorial-{story.id}"):
-        st.markdown('<span class="er-status-tag er-tag-neutral">Market news</span>', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="er-status-tag er-tag-neutral">{_esc(_badge_label(story.source_feed_id))}</span>',
+            unsafe_allow_html=True,
+        )
         local_time = fmt_datetime_local(story.published_at) if story.published_at else ""
         st.markdown(
             f'<div class="er-muted" style="margin-top:0.3rem;">{_esc(story.publisher)} · Editorial · {_esc(local_time)}</div>',
