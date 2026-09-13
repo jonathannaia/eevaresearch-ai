@@ -46,7 +46,12 @@ _INTEL_SOURCE = DailyNewsFeedSource(
 
 
 def _entry(title: str, link: str, summary: str | None = "A short description.") -> RawFeedEntry:
-    return RawFeedEntry(title=title, link=link, published_at="2026-08-24T12:00:00+00:00", summary=summary, image_url=None, image_alt=None)
+    # Issuer-ingestion freshness/cap policy: a fresh, execution-relative
+    # published_at (never a fixed past literal), so every existing test
+    # in this file that doesn't care about freshness keeps its original
+    # intent unchanged now that run_discovery() has a 7x24h freshness
+    # gate — mirrors test_daily_news_pipeline.py's own _entry() fixture.
+    return RawFeedEntry(title=title, link=link, published_at=datetime.now(timezone.utc).isoformat(), summary=summary, image_url=None, image_alt=None)
 
 
 def _mock_fetch(entries_by_url: dict[str, FeedFetchResult], monkeypatch) -> None:

@@ -1,7 +1,16 @@
 """daily_news_pipeline.run_discovery — the bounded, idempotent
 orchestration entry point. Fully mocked rss_atom_client.fetch_entries,
-zero network calls, no live feed access."""
+zero network calls, no live feed access.
+
+Issuer-ingestion freshness/cap policy (design/DECISIONS.md): _entry()'s
+own default `published_at` is a fresh, `datetime.now()`-relative value
+(never a fixed past literal) so every existing test in this file that
+doesn't care about freshness keeps its original intent unchanged now
+that a 7x24h freshness gate exists — mirrors editorial pipeline test
+file's own equivalent fixture convention."""
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 from src.data_access.daily_news import daily_news_pipeline, daily_news_store, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource
@@ -20,9 +29,11 @@ _INTEL_SOURCE = DailyNewsFeedSource(
 
 
 def _entry(
-    title: str, link: str, summary: str | None = "A short description.", published_at: str = "2026-08-24T12:00:00+00:00",
+    title: str, link: str, summary: str | None = "A short description.", published_at: str | None = None,
     image_url: str | None = None, image_alt: str | None = None,
 ) -> RawFeedEntry:
+    if published_at is None:
+        published_at = datetime.now(timezone.utc).isoformat()
     return RawFeedEntry(title=title, link=link, published_at=published_at, summary=summary, image_url=image_url, image_alt=image_alt)
 
 
@@ -444,6 +455,403 @@ def test_fetch_results_populated_even_on_source_failure(tmp_path, monkeypatch):
     fetch_result = report.fetch_results["nvidia-newsroom-rss"]
     assert fetch_result.http_status == 403
     assert fetch_result.duration_ms == 88.0
+
+
+# ============================================================
+# Issuer-ingestion freshness/cap policy (design/DECISIONS.md) — a
+# uniform gate applied identically to every issuer source. Applies to
+# _NVDA_SOURCE/_INTEL_SOURCE and a second NVIDIA-company feed
+# (_NVDA_SOURCE_2, mirroring the real registry's own Meta dual-feed
+# shape) purely as fixtures — no source-specific behavior is under test
+# anywhere below.
+# ============================================================
+
+_NVDA_SOURCE_2 = DailyNewsFeedSource(
+    company_name="NVIDIA", feed_url="https://nvidianews.nvidia.com/second-feed.xml",
+    feed_format="rss", canonical_domains=("nvidianews.nvidia.com",),
+)
+
+
+def _ago(**kwargs) -> str:
+    return (datetime.now(timezone.utc) - timedelta(**kwargs)).isoformat()
+
+
+# --- Freshness: fresh / boundary / stale ---------------------------------
+
+
+def test_fresh_publication_publishes(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Fresh Item", "https://nvidianews.nvidia.com/news/fresh", published_at=_ago(days=1)),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    assert report.items_stale == 0
+
+
+def test_is_fresh_boundary_is_inclusive_unit_level():
+    # A true wall-clock integration test can't hit exactly 604800.000000
+    # seconds (real execution time between the test's own `now` and
+    # run_discovery()'s own `datetime.now()` call always adds a few
+    # milliseconds) — this direct unit-level call to the pure helper is
+    # the precise proof of the inclusive boundary itself; the
+    # integration test below proves the same gate wired correctly into
+    # run_discovery() using a safely-inside-the-window value instead.
+    now = datetime(2026, 9, 13, 12, 0, 0, tzinfo=timezone.utc)
+    exactly_at_boundary = now - timedelta(seconds=7 * 24 * 3600)
+    one_second_past_boundary = now - timedelta(seconds=7 * 24 * 3600 + 1)
+
+    assert daily_news_pipeline._is_fresh(exactly_at_boundary, now) is True
+    assert daily_news_pipeline._is_fresh(one_second_past_boundary, now) is False
+
+
+def test_publication_near_the_boundary_still_within_window_publishes(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Boundary Item", "https://nvidianews.nvidia.com/news/boundary",
+                published_at=_ago(seconds=7 * 24 * 3600 - 5),  # safely inside, allowing for real test execution time
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    assert report.items_stale == 0
+
+
+def test_publication_older_than_seven_times_twentyfour_hours_is_suppressed(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Stale Item", "https://nvidianews.nvidia.com/news/stale",
+                published_at=_ago(seconds=7 * 24 * 3600 + 1),
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+    assert daily_news_store.load_stories(tmp_path) == {}
+
+
+# --- Missing vs. invalid timestamps, tracked separately -------------------
+
+
+def test_missing_timestamp_suppressed_and_counted_separately_from_invalid(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA No Date", "https://nvidianews.nvidia.com/news/no-date", published_at=""),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_missing_published_at == 1
+    assert report.items_invalid_published_at == 0
+
+
+def test_malformed_timestamp_suppressed_and_counted_separately_from_missing(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Bad Date", "https://nvidianews.nvidia.com/news/bad-date", published_at="not-a-real-timestamp",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_invalid_published_at == 1
+    assert report.items_missing_published_at == 0
+
+
+def test_mixed_stale_missing_invalid_and_fresh_entries(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(
+                _entry("Fresh One", "https://nvidianews.nvidia.com/news/fresh-1", published_at=_ago(hours=1)),
+                _entry("Fresh Two", "https://nvidianews.nvidia.com/news/fresh-2", published_at=_ago(hours=2)),
+                _entry("Stale One", "https://nvidianews.nvidia.com/news/stale-1", published_at=_ago(days=8)),
+                _entry("Missing Date", "https://nvidianews.nvidia.com/news/missing-1", published_at=""),
+                _entry("Invalid Date", "https://nvidianews.nvidia.com/news/invalid-1", published_at="garbage"),
+            ),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 2
+    assert report.items_stale == 1
+    assert report.items_missing_published_at == 1
+    assert report.items_invalid_published_at == 1
+
+
+# --- Per-source cap: newest five, deterministic tie-break -----------------
+
+
+def test_cap_selects_newest_five_of_six_qualifying_entries(tmp_path, monkeypatch):
+    entries = tuple(
+        _entry(f"Item {i}", f"https://nvidianews.nvidia.com/news/item-{i}", published_at=_ago(hours=i))
+        for i in range(6)  # Item 0 is newest, Item 5 is oldest
+    )
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=entries, failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 1
+    headlines = {s.headline for s in daily_news_store.load_stories(tmp_path).values()}
+    assert headlines == {"Item 0", "Item 1", "Item 2", "Item 3", "Item 4"}
+    assert "Item 5" not in headlines  # the oldest of the six is the one dropped
+
+
+def test_cap_tie_break_is_deterministic_by_original_feed_order(tmp_path, monkeypatch):
+    # 4 clearly-distinct, strictly newer entries occupy 4 of the 5 cap
+    # slots; the tied pair (identical published_at) competes for the
+    # single remaining slot — this is the only arrangement where the
+    # tie-break actually decides an outcome, rather than both tied
+    # entries fitting within the cap regardless.
+    tied_time = _ago(hours=5)
+    entries = (
+        _entry("Rank 1", "https://nvidianews.nvidia.com/news/rank-1", published_at=_ago(hours=1)),
+        _entry("Rank 2", "https://nvidianews.nvidia.com/news/rank-2", published_at=_ago(hours=2)),
+        _entry("Rank 3", "https://nvidianews.nvidia.com/news/rank-3", published_at=_ago(hours=3)),
+        _entry("Rank 4", "https://nvidianews.nvidia.com/news/rank-4", published_at=_ago(hours=4)),
+        _entry("Tie First In Feed", "https://nvidianews.nvidia.com/news/tie-first", published_at=tied_time),
+        _entry("Tie Second In Feed", "https://nvidianews.nvidia.com/news/tie-second", published_at=tied_time),
+    )
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=entries, failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 1
+    headlines = {s.headline for s in daily_news_store.load_stories(tmp_path).values()}
+    assert "Tie First In Feed" in headlines   # earlier original_index wins the tie
+    assert "Tie Second In Feed" not in headlines
+
+
+# --- Rejected categories never consume a cap slot --------------------------
+
+
+def test_stale_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    stale = _entry("Stale Extra", "https://nvidianews.nvidia.com/news/stale-extra", published_at=_ago(days=8))
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh) + (stale,), failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 0
+    assert report.items_stale == 1
+
+
+def test_invalid_timestamp_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    invalid = _entry("Invalid Extra", "https://nvidianews.nvidia.com/news/invalid-extra", published_at="nonsense")
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh) + (invalid,), failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 0
+    assert report.items_invalid_published_at == 1
+
+
+def test_missing_timestamp_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    missing = _entry("Missing Extra", "https://nvidianews.nvidia.com/news/missing-extra", published_at="")
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh) + (missing,), failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 0
+    assert report.items_missing_published_at == 1
+
+
+def test_already_seen_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh), failure_code=None)}, monkeypatch)
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))  # first run: all 5 published
+
+    already_seen_entry = fresh[0]
+    new_fresh = _entry("Fresh New", "https://nvidianews.nvidia.com/news/fresh-new", published_at=_ago(minutes=1))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(already_seen_entry, new_fresh), failure_code=None),
+    }, monkeypatch)
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1  # only "Fresh New" — the already-seen one never competes for the cap
+    assert report.items_capped == 0
+    assert report.items_already_seen == 1
+
+
+def test_invalid_url_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    off_domain = _entry("Off Domain Extra", "https://example.com/not-nvidia", published_at=_ago(minutes=1))
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh) + (off_domain,), failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 0
+    assert report.items_suppressed_no_url == 1
+
+
+def test_duplicate_title_entry_does_not_consume_cap_slot(tmp_path, monkeypatch):
+    fresh = [_entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)]
+    duplicate = _entry("Fresh 0", "https://nvidianews.nvidia.com/news/fresh-0-duplicate", published_at=_ago(minutes=1))
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(fresh) + (duplicate,), failure_code=None)}, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 5
+    assert report.items_capped == 0
+    assert report.items_deduplicated == 1
+
+
+# --- Capped-out candidates never poison dedupe state -----------------------
+
+
+def test_capped_out_candidate_does_not_poison_global_dedupe_in_the_same_run(tmp_path, monkeypatch):
+    # NVDA_SOURCE and NVDA_SOURCE_2 share company_name="NVIDIA" (mirroring
+    # the real registry's own Meta dual-feed shape) — the only real-world
+    # shape where a cross-source duplicate check can ever fire at all.
+    source_1_entries = [
+        _entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)
+    ]
+    capped_out = _entry("Capped Title", "https://nvidianews.nvidia.com/news/capped-title", published_at=_ago(hours=10))
+    source_2_entry = _entry("Capped Title", "https://nvidianews.nvidia.com/second-feed/capped-title-again", published_at=_ago(minutes=1))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(source_1_entries) + (capped_out,), failure_code=None),
+        _NVDA_SOURCE_2.feed_url: FeedFetchResult(entries=(source_2_entry,), failure_code=None),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE, _NVDA_SOURCE_2))
+
+    assert report.items_capped == 1
+    # Source 2's "Capped Title" must still publish — the capped-out
+    # candidate from source 1 never wrote into existing_headlines.
+    assert report.stories_published == 6
+    headlines = [s.headline for s in daily_news_store.load_stories(tmp_path).values()]
+    assert headlines.count("Capped Title") == 1  # exactly one story with this title actually persisted
+    assert any(s.headline == "Capped Title" and s.sources[0].url == source_2_entry.link for s in daily_news_store.load_stories(tmp_path).values())
+
+
+def test_capped_out_candidate_does_not_poison_dedupe_on_a_later_run(tmp_path, monkeypatch):
+    source_1_entries = [
+        _entry(f"Fresh {i}", f"https://nvidianews.nvidia.com/news/fresh-{i}", published_at=_ago(hours=i)) for i in range(5)
+    ]
+    capped_out = _entry("Capped Title", "https://nvidianews.nvidia.com/news/capped-title", published_at=_ago(hours=10))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=tuple(source_1_entries) + (capped_out,), failure_code=None),
+    }, monkeypatch)
+    first = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    assert first.items_capped == 1
+    assert "Capped Title" not in {s.headline for s in daily_news_store.load_stories(tmp_path).values()}
+
+    # A LATER run where "Capped Title" is now the only (fresh) entry —
+    # must publish, proving run 1's capped-out candidate never poisoned
+    # existing_headlines for a subsequent run either.
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=(capped_out,), failure_code=None)}, monkeypatch)
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert second.stories_published == 1
+    assert "Capped Title" in {s.headline for s in daily_news_store.load_stories(tmp_path).values()}
+
+
+# --- Same-source duplicate-title behavior stays deterministic -------------
+
+
+def test_two_same_title_fresh_candidates_in_one_fetch_first_in_feed_order_wins(tmp_path, monkeypatch):
+    first_in_feed = _entry("Same Title", "https://nvidianews.nvidia.com/news/same-title-a", published_at=_ago(hours=1))
+    second_in_feed = _entry("Same Title", "https://nvidianews.nvidia.com/news/same-title-b", published_at=_ago(minutes=1))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(first_in_feed, second_in_feed), failure_code=None),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    assert report.items_deduplicated == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].url == first_in_feed.link  # first-in-feed-order wins, regardless of relative freshness
+
+
+def test_local_intra_fetch_duplicate_does_not_affect_a_different_companys_source(tmp_path, monkeypatch):
+    nvda_entry = _entry("Same Title Different Company", "https://nvidianews.nvidia.com/news/same-title", published_at=_ago(hours=1))
+    intel_entry = _entry("Same Title Different Company", "https://newsroom.intel.com/news/same-title", published_at=_ago(hours=1))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(nvda_entry,), failure_code=None),
+        _INTEL_SOURCE.feed_url: FeedFetchResult(entries=(intel_entry,), failure_code=None),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE, _INTEL_SOURCE))
+
+    assert report.stories_published == 2  # different company_name — never treated as a duplicate of each other
+    assert report.items_deduplicated == 0
+
+
+# --- Idempotency and ordinary-fixture regression ---------------------------
+
+
+def test_repeated_tick_with_capped_source_remains_idempotent(tmp_path, monkeypatch):
+    # The cap is evaluated fresh per run_discovery() call, not
+    # cumulatively — a candidate capped out on run 1 is not deleted from
+    # the feed and is correctly reconsidered (and, here, published) on
+    # run 2 once it's the only remaining qualifying candidate. True
+    # idempotency means: no run ever re-publishes something already in
+    # the store — proven here by run 3, where all 6 are now already_seen
+    # and nothing new is published.
+    entries = tuple(
+        _entry(f"Item {i}", f"https://nvidianews.nvidia.com/news/item-{i}", published_at=_ago(hours=i)) for i in range(6)
+    )
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=entries, failure_code=None)}, monkeypatch)
+
+    first = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    third = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert first.stories_published == 5
+    assert first.items_capped == 1
+    assert second.stories_published == 1  # the previously-capped "Item 5" catches up
+    assert second.items_already_seen == 5
+    assert third.stories_published == 0   # now fully idempotent — nothing left to publish
+    assert third.items_already_seen == 6
+    assert len(daily_news_store.load_stories(tmp_path)) == 6
+
+
+def test_ordinary_existing_fixture_behavior_unchanged_all_new_counters_zero(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    assert report.items_stale == 0
+    assert report.items_missing_published_at == 0
+    assert report.items_invalid_published_at == 0
+    assert report.items_capped == 0
 
 
 # ============================================================
