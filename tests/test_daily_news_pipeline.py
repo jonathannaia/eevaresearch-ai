@@ -852,3 +852,166 @@ def test_ordinary_existing_fixture_behavior_unchanged_all_new_counters_zero(tmp_
     assert report.items_missing_published_at == 0
     assert report.items_invalid_published_at == 0
     assert report.items_capped == 0
+
+
+# ============================================================
+# Daily News source-expansion batch 4 (2026-09-13) — Samsung Electronics,
+# Murata Manufacturing, Microchip Technology. These use the real,
+# registry-derived feed_registry.PILOT_FEEDS entries (not synthetic
+# fixtures) so a change to the registry's own fields is caught here too
+# — the pipeline logic itself is completely generic/unchanged; these
+# tests prove the three new sources exercise it identically to every
+# existing issuer source (NVIDIA, Intel, etc. above).
+# ============================================================
+
+from src.data_access.daily_news.feed_registry import PILOT_FEEDS
+
+_SAMSUNG_SOURCE = next(f for f in PILOT_FEEDS if f.company_name == "Samsung Electronics")
+_MURATA_SOURCE = next(f for f in PILOT_FEEDS if f.company_name == "Murata Manufacturing Co., Ltd.")
+_MICROCHIP_SOURCE = next(f for f in PILOT_FEEDS if f.company_name == "Microchip Technology Incorporated")
+
+
+def test_samsung_fresh_valid_entry_publishes_with_correct_attribution_and_direct_url(tmp_path, monkeypatch):
+    article_url = "https://news.samsung.com/global/samsung-and-mistral-ai-announce-strategic-partnership"
+    _mock_fetch({
+        _SAMSUNG_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Samsung and Mistral AI Announce Strategic Partnership", article_url),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_SAMSUNG_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.company_name == "Samsung Electronics"
+    assert story.status == NewsStoryStatus.PUBLISHED
+    assert story.sources[0].url == article_url  # direct publisher link preserved, unmodified
+
+
+def test_murata_fresh_valid_entry_publishes_with_correct_attribution_and_direct_url(tmp_path, monkeypatch):
+    article_url = "https://www.murata.com/en-global/news/emc/emifil/2026/0910"
+    _mock_fetch({
+        _MURATA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Murata Launches Common Mode Choke Coils", article_url),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MURATA_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.company_name == "Murata Manufacturing Co., Ltd."
+    assert story.status == NewsStoryStatus.PUBLISHED
+    assert story.sources[0].url == article_url
+
+
+def test_microchip_fresh_valid_entry_publishes_with_correct_attribution_and_direct_url(tmp_path, monkeypatch):
+    article_url = "https://www.microchip.com/en-us/about/news-releases/corporate/microchip-and-marelli-pioneer"
+    _mock_fetch({
+        _MICROCHIP_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Microchip and Marelli Pioneer Open-Standard Display Connectivity", article_url),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MICROCHIP_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.company_name == "Microchip Technology Incorporated"
+    assert story.status == NewsStoryStatus.PUBLISHED
+    assert story.sources[0].url == article_url
+
+
+# --- Negative tests: existing protections apply unchanged to each new source ---
+
+
+def test_samsung_off_domain_entry_is_suppressed(tmp_path, monkeypatch):
+    _mock_fetch({
+        _SAMSUNG_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Samsung Announces Something", "https://example.com/not-samsung"),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_SAMSUNG_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_suppressed_no_url == 1
+    assert daily_news_store.load_stories(tmp_path) == {}
+
+
+def test_murata_duplicate_title_entries_within_one_run_are_deduplicated(tmp_path, monkeypatch):
+    # The issuer pipeline (daily_news_pipeline.run_discovery) has no
+    # ingestion-time staleness/freshness gate of its own — freshness
+    # filtering for issuer stories is a display-time concern in
+    # src/ui/pages/daily_news.py's own 7-day rolling window, not
+    # something run_discovery() enforces. Duplicate-title detection,
+    # verified here instead, is a real ingestion-time protection this
+    # pipeline does enforce for every source, including this one.
+    _mock_fetch({
+        _MURATA_SOURCE.feed_url: FeedFetchResult(
+            entries=(
+                _entry("Murata Launches Something", "https://www.murata.com/en-global/news/a/2026/0910"),
+                _entry("Murata Launches Something", "https://www.murata.com/en-global/news/b/2026/0910"),
+            ),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MURATA_SOURCE,))
+
+    assert report.stories_published == 1
+    assert report.items_deduplicated == 1
+    assert len(daily_news_store.load_stories(tmp_path)) == 1
+
+
+def test_microchip_missing_url_entry_is_suppressed_and_never_persisted(tmp_path, monkeypatch):
+    _mock_fetch({
+        _MICROCHIP_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Microchip Announces Something", ""),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MICROCHIP_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_suppressed_no_url == 1
+    assert daily_news_store.load_stories(tmp_path) == {}
+
+
+def test_microchip_idempotent_rerun_creates_no_duplicate_already_seen(tmp_path, monkeypatch):
+    article_url = "https://www.microchip.com/en-us/about/news-releases/corporate/microchip-and-marelli-pioneer"
+    _mock_fetch({
+        _MICROCHIP_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Microchip and Marelli Pioneer Open-Standard Display Connectivity", article_url),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    first = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MICROCHIP_SOURCE,))
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_MICROCHIP_SOURCE,))
+
+    assert first.stories_published == 1
+    assert second.stories_published == 0
+    assert second.items_already_seen == 1
+    assert len(daily_news_store.load_stories(tmp_path)) == 1
+
+
+def test_samsung_murata_microchip_one_source_failure_isolated_from_the_others(tmp_path, monkeypatch):
+    article_url = "https://www.murata.com/en-global/news/emc/emifil/2026/0910"
+    _mock_fetch({
+        _SAMSUNG_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code="HTTPError:503"),
+        _MURATA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Murata Launches Common Mode Choke Coils", article_url),), failure_code=None,
+        ),
+        # Microchip left unmocked -> zero entries, zero failure, same as _mock_fetch's own default.
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(
+        tmp_path, feed_sources=(_SAMSUNG_SOURCE, _MURATA_SOURCE, _MICROCHIP_SOURCE),
+    )
+
+    assert report.source_failures == {"Samsung Electronics": "HTTPError:503"}
+    assert report.stories_published == 1  # Murata's item still published despite Samsung's failure
