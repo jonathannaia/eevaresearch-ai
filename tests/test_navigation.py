@@ -47,6 +47,9 @@ _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDD
     # Admin Users v1 (design/DECISIONS.md) — same hidden-but-reachable
     # pattern as the other admin pages above.
     "admin_users",
+    # Open-beta feedback (design/DECISIONS.md) — same hidden-but-reachable
+    # pattern as the pages above.
+    "feedback",
 ]
 
 

@@ -95,6 +95,7 @@ from src.data_access.postgres_state_db import identifier_repository as postgres_
 from src.data_access.postgres_state_db import research_repository as postgres_research
 from src.data_access.postgres_state_db import theme_matching_repository as postgres_theme_matching
 from src.data_access.postgres_state_db import theme_repository as postgres_themes
+from src.data_access.postgres_state_db import feedback_repository as postgres_feedback
 from src.data_access.postgres_state_db import user_account_repository as postgres_user_accounts
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
@@ -111,6 +112,7 @@ from src.data_access.state_db import identifier_repository as sqlite_identifiers
 from src.data_access.state_db import research_repository as sqlite_research
 from src.data_access.state_db import theme_matching_repository as sqlite_theme_matching
 from src.data_access.state_db import theme_repository as sqlite_themes
+from src.data_access.state_db import feedback_repository as sqlite_feedback
 from src.data_access.state_db import user_account_repository as sqlite_user_accounts
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
@@ -127,6 +129,12 @@ from src.models.theme_research import (
     ThemeEvidenceItem,
     ThemeResearchNote,
     ThemeVisibility,
+)
+from src.models.feedback_submission import (
+    FeedbackPrimaryInterest,
+    FeedbackRole,
+    FeedbackSubmission,
+    FeedbackTrackingWorkflow,
 )
 from src.models.user_account import UserAccount
 
@@ -1320,3 +1328,166 @@ def get_user_account_repository(settings: Settings) -> UserAccountRepositoryProt
     if backend == "postgres":
         return PostgresUserAccountRepository(conn=_require_postgres_connection(settings))
     return JsonUserAccountRepository(cache_dir=settings.cache_dir)
+
+
+# Open-beta feedback (design/DECISIONS.md) — same JSON-fallback shape as
+# UserAccountRepositoryProtocol above: a single `feedback_submissions.json`
+# file under `settings.cache_dir`, a dict keyed by normalized email.
+# Exactly one repository class uses this store, so (matching the
+# user-account precedent immediately above) a dedicated module would be
+# pure indirection.
+
+class FeedbackRepositoryProtocol(Protocol):
+    def get_submission(self, email: str) -> FeedbackSubmission | None: ...
+    def list_submissions(self) -> list[FeedbackSubmission]: ...
+    def submit_feedback(
+        self,
+        email: str,
+        display_name: str | None,
+        role: FeedbackRole,
+        tracking_workflow: FeedbackTrackingWorkflow,
+        tracking_workflow_other: str | None,
+        primary_interest: FeedbackPrimaryInterest,
+        weekly_value_feedback: str | None,
+        now: str,
+    ) -> None: ...
+
+
+def _feedback_submissions_json_path(cache_dir: Path) -> Path:
+    return cache_dir / "feedback_submissions.json"
+
+
+def _load_json_feedback_submissions(cache_dir: Path) -> dict[str, FeedbackSubmission]:
+    path = _feedback_submissions_json_path(cache_dir)
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        email: FeedbackSubmission(
+            email=email,
+            display_name=record.get("display_name"),
+            submitted_at=record["submitted_at"],
+            role=FeedbackRole(record["role"]),
+            tracking_workflow=FeedbackTrackingWorkflow(record["tracking_workflow"]),
+            tracking_workflow_other=record.get("tracking_workflow_other"),
+            primary_interest=FeedbackPrimaryInterest(record["primary_interest"]),
+            weekly_value_feedback=record.get("weekly_value_feedback"),
+        )
+        for email, record in raw.items()
+    }
+
+
+def _save_json_feedback_submissions(cache_dir: Path, submissions: dict[str, FeedbackSubmission]) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        email: {
+            "display_name": submission.display_name,
+            "submitted_at": submission.submitted_at,
+            "role": submission.role.value,
+            "tracking_workflow": submission.tracking_workflow.value,
+            "tracking_workflow_other": submission.tracking_workflow_other,
+            "primary_interest": submission.primary_interest.value,
+            "weekly_value_feedback": submission.weekly_value_feedback,
+        }
+        for email, submission in submissions.items()
+    }
+    _feedback_submissions_json_path(cache_dir).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8",
+    )
+
+
+@dataclass(frozen=True)
+class JsonFeedbackRepository:
+    cache_dir: Path
+
+    def get_submission(self, email: str) -> FeedbackSubmission | None:
+        return _load_json_feedback_submissions(self.cache_dir).get(email.strip().lower())
+
+    def list_submissions(self) -> list[FeedbackSubmission]:
+        submissions = _load_json_feedback_submissions(self.cache_dir)
+        return sorted(submissions.values(), key=lambda submission: submission.submitted_at, reverse=True)
+
+    def submit_feedback(
+        self,
+        email: str,
+        display_name: str | None,
+        role: FeedbackRole,
+        tracking_workflow: FeedbackTrackingWorkflow,
+        tracking_workflow_other: str | None,
+        primary_interest: FeedbackPrimaryInterest,
+        weekly_value_feedback: str | None,
+        now: str,
+    ) -> None:
+        normalized_email = email.strip().lower()
+        submissions = _load_json_feedback_submissions(self.cache_dir)
+        submissions[normalized_email] = FeedbackSubmission(
+            email=normalized_email, display_name=display_name, submitted_at=now, role=role,
+            tracking_workflow=tracking_workflow, tracking_workflow_other=tracking_workflow_other,
+            primary_interest=primary_interest, weekly_value_feedback=weekly_value_feedback,
+        )
+        _save_json_feedback_submissions(self.cache_dir, submissions)
+
+
+@dataclass(frozen=True)
+class SqliteFeedbackRepository:
+    conn: sqlite3.Connection
+
+    def get_submission(self, email: str) -> FeedbackSubmission | None:
+        return sqlite_feedback.get_submission(self.conn, email)
+
+    def list_submissions(self) -> list[FeedbackSubmission]:
+        return sqlite_feedback.list_submissions(self.conn)
+
+    def submit_feedback(
+        self,
+        email: str,
+        display_name: str | None,
+        role: FeedbackRole,
+        tracking_workflow: FeedbackTrackingWorkflow,
+        tracking_workflow_other: str | None,
+        primary_interest: FeedbackPrimaryInterest,
+        weekly_value_feedback: str | None,
+        now: str,
+    ) -> None:
+        sqlite_feedback.submit_feedback(
+            self.conn, email, display_name, role, tracking_workflow,
+            tracking_workflow_other, primary_interest, weekly_value_feedback, now,
+        )
+
+
+@dataclass(frozen=True)
+class PostgresFeedbackRepository:
+    conn: psycopg.Connection
+
+    def get_submission(self, email: str) -> FeedbackSubmission | None:
+        return postgres_feedback.get_submission(self.conn, email)
+
+    def list_submissions(self) -> list[FeedbackSubmission]:
+        return postgres_feedback.list_submissions(self.conn)
+
+    def submit_feedback(
+        self,
+        email: str,
+        display_name: str | None,
+        role: FeedbackRole,
+        tracking_workflow: FeedbackTrackingWorkflow,
+        tracking_workflow_other: str | None,
+        primary_interest: FeedbackPrimaryInterest,
+        weekly_value_feedback: str | None,
+        now: str,
+    ) -> None:
+        postgres_feedback.submit_feedback(
+            self.conn, email, display_name, role, tracking_workflow,
+            tracking_workflow_other, primary_interest, weekly_value_feedback, now,
+        )
+
+
+def get_feedback_repository(settings: Settings) -> FeedbackRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as
+    get_user_account_repository above."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteFeedbackRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresFeedbackRepository(conn=_require_postgres_connection(settings))
+    return JsonFeedbackRepository(cache_dir=settings.cache_dir)

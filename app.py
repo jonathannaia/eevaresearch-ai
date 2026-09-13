@@ -42,6 +42,7 @@ from src.ui.pages import (
     daily_news_admin,
     dashboard,
     disclaimer,
+    feedback,
     home,
     methodology,
     radar_inbox,
@@ -169,6 +170,19 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages["admin_users"] = st.Page(
         with_chrome(admin_users.render, "admin_users"),
         title="Admin — Users", url_path="admin-users", visibility="hidden",
+    )
+    # Open-beta feedback (design/DECISIONS.md) — same hidden-but-reachable
+    # pattern as the pages above: not in PRIMARY_NAV/SYSTEM_NAV/
+    # HIDDEN_FROM_NAV or any sidebar group. Reached only via the small
+    # secondary link src/ui/pages/dashboard.py adds, or a direct/deep
+    # URL — both still pass through this same mandatory sign-in gate
+    # first, since no page is ever reached without it. No second,
+    # feature-flag or is_admin() guard of its own: any signed-in user is
+    # allowed, per the open-beta access model this file already
+    # implements above.
+    pages["feedback"] = st.Page(
+        with_chrome(feedback.render, "feedback"),
+        title="Feedback", url_path="feedback", visibility="hidden",
     )
     return pages
 

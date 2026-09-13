@@ -437,6 +437,86 @@ def test_v16_daily_news_scan_status_unchanged_after_migration():
     assert "last_result_at" not in columns_before
 
 
+def test_v16_database_upgrades_to_v17():
+    """Simulates a database that was already at v16 before the open-beta
+    feedback workstream — applies exactly migrations 1..16, confirms a
+    pre-existing user_accounts row survives untouched, then calls
+    migrate() and confirms v17's new table is present and usable."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 16)
+    assert schema.get_schema_version(conn) == 16
+    conn.execute(
+        "INSERT INTO user_accounts (email, display_name, first_seen_at, last_seen_at, sign_in_count) "
+        "VALUES ('founder@example.test', 'Ada', 'now', 'now', 1)"
+    )
+    conn.commit()
+
+    result = schema.migrate(conn)
+
+    assert result == schema.CURRENT_SCHEMA_VERSION
+    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    assert "feedback_submissions" in tables
+    # Pre-existing row in an unrelated table is completely untouched.
+    row = conn.execute("SELECT * FROM user_accounts WHERE email = 'founder@example.test'").fetchone()
+    assert row["sign_in_count"] == 1
+    assert row["display_name"] == "Ada"
+
+
+def test_v17_feedback_submissions_starts_empty_and_is_usable():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) AS n FROM feedback_submissions").fetchone()["n"] == 0
+
+
+def test_v17_feedback_submissions_round_trips_and_upserts():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        """
+        INSERT INTO feedback_submissions (
+            email, display_name, submitted_at, role, tracking_workflow,
+            tracking_workflow_other, primary_interest, weekly_value_feedback
+        ) VALUES (
+            'founder@example.test', 'Ada', '2026-01-01T00:00:00+00:00', 'Individual investor',
+            'Other', 'A spreadsheet', 'Daily News', 'Nothing yet'
+        )
+        """
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM feedback_submissions WHERE email = 'founder@example.test'").fetchone()
+    assert row["role"] == "Individual investor"
+    assert row["tracking_workflow_other"] == "A spreadsheet"
+
+    conn.execute(
+        """
+        INSERT INTO feedback_submissions (
+            email, display_name, submitted_at, role, tracking_workflow,
+            tracking_workflow_other, primary_interest, weekly_value_feedback
+        ) VALUES ('founder@example.test', 'Ada', 'later', 'Journalist or media', 'News alerts', NULL, 'Daily News', NULL)
+        ON CONFLICT (email) DO UPDATE SET
+            submitted_at = excluded.submitted_at, role = excluded.role,
+            tracking_workflow = excluded.tracking_workflow,
+            tracking_workflow_other = excluded.tracking_workflow_other,
+            weekly_value_feedback = excluded.weekly_value_feedback
+        """
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM feedback_submissions WHERE email = 'founder@example.test'").fetchone()
+    assert row["role"] == "Journalist or media"
+    assert row["tracking_workflow_other"] is None
+    assert conn.execute("SELECT COUNT(*) AS n FROM feedback_submissions").fetchone()["n"] == 1
+
+
+def test_v17_user_accounts_unchanged_after_migration():
+    """An unrelated pre-existing table must be completely unaffected by
+    this migration — same columns, same behavior."""
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(user_accounts)").fetchall()}
+    assert columns == {"email", "display_name", "first_seen_at", "last_seen_at", "sign_in_count"}
+
+
 def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():
     conn = connection.connect_in_memory()
     schema.migrate(conn)
