@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -35,8 +36,23 @@ _NVDA_SOURCE = DailyNewsFeedSource(
 )
 
 
-def _entry(title: str, link: str, summary: str | None = "A short description.") -> RawFeedEntry:
-    return RawFeedEntry(title=title, link=link, published_at="2026-08-24T12:00:00+00:00", summary=summary)
+def _entry(
+    title: str, link: str, summary: str | None = "A short description.", published_at: str | None = None,
+) -> RawFeedEntry:
+    # Issuer-ingestion freshness/cap policy: a fresh, execution-relative
+    # published_at default (never a fixed past literal) — mirrors
+    # test_daily_news_pipeline.py's own _entry() fixture, see there for
+    # why. Deliberately NOT applied to _story()'s own hardcoded date
+    # below: that helper represents an ALREADY-PERSISTED story, which
+    # classify_feed_entries() never freshness-checks in the first place
+    # (only incoming `entries` go through the freshness gate).
+    if published_at is None:
+        published_at = datetime.now(timezone.utc).isoformat()
+    return RawFeedEntry(title=title, link=link, published_at=published_at, summary=summary)
+
+
+def _ago(**kwargs) -> str:
+    return (datetime.now(timezone.utc) - timedelta(**kwargs)).isoformat()
 
 
 def _story(story_id: str, company_name: str, headline: str, url: str) -> NewsStory:
@@ -183,6 +199,196 @@ def test_classification_parity_with_a_real_isolated_run_discovery_call(tmp_path,
     assert real_report.items_already_seen == 1
     assert real_report.items_deduplicated == 1
     assert real_report.stories_published == 1  # only "Brand New Headline"
+
+
+# ============================================================
+# Issuer-ingestion freshness/cap policy parity
+# ============================================================
+
+
+def test_diagnostics_is_fresh_boundary_is_inclusive_unit_level():
+    """Direct, pure unit-level proof of THIS module's own duplicated
+    _is_fresh() — mirrors test_daily_news_pipeline.py's own
+    test_is_fresh_boundary_is_inclusive_unit_level exactly, so
+    diagnostics.py's copy of the inclusive-boundary guarantee is proven
+    independently rather than only claimed by comment. No
+    datetime.now() call anywhere in this test."""
+    now = datetime(2026, 9, 13, 12, 0, 0, tzinfo=timezone.utc)
+    exactly_at_boundary = now - timedelta(seconds=7 * 24 * 3600)
+    one_second_past_boundary = now - timedelta(seconds=7 * 24 * 3600 + 1)
+
+    assert diagnostics._is_fresh(exactly_at_boundary, now) is True
+    assert diagnostics._is_fresh(one_second_past_boundary, now) is False
+
+
+def test_future_timestamp_parity_with_a_real_isolated_run_discovery_call(tmp_path, monkeypatch):
+    """A future-dated entry is fresh (negative elapsed time is never
+    specifically rejected — see _is_fresh()'s own docstring in both
+    modules) and must publish for real, with every freshness counter at
+    zero, and classify identically as would_publish in diagnostics.
+    `_ago(hours=-1)` reuses the existing _ago() helper unmodified with a
+    negative delta: `now - timedelta(hours=-1)` is exactly `now +
+    timedelta(hours=1)`, a safe one-hour-future margin with no new
+    helper needed."""
+    future_entry = _entry("Future Dated Item", "https://nvidianews.nvidia.com/news/future", published_at=_ago(hours=-1))
+
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=(future_entry,), failure_code=None))
+    real_report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert real_report.stories_published == 1
+    assert real_report.items_stale == 0
+    assert real_report.items_missing_published_at == 0
+    assert real_report.items_invalid_published_at == 0
+
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=(future_entry,), stories={},
+    )
+    assert diagnostic_result[0].classification == "would_publish"
+
+
+def test_missing_invalid_stale_and_fresh_parity_with_a_real_isolated_run_discovery_call(tmp_path, monkeypatch):
+    """Proves classify_feed_entries() agrees with a real, isolated
+    run_discovery() call on all four of the new gates: missing, invalid,
+    stale, and fresh."""
+    missing_entry = _entry("Missing Timestamp", "https://nvidianews.nvidia.com/news/missing", published_at="")
+    invalid_entry = _entry("Invalid Timestamp", "https://nvidianews.nvidia.com/news/invalid", published_at="not-a-real-timestamp")
+    stale_entry = _entry("Stale Item", "https://nvidianews.nvidia.com/news/stale", published_at=_ago(days=8))
+    fresh_entry = _entry("Fresh Item", "https://nvidianews.nvidia.com/news/fresh", published_at=_ago(hours=1))
+    candidate_entries = (missing_entry, invalid_entry, stale_entry, fresh_entry)
+
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=candidate_entries, failure_code=None))
+    real_report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=candidate_entries, stories={},
+    )
+    by_title = {c.title: c.classification for c in diagnostic_result}
+
+    assert by_title["Missing Timestamp"] == "suppressed_missing_published_at"
+    assert by_title["Invalid Timestamp"] == "suppressed_invalid_published_at"
+    assert by_title["Stale Item"] == "suppressed_stale"
+    assert by_title["Fresh Item"] == "would_publish"
+
+    assert real_report.items_missing_published_at == 1
+    assert real_report.items_invalid_published_at == 1
+    assert real_report.items_stale == 1
+    assert real_report.stories_published == 1
+
+
+def test_capped_candidate_parity_with_a_real_isolated_run_discovery_call(tmp_path, monkeypatch):
+    """Six fresh, newest-first-ordered candidates: the pipeline publishes
+    only the newest five and counts the sixth as capped. Diagnostics must
+    classify the identical sixth entry as would_be_capped, not
+    would_publish."""
+    candidate_entries = tuple(
+        _entry(f"Item {i}", f"https://nvidianews.nvidia.com/news/item-{i}", published_at=_ago(hours=i))
+        for i in range(6)
+    )
+
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=candidate_entries, failure_code=None))
+    real_report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=candidate_entries, stories={},
+    )
+    by_title = {c.title: c.classification for c in diagnostic_result}
+
+    # "Item 0" is _ago(hours=0) — the newest — through "Item 4"; "Item 5"
+    # (_ago(hours=5), the oldest of the six) is the one the cap drops.
+    for i in range(5):
+        assert by_title[f"Item {i}"] == "would_publish"
+    assert by_title["Item 5"] == "would_be_capped"
+
+    assert real_report.items_capped == 1
+    assert real_report.stories_published == 5
+
+
+def test_capped_candidate_does_not_read_as_a_persisted_story_on_a_later_diagnostic_call(tmp_path, monkeypatch):
+    """A capped-out candidate is never persisted by run_discovery() (see
+    test_daily_news_pipeline.py's own dedupe-poisoning tests). A later
+    diagnostic call against the real post-run store must therefore still
+    classify that exact same entry as would_publish (now the newest
+    available, cap no longer binding at 1-of-1), never as already_seen or
+    would_deduplicate — proving diagnostics does not privately remember
+    anything about it either."""
+    six_entries = tuple(
+        _entry(f"Item {i}", f"https://nvidianews.nvidia.com/news/item-{i}", published_at=_ago(hours=i))
+        for i in range(6)
+    )
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=six_entries, failure_code=None))
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    stories = daily_news_store.load_stories(tmp_path)
+    assert not any(s.headline == "Item 5" for s in stories.values())  # confirmed never persisted
+
+    capped_entry_only = (six_entries[5],)
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=capped_entry_only, stories=stories,
+    )
+    assert diagnostic_result[0].classification == "would_publish"
+
+
+def test_tie_break_ordering_matches_the_pipelines_own_original_feed_order_rule(tmp_path, monkeypatch):
+    """Mirrors test_daily_news_pipeline.py's own
+    test_cap_tie_break_is_deterministic_by_original_feed_order: 4 clearly
+    newer entries plus 2 exactly-tied entries — the earlier-in-feed-order
+    one of the tied pair must win the cap's last slot, in both the real
+    pipeline and diagnostics."""
+    tied_time = _ago(hours=5)
+    candidate_entries = (
+        _entry("Rank 1", "https://nvidianews.nvidia.com/news/rank-1", published_at=_ago(hours=1)),
+        _entry("Rank 2", "https://nvidianews.nvidia.com/news/rank-2", published_at=_ago(hours=2)),
+        _entry("Rank 3", "https://nvidianews.nvidia.com/news/rank-3", published_at=_ago(hours=3)),
+        _entry("Rank 4", "https://nvidianews.nvidia.com/news/rank-4", published_at=_ago(hours=4)),
+        _entry("Tied First", "https://nvidianews.nvidia.com/news/tied-first", published_at=tied_time),
+        _entry("Tied Second", "https://nvidianews.nvidia.com/news/tied-second", published_at=tied_time),
+    )
+
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=candidate_entries, failure_code=None))
+    real_report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+    stories = daily_news_store.load_stories(tmp_path)
+
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=candidate_entries, stories={},
+    )
+    by_title = {c.title: c.classification for c in diagnostic_result}
+
+    assert by_title["Tied First"] == "would_publish"
+    assert by_title["Tied Second"] == "would_be_capped"
+    assert real_report.stories_published == 5
+    assert any(s.headline == "Tied First" for s in stories.values())
+    assert not any(s.headline == "Tied Second" for s in stories.values())
+
+
+def test_intra_batch_duplicate_title_is_classified_as_would_deduplicate_not_would_publish(tmp_path, monkeypatch):
+    """A gap the earlier (pre-freshness-policy) version of this module
+    had: two fresh entries sharing a title within the SAME batch, neither
+    already in the store, must still resolve to exactly one would_publish
+    and one would_deduplicate — matching run_discovery()'s own
+    queued_headlines_this_source behavior — not two would_publish."""
+    first = _entry("Duplicate Title Same Batch", "https://nvidianews.nvidia.com/news/first-url", published_at=_ago(hours=1))
+    second = _entry("Duplicate Title Same Batch", "https://nvidianews.nvidia.com/news/second-url", published_at=_ago(hours=2))
+    candidate_entries = (first, second)
+
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", lambda feed_url: FeedFetchResult(entries=candidate_entries, failure_code=None))
+    real_report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    diagnostic_result = diagnostics.classify_feed_entries(
+        source_id="nvidia-newsroom-rss", feed_url=_NVDA_SOURCE.feed_url, company_name="NVIDIA",
+        canonical_domains=("nvidianews.nvidia.com",), entries=candidate_entries, stories={},
+    )
+
+    assert diagnostic_result[0].classification == "would_publish"
+    assert diagnostic_result[1].classification == "would_deduplicate"
+    assert diagnostic_result[1].matched_story_title == "Duplicate Title Same Batch"
+    assert diagnostic_result[1].matched_story_url == first.link
+
+    assert real_report.items_deduplicated == 1
+    assert real_report.stories_published == 1
 
 
 def test_would_deduplicate_reports_the_matched_stored_title_and_url(tmp_path):
