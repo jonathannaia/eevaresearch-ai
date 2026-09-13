@@ -61,6 +61,19 @@ class DailyNewsScanReport:
     # by its own id, the ordinary, expected steady-state outcome once a
     # feed's current items have already been published on an earlier run.
     items_already_seen: int
+    # Issuer-ingestion freshness/cap policy (design/DECISIONS.md) — all
+    # four report-only, never persisted (DailyNewsScanReport itself is
+    # never written to any store; only daily_news_admin.py reads it
+    # transiently). items_missing_published_at and items_invalid_
+    # published_at are deliberately separate counters, not folded
+    # together: an empty entry.published_at (the feed genuinely didn't
+    # supply one) and a non-empty-but-unparsable one are different
+    # failure modes worth distinguishing in a report, even though both
+    # are handled the same way (suppressed, fail-closed).
+    items_stale: int
+    items_missing_published_at: int
+    items_invalid_published_at: int
+    items_capped: int
     stories_published: int  # newly persisted this run
     source_failures: dict[str, str]  # company_name -> sanitized failure_code
     suppressed_items: tuple[tuple[str, str, str], ...]  # (company_name, title, reason) — admin view only
@@ -83,10 +96,69 @@ def _story_id(company_name: str, canonical_link: str) -> str:
     return f"newsitem-{slug}-{digest}"
 
 
+# Issuer-ingestion freshness/cap policy (design/DECISIONS.md) — a uniform
+# gate applied identically to every issuer source, existing and future;
+# no source_id/company/category/jurisdiction branch anywhere near this.
+# Deliberately a fixed second-count (7 * 24 * 3600), not a "calendar day"
+# boundary — mirrors editorial_pipeline.py's own _is_fresh() convention
+# exactly (elapsed-seconds-since-published, inclusive boundary), the
+# only precedent this codebase has for a freshness window. This module
+# never imports from editorial_pipeline.py (each pipeline stays fully
+# independent, same discipline this file's own docstring already
+# establishes for dart/edgar/edinet) — the helpers below are a
+# deliberate, separate re-implementation, not a shared import.
+_FRESHNESS_WINDOW_SECONDS = 7 * 24 * 3600
+_PER_SOURCE_CAP = 5
+
+
+def _parse_utc_datetime(published_at: str) -> datetime | None:
+    """Returns None for anything that isn't a real, parseable timestamp
+    — the caller is responsible for distinguishing an empty string
+    (items_missing_published_at) from a non-empty-but-unparsable one
+    (items_invalid_published_at) before calling this, since both look
+    identical from inside this function. Defensive tzinfo-attachment
+    only (rss_atom_client._parse_published_at() always attaches
+    tzinfo=timezone.utc when it produces a value at all — real input is
+    never naive) — mirrors editorial_pipeline._is_fresh()'s own
+    defensive handling exactly."""
+    try:
+        dt = datetime.fromisoformat(published_at)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _is_fresh(published_dt: datetime, now: datetime) -> bool:
+    """Inclusive boundary — an entry exactly 7*24*3600 seconds old is
+    fresh, matching editorial_pipeline._is_fresh()'s own `<=` convention.
+    A future-dated entry (negative elapsed time) is also fresh — never
+    specifically rejected, since nothing in the approved policy asks for
+    that check."""
+    return (now - published_dt).total_seconds() <= _FRESHNESS_WINDOW_SECONDS
+
+
 def _transition(story: NewsStory, status: NewsStoryStatus, detail: str = "") -> NewsStory:
     story.status = status
     story.state_history.append(NewsStateTransition(status=status, at=datetime.now(timezone.utc).isoformat(), detail=detail))
     return story
+
+
+@dataclass(frozen=True)
+class _IssuerCandidate:
+    """One source's own in-run candidate awaiting the per-source cap —
+    never persisted, never touches existing_headlines. `original_index`
+    is this entry's position in `fetch_result.entries` as returned by
+    the fetch, captured purely as a deterministic tie-breaker for
+    candidates that share an identical published_dt (see the explicit
+    sort key in run_discovery() below) — independent of feed-serving
+    order guarantees, which this codebase makes none of."""
+
+    entry: "rss_atom_client.RawFeedEntry"
+    story_id: str
+    published_dt: datetime
+    original_index: int
 
 
 def run_discovery(
@@ -122,10 +194,15 @@ def run_discovery(
     suppressed_items: list[tuple[str, str, str]] = []
     items_deduplicated = 0
     items_already_seen = 0
+    items_stale = 0
+    items_missing_published_at = 0
+    items_invalid_published_at = 0
+    items_capped = 0
     newly_published: list[NewsStory] = []
     source_failures: dict[str, str] = {}
     warnings: list[str] = []
     fetch_results: dict[str, rss_atom_client.FeedFetchResult] = {}
+    now = datetime.now(timezone.utc)
 
     for source in feed_sources:
         company = tracked_company_for(source.company_name)
@@ -139,7 +216,25 @@ def run_discovery(
             source_failures[source.company_name] = fetch_result.failure_code
             continue
 
-        for entry in fetch_result.entries:
+        # Issuer-ingestion freshness/cap policy (design/DECISIONS.md) —
+        # every entry that survives every existing gate below is
+        # collected here first, never constructed or persisted yet.
+        # `queued_headlines_this_source` is a deliberately SEPARATE,
+        # source-local, run-local duplicate-title scope from the global
+        # `existing_headlines` list: it exists only so two entries from
+        # THIS source's OWN fetch that share a title are still caught
+        # (first-in-feed-order wins, exactly mirroring the existing
+        # cross-run duplicate semantics), without writing anything into
+        # global state for a candidate that might still be dropped by
+        # the cap below. `existing_headlines` itself is only ever
+        # appended to once a candidate has survived capping — see the
+        # `capped` loop further down, the one and only place either
+        # `existing_headlines` or `store`-relevant persistence is
+        # touched for this source's entries.
+        qualifying: list[_IssuerCandidate] = []
+        queued_headlines_this_source: list[tuple[str, str]] = []
+
+        for original_index, entry in enumerate(fetch_result.entries):
             items_discovered += 1
             if not entry.title:
                 suppressed_items.append((source.company_name, "(no title)", "Missing title"))
@@ -158,7 +253,38 @@ def run_discovery(
                 items_deduplicated += 1
                 suppressed_items.append((source.company_name, entry.title, "Duplicate of an existing story"))
                 continue
+            if dedup.is_duplicate_title(queued_headlines_this_source, source.company_name, entry.title):
+                items_deduplicated += 1
+                suppressed_items.append((source.company_name, entry.title, "Duplicate of an existing story"))
+                continue
 
+            if not entry.published_at:
+                items_missing_published_at += 1
+                suppressed_items.append((source.company_name, entry.title, "Missing publication timestamp"))
+                continue
+            published_dt = _parse_utc_datetime(entry.published_at)
+            if published_dt is None:
+                items_invalid_published_at += 1
+                suppressed_items.append((source.company_name, entry.title, "Unparsable publication timestamp"))
+                continue
+            if not _is_fresh(published_dt, now):
+                items_stale += 1
+                suppressed_items.append((source.company_name, entry.title, "Older than the 7x24h freshness window"))
+                continue
+
+            queued_headlines_this_source.append((source.company_name, entry.title))
+            qualifying.append(_IssuerCandidate(entry=entry, story_id=story_id, published_dt=published_dt, original_index=original_index))
+
+        # Deterministic selection: newest published_dt first; for an
+        # exact timestamp tie, the entry that appeared earlier in the
+        # feed wins (smallest original_index) — a single explicit sort
+        # key, not incidental dict/list ordering.
+        qualifying.sort(key=lambda candidate: (-candidate.published_dt.timestamp(), candidate.original_index))
+        capped = qualifying[:_PER_SOURCE_CAP]
+        items_capped += len(qualifying) - len(capped)
+
+        for candidate in capped:
+            entry = candidate.entry
             summary_result = generate_summary(entry.title, entry.summary, has_valid_source_url=True)
             retrieved_at = datetime.now(timezone.utc).isoformat()
 
@@ -185,7 +311,7 @@ def run_discovery(
             )
 
             story = NewsStory(
-                id=story_id, company_name=source.company_name, ticker=company.krx_code,
+                id=candidate.story_id, company_name=source.company_name, ticker=company.krx_code,
                 theme_slug=company.themes[0] if company.themes else "",
                 headline=entry.title, eeva_summary=summary_result.eeva_summary,
                 is_fallback_summary=summary_result.is_fallback,
@@ -208,7 +334,10 @@ def run_discovery(
     return DailyNewsScanReport(
         scan_id=scan_id, started_at=started_at, completed_at=completed_at, sources_polled=len(feed_sources),
         items_discovered=items_discovered, items_suppressed_no_url=sum(1 for *_, reason in suppressed_items if reason == "No valid canonical source URL"),
-        items_deduplicated=items_deduplicated, items_already_seen=items_already_seen, stories_published=len(newly_published),
+        items_deduplicated=items_deduplicated, items_already_seen=items_already_seen,
+        items_stale=items_stale, items_missing_published_at=items_missing_published_at,
+        items_invalid_published_at=items_invalid_published_at, items_capped=items_capped,
+        stories_published=len(newly_published),
         source_failures=source_failures, suppressed_items=tuple(suppressed_items), warnings=tuple(warnings),
         fetch_results=fetch_results,
     )
