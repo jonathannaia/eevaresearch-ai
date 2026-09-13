@@ -736,3 +736,393 @@ def test_source_with_no_source_id_never_gets_a_source_status_row(tmp_path, monke
     assert scan_status_repository.get_all_source_statuses() == {}
     # The legacy company-keyed table is completely unaffected either way.
     assert scan_status_repository.get_feed_status("NVIDIA") is not None
+
+
+# ============================================================
+# Editorial Daily News autonomy (design/DECISIONS.md) — the worker now
+# runs editorial_pipeline.run_editorial_discovery() once, second, inside
+# the same acquired-lock tick, after every issuer feed above. These
+# tests exercise the REAL EDITORIAL_SOURCE_REGISTRY (unmodified by this
+# workstream) via its own real canonical_url values, mocked through the
+# same rss_atom_client.fetch_entries seam _mock_fetch() already patches
+# — any real editorial source not explicitly given an entry in the mock
+# dict simply returns zero entries (no failure), exactly like every
+# other unmocked feed in this file's existing tests.
+# ============================================================
+
+from src.data_access.daily_news import editorial_pipeline
+from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY
+
+_CNBC_TOP_NEWS_URL = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+_KOREA_HERALD_URL = "https://www.koreaherald.com/rss/kh_Business"
+_SPACEFORCE_URL = "https://www.spaceforce.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=1060&max=10"
+_NIST_URL = "https://www.nist.gov/news-events/news/rss.xml"
+
+
+def _editorial_entry(title: str, link: str, summary: str | None = None) -> RawFeedEntry:
+    return RawFeedEntry(
+        title=title, link=link, published_at=datetime.now(timezone.utc).isoformat(),
+        summary=summary, image_url=None, image_alt=None,
+    )
+
+
+# --- 1/3/4: exactly-once, issuer-first ordering, correctly-scoped repository ---
+
+
+def test_editorial_discovery_runs_exactly_once_per_acquired_tick(tmp_path, monkeypatch):
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None)}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    call_count = 0
+    real_run_editorial_discovery = editorial_pipeline.run_editorial_discovery
+
+    def _spy(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return real_run_editorial_discovery(*args, **kwargs)
+
+    monkeypatch.setattr(daily_news_worker.editorial_pipeline, "run_editorial_discovery", _spy)
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    assert call_count == 1
+
+
+def test_issuer_feed_is_fetched_before_any_editorial_source(tmp_path, monkeypatch):
+    call_order: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_order.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    assert _NVDA_SOURCE.feed_url in call_order
+    issuer_index = call_order.index(_NVDA_SOURCE.feed_url)
+    editorial_urls_seen = [url for url in call_order if url != _NVDA_SOURCE.feed_url]
+    assert editorial_urls_seen, "expected at least one real editorial source URL to be attempted"
+    assert issuer_index < min(call_order.index(url) for url in editorial_urls_seen)
+
+
+def test_editorial_repository_receives_the_exact_worker_scoped_settings(tmp_path, monkeypatch):
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None)}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    received_settings: list[Settings] = []
+    real_get_editorial_story_repository = daily_news_backend.get_editorial_story_repository
+
+    def _spy(settings):
+        received_settings.append(settings)
+        return real_get_editorial_story_repository(settings)
+
+    monkeypatch.setattr(daily_news_backend, "get_editorial_story_repository", _spy)
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    assert len(received_settings) == 1
+    assert received_settings[0] is worker_settings
+
+
+# --- 5: zero-result editorial run leaves issuer/tick behavior normal ---
+
+
+def test_zero_result_editorial_run_leaves_issuer_status_and_tick_completion_normal(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)  # every real editorial source URL is left unmocked -> zero entries, zero failures
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    feed_status = scan_status_repository.get_feed_status("NVIDIA")
+    assert feed_status.stories_published_last_run == 1
+    assert feed_status.last_failure_code is None
+    worker_status = scan_status_repository.get_worker_status()
+    assert worker_status.last_tick_started_at is not None
+    assert worker_status.last_tick_completed_at is not None
+
+
+# --- 6: unexpected whole-pipeline exception -> explicit degraded FAILED log, no propagation ---
+
+
+def test_unexpected_editorial_exception_logs_degraded_failed_line_and_does_not_propagate(tmp_path, monkeypatch, capsys):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("connection boom - must never propagate")
+
+    monkeypatch.setattr(daily_news_worker.editorial_pipeline, "run_editorial_discovery", _boom)
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)  # must not raise
+
+    output = capsys.readouterr().out
+    assert (
+        "Daily News worker: editorial discovery FAILED unexpectedly — RuntimeError; "
+        "issuer coverage completed, editorial coverage degraded for this tick."
+    ) in output
+    assert "connection boom" not in output
+
+    # Issuer work already completed above the try/except is unaffected.
+    feed_status = scan_status_repository.get_feed_status("NVIDIA")
+    assert feed_status.stories_published_last_run == 1
+    # Reconciliation and the worker-status/tick-completion write still ran.
+    worker_status = scan_status_repository.get_worker_status()
+    assert worker_status.last_tick_completed_at is not None
+    assert worker_status.last_reconciliation_at is not None
+
+
+# --- 7: per-source editorial failures -> aggregate "completed with source failures" ---
+
+
+def test_one_editorial_source_failure_reported_with_correct_aggregate_and_does_not_block_others(
+    tmp_path, monkeypatch, capsys,
+):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _CNBC_TOP_NEWS_URL: FeedFetchResult(entries=(), failure_code="HTTPError:503"),
+        _SPACEFORCE_URL: FeedFetchResult(
+            entries=(_editorial_entry(
+                "US Space Force selects Texas as preferred location for third DARC site",
+                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+            ),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert "Daily News worker: editorial discovery completed with source failures" in output
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert "source_failures=1" in output
+    assert "Daily News worker: editorial source failed — cnbc-top-news-rss (CNBC): HTTPError:503" in output
+    # The Space Force item still published despite CNBC's failure.
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    stories = editorial_repository.load_stories()
+    assert any(s.source_feed_id == "spaceforce-news-rss" for s in stories.values())
+
+
+def test_zero_editorial_source_failures_reported_as_plain_completed(tmp_path, monkeypatch, capsys):
+    _mock_fetch({_NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None)}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert "Daily News worker: editorial discovery completed —" in output
+    assert "completed with source failures" not in output
+    assert "source_failures=0" in output
+
+
+# --- 8: existing editorial eligibility rules unchanged through the worker ---
+
+
+def test_cnbc_item_with_no_company_or_theme_match_is_not_published_through_the_worker(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _CNBC_TOP_NEWS_URL: FeedFetchResult(
+            entries=(_editorial_entry("Record U.S. cyclosporiasis outbreak is over, CDC says", "https://www.cnbc.com/off-topic"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    assert editorial_repository.load_stories() == {}
+
+
+def test_spaceforce_item_with_no_match_still_publishes_through_the_worker(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _SPACEFORCE_URL: FeedFetchResult(
+            entries=(_editorial_entry(
+                "US Space Force selects Texas as preferred location for third DARC site",
+                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+            ),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    stories = editorial_repository.load_stories()
+    assert len(stories) == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ()
+    assert story.source_feed_id == "spaceforce-news-rss"
+
+
+def test_nist_off_topic_item_is_not_published_and_on_topic_item_is_through_the_worker(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _NIST_URL: FeedFetchResult(
+            entries=(
+                _editorial_entry(
+                    "NIST-Developed Quantum Sensors Improve Nuclear Monitoring",
+                    "https://www.nist.gov/news-events/news/2026/09/quantum-sensors",
+                ),
+                _editorial_entry(
+                    "NIST Awards Funding to Advance Domestic Semiconductor Manufacturing",
+                    "https://www.nist.gov/news-events/news/2026/09/chips-funding",
+                    summary="The award, made under the CHIPS Act, supports new semiconductor fabrication capacity.",
+                ),
+            ),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    stories = editorial_repository.load_stories()
+    assert len(stories) == 1
+    story = next(iter(stories.values()))
+    assert story.headline == "NIST Awards Funding to Advance Domestic Semiconductor Manufacturing"
+    assert story.source_feed_id == "nist-news-rss"
+
+
+def test_korea_herald_matching_item_still_publishes_through_the_worker(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _KOREA_HERALD_URL: FeedFetchResult(
+            entries=(_editorial_entry(
+                "Samsung Electronics posts strong memory chip demand", "https://www.koreaherald.com/article/1",
+            ),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    stories = editorial_repository.load_stories()
+    assert len(stories) == 1
+    assert next(iter(stories.values())).source_feed_id == "korea-herald-business-rss"
+
+
+# --- 9: repeated identical editorial entries do not duplicate persisted stories ---
+
+
+def test_repeated_ticks_with_the_same_editorial_item_do_not_duplicate(tmp_path, monkeypatch):
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _SPACEFORCE_URL: FeedFetchResult(
+            entries=(_editorial_entry(
+                "US Space Force selects Texas as preferred location for third DARC site",
+                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+            ),), failure_code=None,
+        ),
+    }, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    assert len(editorial_repository.load_stories()) == 1
+
+
+# --- 2/11: Postgres — no editorial work at all on lock miss; real Postgres repository used ---
+
+
+def test_no_editorial_pipeline_or_repository_work_occurs_on_lock_miss(pg_isolated_dsn, monkeypatch):
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = Settings(db_backend="postgres", state_db_url=pg_isolated_dsn)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    second_conn = _second_raw_connection(pg_isolated_dsn)
+    try:
+        row = second_conn.execute(
+            "SELECT pg_try_advisory_lock(%s) AS acquired", (daily_news_worker._DAILY_NEWS_WORKER_ADVISORY_LOCK_KEY,),
+        ).fetchone()
+        second_conn.commit()
+        assert row["acquired"] is True
+
+        def _fail_if_called(*args, **kwargs):
+            raise AssertionError("editorial pipeline/repository must not be touched when the lock is held")
+
+        monkeypatch.setattr(daily_news_worker.editorial_pipeline, "run_editorial_discovery", _fail_if_called)
+        monkeypatch.setattr(daily_news_backend, "get_editorial_story_repository", _fail_if_called)
+        monkeypatch.setattr(daily_news_backend, "get_daily_news_repository", _fail_if_called)
+
+        daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+        assert scan_status_repository.get_feed_status("NVIDIA") is None
+        assert scan_status_repository.get_worker_status() is None
+    finally:
+        second_conn.execute("SELECT pg_advisory_unlock(%s)", (daily_news_worker._DAILY_NEWS_WORKER_ADVISORY_LOCK_KEY,))
+        second_conn.commit()
+        second_conn.close()
+
+
+def test_worker_mode_editorial_repository_is_real_postgres_not_local_json_fallback(pg_isolated_dsn, monkeypatch):
+    from src.data_access.daily_news.daily_news_backend import PostgresEditorialStoryRepository
+
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
+        _SPACEFORCE_URL: FeedFetchResult(
+            entries=(_editorial_entry(
+                "US Space Force selects Texas as preferred location for third DARC site",
+                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+            ),), failure_code=None,
+        ),
+    }, monkeypatch)
+    worker_settings = Settings(db_backend="postgres", state_db_url=pg_isolated_dsn)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    constructed_repositories = []
+    real_get_editorial_story_repository = daily_news_backend.get_editorial_story_repository
+
+    def _spy(settings):
+        repo = real_get_editorial_story_repository(settings)
+        constructed_repositories.append(repo)
+        return repo
+
+    monkeypatch.setattr(daily_news_backend, "get_editorial_story_repository", _spy)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    assert len(constructed_repositories) == 1
+    assert isinstance(constructed_repositories[0], PostgresEditorialStoryRepository)
+    stories = constructed_repositories[0].load_stories()
+    assert any(s.source_feed_id == "spaceforce-news-rss" for s in stories.values())

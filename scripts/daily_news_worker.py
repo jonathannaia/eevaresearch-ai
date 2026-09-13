@@ -89,6 +89,32 @@ No worker status or controls are exposed anywhere in the public UI,
 sidebar, or the hidden daily_news_admin.py page in this workstream —
 every status field this file writes is read back only by tests and any
 future, separately-approved internal tooling.
+
+Editorial Daily News autonomy (design/DECISIONS.md) — inside the same
+acquired-lock tick, after every issuer feed above has already been
+attempted, this worker now also runs editorial_pipeline.
+run_editorial_discovery() exactly once, second, via the new
+_run_editorial_tick() (see that function's own docstring). Uses the
+pipeline's own unmodified default source registry (CNBC, Korea Herald,
+Space Force, NIST — whatever EDITORIAL_SOURCE_REGISTRY currently
+contains) and the pipeline's own unmodified eligibility/URL/freshness/
+dedup/per-source-cap rules; this file adds no new fetch/parse/matching
+logic of its own, only the correctly worker-scoped repository wiring,
+call ordering, and log lines. No new schema, table, or column: this
+addition deliberately does NOT write to daily_news_source_status —
+that table's own company_name NOT NULL column and issuer-shaped
+counters cannot truthfully represent an issuer-agnostic editorial
+source without either a false value or dropped data, so observability
+here is log-only (see _log_editorial_completion()). An unexpected
+exception from the whole editorial-discovery call (never a per-source
+fetch failure, which run_editorial_discovery() already isolates
+internally) is caught in _run_tick_body() itself, logged as an explicit
+FAILED line, and never prevents issuer work already completed above,
+the reconciliation pass below, or the worker-status/tick-completion
+write at the end of this same tick. The existing manual
+`python -m scripts.run_daily_news_discovery --editorial-only` command
+is completely untouched by this addition and remains available for
+admin/debug use.
 """
 from __future__ import annotations
 
@@ -103,7 +129,7 @@ from typing import Iterator
 import psycopg
 
 from src.config.settings import Settings, get_settings
-from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, editorial_pipeline
 from src.data_access.daily_news.daily_news_backend import (
     DailyNewsScanStatusRepositoryProtocol,
     PostgresDailyNewsScanStatusRepository,
@@ -367,6 +393,67 @@ def _run_reconciliation_pass(
             )
 
 
+def _log_editorial_completion(report) -> None:
+    """Editorial Daily News autonomy (design/DECISIONS.md) — one
+    aggregate line, every counter read directly from `report` (never
+    hardcoded), plus one sanitized line per entry in
+    `report.source_failures`. `"completed with source failures"` vs.
+    plain `"completed"` distinguishes a normal run that had some
+    per-source trouble from one with none, without treating either as a
+    whole-pipeline failure — that separate, louder case is
+    `_run_editorial_tick()`'s own FAILED line below."""
+    status_word = "completed with source failures" if report.source_failures else "completed"
+    print(
+        f"Daily News worker: editorial discovery {status_word} — "
+        f"sources_polled={report.sources_polled} items_fetched={report.items_fetched} "
+        f"stories_published={report.stories_published} items_stale={report.items_stale} "
+        f"items_no_match={report.items_no_match} items_duplicate={report.items_duplicate} "
+        f"items_already_seen={report.items_already_seen} items_capped={report.items_capped} "
+        f"items_no_valid_url={report.items_no_valid_url} source_failures={len(report.source_failures)}"
+    )
+    if report.source_failures:
+        # Reuses editorial_pipeline's own already-imported registry
+        # reference (editorial_pipeline.EDITORIAL_SOURCE_REGISTRY) rather
+        # than importing source_registry directly in this file — this
+        # worker, like daily_news_pipeline.py and the UI pages, must
+        # never import source_registry.py directly (see
+        # tests/test_daily_news_source_registry.py's own scope-guard
+        # test for that pre-existing, unrelated architectural boundary).
+        attribution_by_source_id = {
+            entry.source_id: entry.attribution_label for entry in editorial_pipeline.EDITORIAL_SOURCE_REGISTRY
+        }
+        for source_id, failure_code in report.source_failures.items():
+            attribution_label = attribution_by_source_id.get(source_id, "unknown")
+            print(f"Daily News worker: editorial source failed — {source_id} ({attribution_label}): {failure_code}")
+
+
+def _run_editorial_tick(worker_settings: Settings) -> None:
+    """Editorial Daily News autonomy (design/DECISIONS.md) — runs
+    editorial_pipeline.run_editorial_discovery() exactly once, using the
+    pipeline's own default source_entries (EDITORIAL_SOURCE_REGISTRY),
+    completely unmodified here. The editorial repository is constructed
+    explicitly from `worker_settings` — the same worker-scoped Settings
+    object (db_backend="postgres" in live mode, forced by
+    _build_worker_settings()) already used for the issuer repository two
+    lines above this function's own call site — never the function's own
+    optional default, which would silently fall back to a local JSON
+    cache file instead of the shared production database. Per-source
+    fetch/parse failures are already isolated inside
+    run_editorial_discovery() itself (recorded in its own
+    source_failures dict, never raised); this function adds no
+    additional isolation of its own, only the correctly-scoped
+    repository wiring and the log line. An unexpected exception here
+    (anything other than an already-isolated per-source failure) is
+    caught one level up, by this function's own caller in
+    _run_tick_body(), never here — see that call site's own comment for
+    why."""
+    editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+    report = editorial_pipeline.run_editorial_discovery(
+        worker_settings.cache_dir, editorial_repository=editorial_repository,
+    )
+    _log_editorial_completion(report)
+
+
 def _run_tick_body(
     worker_settings: Settings, scan_status_repository: DailyNewsScanStatusRepositoryProtocol,
 ) -> None:
@@ -376,6 +463,26 @@ def _run_tick_body(
 
     for feed_source in PILOT_FEEDS:
         _run_feed_tick(feed_source, worker_settings, repository, scan_status_repository)
+
+    # Editorial Daily News autonomy (design/DECISIONS.md) — runs once,
+    # second, after every issuer feed has already been attempted above,
+    # inside this same acquired-lock tick. This try/except is the one
+    # place an unexpected editorial-pipeline exception (as opposed to an
+    # already-isolated per-source fetch failure, handled inside
+    # run_editorial_discovery() itself) is caught — issuer work above is
+    # already complete and persisted regardless, and reconciliation plus
+    # the worker-status/tick-completion write below must still run
+    # whether or not this succeeds. Never a healthy-looking silent
+    # no-op: an explicit FAILED line names the exception type and states
+    # plainly that only editorial coverage degraded this tick, not the
+    # whole tick.
+    try:
+        _run_editorial_tick(worker_settings)
+    except Exception as exc:  # noqa: BLE001 — editorial discovery must never abort issuer/reconciliation/tick completion
+        print(
+            f"Daily News worker: editorial discovery FAILED unexpectedly — {type(exc).__name__}; "
+            "issuer coverage completed, editorial coverage degraded for this tick."
+        )
 
     last_reconciliation_at = worker_status.last_reconciliation_at if worker_status else None
     if _reconciliation_due(worker_status, worker_settings):
