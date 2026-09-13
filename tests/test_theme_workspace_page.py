@@ -518,7 +518,7 @@ def test_global_beta_gate_still_covers_the_route(monkeypatch):
     at.query_params["theme_id"] = ""
     at.run()
     all_text = " ".join(m.value for m in at.markdown) + " ".join(t.value for t in at.title)
-    assert "Private beta" in all_text
+    assert "Access restricted" in all_text
     assert "Constraint Research Workspace" not in all_text
 
 

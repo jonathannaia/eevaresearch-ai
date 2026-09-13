@@ -123,7 +123,7 @@ def test_authenticated_user_not_on_nonempty_allowlist_is_blocked_before_navigati
     )
 
     assert not at.exception
-    assert [t.value for t in at.title] == ["Private beta"]
+    assert [t.value for t in at.title] == ["Access restricted"]
     assert "_pages" not in at.session_state
     assert [b.label for b in at.button] == ["Sign out"]
 

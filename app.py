@@ -183,36 +183,35 @@ _beta_is_logged_in = getattr(st.user, "is_logged_in", False)
 
 if not _beta_is_logged_in:
     st.title("Sign in to EevaResearch AI")
-    st.write("Sign in with your Google account to continue.")
+    st.write("EevaResearch is available as an open beta.")
+    st.write("Sign in with your Google account to explore the platform.")
     st.button("Continue with Google", on_click=st.login, args=("google",))
     st.stop()
 
 _beta_email = st.user.get("email")
 
-# EDGE_PRIVATE_BETA_ALLOWED_EMAILS is an optional, secondary, invite-only
-# layer for a later phase (Admin Users page not yet built) — any
-# authenticated Google account is allowed through today unless the
-# allowlist is non-empty and excludes it. evaluate_beta_gate() itself is
-# unchanged (src/ui/beta_gate.py) and keeps its own standalone contract —
-# including EMPTY_ALLOWLIST meaning "deny" — because that contract is
-# exercised directly by tests/test_beta_gate.py. Its AUTH_DISABLED/
-# EMPTY_ALLOWLIST branches both described the old "beta invite is
-# optional" design, which no longer applies now that sign-in itself is
-# mandatory (checked above); forcing private_beta_auth_enabled=True for
+# EevaResearch runs as an open beta: EDGE_PRIVATE_BETA_ALLOWED_EMAILS is
+# an optional, secondary access-restriction list, empty by default — with
+# today's empty allowlist, any authenticated Google account is allowed
+# through. evaluate_beta_gate() itself is unchanged (src/ui/beta_gate.py)
+# and keeps its own standalone contract — including EMPTY_ALLOWLIST
+# meaning "deny" — because that contract is exercised directly by
+# tests/test_beta_gate.py. Forcing private_beta_auth_enabled=True for
 # just this call routes the decision into evaluate_beta_gate's real
 # allowlist-comparison branches (ALLOWED_EMAIL/INVITE_REQUIRED) instead of
 # the now-stale AUTH_DISABLED shortcut, and this call site — not the
 # shared function — is what treats EMPTY_ALLOWLIST as "allow," per the
-# product decision that an empty allowlist must never lock out an
-# authenticated user.
+# deliberate open-beta product decision that an empty allowlist must
+# never lock out an authenticated user. Populating the allowlist remains
+# available if access ever needs to be restricted later.
 _beta_gate_decision = evaluate_beta_gate(
     dataclasses.replace(_beta_settings, private_beta_auth_enabled=True), email=_beta_email
 )
 _beta_allowed = _beta_gate_decision.allowed or _beta_gate_decision.reason is BetaGateReason.EMPTY_ALLOWLIST
 
 if not _beta_allowed:
-    st.title("Private beta")
-    st.error("This Google account is not approved for the private beta.")
+    st.title("Access restricted")
+    st.error("This Google account does not have access to EevaResearch AI.")
     st.button("Sign out", on_click=st.logout)
     st.stop()
 
