@@ -460,6 +460,34 @@ DISCOVERY_STUBS: tuple[Issuer, ...] = (
         ),
         notes="Daily News official-company source only; not eligible for Radar filing scanning.",
     ),
+    # Hewlett Packard Enterprise Company — a Daily News-only discovery,
+    # same shape and reasoning as the entries above: constructed directly
+    # (not via _stub()) since its provenance is a live Daily News feed
+    # verification, not the 2026-08-20 portfolio-map seed list. Verified
+    # official IR RSS feed at investors.hpe.com/rss/news (Daily News
+    # source-expansion batch 5, 2026-09-13). No CIK resolved, not part
+    # of any EDGAR/DART/EDINET scan universe.
+    Issuer(
+        issuer_id="stub:HPE",
+        legal_name="Hewlett Packard Enterprise Company",
+        country_or_jurisdiction="United States",
+        coverage_state=CoverageState.DISCOVERED,
+        lifecycle_state=LifecycleState.ACTIVE,
+        primary_ticker="HPE",
+        primary_exchange="NYSE",
+        identifiers={},  # no CIK resolved or cached — Daily News-only, never a Radar identifier
+        themes=("ai-buildout",),
+        supply_chain_layers=("compute-hardware",),
+        evidence_confidence="Official IR RSS feed verified live; company identity, NYSE ticker, and Delaware incorporation verified through official investor-relations materials.",
+        discovered_via="Daily News official-feed verification (design/DECISIONS.md)",
+        discovered_at="2026-09-13",
+        normalization_status=(
+            "Daily News-only candidate. Not eligible for Radar filing scanning "
+            "— no CIK resolved, not part of tracked_companies.py, structurally "
+            "excluded via DISCOVERED coverage_state."
+        ),
+        notes="Daily News official-company source only; not eligible for Radar filing scanning.",
+    ),
 )
 
 

@@ -364,7 +364,14 @@ def test_nvent_is_now_also_a_real_tracked_company_via_the_core_expansion_batch()
 # tracked_companies.py/TRACKED_COMPANIES ---
 
 def test_discovery_stubs_grew_by_exactly_two_for_arista_and_cisco():
-    assert len(DISCOVERY_STUBS) == 25
+    # Was an exact "== 25" through the Arista/Cisco-only addition; Daily
+    # News source-expansion batch 5 (2026-09-13) added one more stub
+    # (Hewlett Packard Enterprise Company — see the dedicated section
+    # below), so this now asserts "at least 25, both still present"
+    # rather than an exact total tied to this batch alone — same
+    # future-proofing convention the matching nVent test above already
+    # uses for the same reason.
+    assert len(DISCOVERY_STUBS) >= 25
     arista_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "ANET"]
     cisco_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "CSCO"]
     assert len(arista_matches) == 1
@@ -399,3 +406,44 @@ def test_arista_and_cisco_are_now_also_real_tracked_companies_via_the_core_expan
     assert "Cisco Systems, Inc." in edgar_names
     stub_tickers = {i.primary_ticker for i in DISCOVERY_STUBS}
     assert {"ANET", "CSCO"} <= stub_tickers
+
+
+# --- Hewlett Packard Enterprise Company (Daily News source-expansion
+# batch 5, 2026-09-13) — one more Daily News-only DISCOVERY_STUBS entry,
+# never added to tracked_companies.py/TRACKED_COMPANIES. Unlike Arista/
+# Cisco above, this has NOT (as of this batch) graduated to a real
+# tracked company via any core expansion batch — it stays
+# Daily-News-only, structurally excluded from
+# tracked_companies_from_issuer_registry() exactly as designed. ---
+
+
+def test_discovery_stubs_includes_hpe_with_the_expected_fields():
+    hpe_matches = [i for i in DISCOVERY_STUBS if i.primary_ticker == "HPE"]
+    assert len(hpe_matches) == 1
+    hpe = hpe_matches[0]
+    assert hpe.legal_name == "Hewlett Packard Enterprise Company"
+    assert hpe.coverage_state == CoverageState.DISCOVERED
+    assert hpe.identifiers == {}
+    assert hpe.themes == ("ai-buildout",)
+    assert hpe.supply_chain_layers == ("compute-hardware",)
+
+
+def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_hpe():
+    # HPE is Daily-News-only (DISCOVERY_STUBS), never added to
+    # tracked_companies.py/SEED_ISSUERS — both remain 105, unchanged.
+    assert len(get_tracked_companies(active_only=False)) == 105
+    assert len(SEED_ISSUERS) == 105
+
+
+def test_hpe_is_structurally_excluded_from_tracked_companies_from_issuer_registry():
+    # Proves HPE, unlike Arista/Cisco, has NOT graduated to a real
+    # tracked company — tracked_companies_from_issuer_registry() only
+    # ever reads SEED_ISSUERS, and DISCOVERY_STUBS (where HPE lives) is
+    # structurally unreachable from it, per that function's own
+    # docstring.
+    compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
+    assert "HPE" not in compat_tickers
+    from src.config.tracked_companies import get_tracked_companies_for_source
+
+    edgar_names = {c.name for c in get_tracked_companies_for_source("SEC EDGAR", active_only=False)}
+    assert "Hewlett Packard Enterprise Company" not in edgar_names

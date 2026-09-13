@@ -459,7 +459,9 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
     # (2026-09-11) then appended 4 more entries, each a genuinely new
     # company (20 + 4 = 24). Expansion batch 4 (2026-09-13) then
     # appended 3 more entries, each a genuinely new company (24 + 3 = 27).
-    assert len(PILOT_FEEDS) == 27
+    # Expansion batch 5 (2026-09-13) then appended 1 more entry, a
+    # genuinely new company (27 + 1 = 28).
+    assert len(PILOT_FEEDS) == 28
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
@@ -468,7 +470,17 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
         "Lam Research Corp", "KLA Corp", "Arm Holdings plc",
         "Qualcomm Incorporated", "Corning Inc.", "Synopsys, Inc.", "Cadence Design Systems, Inc.",
         "Samsung Electronics", "Murata Manufacturing Co., Ltd.", "Microchip Technology Incorporated",
+        "Hewlett Packard Enterprise Company",
     }
+
+
+def test_hpe_source_present_with_correct_feed_url_and_domain():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Hewlett Packard Enterprise Company"]
+    assert len(matches) == 1
+    hpe = matches[0]
+    assert hpe.feed_url == "https://investors.hpe.com/rss/news"
+    assert hpe.canonical_domains == ("investors.hpe.com",)
+    assert hpe.source_id == "hpe-ir-rss"
 
 
 # --- image_host: exactly three approved mappings, all others None --------
