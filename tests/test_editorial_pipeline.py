@@ -11,7 +11,7 @@ from src.data_access.daily_news import editorial_pipeline
 from src.data_access.daily_news.editorial_story_store import load_stories
 from src.data_access.daily_news.rss_atom_client import FeedFetchResult, RawFeedEntry
 from src.data_access.daily_news.source_registry import DailyNewsSourceEntry, SourceCategory, SourceFormat, SourceHealthState
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 _LICENSING = "Independent journalism test fixture."
 
@@ -928,3 +928,42 @@ def test_batch_2_sources_are_never_leaked_into_runtime_source_registry():
     batch_2_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY_BATCH_2}
     runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
     assert not (batch_2_ids & runtime_ids)
+
+
+# --- Signals materiality classification (design/DECISIONS.md) ---
+
+
+def test_published_editorial_story_is_classified_at_construction_time(tmp_path, monkeypatch):
+    """The default _entry() fixture ("Oracle Corporation reports strong
+    AI cloud demand" / "...AI cloud demand drove revenue higher this
+    quarter") is on-taxonomy (AI cloud) with a materiality anchor
+    ("revenue") — High Signal via the taxonomy-anchored-consequence
+    gate. Proves classify_editorial_story() is actually wired into
+    run_editorial_discovery(), not just present and untested."""
+    source = _source()
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(_entry(),), failure_code=None)})
+
+    editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("taxonomy_anchored_consequence:") for r in story.materiality_reasons)
+
+
+def test_classification_never_changes_which_editorial_items_are_admitted(tmp_path, monkeypatch):
+    """A company-matched but off-taxonomy, zero-anchor item still
+    publishes exactly as it does today — classification only adds a
+    tier label, it never becomes a new admission gate on top of the
+    existing fail-closed company/theme match."""
+    source = _source()
+    entry = _entry(
+        title="Oracle-linked startup begins limited electric truck pilot in California",
+        summary="A small logistics startup backed partly by Oracle is testing a handful of electric delivery trucks.",
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.materiality_tier == NewsMaterialityTier.BACKGROUND
