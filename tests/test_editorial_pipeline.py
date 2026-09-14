@@ -950,11 +950,17 @@ def test_published_editorial_story_is_classified_at_construction_time(tmp_path, 
     assert any(r.startswith("taxonomy_anchored_consequence:") for r in story.materiality_reasons)
 
 
-def test_classification_never_changes_which_editorial_items_are_admitted(tmp_path, monkeypatch):
-    """A company-matched but off-taxonomy, zero-anchor item still
-    publishes exactly as it does today — classification only adds a
-    tier label, it never becomes a new admission gate on top of the
-    existing fail-closed company/theme match."""
+def test_incidental_ambiguous_alias_backer_mention_is_not_admitted(tmp_path, monkeypatch):
+    """Superseded by the precision-first admission gate (design/DECISIONS.md,
+    the Nintendo/Amazon false-positive audit): this test previously asserted
+    that a company-matched, off-taxonomy, zero-anchor item always publishes
+    regardless of classification — i.e. that admission and tiering are fully
+    independent. That was exactly the design flaw behind the Nintendo/Amazon
+    bug. "Oracle" here is an ambiguous mechanical alias (see
+    editorial_admission.py's _AMBIGUOUS_ALIAS_COMPANIES) matched only as an
+    incidental backer mention, with no company-action language and no hard
+    material evidence — the item must now fail admission entirely rather
+    than publish to Background."""
     source = _source()
     entry = _entry(
         title="Oracle-linked startup begins limited electric truck pilot in California",
@@ -964,6 +970,6 @@ def test_classification_never_changes_which_editorial_items_are_admitted(tmp_pat
 
     report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
 
-    assert report.stories_published == 1
-    story = next(iter(load_stories(tmp_path).values()))
-    assert story.materiality_tier == NewsMaterialityTier.BACKGROUND
+    assert report.stories_published == 0
+    assert report.items_not_subject_relevant == 1
+    assert load_stories(tmp_path) == {}

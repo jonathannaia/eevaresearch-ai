@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import canonical_url, dedup, editorial_story_store, rss_atom_client
+from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
 from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, DailyNewsSourceEntry, normalize_source_url
@@ -112,6 +113,13 @@ class EditorialScanReport:
     items_no_valid_url: int
     items_stale: int
     items_no_match: int  # fail-closed: zero company and zero theme match
+    # Precision-first admission gate (design/DECISIONS.md, the Nintendo/
+    # Amazon false-positive audit) — distinct from items_no_match: this
+    # counts an item that DID match a company or theme keyword but was
+    # rejected because that match wasn't admission-worthy (an incidental
+    # mention, a consumer/editorial format, an ambiguous alias with no
+    # supporting evidence, ...). See editorial_admission.py.
+    items_not_subject_relevant: int
     items_duplicate: int
     items_already_seen: int  # idempotency: same story_id already in the store
     items_capped: int  # qualified (passed every gate) but excluded by the 5-per-feed persistence cap this run
@@ -209,6 +217,7 @@ def run_editorial_discovery(
     items_no_valid_url = 0
     items_stale = 0
     items_no_match = 0
+    items_not_subject_relevant = 0
     items_duplicate = 0
     items_already_seen = 0
     items_capped = 0
@@ -253,13 +262,28 @@ def run_editorial_discovery(
                 continue
 
             matched_companies, matched_themes = matched_companies_and_themes(entry.title, entry.summary)
+            # Materiality classified here, once, right after matching —
+            # needed by the admission gate below (a genuine material-
+            # development signal can independently justify admission,
+            # even for an ambiguous alias or a consumer-format-shaped
+            # headline — see editorial_admission.py). Carried through to
+            # construction below unchanged, never recomputed.
+            materiality_tier, materiality_reasons = classify_editorial_story(
+                entry.title, entry.summary, source.category,
+            )
             # Government / Public Sector Daily News lane (design/DECISIONS.md):
             # two named, hardcoded source_id exceptions to the general
             # fail-closed gate below — see this module's own docstring
             # for why this is deliberately not a category-based or
             # generically-extensible mechanism. Every other source_id,
             # including any future one, falls through to the unchanged
-            # company-or-theme check exactly as today.
+            # company-or-theme check, followed by the precision-first
+            # admission gate (design/DECISIONS.md, the Nintendo/Amazon
+            # false-positive audit) — a company/theme keyword match is
+            # necessary but no longer sufficient; see editorial_admission.
+            # py's own docstring for the full rule. Deliberately not
+            # applied to SpaceForce/NIST: an existing, narrower,
+            # separately-approved bypass this fix does not touch.
             if source.source_id == _SPACEFORCE_SOURCE_ID:
                 pass
             elif source.source_id == _NIST_SOURCE_ID:
@@ -269,6 +293,13 @@ def run_editorial_discovery(
             elif not matched_companies and not matched_themes:
                 items_no_match += 1
                 continue
+            else:
+                admission = assess_admission(
+                    entry.title, entry.summary, matched_companies, matched_themes, materiality_reasons,
+                )
+                if not admission.admitted:
+                    items_not_subject_relevant += 1
+                    continue
 
             # Provisionally registered so a second duplicate of THIS SAME
             # entry later in this same source's own feed is still caught
@@ -278,25 +309,20 @@ def run_editorial_discovery(
             # simple, single-pass dedup registration.
             existing_urls.add(normalized_url)
             existing_title_publisher.add((normalized_title, source.attribution_label))
-            qualifying.append((entry, story_id, matched_companies, matched_themes))
+            qualifying.append((entry, story_id, matched_companies, matched_themes, materiality_tier, materiality_reasons))
 
         qualifying.sort(key=lambda item: item[0].published_at, reverse=True)
         capped = qualifying[:_PER_SOURCE_CAP]
         items_capped += len(qualifying) - len(capped)
 
-        for entry, story_id, matched_companies, matched_themes in capped:
+        for entry, story_id, matched_companies, matched_themes, materiality_tier, materiality_reasons in capped:
             retrieved_at = datetime.now(timezone.utc).isoformat()
             # Signals materiality classification (design/DECISIONS.md) —
-            # computed once, here, at construction time only; never
-            # reclassifies an already-persisted story (see
-            # NewsMaterialityTier's own docstring). Classification never
-            # affects admission/inclusion above (the fail-closed company/
-            # theme gate, freshness, cap, and dedup are all unchanged) —
-            # this only adds a display-time tier label to an item that
-            # already qualified for publication.
-            materiality_tier, materiality_reasons = classify_editorial_story(
-                entry.title, entry.summary, source.category,
-            )
+            # computed once, above, in the qualifying loop (also used by
+            # the precision-first admission gate there — see
+            # editorial_admission.py); carried through here unchanged,
+            # never recomputed and never reclassifies an already-
+            # persisted story (see NewsMaterialityTier's own docstring).
             story = EditorialStory(
                 id=story_id, headline=entry.title, publisher=source.attribution_label, source_url=entry.link,
                 published_at=entry.published_at, retrieved_at=retrieved_at,
@@ -317,7 +343,8 @@ def run_editorial_discovery(
     return EditorialScanReport(
         scan_id=scan_id, started_at=started_at, completed_at=completed_at, sources_polled=len(source_entries),
         items_fetched=items_fetched, items_no_valid_url=items_no_valid_url, items_stale=items_stale,
-        items_no_match=items_no_match, items_duplicate=items_duplicate, items_already_seen=items_already_seen,
+        items_no_match=items_no_match, items_not_subject_relevant=items_not_subject_relevant,
+        items_duplicate=items_duplicate, items_already_seen=items_already_seen,
         items_capped=items_capped, stories_published=len(newly_published), source_failures=source_failures,
     )
 
