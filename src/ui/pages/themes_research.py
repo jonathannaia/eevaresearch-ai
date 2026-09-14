@@ -52,6 +52,7 @@ this module."""
 from __future__ import annotations
 
 import html
+from collections import Counter
 
 import streamlit as st
 
@@ -177,27 +178,58 @@ def _render_index(repository: ThemeRepositoryProtocol) -> None:
         _render_card(theme, evidence, company_map, detail_page)
 
 
+_DIRECTION_TAG_CLASS = {"Supports": "er-tag-pos", "Contradicts": "er-tag-neg", "Mixed": "er-tag-mix"}
+
+
+def _evidence_direction_chips_html(evidence) -> str:
+    counts = Counter(_esc(getattr(item.direction, "value", item.direction)) for item in evidence)
+    if not counts:
+        return '<span class="er-muted">No evidence recorded yet.</span>'
+    return "".join(
+        f'<span class="er-status-tag {_DIRECTION_TAG_CLASS.get(direction, "er-tag-neutral")}" '
+        f'style="margin-right:0.35rem;">{direction} · {count}</span>'
+        for direction, count in counts.items()
+    )
+
+
 def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> None:
+    # Modern editorial redesign (design/DECISIONS.md, user-approved
+    # preview) — "richer thesis cards": badges (category/status as
+    # status-tag chips, not plain muted text), the working thesis as a
+    # real summary line (previously only the one-sentence hypothesis),
+    # an evidence-direction breakdown (new), and an Open button using the
+    # app's existing cta-secondary button treatment (previously a bare,
+    # unstyled page_link). The container key changes from
+    # "theme-card-{id}" (which never actually matched the shared
+    # `[class*="st-key-card-"]` card rule — "theme-card-" doesn't
+    # contain "card-" immediately after "st-key-", so this card was
+    # unknowingly using Streamlit's own native border=True styling this
+    # whole time, not this app's design system) to "card-theme-{id}",
+    # which does match — the same white/bordered/hover card every other
+    # page already uses. border=True is dropped since the CSS border
+    # replaces it now, matching every other card in the app.
     distinct_companies = {item.company for item in evidence} | {entry.company_name for entry in company_map}
-    with st.container(border=True, key=f"theme-card-{theme.id}"):
-        top_cols = st.columns([2, 2, 4, 2], vertical_alignment="center")
+    with st.container(key=f"card-theme-{theme.id}"):
+        top_cols = st.columns([6, 3], vertical_alignment="center")
         with top_cols[0]:
-            st.markdown(f'<div class="er-muted">{_enum_label(theme.category)}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<span class="er-status-tag er-tag-info">{_enum_label(theme.category)}</span> '
+                f'<span class="er-status-tag er-tag-neutral">{_enum_label(theme.status)}</span>',
+                unsafe_allow_html=True,
+            )
         with top_cols[1]:
-            st.markdown(f'<div class="er-muted">{_enum_label(theme.status)}</div>', unsafe_allow_html=True)
-        with top_cols[2]:
-            st.markdown(f'<div class="er-card-title">{_esc(theme.title)}</div>', unsafe_allow_html=True)
-        with top_cols[3]:
             st.markdown(
                 f'<div class="er-muted" style="text-align:right;">{_esc(fmt_datetime_local(theme.updated_at))}</div>',
                 unsafe_allow_html=True,
             )
 
-        st.markdown(f'<div style="margin-top:0.3rem;">{_esc(theme.hypothesis)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="er-card-title" style="margin-top:0.5rem; font-size:1.05rem;">{_esc(theme.title)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{_esc(theme.working_thesis)}</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="er-muted" style="margin-top:0.3rem;"><strong>Key question:</strong> {_esc(theme.key_question)}</div>',
+            f'<div style="margin-top:0.5rem;"><strong>Key question:</strong> {_esc(theme.key_question)}</div>',
             unsafe_allow_html=True,
         )
+        st.markdown(f'<div style="margin-top:0.6rem;">{_evidence_direction_chips_html(evidence)}</div>', unsafe_allow_html=True)
 
         bottom_cols = st.columns([2, 2, 4], vertical_alignment="center")
         with bottom_cols[0]:
@@ -206,7 +238,8 @@ def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> No
             st.markdown(f'<div class="er-muted">Companies: {len(distinct_companies)}</div>', unsafe_allow_html=True)
         with bottom_cols[2]:
             if detail_page is not None:
-                st.page_link(detail_page, label="Open", query_params={"theme_id": theme.id})
+                with st.container(key=f"cta-secondary-open-theme-{theme.id}"):
+                    st.page_link(detail_page, label="Open →", query_params={"theme_id": theme.id})
 
 
 def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
