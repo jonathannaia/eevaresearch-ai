@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -819,6 +819,18 @@ _V17_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# "What Eeva tested" optional Theme field (design/DECISIONS.md) — one
+# wholly additive, nullable column on the existing research_themes
+# table. No backfill: every row from before this migration gets NULL,
+# which src.data_access.theme_store/theme_repository.py's own
+# `what_eeva_tested=row["what_eeva_tested"]` reads as None — identical
+# to how a pre-migration JSON theme (missing the key entirely) is
+# already handled via `.get("what_eeva_tested")`. No index: this field
+# is never filtered or sorted on, only displayed.
+_V18_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE research_themes ADD COLUMN what_eeva_tested TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -841,6 +853,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (15, _V15_STATEMENTS),
     (16, _V16_STATEMENTS),
     (17, _V17_STATEMENTS),
+    (18, _V18_STATEMENTS),
 )
 
 

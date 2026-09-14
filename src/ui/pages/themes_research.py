@@ -248,6 +248,16 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
     section_header("The question")
     st.markdown(f'<div>{_esc(theme.key_question)}</div>', unsafe_allow_html=True)
 
+    # 2a. What Eeva tested — optional (design/DECISIONS.md): the
+    # original hypothesis and what primary-source review found, distinct
+    # from the (possibly revised) working thesis below. Omitted entirely
+    # when absent, exactly like an empty company-map role group, so a
+    # Theme authored before this field existed renders identically to
+    # before.
+    if theme.what_eeva_tested:
+        section_header("What Eeva tested")
+        st.markdown(f'<div>{_esc(theme.what_eeva_tested)}</div>', unsafe_allow_html=True)
+
     # 3. Working thesis
     section_header("Working thesis")
     st.markdown(f'<div>{_esc(theme.working_thesis)}</div>', unsafe_allow_html=True)

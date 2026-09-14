@@ -75,6 +75,44 @@ def test_internal_theme_is_not_returned_by_published_lookup(tmp_path):
     assert theme_store.get_theme(tmp_path, theme.id) == theme
 
 
+# ============================================================
+# what_eeva_tested — optional field round trip / backward compatibility
+# ============================================================
+
+
+def test_what_eeva_tested_round_trips_when_set(tmp_path):
+    theme = _theme(what_eeva_tested="Eeva tested the original instead-of-capex hypothesis.")
+    theme_store.append_theme(tmp_path, theme)
+    loaded = theme_store.get_theme(tmp_path, theme.id)
+    assert loaded.what_eeva_tested == "Eeva tested the original instead-of-capex hypothesis."
+    assert loaded == theme
+
+
+def test_what_eeva_tested_defaults_to_none_when_not_set(tmp_path):
+    theme = _theme()
+    theme_store.append_theme(tmp_path, theme)
+    loaded = theme_store.get_theme(tmp_path, theme.id)
+    assert loaded.what_eeva_tested is None
+
+
+def test_theme_json_missing_what_eeva_tested_key_loads_as_none(tmp_path):
+    """Simulates a themes.json row written before this field existed —
+    the raw dict has no "what_eeva_tested" key at all, not even null."""
+    import json
+
+    theme = _theme()
+    theme_store.append_theme(tmp_path, theme)
+    path = tmp_path / "themes.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    del raw[theme.id]["what_eeva_tested"]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    loaded = theme_store.get_theme(tmp_path, theme.id)
+    assert loaded is not None
+    assert loaded.what_eeva_tested is None
+    assert loaded.title == theme.title  # the rest of the pre-existing row is unaffected
+
+
 def test_ready_to_publish_and_archived_themes_are_not_returned_by_published_lookup(tmp_path):
     ready = _theme(title="Ready", visibility=ThemeVisibility.READY_TO_PUBLISH)
     archived = _theme(title="Archived", visibility=ThemeVisibility.ARCHIVED)

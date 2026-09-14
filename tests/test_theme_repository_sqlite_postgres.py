@@ -158,6 +158,26 @@ def test_sqlite_migration_creates_theme_tables_starting_empty():
     assert sqlite_themes.list_published_themes(conn) == ()
 
 
+def test_sqlite_what_eeva_tested_round_trips_when_set():
+    conn = _sqlite_conn()
+    theme = _theme(what_eeva_tested="Eeva tested the original instead-of-capex hypothesis.")
+    sqlite_themes.insert_theme(conn, theme)
+    loaded = sqlite_themes.get_theme(conn, theme.id)
+    assert loaded.what_eeva_tested == "Eeva tested the original instead-of-capex hypothesis."
+    assert loaded == theme
+
+
+def test_sqlite_what_eeva_tested_column_is_nullable_for_pre_existing_rows():
+    # A theme inserted with no what_eeva_tested override — the same
+    # shape every row written before this column existed would have
+    # after the ALTER TABLE ... ADD COLUMN migration backfills NULL.
+    conn = _sqlite_conn()
+    theme = _theme()
+    sqlite_themes.insert_theme(conn, theme)
+    loaded = sqlite_themes.get_theme(conn, theme.id)
+    assert loaded.what_eeva_tested is None
+
+
 # ============================================================
 # Postgres
 # ============================================================
@@ -173,6 +193,21 @@ def test_postgres_theme_round_trip_and_duplicate_rejection(pg_conn):
     # Connection remains usable after the rejected duplicate.
     other = _theme(title="Other PG theme")
     assert postgres_themes.insert_theme(pg_conn, other) is True
+
+
+def test_postgres_what_eeva_tested_round_trips_when_set(pg_conn):
+    theme = _theme(title="PG what-eeva-tested", what_eeva_tested="Eeva tested the original instead-of-capex hypothesis.")
+    postgres_themes.insert_theme(pg_conn, theme)
+    loaded = postgres_themes.get_theme(pg_conn, theme.id)
+    assert loaded.what_eeva_tested == "Eeva tested the original instead-of-capex hypothesis."
+    assert loaded == theme
+
+
+def test_postgres_what_eeva_tested_column_is_nullable_for_pre_existing_rows(pg_conn):
+    theme = _theme(title="PG no what-eeva-tested")
+    postgres_themes.insert_theme(pg_conn, theme)
+    loaded = postgres_themes.get_theme(pg_conn, theme.id)
+    assert loaded.what_eeva_tested is None
 
 
 def test_postgres_internal_theme_not_returned_by_published_lookup(pg_conn):

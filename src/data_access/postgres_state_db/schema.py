@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -653,6 +653,14 @@ _V18_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# "What Eeva tested" optional Theme field (design/DECISIONS.md) —
+# isolated Postgres counterpart to state_db/schema.py's own
+# _V18_STATEMENTS (see that module's comment for the full rationale).
+# One wholly additive, nullable column; no backfill, no index.
+_V19_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE research_themes ADD COLUMN what_eeva_tested TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -676,6 +684,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (16, _V16_STATEMENTS),
     (17, _V17_STATEMENTS),
     (18, _V18_STATEMENTS),
+    (19, _V19_STATEMENTS),
 )
 
 
