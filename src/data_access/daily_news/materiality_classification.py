@@ -62,9 +62,10 @@ C. Taxonomy-anchored consequence: a relevance-taxonomy phrase match
    (semiconductors & equipment; AI compute & data-center infrastructure;
    memory/networking/power/cooling/packaging; wafers/materials/critical
    minerals/manufacturing capacity; capital allocation/policy/trade
-   controls/supply-chain) AND a materiality-anchor keyword (same list as
-   Gate B, without requiring the numeric pattern) — also suppressed when
-   survey/research language is present.
+   controls/supply-chain) AND a materiality-anchor keyword, EXCLUDING the
+   deploy-family (see "Deployment qualification" below) — same list as
+   Gate B otherwise, without requiring the numeric pattern — also
+   suppressed when survey/research language is present.
 D. Credible editorial reporting: editorial SourceCategory.
    INDEPENDENT_NEWS, a substantive excerpt (not a one-line blurb), and
    fact-attribution language (confirmed/disclosed/revealed/filed/
@@ -80,6 +81,20 @@ in priority order: on-taxonomy (Gate C's phrase match fired, but no
 anchor) -> WATCHLIST; a capital-return mention with no qualifying action
 or magnitude -> WATCHLIST; an earnings-shaped item disqualified only by
 scheduling language -> WATCHLIST; otherwise -> BACKGROUND.
+
+--- Deployment qualification (calibration finding) ---
+Every deploy-family word (deploy/deploys/deployed/deploying/deployment/
+deployments) fully qualifies for Gate B (a real number/currency/percent/
+unit must co-occur — "Deploy Up to 2 Gigawatts", "Deploy up to 2.8 GW").
+It is deliberately EXCLUDED from Gate C's taxonomy-pairing, because
+Gate C never requires a number: generic product-positioning copy
+("Cisco Secure AI Factory... Makes AI Easier to Deploy and Secure")
+paired too readily with an incidental taxonomy match ("data center")
+and nothing else, with zero quantification anywhere in the text. The
+AMD/Anthropic and Bloom Energy/Oracle gigawatt-scale partnerships both
+still reach HIGH_SIGNAL — via Gate B alone, since both name a real
+quantity — while the Cisco item correctly falls to WATCHLIST (on-
+taxonomy, no qualifying anchor).
 
 --- Earnings vs. scheduling (calibration finding) ---
 The original Gate A2 matched the bare phrase "financial results"
@@ -191,6 +206,23 @@ _MATERIALITY_ANCHOR_KEYWORDS: tuple[str, ...] = (
     "pricing", "price increase", "price cut", "expansion", "investment",
 )
 
+# The deploy/deploys/deployed/deploying/deployment/deployments family,
+# on its own, is excluded from Gate C's taxonomy-pairing (see
+# _TAXONOMY_PAIRING_ANCHOR_KEYWORDS below and "Deployment qualification"
+# in the module docstring) — calibration finding: generic product-
+# positioning copy ("Makes AI Easier to Deploy and Secure") pairs too
+# readily with an incidental taxonomy match (e.g. "data center") with no
+# quantification anywhere in the text. Deploy-family anchors still fully
+# qualify via Gate B, which already requires a real co-occurring number —
+# a quantified deployment (capacity/power/systems/locations/investment)
+# is exactly what Gate B is for.
+_DEPLOY_FAMILY_KEYWORDS = frozenset({
+    "deploy", "deploys", "deployed", "deploying", "deployment", "deployments",
+})
+_TAXONOMY_PAIRING_ANCHOR_KEYWORDS: tuple[str, ...] = tuple(
+    k for k in _MATERIALITY_ANCHOR_KEYWORDS if k not in _DEPLOY_FAMILY_KEYWORDS
+)
+
 # --- Numeric/currency/unit patterns (Gate B/B2 only — an anchor alone is
 # never enough; a real magnitude must co-occur). Deliberately never
 # matches a bare date/quarter/year: every pattern requires a currency
@@ -216,10 +248,16 @@ _EARNINGS_KEYWORDS: tuple[str, ...] = (
 )
 
 # A future-tense/logistics signal — its presence means _EARNINGS_KEYWORDS
-# alone is not enough (see _classify_core).
+# alone is not enough (see _classify_core). "webcast schedule"/"earnings
+# release and/& webcast schedule" (calibration finding): a "Q2 2026
+# Earnings Release & Webcast Schedule" notice is itself a logistics
+# announcement (when/how to tune into the real release, not the release
+# itself) despite literally containing the phrase "earnings release."
 _SCHEDULING_KEYWORDS: tuple[str, ...] = (
     "to report", "to announce", "will report", "will announce",
     "schedules conference call", "conference call to review", "results on",
+    "webcast schedule", "earnings release and webcast schedule",
+    "earnings release & webcast schedule",
 )
 
 # Real IR usage never applies "reports"/"reported {Nth} quarter" to a
@@ -394,9 +432,14 @@ def _classify_core(
     if capital_return_quantified_hit and numeric_hit:
         reasons.append(f"quantified_capital_return:{capital_return_quantified_hit[0]}")
 
+    # Gate C uses the deploy-family-excluded anchor pool — see
+    # _TAXONOMY_PAIRING_ANCHOR_KEYWORDS' own comment. A deploy-family
+    # anchor still reaches High Signal here indirectly whenever it also
+    # satisfies Gate B above (a real number is present).
+    taxonomy_pairing_anchor_hits = _contains_any(text, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS)
     taxonomy_hits = _matched_taxonomy_buckets(text)
-    if taxonomy_hits and anchor_hits and not survey_content:
-        reasons.append(f"taxonomy_anchored_consequence:{taxonomy_hits[0]}:{anchor_hits[0]}")
+    if taxonomy_hits and taxonomy_pairing_anchor_hits and not survey_content:
+        reasons.append(f"taxonomy_anchored_consequence:{taxonomy_hits[0]}:{taxonomy_pairing_anchor_hits[0]}")
 
     if is_independent_news:
         reporting_hit = _contains_any(text, _REPORTING_VERB_KEYWORDS)

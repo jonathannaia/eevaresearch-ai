@@ -479,3 +479,115 @@ def test_none_title_with_a_real_excerpt_does_not_crash():
 def test_real_title_with_none_excerpt_does_not_crash():
     tier, reasons = classify_issuer_story("NVIDIA Reports Second Quarter 2026 Financial Results", None, SourceClass.OFFICIAL_COMPANY)
     assert tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# ============================================================
+# "Close remaining Signals calibration edge cases" — second calibration pass
+# ============================================================
+
+
+# --- Deployment qualification: bare deploy-language must not independently
+# satisfy Gate C's taxonomy pairing; a real quantity still qualifies via
+# Gate B regardless. ---
+
+
+def test_amd_anthropic_gigawatt_deployment_remains_high_signal_via_quantified_gate():
+    tier, reasons = classify_editorial_story(
+        "AMD and Anthropic Announce Strategic Partnership to Deploy Up to 2 Gigawatts of AMD Instinct MI450 Series GPUs",
+        None,
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons == ("quantified_change:deploy",)
+
+
+def test_bloom_energy_oracle_gigawatt_deployment_remains_high_signal_via_quantified_gate():
+    tier, reasons = classify_issuer_story(
+        "Bloom Energy and Oracle Expand Strategic Partnership to Deploy up to 2.8 GW to Accelerate AI Infrastructure Build-Out",
+        None,
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons == ("quantified_change:deploy",)
+
+
+def test_cisco_generic_ease_of_deployment_copy_is_watchlist_not_high_signal():
+    """The negative fixture: real product-positioning copy — "Makes AI
+    Easier to Deploy and Secure" / "gives customers a framework for
+    deploying AI infrastructure" — pairs an incidental taxonomy match
+    ("data center") with a deploy-family anchor and nothing else. No
+    number anywhere in the text, so Gate B never fires either."""
+    tier, reasons = classify_issuer_story(
+        "Cisco Secure AI Factory with NVIDIA Makes AI Easier to Deploy and Secure, Anywhere Organizations Need It",
+        "Expanded Cisco Secure AI Factory with NVIDIA gives customers a framework for deploying AI infrastructure "
+        "– from central data center to local sites.",
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.WATCHLIST
+    assert reasons == ("on_taxonomy_no_anchor:ai_compute_and_data_center",)
+
+
+def test_deploy_family_alone_never_satisfies_gate_c_without_a_number():
+    """Generalized negative fixture, independent of the Cisco headline
+    specifically: any on-taxonomy story whose only anchor is a deploy-
+    family word, with zero numeric magnitude anywhere, must land in
+    Watchlist, never High Signal."""
+    tier, reasons = classify_issuer_story(
+        "Company Says New AI Data Center Design Makes Deployment Simpler for Customers",
+        None,
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.WATCHLIST
+    assert reasons == ("on_taxonomy_no_anchor:ai_compute_and_data_center",)
+
+
+def test_deploy_family_with_a_named_partner_and_a_real_number_still_qualifies_via_gate_b():
+    """A named customer/partner commitment that is ALSO quantified still
+    qualifies — this is exactly the AMD/Anthropic and Bloom/Oracle
+    shape; this fixture isolates that the partner name itself is not
+    what's doing the work, the number is."""
+    tier, reasons = classify_issuer_story(
+        "Acme Corp and Contoso Announce Partnership to Deploy 500 Megawatts of New Sites",
+        None,
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons == ("quantified_change:deploy",)
+
+
+# --- Scheduling: webcast-schedule notices ---
+
+
+def test_quanta_earnings_release_and_webcast_schedule_notice_is_watchlist():
+    tier, reasons = classify_issuer_story(
+        "Quanta Services Announces Second Quarter 2026 Earnings Release & Webcast Schedule",
+        None,
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.WATCHLIST
+    assert reasons == ("scheduling_notice_not_yet_substantive:earnings release",)
+
+
+def test_webcast_schedule_phrase_variants_are_all_recognized_as_scheduling():
+    for phrase in ("webcast schedule", "earnings release and webcast schedule", "earnings release & webcast schedule"):
+        tier, reasons = classify_issuer_story(
+            f"Company Announces First Quarter 2026 Financial Results {phrase.title()}",
+            None,
+            SourceClass.OFFICIAL_COMPANY,
+        )
+        assert tier == NewsMaterialityTier.WATCHLIST, (phrase, tier, reasons)
+        assert reasons == ("scheduling_notice_not_yet_substantive:financial results",), (phrase, reasons)
+
+
+def test_actual_earnings_release_with_reported_figures_remains_high_signal_after_webcast_fix():
+    """Confirms the webcast-schedule addition doesn't collaterally
+    disqualify a real earnings release that happens to also be
+    livestreamed — the unambiguous "reports {Nth} quarter" override
+    still applies."""
+    tier, reasons = classify_issuer_story(
+        "Acme Corp Reports Second Quarter 2026 Results; Webcast Replay Available",
+        None,
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("formal_earnings_materials:") for r in reasons)
