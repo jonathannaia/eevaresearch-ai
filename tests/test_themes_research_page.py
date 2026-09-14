@@ -256,6 +256,49 @@ def test_published_detail_id_renders(monkeypatch):
 
 
 # ============================================================
+# "What Eeva tested" — optional section
+# ============================================================
+
+
+def test_what_eeva_tested_renders_when_present(monkeypatch):
+    theme = _theme(what_eeva_tested="Eeva tested whether buybacks displace capex; it found they do not.")
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "What Eeva tested" in all_html
+    assert "Eeva tested whether buybacks displace capex; it found they do not." in all_html
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_what_eeva_tested_section_absent_when_empty(monkeypatch, value):
+    theme = _theme(what_eeva_tested=value)
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "What Eeva tested" not in all_html
+
+
+def test_what_eeva_tested_defaults_to_absent_for_themes_authored_before_this_field(monkeypatch):
+    # A Theme constructed exactly as every existing test in this file
+    # already does, with no what_eeva_tested override at all — this is
+    # the "existing Theme without it" backward-compatibility case.
+    theme = _theme()
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "What Eeva tested" not in all_html
+
+
+def test_what_eeva_tested_is_escaped(monkeypatch):
+    theme = _theme(what_eeva_tested="<script>alert('xss')</script>")
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "<script>" not in all_html
+    assert "&lt;script&gt;" in all_html
+
+
+# ============================================================
 # Category/status label exactness
 # ============================================================
 

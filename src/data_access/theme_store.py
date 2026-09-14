@@ -95,6 +95,9 @@ def _theme_from_dict(data: dict) -> ResearchTheme:
         what_to_watch_next=data["what_to_watch_next"],
         created_at=data["created_at"],
         updated_at=data["updated_at"],
+        # .get(), not [...]: a theme persisted before this field existed
+        # has no such key at all — treated as None, never a KeyError.
+        what_eeva_tested=data.get("what_eeva_tested"),
     )
 
 

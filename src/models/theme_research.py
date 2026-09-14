@@ -79,7 +79,16 @@ class ResearchTheme:
     Deliberately low-volume and manually authored — see
     scripts/create_theme.py, the only intended write path — never
     produced by an automatic pipeline, an LLM, or a Research Case
-    publish step."""
+    publish step.
+
+    `what_eeva_tested` is optional (default None) and deliberately the
+    only optional field here: a short account of the original
+    hypothesis Eeva set out to test and what primary-source review
+    found, distinct from `working_thesis` (the current, possibly
+    revised, public claim). Optional so every Theme authored before
+    this field existed keeps rendering exactly as before — the public
+    UI renders this section only when the value is present (see
+    src/ui/pages/themes_research.py)."""
 
     id: str
     category: ThemeCategory
@@ -94,6 +103,7 @@ class ResearchTheme:
     what_to_watch_next: str
     created_at: str
     updated_at: str
+    what_eeva_tested: str | None = None
 
 
 @dataclass(frozen=True)

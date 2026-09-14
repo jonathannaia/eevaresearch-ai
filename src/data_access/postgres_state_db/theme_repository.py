@@ -48,6 +48,7 @@ def _row_to_theme(row) -> ResearchTheme:
         what_to_watch_next=row["what_to_watch_next"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        what_eeva_tested=row["what_eeva_tested"],
     )
 
 
@@ -88,13 +89,14 @@ def insert_theme(conn: psycopg.Connection, theme: ResearchTheme) -> bool:
             INSERT INTO research_themes (
                 id, category, status, visibility, title, key_question, hypothesis,
                 working_thesis, why_it_matters, what_could_change_the_view, what_to_watch_next,
-                created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                created_at, updated_at, what_eeva_tested
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 theme.id, theme.category.value, theme.status.value, theme.visibility.value, theme.title,
                 theme.key_question, theme.hypothesis, theme.working_thesis, theme.why_it_matters,
                 theme.what_could_change_the_view, theme.what_to_watch_next, theme.created_at, theme.updated_at,
+                theme.what_eeva_tested,
             ),
         )
     except psycopg.errors.UniqueViolation:
