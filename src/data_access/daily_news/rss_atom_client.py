@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 import requests
@@ -61,11 +61,41 @@ class FeedFetchResult:
     http_status: int | None = None  # the response's real HTTP status code, success or failure, when known
 
 
+_FUTURE_TOLERANCE = timedelta(minutes=5)  # allows ordinary clock skew, catches a genuine mislabeling
+
+
 def _parse_published_at(entry: dict) -> str:
+    """Timezone-aware UTC, always. feedparser's own published_parsed/
+    updated_parsed is a UTC-normalized struct_time when the source's raw
+    date string carried a real, recognizable offset (RFC822 numeric/zone-
+    name, RFC3339 'Z', etc.) — tagging that struct_time UTC is correct.
+    But a source whose raw date string has NO offset at all (confirmed
+    live for TheElec's own <pubDate>2026-09-14 07:26:41</pubDate> — no
+    'Z', no numeric offset, not even a zone name) is echoed back by
+    feedparser completely unshifted, as literal wall-clock digits; that
+    is Korea local time here, not UTC, and blindly tagging it UTC makes
+    a same-day KST-morning story display as tomorrow to an EDT reader —
+    exactly the symptom this guards against.
+
+    Never guesses the source's real offset (that would require a
+    per-feed timezone table this module has no way to know) — instead,
+    the one fact always true regardless of the source's own timezone
+    convention is that a genuine publication can never be timestamped
+    later than the moment this process is parsing it. A result more than
+    _FUTURE_TOLERANCE past "now" is therefore never trustworthy — never
+    displayed, never persisted — and falls back to "now" itself: always
+    real, always safe, never in the future, matching this function's own
+    existing "never a fabricated value" discipline (an unparseable date
+    already falls back to "" rather than a guess; this is the same
+    posture applied to a parseable-but-impossible one)."""
     struct = entry.get("published_parsed") or entry.get("updated_parsed")
     if struct is None:
         return ""
-    return datetime(*struct[:6], tzinfo=timezone.utc).isoformat()
+    parsed = datetime(*struct[:6], tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if parsed > now + _FUTURE_TOLERANCE:
+        return now.isoformat()
+    return parsed.isoformat()
 
 
 def _plain_text_length(html_text: str) -> int:

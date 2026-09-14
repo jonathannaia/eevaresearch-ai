@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,9 +26,19 @@ from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
 from src.data_access.translation.translation_service import TranslationAttempt
-from src.models.models import FilingEvent, Translation
+from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, Translation
 
 DASHBOARD_HARNESS = Path(__file__).parent / "apptest_pages" / "dashboard_page.py"
+
+# Beta-blocker fix (design/DECISIONS.md): recently_updated.py now reads
+# real CandidateSignals, never a raw FilingEvent — these fixtures must
+# seed both the filing-events scan cache (still read by other dashboard
+# modules, e.g. Regional Brief) and the separate, dedicated candidate
+# store file _load_filing_rows() now actually reads from.
+_CANDIDATE_FILENAME_BY_FILING_FILENAME = {
+    "dart_filing_events.json": "dart_candidates.json",
+    "edgar_filing_events.json": "edgar_candidates.json",
+}
 
 
 def _settings(tmp_path) -> Settings:
@@ -38,6 +49,14 @@ def _seed_filing_event(cache_dir, filing: FilingEvent, filename: str) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {"seen_receipt_numbers": [filing.rcept_no], "filing_events": [asdict(filing)], "candidate_signals": []}
     (cache_dir / filename).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    candidate = CandidateSignal(
+        id=f"cand-{filing.rcept_no}", filing=filing, matched_rules=["test_rule"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW,
+    )
+    candidate_filename = _CANDIDATE_FILENAME_BY_FILING_FILENAME[filename]
+    candidate_payload = {candidate.id: asdict(candidate)}
+    (cache_dir / candidate_filename).write_text(json.dumps(candidate_payload, ensure_ascii=False), encoding="utf-8")
 
 
 def _dart_filing(rcept_no: str = "20260901000001") -> FilingEvent:
@@ -212,7 +231,7 @@ def test_translation_control_renders_inside_the_same_per_row_container_as_its_ro
 
     _seed_filing_event(tmp_path, _dart_filing(), "dart_filing_events.json")
     settings = _settings(tmp_path)
-    rows = recently_updated._load_filing_rows(settings)
+    rows = recently_updated._load_filing_rows(settings, datetime.now(timezone.utc))
     assert len(rows) == 1
     row = rows[0]
 
@@ -271,7 +290,7 @@ def test_row_identity_key_is_derived_from_content_not_list_position(tmp_path):
 
     _seed_filing_event(tmp_path, _dart_filing(rcept_no="20260901000001"), "dart_filing_events.json")
     settings = _settings(tmp_path)
-    rows = recently_updated._load_filing_rows(settings)
+    rows = recently_updated._load_filing_rows(settings, datetime.now(timezone.utc))
     assert len(rows) == 1
     row = rows[0]
 
@@ -288,7 +307,7 @@ def test_row_identity_key_is_derived_from_content_not_list_position(tmp_path):
     # A second, distinct filing gets a distinct key — no collision.
     other_settings_dir = tmp_path / "other"
     _seed_filing_event(other_settings_dir, _dart_filing(rcept_no="20260902000002"), "dart_filing_events.json")
-    other_row = recently_updated._load_filing_rows(_settings(other_settings_dir))[0]
+    other_row = recently_updated._load_filing_rows(_settings(other_settings_dir), datetime.now(timezone.utc))[0]
     assert recently_updated._row_identity_key(other_row) != recently_updated._row_identity_key(row)
 
 
