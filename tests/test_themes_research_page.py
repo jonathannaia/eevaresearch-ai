@@ -256,7 +256,36 @@ def test_published_theme_renders_in_index(monkeypatch):
     assert not at.exception
     all_html = " ".join(m.value for m in at.markdown)
     assert "Test theme" in all_html
-    assert "One sentence hypothesis." in all_html
+    # Modern editorial redesign, user-approved preview: the index card's
+    # summary line is now the working thesis (a richer synthesized
+    # takeaway), not the shorter one-sentence hypothesis — the detail
+    # page still shows both, see test_published_detail_id_renders below.
+    assert "The working thesis." in all_html
+
+
+def test_published_index_card_shows_badges_and_evidence_direction_breakdown(monkeypatch):
+    """Modern editorial redesign, user-approved preview — "richer thesis
+    cards": category/status badges and an evidence-direction breakdown,
+    neither of which existed on the index card before."""
+    theme = _theme(category=ThemeCategory.SECOND_ORDER_EFFECT, status=ThemeStatus.MONITORING)
+    item = _evidence(theme.id, direction=EvidenceDirection.SUPPORTS)
+    repo = _FakeRepo(themes=[theme], evidence_by_theme={theme.id: (item,)})
+    at = _run_with_repo(monkeypatch, repo)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Second-order effect" in all_html
+    assert "Monitoring" in all_html
+    assert "Supports" in all_html
+
+
+def test_published_index_card_has_an_open_link_to_the_right_theme():
+    """Same documented limitation as test_detail_back_link_says_all_
+    research_theses above: get_page("themes") only resolves to a real
+    Page object when run through app.py's real entry point, so the
+    isolated per-page AppTest harness can never actually render this
+    page_link — checked at the source level instead."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
+    assert 'st.page_link(detail_page, label="Open →", query_params={"theme_id": theme.id})' in source
 
 
 @pytest.mark.parametrize("visibility", [ThemeVisibility.INTERNAL, ThemeVisibility.READY_TO_PUBLISH, ThemeVisibility.ARCHIVED])

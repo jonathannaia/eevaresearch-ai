@@ -1,8 +1,10 @@
-"""Visual-theme redesign (design/DECISIONS.md) — light editorial palette.
-This is a full replacement of the token system (not an additive layer),
-so this file's own history is: originally written against the midnight-
-navy pass (commit 6e34c76), now revised in place for the light palette
-that replaces it — same test names/shape, new expected values.
+"""Visual-theme redesign (design/DECISIONS.md) — indigo/editorial-white
+palette. This is a full replacement of the token system (not an additive
+layer), so this file's own history is: originally written against the
+midnight-navy pass (commit 6e34c76), then revised in place for a light
+editorial (slate/navy-accent) palette, and now revised in place again for
+this indigo-accent palette (feat/ui-redesign-live) — same test names/
+shape, new expected values each time.
 
 Pure static-content and contrast-math checks against assets/styles.css,
 .streamlit/config.toml, and the two component files with hardcoded (non
@@ -32,21 +34,21 @@ def _token(name: str) -> str:
 # (--hairline-2 is the one deliberate exception — see its own test below.)
 
 _EXPECTED_TOKENS = {
-    "bg": "#F8FAFC",
-    "rail": "#F1F5F9",
+    "bg": "#FAFAFA",
+    "rail": "#FFFFFF",
     "surface": "#FFFFFF",
-    "surface-2": "#F8FBFF",
+    "surface-2": "#F3F4F6",
     "surface-input": "#FFFFFF",
-    "hairline": "#D9E2EC",
-    "text": "#0F172A",
-    "text-2": "#334155",
-    "text-3": "#64748B",
-    "invert-bg": "#102A43",
+    "hairline": "#E5E7EB",
+    "text": "#111827",
+    "text-2": "#374151",
+    "text-3": "#6B7280",
+    "invert-bg": "#4F46E5",
     "invert-fg": "#FFFFFF",
-    "accent": "#102A43",
-    "accent-hover": "#163E68",
-    "focus": "#2563EB",
-    "link": "#1D4ED8",
+    "accent": "#4F46E5",
+    "accent-hover": "#4338CA",
+    "focus": "#4F46E5",
+    "link": "#4F46E5",
     "pos": "#087F5B",
     "neg": "#B4233C",
     "mix": "#9A6700",
@@ -59,7 +61,7 @@ def test_root_tokens_match_the_specified_light_editorial_palette():
 
 
 def test_glow_token_matches_specified_primary_cta_glow():
-    assert _token("glow") == "rgba(22, 62, 104, .18)"
+    assert _token("glow") == "rgba(79, 70, 229, .18)"
 
 
 def test_functional_border_is_deliberately_darker_than_the_literal_spec_value():
@@ -80,11 +82,14 @@ def test_functional_border_is_deliberately_darker_than_the_literal_spec_value():
 
 _LEGACY_HEXES = [
     # midnight-navy pass (commit 6e34c76) — #F1F5F9 deliberately excluded:
-    # it was that pass's --text value, but is *also* this pass's correct
-    # --rail value (a coincidental hex collision between two unrelated
-    # palettes), so it's expected to still be present, just in a different
-    # role (checked directly by test_root_tokens_match_the_specified_
-    # light_editorial_palette's --rail assertion above).
+    # it was that pass's --text value, but is *also* the light-editorial
+    # pass's --rail value (a coincidental hex collision between two
+    # unrelated palettes), so it's expected to still be present there —
+    # checked directly by test_root_tokens_match_the_specified_light_
+    # editorial_palette's --rail assertion above. It is NOT excluded for
+    # this (indigo) pass, which retired --rail to #FFFFFF, so #F1F5F9 is
+    # now itself a legacy value and is listed below along with the rest
+    # of that light-editorial palette's retired tokens.
     "#07111F", "#0A1628", "#101F35", "#152944", "#1B3352", "#0D1A2D",
     "#243A57", "#5578A0", "#B8C5D6", "#8091A8",
     "#60A5FA", "#93C5FD",
@@ -93,6 +98,9 @@ _LEGACY_HEXES = [
     "#181818", "#212121", "#2A2A2A", "#303030", "#3A3A3A",
     "#ECECEC", "#B4B4B4", "#A8A8A8", "#8A8A8A",
     "#7CAE8C", "#C98A93", "#C7A968",
+    # light-editorial pass (slate/navy-accent) — retired by this indigo pass
+    "#F8FAFC", "#F1F5F9", "#F8FBFF", "#D9E2EC", "#0F172A", "#334155",
+    "#64748B", "#102A43", "#163E68", "#2563EB", "#1D4ED8", "#E2E8F0",
 ]
 
 
@@ -117,17 +125,50 @@ def test_theme_is_light_only_no_dark_mode_media_query():
     assert "prefers-color-scheme" not in _CSS
 
 
-# --- Retained mechanics: pill shape + glow effect + fonts unchanged ---
+# --- Retained/changed mechanics: button radius, glow effect, fonts ---
 
-def test_primary_cta_keeps_pill_shape_and_glow_effect():
-    assert "border-radius: 999px !important;" in _CSS
+def test_primary_cta_uses_the_new_8px_radius_not_a_pill_and_keeps_the_glow():
+    """Modern editorial redesign (user-approved preview): primary/secondary
+    CTA buttons moved from a full pill (999px) to the same 8px radius
+    (--r-sm) used elsewhere in the app, while status tags/chips/badges
+    intentionally kept the pill shape (checked separately below) — this
+    was a deliberate, approved part of the redesign, not a regression."""
+    assert "border-radius: var(--r-sm) !important;" in _CSS
     assert "0 0 22px var(--glow)" in _CSS
+
+
+def test_status_tags_and_chips_still_use_pill_shape():
+    """Unlike buttons (see above), status tags/chips/badges were not part
+    of the button-radius change and should still render as pills."""
+    assert "border-radius: 999px;" in _CSS
 
 
 def test_fonts_are_unchanged():
     assert '--font-ui: "Inter", sans-serif;' in _CSS
     assert '--font-mono: "JetBrains Mono", monospace;' in _CSS
     assert '--font-serif: "Source Serif 4"' in _CSS
+
+
+# --- Keyboard focus: every focusable control gets a visible ring ---
+
+def test_topbar_avatar_popover_gets_a_visible_focus_ring():
+    """stPopoverButton (the top bar's circular avatar trigger) carries
+    only its own testid, never stBaseButton-secondary — unlike every
+    other button in the app, so it was silently missing from the shared
+    focus-visible selector list until this was caught in a keyboard/
+    focus audit and fixed. This pins two things so the gap can't
+    reappear silently: (1) stPopoverButton is part of the same shared
+    --focus outline rule as every other interactive control, and (2) it
+    gets its own circular outline-radius override so the ring matches
+    the button's circular shape instead of the app's default squared
+    outline."""
+    shared_rule_match = re.search(r'\[data-testid="stPageLink"\] a:focus-visible,.*?\{[^}]*outline:\s*2px solid var\(--focus\)', _CSS, re.DOTALL)
+    assert shared_rule_match, "shared focus-visible rule block not found"
+    assert '[data-testid="stPopoverButton"]:focus-visible' in shared_rule_match.group(0)
+
+    circular_override_match = re.search(r'\[data-testid="stPopoverButton"\]:focus-visible\s*\{([^}]*)\}', _CSS)
+    assert circular_override_match, "stPopoverButton circular focus-ring override not found"
+    assert "border-radius: 50%" in circular_override_match.group(1)
 
 
 # --- .streamlit/config.toml native-widget theme matches the new palette ---
@@ -298,15 +339,15 @@ def test_primary_cta_label_meets_aa_contrast_on_default_and_hover_fill():
 
 
 def test_decorative_border_is_documented_as_intentionally_below_aa():
-    """--hairline (#D9E2EC, ~1.2-1.3:1 against every surface) is used only
-    for decorative dividers/footer rules/chart gridlines, never a
+    """--hairline (#E5E7EB, ~1.13-1.24:1 against every surface) is used
+    only for decorative dividers/footer rules/chart gridlines, never a
     functional control boundary (that role is --hairline-2, checked
     above) — WCAG's non-text-contrast rule doesn't apply to purely
     decorative separators, so this is intentionally not held to 3:1. This
     test just pins the value so a future change notices if --hairline
     silently becomes something a control boundary starts depending on."""
     color = _token("hairline")
-    assert color == "#D9E2EC"
+    assert color == "#E5E7EB"
     for bg in _ALL_BACKGROUNDS:
         ratio = _contrast_ratio(color, bg)
         assert ratio < 3.0  # documents the (accepted) shortfall, not a bug

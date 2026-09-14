@@ -258,9 +258,12 @@ def render_sidebar(current_key: str) -> None:
                 st.markdown('<span class="er-rail-word">EevaResearch</span>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        from src.ui.components.command_palette import render_palette_trigger
-
-        render_palette_trigger()
+        # Search (⌘K) moved to the top bar (modern editorial redesign,
+        # user-approved preview) — see _render_topbar() below. Was
+        # rendered here; render_palette_trigger() itself is unchanged,
+        # only the call site moved, and it is called exactly once per
+        # page render either way (never duplicated), so no new risk of
+        # the duplicate-element-key issue a second call site would raise.
 
         # WORKSPACE — the four core visible destinations (navigation-cleanup
         # pass, design/DECISIONS.md). Coverage/Themes/Signals/Research and
@@ -316,18 +319,12 @@ def render_sidebar(current_key: str) -> None:
                 st.markdown('<div class="er-rail-group-label">Admin</div>', unsafe_allow_html=True)
                 st.page_link(admin_users_page, label="Users")
 
-        # Mandatory Google sign-in gate (design/DECISIONS.md) — every
-        # visitor reaching this sidebar is already authenticated (app.py
-        # stops before st.navigation() otherwise), so a sign-out control
-        # belongs here, not only in the denied-access screen. Only the
-        # email claim is shown — never a token, cookie, session id, or any
-        # other identity attribute.
-        _account_email = st.user.get("email") if getattr(st.user, "is_logged_in", False) else None
-        if _account_email:
-            st.markdown('<div class="er-rail-group-label">Account</div>', unsafe_allow_html=True)
-            st.caption(f"Signed in as {_account_email}")
-            st.button("Sign out", on_click=st.logout, key="er-rail-sign-out")
-            st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
+        # Account (email + sign out) moved to the top bar's avatar
+        # dropdown (modern editorial redesign, user-approved preview) —
+        # see _render_topbar() below. Same st.user.is_logged_in/
+        # st.user.get("email")/st.logout calls as before, same "only the
+        # email claim is shown, never a token/cookie/session id" rule —
+        # only the location changed, not the mechanism or the content.
 
         # Reader-facing data-integrity pass (design/DECISIONS.md): the
         # previous blanket "Demo environment · sample data" status was
@@ -383,11 +380,44 @@ def get_page(name: str):
     return st.session_state.get("_pages", {}).get(name)
 
 
+def _render_topbar(nav_key: str) -> None:
+    """Sticky top bar (modern editorial redesign, user-approved preview):
+    search (⌘K, the same render_palette_trigger() the sidebar used to
+    host) on the left, an avatar popover (email + sign out — the same
+    st.user/st.logout calls the sidebar's own former "Account" section
+    used, moved here rather than duplicated) on the right. Real Streamlit
+    widgets laid out via st.columns inside a sticky-styled wrapper div,
+    not a hand-rolled overlay — see assets/styles.css's own
+    .er-topbar-anchor rule for why."""
+    from src.ui.components.command_palette import render_palette_trigger
+
+    email = st.user.get("email") if getattr(st.user, "is_logged_in", False) else None
+    initial = (email or "?")[0].upper()
+
+    st.markdown('<div class="er-topbar-anchor">', unsafe_allow_html=True)
+    cols = st.columns([5, 3, 1], vertical_alignment="center")
+    with cols[0]:
+        render_palette_trigger()
+    with cols[2]:
+        with st.container(key=f"topbar-avatar-{nav_key}"):
+            with st.popover(initial, use_container_width=False):
+                if email:
+                    st.markdown(f'<div class="er-topbar-avatar-email">{email}</div>', unsafe_allow_html=True)
+                    st.button(
+                        "Sign out", on_click=st.logout, key=f"topbar-sign-out-{nav_key}", use_container_width=True,
+                    )
+                    st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
+                else:
+                    st.caption("Not signed in")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = True) -> Callable[[], None]:
     def _wrapped() -> None:
         load_css()
         if show_sidebar:
             render_sidebar(nav_key)
+            _render_topbar(nav_key)
 
         with st.container(key="page-content"):
             page_fn()
