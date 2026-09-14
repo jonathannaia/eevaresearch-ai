@@ -53,26 +53,33 @@ def _load_recent_filings(source: str, settings: Settings) -> list[FilingEvent]:
 
 
 def _render_filing_item(filing: FilingEvent) -> None:
+    """Compact single-row-plus-metadata layout (Dashboard layout-
+    tightening pass, design/DECISIONS.md): title on its own line,
+    company/date/source and "View source document ->" together on one
+    tight second line, the link floated to the right rather than
+    occupying a separate third line as before — same content, same real
+    URL, no new markup element added beyond a flex wrapper."""
     parsed = _parse_rcept_date(filing.rcept_dt)
     date_label = fmt_date(parsed.isoformat()) if parsed else filing.rcept_dt
-    st.markdown(
-        f'<div class="er-row" style="border-bottom:none; padding-bottom:var(--space-1);">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{filing.report_nm}</div>'
-        f'<div class="er-muted" style="font-size:0.78rem;">{filing.corp_name} · {date_label} · {filing.source_name}</div>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
     # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites
     # a raw, key-required EDINET API URL to the public disclosure portal
     # root; every other source's URL passes through unchanged.
     safe_url = public_source_url(filing.source_url)
-    if safe_url:
-        st.markdown(
-            f'<div class="er-muted" style="font-size:0.76rem; margin-top:-0.2rem; margin-bottom:0.3rem;">'
-            f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
-            f'style="color:var(--text-2); text-decoration:underline;">View source document ↗</a></div>',
-            unsafe_allow_html=True,
-        )
+    link_html = (
+        f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
+        f'style="color:var(--text-2); font-size:0.76rem; text-decoration:underline; white-space:nowrap;">'
+        "View source document ↗</a>"
+    ) if safe_url else ""
+    st.markdown(
+        f'<div class="er-row" style="border-bottom:none; padding:0 0 var(--space-2) 0;">'
+        f'<div class="er-card-title" style="font-size:0.88rem;">{filing.report_nm}</div>'
+        f'<div style="display:flex; align-items:baseline; justify-content:space-between; gap:var(--space-2); '
+        f'flex-wrap:wrap; margin-top:0.1rem;">'
+        f'<div class="er-muted" style="font-size:0.78rem;">{filing.corp_name} · {date_label} · {filing.source_name}</div>'
+        f"{link_html}"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_region_tab(region: str, settings: Settings) -> None:
@@ -106,7 +113,13 @@ def _render_china_tab() -> None:
 
 
 def render_regional_brief(settings: Settings) -> None:
-    st.markdown('<div class="er-section-label" style="margin-top:0.6rem;">Regional Brief</div>', unsafe_allow_html=True)
+    # Standardized to the shared .er-section-label top margin (Dashboard
+    # layout-tightening pass, design/DECISIONS.md) — this section
+    # previously carried its own smaller inline override, the one real
+    # inconsistency in Dashboard's inter-section spacing; every other
+    # section header (Recently Updated, Recent Theme Activity, Theme
+    # Health) already uses the bare class.
+    st.markdown('<div class="er-section-label">Regional Brief</div>', unsafe_allow_html=True)
     tabs = st.tabs(["United States", "South Korea", "Japan", "China"])
     with tabs[0]:
         _render_region_tab("United States", settings)

@@ -66,7 +66,7 @@ from src.models.models import FilingEvent
 from src.ui.ui import get_page
 
 WINDOW_DAYS = 14
-MAX_ROWS = 5
+MAX_ROWS = 4
 
 
 def _esc(value: object) -> str:
@@ -172,26 +172,41 @@ def _load_daily_news_items(settings: Settings) -> list[ThemeActivityItem]:
 
 
 def _render_row(row: ThemeActivityRow) -> None:
-    """Renders one theme's row: name, honest count, most-recent item
-    line, and its own conditional "View ->" link to that item's real
-    source_url. No theme-specific Themes-page link here — see
+    """Renders one theme's row as a compact single-row card: theme name +
+    most-recent item line on the left, the honest "N item(s) in the last
+    14 days" count and a small "View ->" affordance stacked on the right
+    (Dashboard layout-tightening pass, design/DECISIONS.md) — replaces
+    the former full-width st.link_button, which rendered as a tall,
+    empty-looking input-style box. "View ->" stays the exact same
+    st.link_button widget (only its width/wrapper changed, de-emphasized
+    via the existing sitewide cta-tertiary treatment in assets/
+    styles.css — same mechanism recently_updated.py's own tertiary links
+    already use) pointing at that item's real source_url — never a
+    fabricated per-theme "theme detail" link: no taxonomy-slug-aware
+    route exists on the Themes page at all (see module docstring's
+    "Corrective pass" note); this row's only honest click target is the
+    real item it names. No theme-specific Themes-page link here — see
     render_recent_theme_activity's own single, generic "Browse all
-    themes ->" link, rendered once for the whole component instead (see
-    module docstring's "Corrective pass" note for why)."""
+    themes ->" link, rendered once for the whole component instead."""
     with st.container(border=True, key=f"card-recent-theme-activity-{row.theme_slug}"):
         item_word = "item" if row.count == 1 else "items"
-        st.markdown(
-            '<div style="display:flex; align-items:baseline; justify-content:space-between; gap:var(--space-2); flex-wrap:wrap;">'
-            f'<div class="er-card-title" style="font-size:0.92rem;">{_esc(row.theme_name)}</div>'
-            f'<div class="er-muted" style="font-size:0.78rem; white-space:nowrap;">{row.count} {item_word} in the last 14 days</div>'
-            "</div>"
-            f'<div class="er-muted" style="font-size:0.82rem; margin-top:0.2rem;">'
-            f"{_esc(row.most_recent.company_name)} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>",
-            unsafe_allow_html=True,
-        )
-        if row.most_recent.source_url:
-            with st.container(key=f"cta-tertiary-rta-view-{row.theme_slug}"):
-                st.link_button("View →", row.most_recent.source_url, width="stretch")
+        left, right = st.columns([3.4, 1.3], vertical_alignment="center")
+        with left:
+            st.markdown(
+                f'<div class="er-card-title" style="font-size:0.92rem;">{_esc(row.theme_name)}</div>'
+                f'<div class="er-muted" style="font-size:0.8rem; margin-top:0.15rem;">'
+                f"{_esc(row.most_recent.company_name)} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>",
+                unsafe_allow_html=True,
+            )
+        with right:
+            st.markdown(
+                f'<div class="er-muted" style="font-size:0.74rem; text-align:right;">'
+                f"{row.count} {item_word} in the last 14 days</div>",
+                unsafe_allow_html=True,
+            )
+            if row.most_recent.source_url:
+                with st.container(key=f"cta-tertiary-rta-view-{row.theme_slug}"):
+                    st.link_button("View →", row.most_recent.source_url)
 
 
 def render_recent_theme_activity(ctx, settings: Settings) -> None:

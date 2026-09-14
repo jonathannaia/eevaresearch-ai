@@ -107,6 +107,12 @@ def _render_theme_health(settings) -> None:
     cols = st.columns(min(len(shown), _MAX_THEME_HEALTH_CARDS) or 1)
     for col, theme in zip(cols, shown):
         with col:
+            # Layout-tightening pass (design/DECISIONS.md): title and
+            # evidence/company counts emphasized, tighter internal
+            # spacing so the card reads closer to a Recent Theme Activity
+            # row's own height (padding reduced via the scoped
+            # card-theme-health- rule in assets/styles.css, not the
+            # shared sitewide card padding). No new metric added.
             with st.container(border=True, key=f"card-theme-health-{theme.id}"):
                 st.markdown(f'<div class="er-metric-label">{_esc(theme.title)}</div>', unsafe_allow_html=True)
                 try:
@@ -115,11 +121,11 @@ def _render_theme_health(settings) -> None:
                     distinct_companies = {item.company for item in evidence} | {entry.company_name for entry in company_map}
                 except Exception:  # noqa: BLE001 — one theme's count lookup failing must not take down the row
                     evidence, distinct_companies = (), set()
-                st.markdown(f'<div class="er-metric-value">{len(evidence)}</div>', unsafe_allow_html=True)
-                st.markdown('<div class="er-metric-label" style="margin-top:var(--space-2);">Evidence items</div>', unsafe_allow_html=True)
                 company_word = "company" if len(distinct_companies) == 1 else "companies"
                 st.markdown(
-                    f'<div class="er-muted" style="margin-top:var(--space-1);">{len(distinct_companies)} {company_word}</div>',
+                    f'<div class="er-metric-value">{len(evidence)}</div>'
+                    f'<div class="er-metric-label" style="margin-top:0.15rem;">Evidence items</div>'
+                    f'<div class="er-muted" style="margin-top:0.1rem;">{len(distinct_companies)} {company_word}</div>',
                     unsafe_allow_html=True,
                 )
                 if themes_page is not None:

@@ -104,7 +104,7 @@ from src.models.models import CandidateStatus, FilingEvent
 from src.ui.components.editorial_coverage import get_visible_editorial_stories
 from src.ui.ui import get_page
 
-PREVIEW_COUNT = 8
+PREVIEW_COUNT = 5
 
 # Beta-blocker fix (design/DECISIONS.md) — "Latest"/Recently Updated must
 # be driven entirely by live, currently-eligible data: real Radar
