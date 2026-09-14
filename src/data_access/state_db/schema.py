@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -831,6 +831,24 @@ _V18_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE research_themes ADD COLUMN what_eeva_tested TEXT",
 )
 
+# Signals materiality classification (design/DECISIONS.md) — two wholly
+# additive, nullable columns on the existing daily_news_stories table.
+# No backfill: every row from before this migration gets NULL for
+# materiality_tier (src.data_access.daily_news.daily_news_store's own
+# JSON store already established this exact "None means not yet
+# classified, never backfilled" contract for the same field — see
+# NewsMaterialityTier's own docstring) and NULL for materiality_reasons
+# (read back as an empty tuple, same convention as matched_companies_json/
+# matched_themes_json elsewhere in this codebase). No index: neither
+# column is filtered or sorted on at the database layer — tier-based
+# feed sectioning happens in Python at render time, over an already-
+# loaded story list, matching how every other Daily News display rule
+# (freshness, per-source cap) already works.
+_V19_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE daily_news_stories ADD COLUMN materiality_tier TEXT",
+    "ALTER TABLE daily_news_stories ADD COLUMN materiality_reasons TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -854,6 +872,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (16, _V16_STATEMENTS),
     (17, _V17_STATEMENTS),
     (18, _V18_STATEMENTS),
+    (19, _V19_STATEMENTS),
 )
 
 

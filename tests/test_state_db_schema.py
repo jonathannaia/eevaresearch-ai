@@ -551,3 +551,55 @@ def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():
 
     count = conn.execute("SELECT COUNT(*) AS n FROM filing_events WHERE corp_code = '0000000002'").fetchone()["n"]
     assert count == 0  # rolled back, not partially applied
+
+
+# --- Signals materiality classification (design/DECISIONS.md): static
+# migration assertions, no database connection required. ---
+
+
+def test_v19_is_registered_immediately_after_v18_and_is_current():
+    assert schema.CURRENT_SCHEMA_VERSION == 19
+    versions = [v for v, _ in schema._MIGRATIONS]
+    assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
+    assert versions[-2:] == [18, 19]
+    assert dict(schema._MIGRATIONS)[19] is schema._V19_STATEMENTS
+
+
+def test_v19_statements_are_additive_only_two_nullable_columns_on_daily_news_stories():
+    assert schema._V19_STATEMENTS == (
+        "ALTER TABLE daily_news_stories ADD COLUMN materiality_tier TEXT",
+        "ALTER TABLE daily_news_stories ADD COLUMN materiality_reasons TEXT",
+    )
+    for statement in schema._V19_STATEMENTS:
+        assert statement.strip().upper().startswith("ALTER TABLE DAILY_NEWS_STORIES ADD COLUMN")
+        assert "DROP" not in statement.upper()
+        assert "NOT NULL" not in statement.upper()  # nullable — no default value forced onto existing rows
+
+
+def test_v19_migration_is_idempotent_when_applied_twice_to_the_same_connection():
+    conn = connection.connect_in_memory()
+    first = schema.migrate(conn)
+    second = schema.migrate(conn)
+    assert first == second == 19
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(daily_news_stories)").fetchall()]
+    assert columns.count("materiality_tier") == 1
+    assert columns.count("materiality_reasons") == 1
+
+
+def test_v19_columns_are_nullable_and_untouched_existing_rows_read_back_as_null():
+    """A row inserted with the pre-V19 column set only (materiality_tier/
+    materiality_reasons never mentioned) must not error and must read
+    back NULL for both new columns — the migration never forces a
+    default value onto rows that predate it."""
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s-static-check', 'NVIDIA', 'H', 'Published', 'now', 'now')"
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT materiality_tier, materiality_reasons FROM daily_news_stories WHERE id = 's-static-check'"
+    ).fetchone()
+    assert row["materiality_tier"] is None
+    assert row["materiality_reasons"] is None

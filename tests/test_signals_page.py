@@ -350,7 +350,7 @@ def test_signals_page_shows_truthful_empty_state_when_no_eligible_candidates(tmp
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No eligible signals yet" in all_text
+    assert "No eligible Radar Signals yet" in all_text
     assert ":gray-badge[Sample]" not in all_text
     # The old fabricated empty-state copy must be gone.
     assert "TDnet" not in all_text
@@ -368,7 +368,7 @@ def test_signals_page_empty_state_when_no_cache_files_exist(tmp_path):
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No eligible signals yet" in all_text
+    assert "No eligible Radar Signals yet" in all_text
     assert ":gray-badge[Sample]" not in all_text
 
 
@@ -456,7 +456,7 @@ def test_signals_page_hosted_failure_shows_static_state_no_leak_no_fallback():
     # Structural proof of no fallback: the default JSON-path's own
     # truthful-empty-state copy and its filter widgets never render at
     # all, since the injected branch returns before reaching them.
-    assert "No eligible signals yet" not in all_text
+    assert "No eligible Radar Signals yet" not in all_text
     assert len(at.multiselect) == 0
 
 
@@ -467,7 +467,7 @@ def test_signals_page_hosted_empty_result_distinct_from_hosted_unavailable():
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "No eligible signals yet" in all_text
+    assert "No eligible Radar Signals yet" in all_text
     assert "Hosted signals are temporarily unavailable." not in all_text
 
 
@@ -485,5 +485,5 @@ def test_signals_page_hosted_filter_empty_distinct_from_hosted_unavailable_and_e
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
     assert "No signals match the current filters." in all_text
-    assert "No eligible signals yet" not in all_text
+    assert "No eligible Radar Signals yet" not in all_text
     assert "Hosted signals are temporarily unavailable." not in all_text

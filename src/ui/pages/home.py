@@ -8,7 +8,7 @@ capital-rotation nor market-pricing data exists anywhere in this build —
 see dashboard.py's own docstring) with a precise description of Eeva's
 actual, currently-shipped capabilities: cross-market primary sources
 (SEC EDGAR / DART / EDINET), company research, Themes, supply-chain
-research (company roles within a theme's value chain), Daily News, and
+research (company roles within a theme's value chain), Signals, and
 original-source links. "What this tool won't do" keeps pointing directly
 at Disclaimer, unchanged from before.
 
@@ -35,7 +35,7 @@ _CAPABILITIES = [
     ("Company research", "Tracked issuers across AI infrastructure, industrial automation, space, defense, and supply-chain themes."),
     ("Research Theses", "Evidence-first research narratives connecting official-source evidence across companies."),
     ("Supply-chain research", "Each company's role in a theme's value chain, from constraint owner to demand driver."),
-    ("Daily News", "Official company releases, as published, from investor-relations and newsroom sources."),
+    ("Signals", "Material disclosures and developments, as published, from official and editorial sources."),
     ("Original-source links", "Every fact links back to the real filing, release, or document it came from."),
 ]
 

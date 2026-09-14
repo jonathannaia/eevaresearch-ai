@@ -1,5 +1,5 @@
 """Reader-facing data-integrity pass (design/DECISIONS.md) — fixture-
-driven tests for Dashboard's Theme Health and Priority Signals modules:
+driven tests for Dashboard's Theme Health and Radar Signals modules:
 each must render nothing at all (no header, no placeholder, no link)
 when no real data qualifies, and must render only real, source-backed
 content — with full provenance (company, jurisdiction, source, date,
@@ -224,7 +224,7 @@ def test_theme_health_never_reads_internal_or_unpublished_themes(tmp_path, monke
 
 
 # ============================================================
-# Priority Signals — absent with zero real signals, present with real
+# Radar Signals — absent with zero real signals, present with real
 # provenance when one exists
 # ============================================================
 
@@ -236,7 +236,7 @@ def test_priority_signals_absent_with_zero_real_signals(tmp_path, monkeypatch):
     at.run()
     assert not at.exception
     all_text = _main_text(at)
-    assert "Priority Signals" not in all_text
+    assert "Radar Signals" not in all_text
     assert "No signals loaded" not in all_text
 
 
@@ -249,7 +249,7 @@ def test_priority_signals_shows_full_provenance_for_a_real_signal(tmp_path, monk
     at.run()
     assert not at.exception
     all_text = _main_text(at)
-    assert "Priority Signals" in all_text
+    assert "Radar Signals" in all_text
     assert "Apple Inc." in all_text  # company
     assert "SEC EDGAR" in all_text  # source
     assert "United States" in all_text  # jurisdiction
@@ -282,7 +282,7 @@ def test_priority_signals_edinet_source_link_never_points_at_the_raw_api_host(tm
     at.run()
     assert not at.exception
     all_text = _main_text(at)
-    assert "Priority Signals" in all_text
+    assert "Radar Signals" in all_text
     assert "api.edinet-fsa.go.jp" not in all_text
     assert "https://disclosure2.edinet-fsa.go.jp/" in all_text
 
@@ -295,7 +295,7 @@ def test_priority_signals_has_no_demo_or_sample_wording(tmp_path, monkeypatch):
     at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
     at.run()
     all_text = _main_text(at)
-    priority_start = all_text.index("Priority Signals")
+    priority_start = all_text.index("Radar Signals")
     priority_chunk = all_text[priority_start : priority_start + 2000]
     for word in _MOCK_WORDS:
         assert word not in priority_chunk.lower()

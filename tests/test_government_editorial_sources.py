@@ -79,12 +79,19 @@ def test_on_topic_real_sample_style_item_matches():
 
 def test_editorial_story_has_no_new_persisted_field():
     # Government / Public Sector Daily News lane (design/DECISIONS.md)
-    # deliberately adds zero fields to this dataclass — the badge label
+    # deliberately added zero fields to this dataclass — the badge label
     # is derived at render time from the already-existing
-    # source_feed_id (see src/ui/components/editorial_coverage.py).
-    # This is the exact, unchanged field set from before this batch.
+    # source_feed_id (see src/ui/components/editorial_coverage.py). This
+    # test's own name/scope is specifically about THAT batch, so it's
+    # still the right regression guard to keep — but a later, separately-
+    # approved batch (Signals materiality classification, design/
+    # DECISIONS.md) did add two new, additive, safe-default fields
+    # (materiality_tier/materiality_reasons — see NewsMaterialityTier's
+    # own docstring), so the exact-field-set assertion below now includes
+    # them explicitly rather than silently going stale.
     field_names = {f.name for f in dataclasses.fields(EditorialStory)}
     assert field_names == {
         "id", "headline", "publisher", "source_url", "published_at", "retrieved_at",
         "excerpt", "matched_companies", "matched_themes", "source_feed_id",
+        "materiality_tier", "materiality_reasons",
     }

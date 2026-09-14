@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import canonical_url, daily_news_store, dedup, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_FEEDS, tracked_company_for
+from src.data_access.daily_news.materiality_classification import classify_issuer_story
 from src.data_access.daily_news.summary_grounding import generate_summary
 from src.models.daily_news_models import (
     NewsSourceReference,
@@ -310,6 +311,17 @@ def run_discovery(
                 first_discovered_at=retrieved_at,
             )
 
+            # Signals materiality classification (design/DECISIONS.md) —
+            # computed once, here, at construction time only; never
+            # reclassifies an already-persisted story (see
+            # NewsMaterialityTier's own docstring). Classification never
+            # affects admission/inclusion above — every item that already
+            # passed every existing gate is still published exactly as
+            # before; this only adds a display-time tier label.
+            materiality_tier, materiality_reasons = classify_issuer_story(
+                entry.title, entry.summary, SourceClass.OFFICIAL_COMPANY,
+            )
+
             story = NewsStory(
                 id=candidate.story_id, company_name=source.company_name, ticker=company.krx_code,
                 theme_slug=company.themes[0] if company.themes else "",
@@ -318,6 +330,7 @@ def run_discovery(
                 translation_unavailable=summary_result.translation_unavailable,
                 original_title=summary_result.original_title,
                 sources=(source_reference,), status=NewsStoryStatus.DISCOVERED, state_history=[],
+                materiality_tier=materiality_tier, materiality_reasons=materiality_reasons,
             )
             story = _transition(story, NewsStoryStatus.PUBLISHED, "Discovered from official company feed.")
 

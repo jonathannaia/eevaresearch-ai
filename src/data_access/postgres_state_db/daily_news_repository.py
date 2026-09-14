@@ -13,6 +13,7 @@ propagates as a real exception rather than becoming an empty result.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -20,6 +21,7 @@ import psycopg
 
 from src.data_access.postgres_state_db.connection import transaction
 from src.models.daily_news_models import (
+    NewsMaterialityTier,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -64,6 +66,7 @@ def _row_to_story(conn: psycopg.Connection, row) -> NewsStory:
         NewsStateTransition(status=NewsStoryStatus(h["status"]), at=h["at"], detail=h["detail"])
         for h in history_rows
     ]
+    materiality_tier_raw = row["materiality_tier"]
     return NewsStory(
         id=row["id"], company_name=row["company_name"], ticker=row["ticker"],
         theme_slug=row["theme_slug"], headline=row["headline"], eeva_summary=row["eeva_summary"],
@@ -71,6 +74,11 @@ def _row_to_story(conn: psycopg.Connection, row) -> NewsStory:
         translation_unavailable=bool(row["translation_unavailable"]),
         original_title=row["original_title"], sources=sources,
         status=NewsStoryStatus(row["status"]), state_history=state_history,
+        # Materiality classification (design/DECISIONS.md) — same
+        # additive, safe-default contract as state_db/
+        # daily_news_repository.py's own _row_to_story.
+        materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
+        materiality_reasons=tuple(json.loads(row["materiality_reasons"])) if row["materiality_reasons"] else (),
     )
 
 
@@ -110,13 +118,16 @@ def _insert_story(conn: psycopg.Connection, story: NewsStory, now: str) -> None:
         """
         INSERT INTO daily_news_stories (
             id, company_name, ticker, theme_slug, headline, eeva_summary, is_fallback_summary,
-            translation_unavailable, original_title, status, version, created_at, updated_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+            translation_unavailable, original_title, status, version, created_at, updated_at,
+            materiality_tier, materiality_reasons
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, %s, %s)
         """,
         (
             story.id, story.company_name, story.ticker, story.theme_slug, story.headline,
             story.eeva_summary, int(story.is_fallback_summary), int(story.translation_unavailable),
             story.original_title, story.status.value, now, now,
+            story.materiality_tier.value if story.materiality_tier else None,
+            json.dumps(list(story.materiality_reasons)) if story.materiality_reasons else None,
         ),
     )
     for source in story.sources:
@@ -156,13 +167,17 @@ def update_story(conn: psycopg.Connection, story: NewsStory, expected_version: i
             UPDATE daily_news_stories SET
                 company_name = %s, ticker = %s, theme_slug = %s, headline = %s, eeva_summary = %s,
                 is_fallback_summary = %s, translation_unavailable = %s, original_title = %s, status = %s,
+                materiality_tier = %s, materiality_reasons = %s,
                 version = version + 1, updated_at = %s
             WHERE id = %s AND version = %s
             """,
             (
                 story.company_name, story.ticker, story.theme_slug, story.headline, story.eeva_summary,
                 int(story.is_fallback_summary), int(story.translation_unavailable), story.original_title,
-                story.status.value, now, story.id, expected_version,
+                story.status.value,
+                story.materiality_tier.value if story.materiality_tier else None,
+                json.dumps(list(story.materiality_reasons)) if story.materiality_reasons else None,
+                now, story.id, expected_version,
             ),
         )
         if cursor.rowcount == 0:

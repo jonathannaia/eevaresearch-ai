@@ -291,7 +291,7 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
             sort_key=sort_key,
             company_name=story.company_name,
             title=story.headline,
-            source_label="Daily News",
+            source_label="Signals",
             display_date=fmt_datetime_local(source_ref.published_at),
             source_url=source_ref.url or None,
         ))
@@ -325,7 +325,7 @@ def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
             sort_key=sort_key,
             company_name=", ".join(story.matched_companies),
             title=story.headline,
-            source_label="Daily News",
+            source_label="Signals",
             display_date=fmt_datetime_local(story.published_at),
             source_url=story.source_url or None,
         ))
@@ -547,4 +547,4 @@ def render_recently_updated(settings: Settings) -> None:
         daily_news_page = get_page("daily_news")
         if daily_news_page is not None:
             with st.container(key="cta-tertiary-recently-updated-daily-news"):
-                st.page_link(daily_news_page, label="View all Daily News →")
+                st.page_link(daily_news_page, label="View all Signals →")

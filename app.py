@@ -3,11 +3,15 @@
 Run with: streamlit run app.py
 
 Registers Home (first-visit landing, no sidebar), the WORKSPACE routes
-(Dashboard, Radar, Themes, Daily News), the SYSTEM route (Methodology &
+(Dashboard, Radar, Themes, Signals — product-naming separation, design/
+DECISIONS.md: "Signals" is Daily News's own selective, cross-source
+disclosure feed, route key "daily_news"), the SYSTEM route (Methodology &
 Coverage, reusing the Coverage page/route), and routes that stay fully
 reachable but are no longer linked from any visible sidebar group —
-Coverage/Signals/Methodology/About (direct URL, the command palette,
-in-page cross-links) and Disclaimer (Methodology's cross-link and the
+Coverage/Radar Signals/Methodology/About (direct URL, the command
+palette, in-page cross-links; "Radar Signals" is the renamed, unrelated,
+Radar-filing-derived concept, route key "signals" — unchanged from
+before) and Disclaimer (Methodology's cross-link and the
 page footer) — see design/eevaresearch-brief.md §4 for the original
 route table and design/DECISIONS.md for the navigation-cleanup pass that
 reorganized it. Watchlists, Research (canned-demo-answer chat), and

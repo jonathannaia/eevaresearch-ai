@@ -70,7 +70,7 @@ def test_home_page_shows_capability_list():
     all_text = " ".join(m.value for m in at.markdown)
     assert "What Eeva does today" in all_text
     assert "Cross-market primary sources" in all_text
-    assert "Daily News" in all_text
+    assert "Signals" in all_text
     assert "Step 1" not in all_text
 
 

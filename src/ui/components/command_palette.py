@@ -71,7 +71,11 @@ def _index(ctx) -> list[dict]:
     for th in ctx.theme_repository.get_all_themes():
         items.append({"group": "Themes", "label": th.name, "sub": f"{len(th.subthemes)} subcategories", "go": "themes"})
     for s in ctx.signal_repository.get_all_signals():
-        items.append({"group": "Signals", "label": s.title, "sub": s.theme_slug, "go": "signals"})
+        # Product-naming separation (design/DECISIONS.md): "Signals" is
+        # now the Daily News rework's own group; these are Radar-derived
+        # filing signals, still routed to the unchanged "signals" page/
+        # route key — only the group label moved.
+        items.append({"group": "Radar Signals", "label": s.title, "sub": s.theme_slug, "go": "signals"})
     items.append({"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"})
     return items
 

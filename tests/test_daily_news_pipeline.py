@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from src.data_access.daily_news import daily_news_pipeline, daily_news_store, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource
 from src.data_access.daily_news.rss_atom_client import FeedFetchResult, RawFeedEntry
-from src.models.daily_news_models import NewsStoryStatus
+from src.models.daily_news_models import NewsMaterialityTier, NewsStoryStatus
 
 _NVDA_SOURCE = DailyNewsFeedSource(
     company_name="NVIDIA", feed_url="https://nvidianews.nvidia.com/releases.xml",
@@ -1059,3 +1059,49 @@ def test_hpe_off_domain_entry_is_suppressed(tmp_path, monkeypatch):
     assert report.stories_published == 0
     assert report.items_suppressed_no_url == 1
     assert daily_news_store.load_stories(tmp_path) == {}
+
+
+# --- Signals materiality classification (design/DECISIONS.md) ---
+
+
+def test_published_story_is_classified_at_construction_time(tmp_path, monkeypatch):
+    """A generic product-announcement-shaped headline with no quantified
+    figure classifies as Watchlist — proves classify_issuer_story() is
+    actually wired into run_discovery(), not just present and untested."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces New AI Accelerator for Edge Computing",
+                "https://nvidianews.nvidia.com/news/new-ai-accelerator",
+                summary="NVIDIA today unveiled its newest AI accelerator platform.",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.materiality_tier == NewsMaterialityTier.WATCHLIST
+    assert story.materiality_reasons == ("on_taxonomy_no_anchor:ai_compute_and_data_center",)
+
+
+def test_classification_never_changes_which_items_are_admitted(tmp_path, monkeypatch):
+    """A zero-gate, off-taxonomy headline still publishes (classification
+    only adds a tier label — it never becomes a new admission gate)."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Sponsors Local Youth Robotics Club Fundraiser",
+                "https://nvidianews.nvidia.com/news/fundraiser",
+                summary="A community sponsorship announcement.",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.materiality_tier == NewsMaterialityTier.BACKGROUND

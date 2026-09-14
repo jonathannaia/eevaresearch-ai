@@ -141,7 +141,12 @@ def _render_priority_signals(ctx) -> None:
         return
 
     st.markdown('<div id="priority-signals"></div>', unsafe_allow_html=True)
-    section_header("Priority Signals", "Highest-conviction real signals by direction, strength, and evidence.")
+    # Product-naming separation (design/DECISIONS.md): "Priority Signals"
+    # renamed to "Radar Signals" once the Daily News rework claimed the
+    # bare "Signals" label for its own, unrelated feed — this section's
+    # own data source (signal_repository, real Radar-promoted signals)
+    # and anchor id are unchanged, only the visible header text moved.
+    section_header("Radar Signals", "Highest-conviction real signals by direction, strength, and evidence.")
 
     prev_last_seen = st.session_state.get(LAST_SEEN_KEY)
     read_ids = st.session_state.setdefault(READ_IDS_KEY, set())

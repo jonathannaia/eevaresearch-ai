@@ -425,3 +425,30 @@ def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connecti
     postgres_schema.migrate(pg_isolated_connection)
     row = pg_isolated_connection.execute("SELECT COUNT(*) AS n FROM candidates").fetchone()
     assert row["n"] == 0
+
+
+# --- Signals materiality classification (design/DECISIONS.md): static
+# migration assertions, no database connection required. ---
+
+
+def test_v20_is_registered_immediately_after_v19_and_is_current():
+    assert postgres_schema.CURRENT_SCHEMA_VERSION == 20
+    versions = [v for v, _ in postgres_schema._MIGRATIONS]
+    assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
+    assert versions[-2:] == [19, 20]
+    assert dict(postgres_schema._MIGRATIONS)[20] is postgres_schema._V20_STATEMENTS
+
+
+def test_v20_statements_are_additive_only_four_nullable_columns():
+    assert postgres_schema._V20_STATEMENTS == (
+        "ALTER TABLE daily_news_stories ADD COLUMN materiality_tier TEXT",
+        "ALTER TABLE daily_news_stories ADD COLUMN materiality_reasons TEXT",
+        "ALTER TABLE editorial_stories ADD COLUMN materiality_tier TEXT",
+        "ALTER TABLE editorial_stories ADD COLUMN materiality_reasons TEXT",
+    )
+    for statement in postgres_schema._V20_STATEMENTS:
+        assert statement.strip().upper().startswith("ALTER TABLE")
+        assert " ADD COLUMN " in statement.upper()
+        assert "DROP" not in statement.upper()
+        assert "NOT NULL" not in statement.upper()  # nullable — no default value forced onto existing rows
+        assert statement.split()[2] in ("daily_news_stories", "editorial_stories")

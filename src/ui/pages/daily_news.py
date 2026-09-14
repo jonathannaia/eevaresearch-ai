@@ -1,6 +1,11 @@
-"""Daily News — an independent, autonomous discovery surface, entirely
-separate from Radar Inbox (see design/DECISIONS.md for the product
-clarification this follows). Reads NewsStory records via
+"""Signals (renamed from "Daily News", product-naming separation, design/
+DECISIONS.md — user-facing label only; internal route key/url_path stay
+"daily_news"/"daily-news") — an independent, autonomous discovery
+surface, entirely separate from Radar Inbox (see design/DECISIONS.md for
+the product clarification this follows). Not to be confused with "Radar
+Signals" (src/ui/pages/signals.py), the renamed, unrelated, Radar-
+filing-derived concept this page's name previously collided with. Reads
+NewsStory records via
 src.data_access.daily_news.daily_news_backend.get_daily_news_repository()
 (JSON by default, unless EDGE_DB_BACKEND selects sqlite/postgres — see
 the Daily News durability workstream) and EditorialStory records via
@@ -105,7 +110,7 @@ from src.config.settings import Settings, get_settings
 from src.data_access.daily_news import daily_news_backend
 from src.data_access.daily_news.company_aliases import daily_news_company_names
 from src.logic.formatting import fmt_datetime_local
-from src.models.daily_news_models import EditorialStory, NewsStory, NewsStoryStatus, SourceClass
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui.components.editorial_coverage import (
     get_editorial_stories_for_company,
     get_visible_editorial_stories,
@@ -126,8 +131,38 @@ _SOURCE_CLASS_LABELS: dict[SourceClass, str] = {
     SourceClass.PRESS_RELEASE_WIRE: "Press-release wire",
     SourceClass.INDEPENDENT_JOURNALISM: "Independent journalism",
 }
-_OFFICIAL_SUBTITLE = "Company updates from official sources."
-_MIXED_SUBTITLE = "Tracked-company and thematic coverage from official and editorial sources."
+# Product-naming separation (design/DECISIONS.md): "Daily News" renamed
+# to "Signals" — the exact, approved subtitle replaces the former two
+# source-mix-dependent variants (_OFFICIAL_SUBTITLE/_MIXED_SUBTITLE),
+# since the approved copy is one fixed sentence regardless of source
+# mix; the per-card source-type label already carries that distinction.
+_SUBTITLE = "Material disclosures and developments across AI infrastructure and global technology supply chains."
+
+# Signals materiality classification (design/DECISIONS.md) — tier-based
+# presentation. Reuses the existing er-status-tag/er-tag-* badge system
+# (Research Theses' evidence-direction chips already established
+# pos/neg/mix as green/rose/amber) — no new CSS, no new design language.
+_TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
+    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-pos",
+    NewsMaterialityTier.WATCHLIST: "er-tag-mix",
+    NewsMaterialityTier.BACKGROUND: "er-tag-neutral",
+}
+_NO_HIGH_SIGNAL_EMPTY_STATE = "No material signals right now. Eeva is monitoring new disclosures and developments."
+
+
+def _effective_tier(item: NewsStory | EditorialStory) -> NewsMaterialityTier:
+    """None (materiality_tier's own default — see NewsMaterialityTier's
+    docstring) means "persisted before this field existed, never
+    reclassified" — a display-only, never-persisted safe default of
+    Watchlist: shown, not silently hidden like Background, but never
+    overclaimed as confidently material like High Signal either. The
+    stored record itself is never written back to or modified here."""
+    return item.materiality_tier or NewsMaterialityTier.WATCHLIST
+
+
+def _tier_badge_html(tier: NewsMaterialityTier) -> str:
+    css_class = _TIER_BADGE_CLASS.get(tier, "er-tag-neutral")
+    return f'<span class="er-status-tag {css_class}">{tier.value}</span>'
 
 
 def _published_stories(settings: Settings) -> list[NewsStory]:
@@ -203,7 +238,7 @@ def _recent_stories(stories: list[NewsStory], now: datetime | None = None) -> li
     return [s for s in stories if _is_recent(s, now)]
 
 
-def _render_card(story: NewsStory, is_historical: bool = False) -> None:
+def _render_card(story: NewsStory, is_historical: bool = False, tier: NewsMaterialityTier | None = None) -> None:
     # Text-only layout for every card, regardless of whether a validated
     # image_url/image_alt exists on the story — optional source-image
     # rendering is disabled for now (UI decision; the underlying
@@ -220,7 +255,8 @@ def _render_card(story: NewsStory, is_historical: bool = False) -> None:
     source_type_label = _SOURCE_CLASS_LABELS.get(source.source_class, source.source_class.value)
 
     with st.container(border=True, key=f"card-issuer-{story.id}"):
-        st.markdown('<span class="er-status-tag er-tag-neutral">Company news</span>', unsafe_allow_html=True)
+        tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
+        st.markdown(f'<span class="er-status-tag er-tag-neutral">Company news</span>{tier_badge}', unsafe_allow_html=True)
         if is_historical:
             # System-wide company-matched-news fix (design/DECISIONS.md),
             # requirement 6: an older official card shown via the
@@ -254,25 +290,9 @@ def _render_card(story: NewsStory, is_historical: bool = False) -> None:
         st.markdown(f"[Read original source →]({source.url})")
 
 
-def _page_subtitle(recent_stories: list[NewsStory]) -> str:
-    """Source-attribution pass (design/DECISIONS.md), future-safe
-    subtitle strategy: computed from the same 7-day, all-companies
-    `recent_stories` set the default view itself shows — an empty set is
-    treated as official-only (the conservative default; nothing visible
-    contradicts it). Never claims every non-official category is
-    "editorial" — the per-card source-type label above is what carries
-    the actual category distinction; this subtitle only ever picks
-    between the two approved, generic sentences."""
-    all_official = all(
-        source.source_class == SourceClass.OFFICIAL_COMPANY
-        for story in recent_stories for source in story.sources
-    )
-    return _OFFICIAL_SUBTITLE if all_official else _MIXED_SUBTITLE
-
-
 def render() -> None:
-    """Unified Daily News feed (design/DECISIONS.md): one page, one
-    "Daily News" heading, issuer and editorial stories interleaved into
+    """Unified Signals feed (design/DECISIONS.md): one page, one
+    "Signals" heading, issuer and editorial stories interleaved into
     one reverse-chronological list. Each lane applies its own existing,
     unmodified rules first (issuer: 7-day window + per-company stale-feed
     fallback; editorial: 72-hour window + per-source/total caps, via
@@ -281,14 +301,10 @@ def render() -> None:
     filtering logic itself."""
     settings = get_settings()
     all_stories = _published_stories(settings)
-    recent_for_subtitle = _recent_stories(all_stories)
     visible_editorial = get_visible_editorial_stories(settings)
 
-    st.markdown('<div class="er-page-title">Daily News</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="er-muted">{_page_subtitle(recent_for_subtitle)}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="er-page-title">Signals</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="er-muted">{_SUBTITLE}</div>', unsafe_allow_html=True)
 
     selected_company = st.selectbox("Companies", options=_company_options(), index=0)
 
@@ -296,8 +312,6 @@ def render() -> None:
         '<div class="er-muted">Showing tracked coverage from the past 7 days.</div>',
         unsafe_allow_html=True,
     )
-
-    section_header("Latest")
 
     fallback_notice: str | None = None
     issuer_items_are_historical = False
@@ -379,8 +393,51 @@ def render() -> None:
     if fallback_notice:
         st.markdown(fallback_notice, unsafe_allow_html=True)
 
+    # Signals materiality classification (design/DECISIONS.md) — tier-
+    # based presentation. Partitions the already-decided, already-
+    # ordered `merged` list into three buckets, preserving each bucket's
+    # own relative chronological order — never re-derives or waives
+    # either lane's own inclusion decision above; this only changes how
+    # an already-admitted item is grouped for display.
+    high_signal_items: list[tuple[str, NewsStory | EditorialStory]] = []
+    watchlist_items: list[tuple[str, NewsStory | EditorialStory]] = []
+    background_items: list[tuple[str, NewsStory | EditorialStory]] = []
     for kind, item in merged:
-        if kind == "issuer":
-            _render_card(item, is_historical=issuer_items_are_historical)
+        tier = _effective_tier(item)
+        if tier == NewsMaterialityTier.HIGH_SIGNAL:
+            high_signal_items.append((kind, item))
+        elif tier == NewsMaterialityTier.BACKGROUND:
+            background_items.append((kind, item))
         else:
-            render_editorial_card(item)
+            watchlist_items.append((kind, item))
+
+    def _render_item(kind: str, item: NewsStory | EditorialStory, tier: NewsMaterialityTier) -> None:
+        if kind == "issuer":
+            _render_card(item, is_historical=issuer_items_are_historical, tier=tier)
+        else:
+            render_editorial_card(item, tier=tier)
+
+    section_header("High Signal")
+    if high_signal_items:
+        for kind, item in high_signal_items:
+            _render_item(kind, item, NewsMaterialityTier.HIGH_SIGNAL)
+    else:
+        # High Signal is the default Signals feed (design/DECISIONS.md) —
+        # this is NOT the same as the true "zero coverage at all" empty
+        # state above (which already returned): items exist (in
+        # Watchlist/Background below), just none reached the High Signal
+        # bar yet.
+        empty_state(_NO_HIGH_SIGNAL_EMPTY_STATE)
+
+    if watchlist_items:
+        section_header("Watchlist", "Relevant but early, unquantified, or not yet material.")
+        for kind, item in watchlist_items:
+            _render_item(kind, item, _effective_tier(item))
+
+    if background_items:
+        # Retained, never deleted — accessible only through this explicit
+        # control, excluded from the default feed above (design/
+        # DECISIONS.md).
+        with st.expander(f"Show Background ({len(background_items)})"):
+            for kind, item in background_items:
+                _render_item(kind, item, NewsMaterialityTier.BACKGROUND)

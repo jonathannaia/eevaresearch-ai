@@ -334,7 +334,7 @@ def test_admin_sees_every_feedback_submission_with_all_fields_in_order(tmp_path)
     assert "founder@example.test" in all_text
     assert "Submitted: 2026-01-01T00:00:00+00:00" in all_text
     assert "Role: Other" in all_text
-    assert "Primary interest: Daily News" in all_text
+    assert "Primary interest: Signals" in all_text
     assert "Tracking workflow: Other — A custom spreadsheet" in all_text
     assert "Faster Korea coverage" in all_text
     # a submission with no Other detail and no optional feedback renders cleanly

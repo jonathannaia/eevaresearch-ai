@@ -125,8 +125,8 @@ def test_coverage_page_shows_static_coverage_and_freshness_panel():
         and "scheduled hourly" in all_text
     )
     assert (
-        "Daily News" in all_text
-        and "curated official company news and investor-relations sources" in all_text
+        "Signals" in all_text
+        and "material disclosures and developments from official company and" in all_text
         and "scheduled every 30 minutes" in all_text
     )
     assert (

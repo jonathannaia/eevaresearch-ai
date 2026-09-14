@@ -38,7 +38,7 @@ class FeedbackPrimaryInterest(str, Enum):
     US_FILINGS_EDGAR = "U.S. filings (EDGAR)"
     KOREA_FILINGS_DART = "Korea filings (DART)"
     JAPAN_FILINGS_EDINET = "Japan filings (EDINET)"
-    DAILY_NEWS = "Daily News"
+    DAILY_NEWS = "Signals"  # product-naming separation (design/DECISIONS.md): Daily News renamed to Signals; enum member name kept stable
     THEME_AND_SUPPLY_CHAIN_RESEARCH = "Theme and supply-chain research"
 
 

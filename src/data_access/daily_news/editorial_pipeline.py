@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import canonical_url, dedup, editorial_story_store, rss_atom_client
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
+from src.data_access.daily_news.materiality_classification import classify_editorial_story
 from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, DailyNewsSourceEntry, normalize_source_url
 from src.models.daily_news_models import EditorialStory
 
@@ -285,12 +286,24 @@ def run_editorial_discovery(
 
         for entry, story_id, matched_companies, matched_themes in capped:
             retrieved_at = datetime.now(timezone.utc).isoformat()
+            # Signals materiality classification (design/DECISIONS.md) —
+            # computed once, here, at construction time only; never
+            # reclassifies an already-persisted story (see
+            # NewsMaterialityTier's own docstring). Classification never
+            # affects admission/inclusion above (the fail-closed company/
+            # theme gate, freshness, cap, and dedup are all unchanged) —
+            # this only adds a display-time tier label to an item that
+            # already qualified for publication.
+            materiality_tier, materiality_reasons = classify_editorial_story(
+                entry.title, entry.summary, source.category,
+            )
             story = EditorialStory(
                 id=story_id, headline=entry.title, publisher=source.attribution_label, source_url=entry.link,
                 published_at=entry.published_at, retrieved_at=retrieved_at,
                 excerpt=_extractive_excerpt(entry.summary),
                 matched_companies=matched_companies, matched_themes=matched_themes,
                 source_feed_id=source.source_id,
+                materiality_tier=materiality_tier, materiality_reasons=materiality_reasons,
             )
             newly_published.append(story)
 

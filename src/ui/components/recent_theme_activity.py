@@ -165,7 +165,7 @@ def _load_daily_news_items(settings: Settings) -> list[ThemeActivityItem]:
         if timestamp is None:
             continue
         items.append(ThemeActivityItem(
-            theme_slug=story.theme_slug, company_name=story.company_name, item_type="Daily News",
+            theme_slug=story.theme_slug, company_name=story.company_name, item_type="Signals",
             timestamp=timestamp, display_date=fmt_datetime_local(source_ref.published_at), source_url=source_ref.url or None,
         ))
     return items

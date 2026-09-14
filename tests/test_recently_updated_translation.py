@@ -321,7 +321,7 @@ def test_row_identity_key_falls_back_to_source_url_when_no_translation_document_
 
     row = recently_updated._Row(
         sort_key=datetime(2026, 9, 1, tzinfo=timezone.utc), company_name="Apple Inc.",
-        title="Apple announces new product", source_label="Daily News",
+        title="Apple announces new product", source_label="Signals",
         display_date="Sep 1, 2026", source_url="https://example.invalid/apple",
     )
     assert row.translation_document_id is None

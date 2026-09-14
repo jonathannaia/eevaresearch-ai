@@ -36,7 +36,7 @@ from src.data_access.daily_news.editorial_pipeline import (
     select_visible_editorial_stories_for_company,
 )
 from src.logic.formatting import fmt_datetime_local
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 _THEME_DISPLAY_NAMES: dict[str, str] = {
     "ai-buildout": "AI Buildout",
@@ -47,6 +47,24 @@ _THEME_DISPLAY_NAMES: dict[str, str] = {
 }
 
 _DEFAULT_BADGE_LABEL = "Market news"
+
+# Signals materiality classification (design/DECISIONS.md) — same
+# tier-badge mapping as src.ui.pages.daily_news's own _TIER_BADGE_CLASS
+# (kept as its own small, duplicated constant here rather than a shared
+# import, matching this module's own "zero import of daily_news_pipeline/
+# daily_news_store or anything else that owns the issuer lane" isolation
+# discipline — the issuer page importing FROM this module, not the
+# reverse, is the one direction already established).
+_TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
+    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-pos",
+    NewsMaterialityTier.WATCHLIST: "er-tag-mix",
+    NewsMaterialityTier.BACKGROUND: "er-tag-neutral",
+}
+
+
+def _tier_badge_html(tier: NewsMaterialityTier) -> str:
+    css_class = _TIER_BADGE_CLASS.get(tier, "er-tag-neutral")
+    return f'<span class="er-status-tag {css_class}">{tier.value}</span>'
 
 # Government / Public Sector Daily News lane (design/DECISIONS.md) —
 # badge label derived at render time from the story's own already-
@@ -108,7 +126,7 @@ def get_editorial_stories_for_company(settings: Settings, company_name: str) -> 
     return select_visible_editorial_stories_for_company(stories, company_name)
 
 
-def render_editorial_card(story: EditorialStory) -> None:
+def render_editorial_card(story: EditorialStory, tier: NewsMaterialityTier | None = None) -> None:
     """One editorial card's content — extracted, unchanged in substance,
     from the former render_editorial_coverage()'s own per-item loop body.
     A compact item-type label (unified Daily News feed, design/
@@ -118,10 +136,16 @@ def render_editorial_card(story: EditorialStory) -> None:
     Government / Public Sector Daily News lane (design/DECISIONS.md):
     the label itself is now derived from story.source_feed_id via
     _badge_label() rather than a hardcoded literal — every existing
-    source still renders exactly 'Market news', unchanged."""
+    source still renders exactly 'Market news', unchanged. `tier`
+    (Signals materiality classification, design/DECISIONS.md) is
+    optional and caller-supplied — this function never reads
+    story.materiality_tier directly, so the caller's own effective-tier
+    fallback (None -> Watchlist for display only) stays the single
+    source of truth."""
     with st.container(border=True, key=f"card-editorial-{story.id}"):
+        tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
         st.markdown(
-            f'<span class="er-status-tag er-tag-neutral">{_esc(_badge_label(story.source_feed_id))}</span>',
+            f'<span class="er-status-tag er-tag-neutral">{_esc(_badge_label(story.source_feed_id))}</span>{tier_badge}',
             unsafe_allow_html=True,
         )
         local_time = fmt_datetime_local(story.published_at) if story.published_at else ""

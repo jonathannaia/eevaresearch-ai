@@ -11,6 +11,7 @@ import pytest
 
 from src.data_access.state_db import connection, daily_news_repository, schema
 from src.models.daily_news_models import (
+    NewsMaterialityTier,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -334,3 +335,61 @@ def test_first_discovered_at_is_none_for_a_pre_migration_row():
     conn.commit()
     reloaded = daily_news_repository.get_story(conn, "s-legacy")
     assert reloaded.sources[0].first_discovered_at is None
+
+
+# --- Signals materiality classification (design/DECISIONS.md) ---
+
+
+def test_materiality_tier_and_reasons_round_trip():
+    story = _story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL, materiality_reasons=("primary_disclosure",))
+    conn = _conn()
+    daily_news_repository.upsert_new_stories(conn, [story])
+    reloaded = daily_news_repository.get_story(conn, story.id)
+    assert reloaded.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reloaded.materiality_reasons == ("primary_disclosure",)
+
+
+def test_materiality_tier_is_none_when_not_supplied():
+    story = _story()  # default _story() leaves materiality_tier unset (None)
+    conn = _conn()
+    daily_news_repository.upsert_new_stories(conn, [story])
+    reloaded = daily_news_repository.get_story(conn, story.id)
+    assert reloaded.materiality_tier is None
+    assert reloaded.materiality_reasons == ()
+
+
+def test_materiality_tier_is_none_for_a_pre_migration_row():
+    """Backward compatibility: a row written directly against the
+    pre-V19 column set (materiality_tier/materiality_reasons never
+    supplied to the INSERT at all) reads back as None/empty, never an
+    error, never a fabricated value — same discipline as
+    test_first_discovered_at_is_none_for_a_pre_migration_row above."""
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO daily_news_stories (id, company_name, headline, status, created_at, updated_at) "
+        "VALUES ('s-legacy-tier', 'NVIDIA', 'Legacy headline', 'Published', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO daily_news_sources (story_id, publisher, source_class, url, title, published_at, "
+        "retrieved_at, original_language) VALUES ('s-legacy-tier', 'NVIDIA', 'Official company source', "
+        "'https://example.com/legacy-tier', 'T', 'now', 'now', 'English')"
+    )
+    conn.commit()
+    reloaded = daily_news_repository.get_story(conn, "s-legacy-tier")
+    assert reloaded.materiality_tier is None
+    assert reloaded.materiality_reasons == ()
+
+
+def test_materiality_tier_updates_via_optimistic_locking():
+    story = _story(materiality_tier=NewsMaterialityTier.WATCHLIST, materiality_reasons=("on_taxonomy_no_anchor:x",))
+    conn = _conn()
+    daily_news_repository.upsert_new_stories(conn, [story])
+    reloaded = daily_news_repository.get_story(conn, story.id)
+
+    from dataclasses import replace
+
+    updated = replace(reloaded, materiality_tier=NewsMaterialityTier.HIGH_SIGNAL, materiality_reasons=("quantified_change:capacity",))
+    outcome = daily_news_repository.update_story(conn, updated, expected_version=1)
+    assert outcome.status == "updated"
+    assert outcome.current.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert outcome.current.materiality_reasons == ("quantified_change:capacity",)

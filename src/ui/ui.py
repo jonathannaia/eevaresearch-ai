@@ -25,18 +25,24 @@ METHODOLOGY_STATEMENT = (
 # pass (design/DECISIONS.md): the core destinations. Home and Company are
 # deliberately excluded (Home is first-visit-only with no sidebar at all;
 # Company is reached only by clicking a ticker). Coverage, Themes,
-# Signals, and Research are intentionally NOT here any more — see
+# Radar Signals, and Research are intentionally NOT here any more — see
 # HIDDEN_FROM_NAV below; their pages/routes/data are untouched, they are
 # simply no longer linked from any visible sidebar group.
 PRIMARY_NAV: list[tuple[str, str]] = [
     ("dashboard", "Dashboard"),
     ("radar_inbox", "Filings"),
-    # Daily News (Slice 1, design/DECISIONS.md) — an independent, separately-
-    # scoped autonomous discovery surface, not a Filings view (see the
-    # Radar-vs-Daily-News product clarification the same document records).
-    # Placed next to Filings for IA/UX grouping only ("what's new" feeds
-    # together) — this has no bearing on their code/data independence.
-    ("daily_news", "Daily News"),
+    # Daily News (Slice 1, design/DECISIONS.md), product-naming separation
+    # (design/DECISIONS.md) — an independent, separately-scoped autonomous
+    # discovery surface, not a Filings view (see the Radar-vs-Daily-News
+    # product clarification the same document records). Now user-facing
+    # "Signals": a selective, material, cross-source disclosure feed —
+    # distinct from "Radar Signals" (the Radar-derived, filing-only
+    # concept previously just called "Signals", see HIDDEN_FROM_NAV
+    # below). Route key/url_path stay "daily_news"/"daily-news" —
+    # unchanged — only this display label moved. Placed next to Filings
+    # for IA/UX grouping only ("what's new" feeds together) — this has no
+    # bearing on their code/data independence.
+    ("daily_news", "Signals"),
 ]
 
 # Lower-priority "SYSTEM" group in the sidebar (navigation-cleanup pass) —
@@ -75,7 +81,11 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 # render()-level guard for what a non-admin visitor who reaches this
 # route directly sees instead of the real (possibly sparse) index.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
-    ("signals", "Signals"),
+    # Product-naming separation (design/DECISIONS.md): renamed from bare
+    # "Signals" to "Radar Signals" once Daily News claimed "Signals" for
+    # its own, unrelated feed (see PRIMARY_NAV's "daily_news" entry
+    # above). Route key/url_path/model/repository are all unchanged.
+    ("signals", "Radar Signals"),
     ("methodology", "Methodology"),
     ("about", "About"),
     ("themes", "Research Theses"),
