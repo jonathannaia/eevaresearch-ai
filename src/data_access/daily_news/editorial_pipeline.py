@@ -333,3 +333,46 @@ def select_visible_editorial_stories(
 
     capped_per_source.sort(key=lambda s: s.published_at, reverse=True)
     return tuple(capped_per_source[:_TOTAL_DISPLAY_CAP])
+
+
+def select_visible_editorial_stories_for_company(
+    stories: dict[str, EditorialStory], company_name: str, now: datetime | None = None,
+) -> tuple[EditorialStory, ...]:
+    """System-wide company-matched-news fix (design/DECISIONS.md) — the
+    per-company counterpart to select_visible_editorial_stories() above.
+    Same 72-hour freshness (re-checked here, not trusted from ingest
+    time) and same _PER_SOURCE_CAP-per-source cap, applied against the
+    FULL persisted story set — never against
+    select_visible_editorial_stories()'s own already cross-company-
+    capped output. Deliberately does NOT apply _TOTAL_DISPLAY_CAP: that
+    cap exists only to bound the shared "All companies" list's length: a
+    company already scoped to its own matched_companies membership has
+    no cross-company list to bound, and applying that cap here would
+    silently drop a company's own real, fresh, correctly-matched
+    coverage whenever enough OTHER companies' stories happened to be
+    newer — exactly the defect this function exists to fix. Generic:
+    works identically for any company_name in the Daily News company
+    universe (company_aliases.daily_news_company_names()) — tracked or
+    Daily-News-only-stub — with no company-specific branch.
+
+    Kept as its own separate, small function (rather than refactoring
+    select_visible_editorial_stories() to take an optional company
+    filter) specifically so the "All companies" path above stays
+    provably byte-for-byte unchanged — see
+    tests/test_editorial_pipeline.py's own regression coverage."""
+    now = now or datetime.now(timezone.utc)
+    matching = [s for s in stories.values() if company_name in s.matched_companies]
+    fresh = [s for s in matching if _is_fresh(s.published_at, now)]
+    fresh.sort(key=lambda s: s.published_at, reverse=True)
+
+    capped_per_source: list[EditorialStory] = []
+    counts: dict[str, int] = {}
+    for story in fresh:
+        count = counts.get(story.source_feed_id, 0)
+        if count >= _PER_SOURCE_CAP:
+            continue
+        counts[story.source_feed_id] = count + 1
+        capped_per_source.append(story)
+
+    capped_per_source.sort(key=lambda s: s.published_at, reverse=True)
+    return tuple(capped_per_source)

@@ -64,6 +64,73 @@ def test_bare_short_name_not_in_alias_list_does_not_match():
     assert "Dell Technologies Inc." not in match_companies("Dell posted strong laptop sales")
 
 
+# ============================================================
+# System-wide company-matched-news fix (design/DECISIONS.md) — curated
+# brand-alias overlay: positive matches for the approved low-ambiguity
+# list (Amazon Web Services/AWS, Google, IBM), and explicit
+# false-positive tests proving the case-sensitivity mitigation. Bare
+# "Amazon"/"Meta"/"Facebook" are deliberately NOT in the overlay this
+# pass — see company_aliases.py's own docstring — so no positive test
+# exists for those, only the pre-existing negative ones already above.
+# ============================================================
+
+
+def test_amazon_web_services_full_phrase_matches():
+    assert "Amazon.com, Inc." in match_companies("Amazon Web Services outage disrupts major websites")
+
+
+def test_aws_acronym_matches():
+    assert "Amazon.com, Inc." in match_companies("AWS launches new region in Mexico")
+
+
+def test_google_brand_alias_matches():
+    assert "Alphabet Inc." in match_companies("Google unveils new Pixel phone lineup")
+
+
+def test_ibm_brand_alias_matches():
+    assert "International Business Machines Corporation" in match_companies("IBM announces new mainframe chip")
+
+
+def test_bare_amazon_still_never_matches_this_pass():
+    # Required alias-policy correction: bare "Amazon" is not in the
+    # curated overlay — capitalization alone does not resolve its real
+    # ambiguity (e.g. "Amazon River"), so it is deliberately excluded
+    # until a separately reviewed, evidence-based decision.
+    assert "Amazon.com, Inc." not in match_companies("Amazon reports record Prime Day sales")
+    assert "Amazon.com, Inc." not in match_companies("Explorers followed the Amazon River deep into the rainforest")
+
+
+def test_bare_meta_and_facebook_still_never_match_this_pass():
+    assert "Meta Platforms, Inc." not in match_companies("Meta shares jump after earnings beat")
+    assert "Meta Platforms, Inc." not in match_companies("Facebook parent company announces layoffs")
+
+
+def test_lowercase_aws_does_not_match_case_sensitive_brand_alias():
+    # "aws" (lowercase) must not match — curated brand aliases require
+    # their own real-world capitalization, a deterministic mitigation
+    # for acronym/common-word ambiguity.
+    assert "Amazon.com, Inc." not in match_companies("this update uses aws-style lowercase text, unrelated")
+
+
+def test_lowercase_google_does_not_match_case_sensitive_brand_alias():
+    assert "Alphabet Inc." not in match_companies("you can google it if you want to know more")
+
+
+def test_lowercase_ibm_does_not_match_case_sensitive_brand_alias():
+    assert "International Business Machines Corporation" not in match_companies("ibm is not capitalized here")
+
+
+def test_aws_does_not_match_as_a_substring_of_a_longer_word():
+    assert "Amazon.com, Inc." not in match_companies("The AWSomeCorp company is unrelated")
+
+
+def test_mechanical_alias_matching_stays_case_insensitive_unaffected_by_brand_overlay():
+    # The pre-existing mechanical-alias behavior (case-insensitive) must
+    # be completely unaffected by adding the case-sensitive brand
+    # overlay for a DIFFERENT company.
+    assert "Corning Inc." in match_companies("corning reports quarterly results")
+
+
 # --- Theme matching — exact approved phrases only ---------------------
 
 

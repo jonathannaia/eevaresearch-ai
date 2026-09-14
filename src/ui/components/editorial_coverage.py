@@ -31,7 +31,10 @@ import streamlit as st
 
 from src.config.settings import Settings
 from src.data_access.daily_news import daily_news_backend
-from src.data_access.daily_news.editorial_pipeline import select_visible_editorial_stories
+from src.data_access.daily_news.editorial_pipeline import (
+    select_visible_editorial_stories,
+    select_visible_editorial_stories_for_company,
+)
 from src.logic.formatting import fmt_datetime_local
 from src.models.daily_news_models import EditorialStory
 
@@ -89,6 +92,20 @@ def get_visible_editorial_stories(settings: Settings) -> tuple[EditorialStory, .
     repository = daily_news_backend.get_editorial_story_repository(settings)
     stories = repository.load_stories()
     return select_visible_editorial_stories(stories)
+
+
+def get_editorial_stories_for_company(settings: Settings, company_name: str) -> tuple[EditorialStory, ...]:
+    """System-wide company-matched-news fix (design/DECISIONS.md) — the
+    per-company counterpart to get_visible_editorial_stories() above.
+    Same repository read; scoped via
+    select_visible_editorial_stories_for_company() instead of the
+    cross-company-capped select_visible_editorial_stories() — see that
+    function's own docstring for why the total-20 cap is never applied
+    here. Generic: works for any company in the Daily News company
+    universe, no company-specific branch."""
+    repository = daily_news_backend.get_editorial_story_repository(settings)
+    stories = repository.load_stories()
+    return select_visible_editorial_stories_for_company(stories, company_name)
 
 
 def render_editorial_card(story: EditorialStory) -> None:
