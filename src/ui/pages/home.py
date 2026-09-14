@@ -33,7 +33,7 @@ from src.ui.ui import brand_mark_html, get_page
 _CAPABILITIES = [
     ("Cross-market primary sources", "SEC EDGAR (U.S.), DART (Korea), and EDINET (Japan) filings."),
     ("Company research", "Tracked issuers across AI infrastructure, industrial automation, space, defense, and supply-chain themes."),
-    ("Themes", "Evidence-first research narratives connecting official-source evidence across companies."),
+    ("Research Theses", "Evidence-first research narratives connecting official-source evidence across companies."),
     ("Supply-chain research", "Each company's role in a theme's value chain, from constraint owner to demand driver."),
     ("Daily News", "Official company releases, as published, from investor-relations and newsroom sources."),
     ("Original-source links", "Every fact links back to the real filing, release, or document it came from."),

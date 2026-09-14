@@ -13,6 +13,7 @@ from typing import Callable
 import streamlit as st
 
 from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
+from src.data_access import backend_factory
 
 METHODOLOGY_STATEMENT = (
     "EevaResearch separates source-backed facts, market interpretation, model "
@@ -61,18 +62,23 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 #
 # Themes (beta UI polish pass, design/DECISIONS.md) — moved here from
 # PRIMARY_NAV: the public Themes page has no content-readiness gate of
-# its own, so a beta launch should not link to it from the sidebar until
-# there is enough published content to justify it. The route, its data,
-# repository, and the separate internal authoring workflow
-# (theme_workspace.py) are all completely untouched — see
-# src/ui/pages/themes_research.py's own render()-level guard for what a
-# non-admin visitor who reaches this route directly sees instead of the
-# real (possibly sparse) index.
+# its own, so a beta launch should not unconditionally link to it from
+# the sidebar. "themes" staying in this list only controls its
+# underlying st.Page's own (Streamlit-native, unused by this app's
+# custom sidebar) visibility="hidden" in app.py — it does NOT mean the
+# link never appears. render_sidebar() below adds its own manual,
+# conditional st.page_link (same pattern as the Admin Users link further
+# down this file) once at least one Theme is actually PUBLISHED — see
+# _has_published_themes(). The route, its data, repository, and the
+# separate internal authoring workflow (theme_workspace.py) are all
+# completely untouched — see src/ui/pages/themes_research.py's own
+# render()-level guard for what a non-admin visitor who reaches this
+# route directly sees instead of the real (possibly sparse) index.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
     ("signals", "Signals"),
     ("methodology", "Methodology"),
     ("about", "About"),
-    ("themes", "Themes"),
+    ("themes", "Research Theses"),
 ]
 
 # Session-state keys for unread/last-seen tracking (brief §10) — defined
@@ -201,6 +207,39 @@ def is_admin(settings: Settings | None = None) -> bool:
     return bool(email) and email in settings.admin_emails
 
 
+# Themes sidebar visibility (design/DECISIONS.md) — the "Themes" link
+# below is the one WORKSPACE entry whose presence is data-driven rather
+# than static like every other PRIMARY_NAV/SYSTEM_NAV item: it appears
+# only once at least one Theme is actually PUBLISHED, so the beta
+# sidebar never links to what would otherwise be an empty index (see
+# src/ui/pages/themes_research.py's own empty-state). 60s, not per-
+# render: this check runs on every single page load across the whole
+# app (sidebar chrome, not just the Themes page itself), so an uncached
+# repository call here would add a DB round trip to every navigation
+# site-wide.
+_THEMES_NAV_CACHE_TTL_SECONDS = 60
+
+
+@st.cache_data(show_spinner=False, ttl=_THEMES_NAV_CACHE_TTL_SECONDS)
+def _has_published_themes() -> bool:
+    """True only if at least one Theme is visible through the public,
+    published-only protocol (backend_factory.get_theme_repository) —
+    the exact same read path src/ui/pages/themes_research.py itself
+    uses, never the private curator seam
+    (get_theme_curator_repository), so an INTERNAL, READY_TO_PUBLISH,
+    or ARCHIVED Theme can never make this true. Fails closed (returns
+    False, keeping the sidebar link hidden) on any repository error —
+    global sidebar chrome must never raise because of a Theme backend
+    hiccup, matching themes_research.py's own fail-closed convention
+    for the exact same failure case."""
+    settings = get_settings()
+    try:
+        repository = backend_factory.get_theme_repository(settings)
+        return len(repository.list_published_themes()) > 0
+    except Exception:  # noqa: BLE001 — fail closed, see docstring above
+        return False
+
+
 def render_sidebar(current_key: str) -> None:
     _correct_sidebar_state_for_width()
 
@@ -238,6 +277,23 @@ def render_sidebar(current_key: str) -> None:
                     st.markdown(f'<div class="{active_cls}">', unsafe_allow_html=True)
                 st.page_link(page, label=label)
                 if active_cls:
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+        # Themes — data-driven WORKSPACE entry (design/DECISIONS.md): not
+        # in PRIMARY_NAV/HIDDEN_FROM_NAV's static split at all, since its
+        # visibility depends on published content, not a fixed nav table.
+        # Same styling/active-state as the PRIMARY_NAV loop above; the
+        # underlying "themes" page/route is unaffected either way (still
+        # registered, still reachable by direct URL, still visibility=
+        # "hidden" in app.py's own st.Page — only this manual link is new).
+        themes_page = pages.get("themes")
+        if themes_page is not None and _has_published_themes():
+            themes_active_cls = "er-rail-navactive" if current_key == "themes" else ""
+            with st.container(key="navitem-themes"):
+                if themes_active_cls:
+                    st.markdown(f'<div class="{themes_active_cls}">', unsafe_allow_html=True)
+                st.page_link(themes_page, label="Research Theses")
+                if themes_active_cls:
                     st.markdown("</div>", unsafe_allow_html=True)
 
         # SYSTEM — lower-priority destinations (navigation-cleanup pass).

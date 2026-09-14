@@ -338,11 +338,10 @@ def test_public_theme_evidence_row_shows_jurisdiction(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     theme = _publish_theme(settings)
     monkeypatch.setattr(themes_research, "get_settings", lambda: settings)
-    # Beta UI polish pass (design/DECISIONS.md): render() now gates on
-    # is_admin() before showing the real detail view — see
-    # tests/test_themes_research_page.py's own _run_with_repo() for the
-    # same admin sign-in this integrity check also needs.
-    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: True)
+    # Research Theses admin-gate removal (design/DECISIONS.md): render()
+    # no longer gates on is_admin() at all — no patch needed here any
+    # more (see tests/test_themes_research_page.py's own _run_with_repo()
+    # and test_page_module_never_imports_or_uses_is_admin()).
 
     at = AppTest.from_file(str(THEMES_RESEARCH_HARNESS), default_timeout=15)
     at.query_params["theme_id"] = theme.id
