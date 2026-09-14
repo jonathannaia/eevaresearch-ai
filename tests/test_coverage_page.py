@@ -39,14 +39,16 @@ def test_coverage_page_summary_metrics_match_registry_counts():
     # issuer-expansion batch 2 (2026-09-04) added 19 more still
     # (81 + 19 = 100), and the EDINET Filings Radar issuer-expansion
     # batch (2026-09-04) added 5 more EDINET issuers (100 + 5 = 105).
-    # DISCOVERY_STUBS itself is untouched by any of these batches
-    # (still 25).
+    # DISCOVERY_STUBS itself was untouched by any of these batches
+    # (stayed 25) until Daily News source-expansion batch 5 (2026-09-13)
+    # added one more Daily-News-only stub (Hewlett Packard Enterprise
+    # Company), bringing it to 26.
     at = _run()
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["Active seed issuers"] == "105"
-    assert metrics["Discovery proposals"] == "25"
+    assert metrics["Discovery proposals"] == "26"
     assert metrics["Scan-eligible"] == "105"
-    assert metrics["Unverified / excluded"] == "25"
+    assert metrics["Unverified / excluded"] == "26"
 
 
 def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_counts():
@@ -54,7 +56,7 @@ def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_co
     assert len(at.dataframe) == 2
     seed_table, discovery_table = at.dataframe[0].value, at.dataframe[1].value
     assert len(seed_table) == 105
-    assert len(discovery_table) == 25
+    assert len(discovery_table) == 26
 
 
 def test_coverage_page_seed_table_never_contains_a_discovery_stub_name():

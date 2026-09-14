@@ -1015,3 +1015,47 @@ def test_samsung_murata_microchip_one_source_failure_isolated_from_the_others(tm
 
     assert report.source_failures == {"Samsung Electronics": "HTTPError:503"}
     assert report.stories_published == 1  # Murata's item still published despite Samsung's failure
+
+
+# ============================================================
+# Daily News source-expansion batch 5 (2026-09-13) — Hewlett Packard
+# Enterprise Company. Uses the real, registry-derived
+# feed_registry.PILOT_FEEDS entry (not a synthetic fixture) so a change
+# to the registry's own fields is caught here too — the pipeline logic
+# itself is completely generic/unchanged; this test proves the new
+# source exercises it identically to every existing issuer source
+# (NVIDIA, Intel, Samsung, etc. above).
+# ============================================================
+
+_HPE_SOURCE = next(f for f in PILOT_FEEDS if f.company_name == "Hewlett Packard Enterprise Company")
+
+
+def test_hpe_fresh_valid_entry_publishes_with_correct_attribution_and_direct_url(tmp_path, monkeypatch):
+    article_url = "https://investors.hpe.com/news-and-events/news/news-details/2026/HPE-Announces-Something"
+    _mock_fetch({
+        _HPE_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("HPE Announces Something", article_url),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_HPE_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.company_name == "Hewlett Packard Enterprise Company"
+    assert story.status == NewsStoryStatus.PUBLISHED
+    assert story.sources[0].url == article_url
+
+
+def test_hpe_off_domain_entry_is_suppressed(tmp_path, monkeypatch):
+    _mock_fetch({
+        _HPE_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("HPE Announces Something", "https://example.com/not-hpe"),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_HPE_SOURCE,))
+
+    assert report.stories_published == 0
+    assert report.items_suppressed_no_url == 1
+    assert daily_news_store.load_stories(tmp_path) == {}

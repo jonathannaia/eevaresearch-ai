@@ -602,3 +602,214 @@ def test_mixed_run_cnbc_gate_is_unaffected_by_government_sources(tmp_path, monke
     stories = load_stories(tmp_path)
     assert len(stories) == 1
     assert next(iter(stories.values())).source_feed_id == "spaceforce-news-rss"
+
+
+# ============================================================
+# Daily News source-expansion batch 2, editorial lane (2026-09-13) — 23
+# more issuer_agnostic=True editorial sources (US independent/trade
+# press, The Register's shared-attribution pair, PR Newswire's
+# shared-attribution pair, US federal regulators, Japan, South Korea).
+# These grouped smoke tests use the REAL, registry-derived
+# EDITORIAL_SOURCE_REGISTRY_BATCH_2 entries (not synthetic fixtures) so
+# a mistake in the registry's own fields (wrong domain, wrong category,
+# wrong attribution_label) is caught here too — the pipeline gate logic
+# itself is unchanged and already exhaustively proven above; one
+# representative smoke test per new lane/publisher pattern is enough to
+# prove each pattern wires through it correctly, matching this file's
+# own existing CNBC/Korea Herald/Space Force/NIST precedent.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY_BATCH_2
+
+_MATCHING_TITLE = "Oracle Corporation reports strong AI cloud demand"
+_MATCHING_SUMMARY = "Oracle Corporation said AI cloud demand drove revenue higher this quarter."
+
+
+def _batch_2_source(source_id: str) -> DailyNewsSourceEntry:
+    return next(e for e in EDITORIAL_SOURCE_REGISTRY_BATCH_2 if e.source_id == source_id)
+
+
+def test_techcrunch_matching_item_publishes_with_correct_attribution_and_domain(tmp_path, monkeypatch):
+    # Representative of the US independent/trade-press pattern shared by
+    # techcrunch-rss, ars-technica-rss, the-verge-rss,
+    # semiconductor-engineering-rss, ieee-spectrum-rss,
+    # data-center-frontier-rss, toms-hardware-rss, supply-chain-dive-rss,
+    # utility-dive-rss — every one an INDEPENDENT_NEWS, issuer_agnostic,
+    # allowlisted source subject to the same fail-closed matching gate.
+    source = _batch_2_source("techcrunch-rss")
+    entry = _entry(
+        title=_MATCHING_TITLE, link="https://techcrunch.com/2026/09/13/oracle-ai-cloud/", summary=_MATCHING_SUMMARY,
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "TechCrunch"
+    assert story.source_feed_id == "techcrunch-rss"
+
+
+def test_techcrunch_off_topic_item_does_not_publish(tmp_path, monkeypatch):
+    source = _batch_2_source("techcrunch-rss")
+    entry = _entry(title="A roundup of the week's best deals", link="https://techcrunch.com/deals", summary=None)
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1
+
+
+def test_the_register_pair_shares_attribution_and_cross_feed_deduplicates(tmp_path, monkeypatch):
+    # The Register's two feeds (headlines + On Prem) share one
+    # attribution_label ("The Register") specifically so a story synced
+    # to both sections dedups as one publisher, not two — same proof
+    # test_same_title_different_publisher_is_not_a_duplicate above gives
+    # for two genuinely DIFFERENT publishers, mirrored here for the
+    # SAME publisher across two feeds.
+    headlines = _batch_2_source("the-register-headlines-rss")
+    on_prem = _batch_2_source("the-register-on-prem-rss")
+    assert headlines.attribution_label == on_prem.attribution_label == "The Register"
+
+    shared_title = "Oracle Corporation expands AI cloud datacenter footprint"
+    _patch_fetch(monkeypatch, {
+        headlines.canonical_url: FeedFetchResult(
+            entries=(_entry(title=shared_title, link="https://www.theregister.com/2026/09/13/oracle_a/", summary=_MATCHING_SUMMARY),),
+            failure_code=None,
+        ),
+        on_prem.canonical_url: FeedFetchResult(
+            entries=(_entry(title=shared_title, link="https://www.theregister.com/on_prem/2026/09/13/oracle_b/", summary=_MATCHING_SUMMARY),),
+            failure_code=None,
+        ),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(headlines, on_prem))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "The Register"
+
+
+def test_pr_newswire_pair_shares_attribution_and_cross_feed_deduplicates(tmp_path, monkeypatch):
+    # PR Newswire's two feeds (general + financial-services) share one
+    # attribution_label ("PR Newswire") for the same reason as The
+    # Register pair above.
+    general = _batch_2_source("pr-newswire-general-rss")
+    financial = _batch_2_source("pr-newswire-financial-services-rss")
+    assert general.attribution_label == financial.attribution_label == "PR Newswire"
+
+    shared_title = "Oracle Corporation Announces Strategic AI Cloud Partnership"
+    _patch_fetch(monkeypatch, {
+        general.canonical_url: FeedFetchResult(
+            entries=(_entry(title=shared_title, link="https://www.prnewswire.com/news-releases/oracle-a-302000001.html", summary=_MATCHING_SUMMARY),),
+            failure_code=None,
+        ),
+        financial.canonical_url: FeedFetchResult(
+            entries=(_entry(title=shared_title, link="https://www.prnewswire.com/news-releases/oracle-b-302000002.html", summary=_MATCHING_SUMMARY),),
+            failure_code=None,
+        ),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(general, financial))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "PR Newswire"
+
+
+def test_sec_regulator_matching_item_publishes_with_correct_attribution(tmp_path, monkeypatch):
+    # Representative of the US-federal-regulator pattern shared by
+    # sec-press-releases-rss, federal-reserve-press-rss,
+    # ftc-press-releases-rss — SourceCategory.REGULATOR, issuer_agnostic,
+    # no allowlisted flag, same fail-closed matching gate.
+    source = _batch_2_source("sec-press-releases-rss")
+    assert source.allowlisted is False
+    entry = _entry(
+        title=_MATCHING_TITLE, link="https://www.sec.gov/newsroom/press-releases/2026-100-oracle", summary=_MATCHING_SUMMARY,
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "U.S. Securities and Exchange Commission (SEC)"
+    assert story.source_feed_id == "sec-press-releases-rss"
+
+
+def test_japan_times_matching_item_publishes_with_correct_attribution(tmp_path, monkeypatch):
+    # Representative of the Japan lane, shared with jpx-market-news-rss
+    # (SourceCategory.EXCHANGE) and fsa-japan-news-rss
+    # (SourceCategory.REGULATOR) — same fail-closed matching gate.
+    source = _batch_2_source("japan-times-rss")
+    entry = _entry(
+        title=_MATCHING_TITLE, link="https://www.japantimes.co.jp/business/2026/09/13/oracle-ai-cloud/",
+        summary=_MATCHING_SUMMARY,
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "The Japan Times"
+    assert story.source_feed_id == "japan-times-rss"
+
+
+def test_jpx_exchange_matching_item_publishes_with_correct_attribution(tmp_path, monkeypatch):
+    source = _batch_2_source("jpx-market-news-rss")
+    assert source.category == SourceCategory.EXCHANGE
+    assert source.allowlisted is False
+    entry = _entry(
+        title=_MATCHING_TITLE, link="https://www.jpx.co.jp/english/news/oracle", summary=_MATCHING_SUMMARY,
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Japan Exchange Group (JPX)"
+
+
+def test_yonhap_matching_item_publishes_with_correct_attribution(tmp_path, monkeypatch):
+    # Representative of the South Korea lane, shared with
+    # korea-times-rss, korea-it-times-rss, thelec-rss.
+    source = _batch_2_source("yonhap-news-rss")
+    entry = _entry(
+        title=_MATCHING_TITLE, link="https://en.yna.co.kr/view/AEN20260913001500999", summary=_MATCHING_SUMMARY,
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Yonhap News Agency"
+    assert story.source_feed_id == "yonhap-news-rss"
+
+
+def test_thelec_off_domain_item_is_still_rejected(tmp_path, monkeypatch):
+    # Proves the existing canonical_url gate applies unchanged to a new
+    # source too, even one whose own feed <language> tag misreports
+    # "ko" for genuinely English content (see this source's own registry
+    # notes) — ingestion never filters on that tag either way.
+    source = _batch_2_source("thelec-rss")
+    entry = _entry(title=_MATCHING_TITLE, link="https://example.com/not-thelec", summary=_MATCHING_SUMMARY)
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_batch_2_sources_are_never_leaked_into_runtime_source_registry():
+    from src.data_access.daily_news.source_registry import RUNTIME_SOURCE_REGISTRY
+
+    batch_2_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY_BATCH_2}
+    runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
+    assert not (batch_2_ids & runtime_ids)

@@ -860,16 +860,46 @@ EXPANSION_BATCH_4_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News source-expansion batch 5 (2026-09-13) — one official IR RSS
+# feed, live-verified this batch (real fetch, HTTP 200, parseable RSS
+# 2.0, on-domain per-article item links), closing a coverage gap for a
+# newly-tracked issuer that had no existing Daily News source. Hewlett
+# Packard Enterprise Company is a Daily News-only discovery — not in
+# tracked_companies.py (Radar's own scan universe) — so it is resolved
+# via a new src.config.issuer_registry.DISCOVERY_STUBS entry (stub:HPE),
+# the same established mechanism already used for Quanta Services, nVent
+# Electric, Arista Networks, and Cisco Systems above; tracked_companies.py
+# itself is untouched. Classified OFFICIAL_IR, matching this registry's
+# own established investor.*/ir.*-subdomain convention.
+EXPANSION_BATCH_5_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="hpe-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investors.hpe.com/rss/news",
+        domains=("investors.hpe.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Hewlett Packard Enterprise Company", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Hewlett Packard Enterprise Company", last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 5 (2026-09-13) — live-verified official IR RSS "
+            "feed, HTTP 200, 121 dated items, newest 2026-09-02, all items on-domain "
+            "(investors.hpe.com/news-and-events/...). IR/earnings-cadence feed, not a general "
+            "newsroom — publication frequency will reflect that. Resolved via a new "
+            "src.config.issuer_registry.DISCOVERY_STUBS entry (stub:HPE); not part of "
+            "tracked_companies.py or any EDGAR/DART/EDINET scan universe."
+        ),
+    ),
+)
+
 # The real, live runtime feed list — original 12 pilot sources first
 # (byte-identical, same order), then expansion batch 1's 7 sources,
 # then expansion batch 2's 1 source, then expansion batch 3's 4
-# sources, then expansion batch 4's 3 sources, in the exact order given
-# (19 + 1 + 4 + 3 = 27).
+# sources, then expansion batch 4's 3 sources, then expansion batch 5's
+# 1 source, in the exact order given (19 + 1 + 4 + 3 + 1 = 28).
 # feed_registry.PILOT_FEEDS is generated from this tuple via
 # to_daily_news_feed_source(); see that module's own updated docstring.
 RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
-    + EXPANSION_BATCH_3_SOURCE_REGISTRY + EXPANSION_BATCH_4_SOURCE_REGISTRY
+    + EXPANSION_BATCH_3_SOURCE_REGISTRY + EXPANSION_BATCH_4_SOURCE_REGISTRY + EXPANSION_BATCH_5_SOURCE_REGISTRY
 )
 
 _EDITORIAL_LICENSING_CLASSIFICATION = (
@@ -894,6 +924,41 @@ _GOVERNMENT_LICENSING_CLASSIFICATION = (
     "src/data_access/daily_news/summary_grounding.py)."
 )
 
+# Daily News source-expansion batch 2 editorial lane (2026-09-13) — a
+# non-U.S. counterpart to _GOVERNMENT_LICENSING_CLASSIFICATION above:
+# an official exchange/regulator/central-bank source whose material is
+# NOT U.S. federal government work and therefore not assumed public
+# domain under any foreign equivalent — stated in its own accurate
+# terms rather than reusing either the U.S.-public-domain or
+# independent-journalism wording, neither of which describes this
+# source type. Used for JPX Market News, Japan's Financial Services
+# Agency below.
+_EXCHANGE_REGULATOR_LICENSING_CLASSIFICATION = (
+    "Official exchange/regulator source (publisher-owned RSS feed) — public market/regulatory "
+    "information; headline, publisher-provided excerpt, and direct link only, never full "
+    "article-body reproduction, per this project's existing no-full-article-reproduction policy "
+    "(see src/data_access/daily_news/summary_grounding.py)."
+)
+
+# Daily News source-expansion batch 2 editorial lane (2026-09-13) — for
+# a press-release distribution wire service (PR Newswire): syndicated
+# issuer press releases the wire service itself did not report or
+# write, not independently-reported journalism. Deliberately distinct
+# wording from _EDITORIAL_LICENSING_CLASSIFICATION's "Independent
+# journalism" — never describe a wire-service source that way. Category
+# remains SourceCategory.INDEPENDENT_NEWS (the only issuer-agnostic,
+# non-official category this registry's admission rules define today;
+# adding a dedicated wire-service category is out of this batch's
+# scope), but this licensing text and every entry's own notes state the
+# wire-service distinction explicitly.
+_WIRE_SERVICE_LICENSING_CLASSIFICATION = (
+    "Press-release distribution wire service (publisher-owned RSS feed) — syndicated issuer "
+    "press-release content the wire service itself did not report or write; not independent "
+    "journalism. Headline, publisher-provided excerpt, and direct link only, never full "
+    "article-body reproduction, per this project's existing no-full-article-reproduction policy "
+    "(see src/data_access/daily_news/summary_grounding.py)."
+)
+
 # Editorial Daily News v1 (design/DECISIONS.md) — a SEPARATE registry
 # from RUNTIME_SOURCE_REGISTRY, deliberately never merged into it:
 # these 10 sources are issuer_agnostic=True (category=INDEPENDENT_NEWS),
@@ -913,7 +978,7 @@ _GOVERNMENT_LICENSING_CLASSIFICATION = (
 # Technology feed exists on koreaherald.com/rss, confirmed live).
 # Yonhap was attempted and excluded: unreachable from this session's own
 # tooling both times it was tried — not silently added.
-EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+EDITORIAL_SOURCE_REGISTRY_V1: tuple[DailyNewsSourceEntry, ...] = (
     DailyNewsSourceEntry(
         source_id="cnbc-top-news-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
         canonical_url="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
@@ -1054,4 +1119,375 @@ EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
             "science news (the majority of this feed) is deliberately excluded, not published."
         ),
     ),
+)
+
+# Daily News source-expansion batch 2, editorial lane (2026-09-13) — 23
+# more issuer_agnostic=True editorial sources, each independently
+# live-verified this batch (real fetch, HTTP 200, parseable RSS/Atom,
+# real dated per-article item links confirmed on-domain across every
+# item in the feed, not just a sample). Appended AFTER
+# EDITORIAL_SOURCE_REGISTRY_V1, never interleaved — see
+# EDITORIAL_SOURCE_REGISTRY below, which preserves this exact ordering.
+#
+# The Register's two feeds (headlines + On Prem) share one
+# attribution_label ("The Register") and PR Newswire's two feeds
+# (general + financial-services) share one attribution_label ("PR
+# Newswire") — same convention as the 9 existing CNBC feeds above,
+# needed because dedup.is_duplicate_title() keys cross-feed duplicate
+# detection on (normalized_title, publisher): two feeds from the same
+# real-world publisher must report that publisher identically or a
+# duplicate story from both feeds would not be recognized as one. PR
+# Newswire is a press-release distribution wire service, not
+# independent journalism — see _WIRE_SERVICE_LICENSING_CLASSIFICATION's
+# own docstring; its entries' notes restate this explicitly so it is
+# never read as 2 independent publishers among "25 independent
+# publishers" — this batch is 24 feeds across meaningfully fewer real
+# publishers once The Register's and PR Newswire's pairs are counted
+# once each.
+#
+# Bank of Japan (boj.or.jp/en/rss/whatsnew.xml) was live-verified
+# (HTTP 200, 43 parseable dated items) but is REJECTED, not added: a
+# full item-by-item scan (not just a sample) found every single one of
+# its 43 item <link> values uses plain http://, never https:// — the
+# existing, unmodified canonical_url.validate_canonical_url() gate
+# requires parsed.scheme == "https" unconditionally, so zero stories
+# would ever publish from this feed as configured. Same "Micron"
+# failure pattern already documented in expansion batch 3 above; not
+# silently dropped, and no unverified substitute was added in its
+# place. Revisit only if the Bank of Japan's own feed later serves
+# https:// links.
+EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
+    # --- US independent news / trade press ---
+    DailyNewsSourceEntry(
+        source_id="techcrunch-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://techcrunch.com/feed/",
+        domains=("techcrunch.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="TechCrunch", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-13, all 20 items on-domain "
+            "(techcrunch.com)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="ars-technica-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://feeds.arstechnica.com/arstechnica/index",
+        domains=("arstechnica.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Ars Technica", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-13, all 20 items on-domain "
+            "(arstechnica.com — the feed host, feeds.arstechnica.com, is not the item-link domain)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="the-verge-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.theverge.com/rss/index.xml",
+        domains=("www.theverge.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Verge", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, Atom, 10 dated items, newest 2026-09-13, all 10 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="the-register-headlines-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.theregister.com/headlines.atom",
+        domains=("www.theregister.com",),
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, real Atom/RSS content despite the .atom extension, 50 dated items, newest "
+            "2026-09-13, all 50 items on-domain. Shares attribution_label 'The Register' with "
+            "the-register-on-prem-rss below (same real-world publisher, two sections) — see this "
+            "batch's own module-level comment for why."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="the-register-on-prem-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.theregister.com/on_prem/headlines.atom",
+        domains=("www.theregister.com",),
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, 50 dated items, newest 2026-09-10, all 50 items on-domain. Shares "
+            "attribution_label 'The Register' with the-register-headlines-rss above (same "
+            "real-world publisher, two sections, not two independent publishers) — see this "
+            "batch's own module-level comment for why."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="pr-newswire-general-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.prnewswire.com/rss/news-releases-list.rss",
+        domains=("www.prnewswire.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="PR Newswire", licensing_classification=_WIRE_SERVICE_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-13, all 20 items on-domain. "
+            "Press-release distribution wire service, not independent journalism — see "
+            "_WIRE_SERVICE_LICENSING_CLASSIFICATION. Shares attribution_label 'PR Newswire' with "
+            "pr-newswire-financial-services-rss below (same real-world publisher, two feeds, not "
+            "two independent publishers) — see this batch's own module-level comment for why. "
+            "The feed itself carries a mix of languages (global syndication); the pipeline's own "
+            "company/theme fail-closed matching gate, not this admission entry, is what "
+            "determines which items actually publish."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="pr-newswire-financial-services-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.prnewswire.com/rss/financial-services-latest-news/financial-services-latest-news-list.rss",
+        domains=("www.prnewswire.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="PR Newswire", licensing_classification=_WIRE_SERVICE_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-13, all 20 items on-domain. "
+            "Press-release distribution wire service, not independent journalism — see "
+            "_WIRE_SERVICE_LICENSING_CLASSIFICATION. Shares attribution_label 'PR Newswire' with "
+            "pr-newswire-general-rss above — see this batch's own module-level comment for why."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="semiconductor-engineering-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://semiengineering.com/feed/",
+        domains=("semiengineering.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Semiconductor Engineering", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-11, all 10 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="ieee-spectrum-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://spectrum.ieee.org/feeds/feed.rss",
+        domains=("spectrum.ieee.org", "event.on24.com"),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="IEEE Spectrum", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 30 dated items, newest 2026-09-11, 29 of 30 items on "
+            "spectrum.ieee.org; one item this batch linked to a webinar registration page on "
+            "event.on24.com, included in `domains` since it is a real IEEE-sponsored-event link "
+            "seen live in the feed's own content, not a guess."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="data-center-frontier-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.datacenterfrontier.com/__rss/website-scheduled-content.xml?input=%7B%22sectionAlias%22%3A%22home%22%7D",
+        domains=("www.datacenterfrontier.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Data Center Frontier", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 25 dated items, newest 2026-09-11, all 25 items on-domain. Note "
+            "the site's own conventional /rss.xml path 404s — this is the real, working feed URL, "
+            "confirmed live, not guessed."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="toms-hardware-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.tomshardware.com/feeds/all",
+        domains=("www.tomshardware.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Tom's Hardware", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 50 dated items, newest 2026-09-13, all 50 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="supply-chain-dive-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.supplychaindive.com/feeds/news/",
+        domains=("www.supplychaindive.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Supply Chain Dive", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-11, all 10 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="utility-dive-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.utilitydive.com/feeds/news/",
+        domains=("www.utilitydive.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Utility Dive", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-11, all 10 items on-domain."
+        ),
+    ),
+    # --- US federal regulators (market-relevant policy/regulatory action) ---
+    DailyNewsSourceEntry(
+        source_id="sec-press-releases-rss", category=SourceCategory.REGULATOR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.sec.gov/news/pressreleases.rss",
+        domains=("www.sec.gov",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="U.S. Securities and Exchange Commission (SEC)",
+        licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 25 dated items, newest 2026-09-11, all 25 items on-domain. No "
+            "`allowlisted` flag required — that gate applies only to SourceCategory."
+            "INDEPENDENT_NEWS, not REGULATOR."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="federal-reserve-press-rss", category=SourceCategory.REGULATOR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.federalreserve.gov/feeds/press_all.xml",
+        domains=("www.federalreserve.gov",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Board of Governors of the Federal Reserve System",
+        licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-11, all 20 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="ftc-press-releases-rss", category=SourceCategory.REGULATOR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.ftc.gov/feeds/press-release.xml",
+        domains=("www.ftc.gov",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Federal Trade Commission (FTC)", licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-10, all 10 items on-domain."
+        ),
+    ),
+    # --- Japan ---
+    DailyNewsSourceEntry(
+        source_id="japan-times-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.japantimes.co.jp/feed/",
+        domains=("www.japantimes.co.jp",),
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Japan Times", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 30 dated items, newest 2026-09-14 (JST), all 30 items on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="jpx-market-news-rss", category=SourceCategory.EXCHANGE, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.jpx.co.jp/english/rss/markets_news.xml",
+        domains=("www.jpx.co.jp",),
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Japan Exchange Group (JPX)", licensing_classification=_EXCHANGE_REGULATOR_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 22 dated items, newest 2026-09-11, all 22 items on-domain. No "
+            "`allowlisted` flag required — that gate applies only to SourceCategory."
+            "INDEPENDENT_NEWS, not EXCHANGE."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="fsa-japan-news-rss", category=SourceCategory.REGULATOR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.fsa.go.jp/fsaEnNewsList_rss2.xml",
+        domains=("www.fsa.go.jp",),
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Financial Services Agency of Japan (FSA)",
+        licensing_classification=_EXCHANGE_REGULATOR_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-10 (JST), all 10 items on-domain. "
+            "Several linked items are PDFs — the existing canonical_url gate does not reject by "
+            "file type, only by scheme/domain/path shape, and every one of this feed's links uses "
+            "https:// (unlike Bank of Japan's feed — see this batch's own rejection note above)."
+        ),
+    ),
+    # --- South Korea ---
+    DailyNewsSourceEntry(
+        source_id="yonhap-news-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://en.yna.co.kr/RSS/news.xml",
+        domains=("en.yna.co.kr",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Yonhap News Agency", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 100 dated items, newest 2026-09-14 (KST), all 100 items on-domain. "
+            "Previously attempted and excluded in the Editorial Daily News v1 batch above as "
+            "'unreachable from this session's own tooling' — reattempted and confirmed live this "
+            "batch at the same URL."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="korea-times-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://feed.koreatimes.co.kr/k/allnews.xml",
+        domains=("www.koreatimes.co.kr",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Korea Times", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 7 dated items, newest 2026-09-13, all 7 items on-domain "
+            "(www.koreatimes.co.kr — the feed host, feed.koreatimes.co.kr, is not the item-link "
+            "domain). Legacy www.koreatimes.co.kr/... feed paths 301/403; this is the real, "
+            "working feed URL, confirmed live, not guessed."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="korea-it-times-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.koreaittimes.com/rss/S1N1.xml",
+        domains=("www.koreaittimes.com",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Korea IT Times", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 20 dated items, newest 2026-09-13, all 20 items on-domain. This "
+            "is the English/HOME section feed; allArticle.xml mixes in Korean-language content "
+            "and was deliberately not used."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="thelec-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.thelec.net/rss/allArticle.xml",
+        domains=("www.thelec.net",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="TheElec", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
+        notes=(
+            "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
+            "HTTP 200, RSS 2.0, 50 dated items, newest 2026-09-14 (KST), all 50 items on-domain. "
+            "This is the English edition (thelec.net), not the Korean edition (thelec.kr) — the "
+            "feed's own <language> tag incorrectly reports 'ko' despite genuinely English content; "
+            "confirmed live by reading real item titles/summaries, not by trusting that tag, and "
+            "ingestion here never filters on it."
+        ),
+    ),
+)
+
+# The real, live editorial feed list — v1's 12 sources first (unchanged,
+# same order), then batch 2's 23 sources, in the exact order given
+# (12 + 23 = 35). Never merged into RUNTIME_SOURCE_REGISTRY — read only
+# by editorial_pipeline.py; see that module's own docstring.
+EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    EDITORIAL_SOURCE_REGISTRY_V1 + EDITORIAL_SOURCE_REGISTRY_BATCH_2
 )
