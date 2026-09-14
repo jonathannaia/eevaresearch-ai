@@ -1484,10 +1484,50 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News source-expansion batch 3, Phase 1 activation (from the
+# read-only US/Japan/Korea source audit) — exactly one entry: Data
+# Center Dynamics. Re-verified live this batch (cache-bypassed fetch,
+# not trusted from the audit's own earlier check): HTTP 200,
+# application/rss+xml, 20 dated items, newest published minutes before
+# this verification, every item on-domain (www.datacenterdynamics.com).
+#
+# METI's Japan Atom feed (the audit's other candidate,
+# meti.go.jp/ml_index_en_atom.xml) was re-verified this same batch and
+# is REJECTED, not added: still a real, live, well-formed Atom feed
+# (confirmed again), but a cache-bypassed re-fetch shows its newest
+# entry dated 2026-06-19 — roughly 3 months stale relative to this
+# batch. editorial_pipeline.py's own unmodified ingestion-time freshness
+# gate (`_is_fresh`, 72-hour window — see run_editorial_discovery's own
+# `items_stale` counter) would reject 100% of this feed's current items
+# before matching/admission ever runs; it would sit permanently silent
+# under real conditions. Same "Microsoft"/"Bank of Japan" failure
+# pattern already documented and rejected elsewhere in this registry —
+# not a guess, and not silently dropped. Revisit only if METI's own
+# English feed resumes near-real-time publication.
+EDITORIAL_SOURCE_REGISTRY_BATCH_3: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="data-center-dynamics-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.datacenterdynamics.com/en/rss/",
+        domains=("www.datacenterdynamics.com",),
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Data Center Dynamics", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Daily News source-expansion batch 3, Phase 1 activation (2026-09-15) — live-verified, "
+            "cache-bypassed fetch, HTTP 200, application/rss+xml, 20 dated items, newest published "
+            "minutes before verification, all 20 items on-domain "
+            "(www.datacenterdynamics.com/en/news/...). Publisher is Data Centre Dynamics Ltd, "
+            "London, UK (confirmed via the site's own footer); domain and branding use the US "
+            "spelling 'DataCenterDynamics'/'DCD'."
+        ),
+    ),
+)
+
 # The real, live editorial feed list — v1's 12 sources first (unchanged,
-# same order), then batch 2's 23 sources, in the exact order given
-# (12 + 23 = 35). Never merged into RUNTIME_SOURCE_REGISTRY — read only
-# by editorial_pipeline.py; see that module's own docstring.
+# same order), then batch 2's 23 sources, then batch 3's 1 source, in
+# the exact order given (12 + 23 + 1 = 36). Never merged into
+# RUNTIME_SOURCE_REGISTRY — read only by editorial_pipeline.py; see that
+# module's own docstring.
 EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
-    EDITORIAL_SOURCE_REGISTRY_V1 + EDITORIAL_SOURCE_REGISTRY_BATCH_2
+    EDITORIAL_SOURCE_REGISTRY_V1 + EDITORIAL_SOURCE_REGISTRY_BATCH_2 + EDITORIAL_SOURCE_REGISTRY_BATCH_3
 )

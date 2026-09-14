@@ -973,3 +973,199 @@ def test_incidental_ambiguous_alias_backer_mention_is_not_admitted(tmp_path, mon
     assert report.stories_published == 0
     assert report.items_not_subject_relevant == 1
     assert load_stories(tmp_path) == {}
+
+
+# ============================================================
+# Daily News source-expansion batch 3, Phase 1 activation (2026-09-15) —
+# Data Center Dynamics, added from the read-only US/Japan/Korea source
+# audit. Uses the REAL, registry-derived EDITORIAL_SOURCE_REGISTRY_
+# BATCH_3 entry (not a synthetic fixture) so a mistake in the registry's
+# own fields is caught here too — same discipline as the batch 2 section
+# above. METI's Japan Atom feed (the audit's other candidate) was
+# re-verified and excluded this same batch for staleness (see
+# source_registry.py's own EDITORIAL_SOURCE_REGISTRY_BATCH_3 comment) —
+# not added, so no test exists for it.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY_BATCH_3
+
+_dcd = next(e for e in EDITORIAL_SOURCE_REGISTRY_BATCH_3 if e.source_id == "data-center-dynamics-rss")
+
+
+def test_dcd_registry_entry_has_the_expected_fields():
+    """Parsing/fetch prerequisites and source/terms standards, verified
+    against the actual registry entry the pipeline reads — not a
+    duplicate literal that could silently drift from it."""
+    assert _dcd.canonical_url == "https://www.datacenterdynamics.com/en/rss/"
+    assert _dcd.domains == ("www.datacenterdynamics.com",)
+    assert _dcd.format == SourceFormat.RSS_ATOM
+    assert _dcd.category == SourceCategory.INDEPENDENT_NEWS
+    assert _dcd.jurisdiction == "United Kingdom"
+    assert _dcd.issuer_agnostic is True
+    assert _dcd.allowlisted is True  # required for INDEPENDENT_NEWS — see validate_source_entry
+    assert _dcd.attribution_label == "Data Center Dynamics"
+    assert _dcd.licensing_classification  # non-empty; independent-journalism, no-full-reproduction policy
+
+
+def test_dcd_matching_item_publishes_with_correct_attribution_and_canonical_link(tmp_path, monkeypatch):
+    """Parsing + source attribution + canonical original link, using a
+    realistic DCD-shaped item — a hyperscaler capex story naming a
+    tracked company, matching DCD's real editorial beat."""
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://www.datacenterdynamics.com/en/news/amazon-announces-new-aws-data-center-campus-expansion/",
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus, adding capacity for AI workloads.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Data Center Dynamics"
+    assert story.source_feed_id == "data-center-dynamics-rss"
+    assert story.source_url == entry.link  # canonical original link preserved verbatim, never rewritten
+
+
+def test_dcd_off_domain_link_is_rejected(tmp_path, monkeypatch):
+    """Canonical-link validation: an item whose link resolves off DCD's
+    own declared domain must never publish, regardless of content."""
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://not-datacenterdynamics.example.com/amazon-aws",
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_dcd_stale_item_beyond_72_hours_is_excluded(tmp_path, monkeypatch):
+    """Update-timestamp handling: an item published outside the 72-hour
+    freshness window must never publish, even if otherwise qualifying —
+    this is the exact gate that disqualified METI's own feed this same
+    batch (see source_registry.py's own rejection note)."""
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=200)).isoformat()
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://www.datacenterdynamics.com/en/news/amazon-announces-new-aws-data-center-campus-expansion/",
+        published_at=stale_at,
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+
+
+def test_dcd_item_within_72_hours_is_included(tmp_path, monkeypatch):
+    fresh_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://www.datacenterdynamics.com/en/news/amazon-announces-new-aws-data-center-campus-expansion/",
+        published_at=fresh_at,
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 1
+
+
+def test_dcd_duplicate_within_one_run_is_deduplicated(tmp_path, monkeypatch):
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://www.datacenterdynamics.com/en/news/amazon-announces-new-aws-data-center-campus-expansion/",
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry, entry), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_dcd_rediscovering_the_same_item_on_a_second_run_is_idempotent(tmp_path, monkeypatch):
+    entry = _entry(
+        title="Amazon announces new AWS data center campus expansion",
+        link="https://www.datacenterdynamics.com/en/news/amazon-announces-new-aws-data-center-campus-expansion/",
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+    first = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+    second = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert first.stories_published == 1
+    assert second.stories_published == 0
+    assert second.items_already_seen == 1
+
+
+def test_dcd_off_topic_item_does_not_publish(tmp_path, monkeypatch):
+    """No company/theme match at all — the pre-existing fail-closed gate,
+    distinct from the admission gate below."""
+    entry = _entry(
+        title="Five conference talks worth catching this year",
+        link="https://www.datacenterdynamics.com/en/opinions/five-conference-talks-worth-catching/",
+        summary="Our picks for the most interesting sessions at this year's industry conferences.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1
+
+
+def test_dcd_consumer_format_item_naming_a_company_fails_the_admission_gate(tmp_path, monkeypatch):
+    """Rejection under the precision-first admission gate specifically
+    (editorial_admission.py), distinct from items_no_match: this item
+    DOES match a tracked company (NVIDIA) but is a consumer buying-guide
+    format, not a genuine corporate development — must fail admission,
+    not merely be demoted."""
+    entry = _entry(
+        title="Best NVIDIA GPUs Under $500 for Your Home Lab",
+        link="https://www.datacenterdynamics.com/en/opinions/best-nvidia-gpus-under-500-for-your-home-lab/",
+        summary="We rounded up the best NVIDIA graphics cards you can buy for under $500 right now.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.items_not_subject_relevant == 1
+    assert load_stories(tmp_path) == {}
+
+
+def test_dcd_failed_fetch_is_recorded_and_never_published(tmp_path, monkeypatch):
+    """Fail-closed behavior on an unavailable feed: a fetch failure is
+    recorded in source_failures, zero stories publish, and the run
+    completes without raising."""
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(), failure_code="HTTPError:503")})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.source_failures == {"data-center-dynamics-rss": "HTTPError:503"}
+
+
+def test_dcd_malformed_entry_missing_title_is_rejected_not_published(tmp_path, monkeypatch):
+    """Fail-closed behavior on a malformed entry within an otherwise-
+    available feed: an entry with no title must never publish."""
+    entry = _entry(
+        title="",
+        link="https://www.datacenterdynamics.com/en/news/untitled/",
+        summary="Amazon confirmed a new multi-billion-dollar AWS data center campus.",
+    )
+    _patch_fetch(monkeypatch, {_dcd.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_dcd,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
