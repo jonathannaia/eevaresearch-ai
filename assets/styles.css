@@ -108,6 +108,7 @@
     --glow: rgba(79, 70, 229, .18);
     --accent: #4F46E5;
     --accent-hover: #4338CA;
+    --accent-soft: #EEF2FF;
     --focus: #4F46E5;
     --link: #4F46E5;
     --r-sm: 8px;
@@ -400,8 +401,52 @@ a:hover { color: var(--accent-hover); }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
     background: var(--surface); color: var(--text) !important;
 }
+/* Active nav item: soft indigo fill + indigo text (modern editorial
+   redesign, user-approved preview) — was a neutral gray fill/dark text. */
 .er-rail-navactive [data-testid="stPageLink"] a {
-    background: var(--surface-2); color: var(--text) !important; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent) !important; font-weight: 600;
+}
+
+/* Sidebar nav icons (modern editorial redesign, user-approved preview) —
+   a small line icon before each Workspace item's label, CSS-only (no
+   Python/page_link restructuring: st.page_link's own label is plain
+   text and can't carry an icon itself, so each icon is a ::before
+   background-image on the link, keyed off the existing per-item
+   st.container(key=f"navitem-{key}") wrapper class already used for the
+   active-state styling above — nothing about that container's own
+   purpose or the page_link mechanism changes). Muted gray by default,
+   switching to indigo only inside the .er-rail-navactive wrapper the
+   active item already gets. */
+[class*="st-key-navitem-"] [data-testid="stPageLink"] a {
+    display: flex !important; align-items: center; gap: 10px;
+}
+[class*="st-key-navitem-"] [data-testid="stPageLink"] a::before {
+    content: ""; width: 16px; height: 16px; flex-shrink: 0;
+    background-repeat: no-repeat; background-position: center; background-size: contain;
+}
+.st-key-navitem-dashboard [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-dashboard .er-rail-navactive [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-radar_inbox .er-rail-navactive [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-daily_news .er-rail-navactive [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-themes [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+}
+.st-key-navitem-themes .er-rail-navactive [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
@@ -411,6 +456,39 @@ a:hover { color: var(--accent-hover); }
 .er-rail-footlinks { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.4rem; }
 /* sidebar contrast fix — see :root comment. */
 .er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
+
+/* ---------- top bar (modern editorial redesign, user-approved preview) ----------
+   Sticky search (⌘K) + avatar dropdown, above every page's own content —
+   see src/ui/ui.py::_render_topbar(). The real search button and avatar
+   popover are laid out by st.columns immediately inside this wrapper;
+   the wrapper itself only supplies the sticky/border/padding chrome, so
+   no real Streamlit widget needs to be nested inside a raw
+   unsafe_allow_html block (not supported). */
+.er-topbar-anchor {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--hairline);
+    padding: var(--space-3) 0; margin: -1.25rem 0 var(--space-5) 0;
+}
+/* The search trigger is render_palette_trigger()'s own existing
+   cta-secondary button (unchanged mechanism) — already picks up the new
+   token colors/8px radius from the shared button rules above; only its
+   width is loosened here so it reads as a search field, not a small
+   pill button, inside the top bar's wide left column. */
+.er-topbar-anchor [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"] {
+    width: 100%; justify-content: flex-start !important;
+}
+/* Avatar popover trigger — a plain st.popover button restyled into a
+   circular avatar. Scoped to the topbar-avatar-* container key prefix
+   so it can never affect any other popover a page might add. */
+[class*="st-key-topbar-avatar-"] [data-testid="stPopoverButton"],
+[class*="st-key-topbar-avatar-"] [data-testid="stBaseButton-secondary"] {
+    width: 32px !important; height: 32px !important; border-radius: 50% !important;
+    background: var(--accent) !important; color: var(--invert-fg) !important;
+    font-weight: 600 !important; padding: 0 !important; border: none !important;
+    margin-left: auto; display: flex !important; align-items: center; justify-content: center;
+}
+.er-topbar-avatar-email { font-size: 0.8rem; color: var(--text-2); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--hairline); margin-bottom: 0.5rem; word-break: break-all; }
 
 /* live-status dot (the one non-breadth-bar permitted motion instance) */
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-3); }
@@ -557,10 +635,10 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-/* Focus ring uses the dedicated --focus token (#2563EB) rather than a
-   plain dark or muted-text color — ≥4.7:1 against every surface in this
-   palette, well past the 3:1 AA minimum for a focus indicator, and reads
-   as an intentional accent ring rather than a generic outline. */
+/* Focus ring uses the dedicated --focus token (#4F46E5) rather than a
+   plain dark or muted-text color — well past the 3:1 AA minimum for a
+   focus indicator, and reads as an intentional accent ring rather than a
+   generic outline. */
 .btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: 3px; }
 
 [data-testid="stPageLink"] a:focus-visible,

@@ -131,12 +131,18 @@ def test_authenticated_user_not_on_nonempty_allowlist_is_blocked_before_navigati
 # --- Sidebar: signed-in email + sign-out control ---
 
 
-def test_authenticated_user_sees_signed_in_email_and_sign_out_in_sidebar(monkeypatch):
+def test_authenticated_user_sees_signed_in_email_and_sign_out_in_topbar(monkeypatch):
     # Home renders chrome-free on a session's very first visit (by design —
     # see app.py's own "Home renders on first visit only" comment), so the
-    # sidebar (and its sign-out control) only appears once Dashboard takes
-    # over as default — i.e. on a second visit. Pre-seeding "_has_visited"
-    # simulates that without needing a real second AppTest.run() round trip.
+    # top bar's avatar popover (and its sign-out control) only appears
+    # once Dashboard takes over as default — i.e. on a second visit.
+    # Pre-seeding "_has_visited" simulates that without needing a real
+    # second AppTest.run() round trip. Modern editorial redesign
+    # (user-approved preview): email + Sign out moved from the sidebar's
+    # own "Account" section into the top bar's avatar popover — same
+    # st.user/st.logout calls, same "only the email claim is shown"
+    # rule, just a different location and a shorter label (no more
+    # "Signed in as " prefix — the popover context already implies it).
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
     import streamlit.user_info as user_info_module
 
@@ -154,21 +160,23 @@ def test_authenticated_user_sees_signed_in_email_and_sign_out_in_sidebar(monkeyp
 
     assert not at.exception
     text = _all_rendered_text(at)
-    assert "Signed in as member@example.com" in text
+    assert "member@example.com" in text
     assert "Sign out" in [b.label for b in at.button]
 
 
-def test_denied_user_does_not_see_sidebar_signed_in_text(monkeypatch):
-    # The sidebar's "Signed in as ..." caption only exists inside
-    # with_chrome()-wrapped pages, which a denied user never reaches —
-    # only app.py's own denial screen's "Sign out" button is expected.
+def test_denied_user_does_not_see_topbar_email(monkeypatch):
+    # The top bar's avatar-popover email (moved from the sidebar's own
+    # former "Account" section, modern editorial redesign/user-approved
+    # preview) only exists inside with_chrome()-wrapped pages, which a
+    # denied user never reaches — only app.py's own denial screen's
+    # "Sign out" button is expected.
     at = _run_app(
         monkeypatch, logged_in=True, email="stranger@example.com", allowed_emails="founder@example.com"
     )
 
     assert not at.exception
     text = _all_rendered_text(at)
-    assert "Signed in as" not in text
+    assert "stranger@example.com" not in text
 
 
 # --- Logout: next rerun returns to the anonymous/sign-in state ---
