@@ -547,4 +547,4 @@ def render_recently_updated(settings: Settings) -> None:
         daily_news_page = get_page("daily_news")
         if daily_news_page is not None:
             with st.container(key="cta-tertiary-recently-updated-daily-news"):
-                st.page_link(daily_news_page, label="View all Daily News →")
+                st.page_link(daily_news_page, label="View all Signals →")

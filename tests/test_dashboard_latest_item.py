@@ -281,3 +281,23 @@ def test_end_to_end_newer_live_item_displays_and_stale_seed_headline_does_not(tm
     all_text = _text(at)
     assert "Oracle announces new data center investment" in all_text
     assert "Larry Ellison cancels plan to sell Oracle stock" not in all_text
+
+
+def test_recently_updated_footer_links_use_the_current_signals_label():
+    """Product-naming separation (design/DECISIONS.md) — the "Recently
+    Updated" section's own footer link was missed in the original rename
+    pass (a real, confirmed gap found by a later pre-push audit) and
+    still read "View all Daily News →" until this fix.
+
+    get_page("daily_news")/get_page("radar_inbox") only resolve to real
+    Page objects when run through app.py's real entry point — the
+    isolated per-page/per-component AppTest harness never populates
+    st.session_state["_pages"], so these page_links never actually
+    render there (same documented limitation as
+    tests/test_themes_research_page.py::test_detail_back_link_says_all_
+    research_theses). Checked at the source level instead."""
+    source = (
+        Path(__file__).parent.parent / "src" / "ui" / "components" / "recently_updated.py"
+    ).read_text(encoding="utf-8")
+    assert 'st.page_link(daily_news_page, label="View all Signals →")' in source
+    assert "View all Daily News" not in source
