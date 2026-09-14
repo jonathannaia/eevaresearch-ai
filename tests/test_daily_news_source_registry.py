@@ -15,6 +15,7 @@ from src.data_access.daily_news import feed_registry
 from src.data_access.daily_news.source_registry import (
     EDITORIAL_SOURCE_REGISTRY,
     EDITORIAL_SOURCE_REGISTRY_BATCH_2,
+    EDITORIAL_SOURCE_REGISTRY_BATCH_3,
     EDITORIAL_SOURCE_REGISTRY_V1,
     EXPANSION_BATCH_1_SOURCE_REGISTRY,
     EXPANSION_BATCH_2_SOURCE_REGISTRY,
@@ -913,13 +914,17 @@ def test_editorial_source_registry_v1_has_exactly_twelve_entries():
     )
 
 
-def test_editorial_source_registry_has_exactly_thirty_five_entries_v1_then_batch_2():
+def test_editorial_source_registry_has_exactly_thirty_six_entries_v1_then_batch_2_then_batch_3():
     # Daily News source-expansion batch 2, editorial lane (2026-09-13)
-    # appended 23 more entries after EDITORIAL_SOURCE_REGISTRY_V1's 12
-    # (12 + 23 = 35), never interleaved.
-    assert len(EDITORIAL_SOURCE_REGISTRY) == 35
+    # appended 23 more entries after EDITORIAL_SOURCE_REGISTRY_V1's 12;
+    # batch 3, Phase 1 activation (2026-09-15) appended 1 more (Data
+    # Center Dynamics — METI was re-verified and excluded for staleness,
+    # see source_registry.py's own EDITORIAL_SOURCE_REGISTRY_BATCH_3
+    # comment) (12 + 23 + 1 = 36), never interleaved.
+    assert len(EDITORIAL_SOURCE_REGISTRY) == 36
     assert EDITORIAL_SOURCE_REGISTRY[:12] == EDITORIAL_SOURCE_REGISTRY_V1
-    assert EDITORIAL_SOURCE_REGISTRY[12:] == EDITORIAL_SOURCE_REGISTRY_BATCH_2
+    assert EDITORIAL_SOURCE_REGISTRY[12:35] == EDITORIAL_SOURCE_REGISTRY_BATCH_2
+    assert EDITORIAL_SOURCE_REGISTRY[35:] == EDITORIAL_SOURCE_REGISTRY_BATCH_3
 
 
 def test_editorial_source_registry_has_zero_validation_violations():
