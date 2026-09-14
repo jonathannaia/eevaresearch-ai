@@ -40,6 +40,33 @@ class NewsStoryStatus(str, Enum):
     SUPPRESSED = "Suppressed"  # no valid canonical URL — never shown, never partially rendered
 
 
+class NewsMaterialityTier(str, Enum):
+    """Signals materiality classification (product-naming separation +
+    deterministic classification, design/DECISIONS.md) — a Daily-News-
+    domain type, deliberately never SignalTier/Signal or any Radar-owned
+    type (see this module's own docstring on why Daily News stays
+    decoupled from Radar's domain types at the type level). Computed
+    once, deterministically, by src/data_access/daily_news/
+    materiality_classification.py at story-construction time; never an
+    LLM score, never user-editable.
+
+    HIGH_SIGNAL: material and evidence-backed — the default Signals feed.
+    WATCHLIST: relevant but early, unquantified, or insufficiently
+      material — retained, shown in a secondary section.
+    BACKGROUND: real but not currently decision-relevant — retained for
+      search/audit, excluded from the default feed.
+
+    None (the field's own default on NewsStory/EditorialStory, not a
+    member of this enum) means "not yet classified" — every record
+    persisted before this field existed. Never reclassified automatically
+    (see materiality_classification.py's own module docstring); such a
+    record must still render safely wherever a tier is displayed."""
+
+    HIGH_SIGNAL = "High Signal"
+    WATCHLIST = "Watchlist"
+    BACKGROUND = "Background"
+
+
 @dataclass(frozen=True)
 class NewsSourceReference:
     publisher: str
@@ -100,6 +127,13 @@ class NewsStory:
     sources: tuple[NewsSourceReference, ...]
     status: NewsStoryStatus
     state_history: list[NewsStateTransition] = field(default_factory=list)
+    # Materiality classification (design/DECISIONS.md) — additive, safe-
+    # default fields. None for every record persisted before this field
+    # existed (never backfilled automatically — see
+    # materiality_classification.py's own docstring); set once, at
+    # construction, for every story discovered from this point forward.
+    materiality_tier: NewsMaterialityTier | None = None
+    materiality_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,3 +167,9 @@ class EditorialStory:
     matched_companies: tuple[str, ...]  # zero-to-many real TrackedCompany.name values
     matched_themes: tuple[str, ...]  # one-to-many theme slugs
     source_feed_id: str  # the DailyNewsSourceEntry.source_id this item came from — for per-source cap/failure-isolation bookkeeping
+    # Materiality classification (design/DECISIONS.md) — same additive,
+    # safe-default fields as NewsStory above; see that field's own
+    # comment for the "None means not yet classified, never backfilled"
+    # contract.
+    materiality_tier: NewsMaterialityTier | None = None
+    materiality_reasons: tuple[str, ...] = ()
