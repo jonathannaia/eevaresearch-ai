@@ -293,6 +293,55 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-card-recently-updated-row-"] [class*="st-key-cta-tertiary-"] {
     margin-top: 0.2rem !important;
 }
+
+/* ---------- Dashboard layout-tightening pass (design/DECISIONS.md) ----------
+   Every rule below is scoped to a Dashboard-only container-key prefix
+   (card-recently-updated-*, card-recent-theme-activity-*, card-theme-
+   health-*, cta-tertiary-rta-view-*, cta-tertiary-health-*) — none of
+   these prefixes exist on Signals, Filings, or Research Theses, whose
+   cards keep the shared [class*="st-key-card-"] padding/spacing above
+   completely unchanged. No new color/token: every value here reuses the
+   existing --space-* scale or a fraction of it. */
+
+/* Recently Updated: ~25% less vertical padding per row (8px -> 6px)
+   than the shared .er-row rule above, so five compact rows read as a
+   tighter list without touching .er-row itself (still used unchanged by
+   Filings' radar_card.py and by Regional Brief below). */
+[class*="st-key-card-recently-updated-"] .er-row { padding: 6px 0; }
+
+/* Recent Theme Activity: reduce the shared card padding for this one
+   prefix only, so a 4-row list is visibly shorter without a scroll. */
+[class*="st-key-card-recent-theme-activity-"] {
+    padding: var(--space-2) var(--space-3) !important;
+}
+/* The "View ->" affordance is a real st.link_button (unchanged widget
+   type — see recent_theme_activity.py's own docstring for why this
+   matters for test stability), de-emphasized the same way every other
+   tertiary action on this page already is: transparent, borderless,
+   --text-3, matching .st-key-cta-tertiary-*'s existing treatment for
+   st.button/st.page_link above. Streamlit's real widget class for
+   st.link_button (confirmed against the installed build) is
+   stBaseLinkButton-secondary, not stBaseButton-secondary, so it needs
+   its own selector rather than falling under the existing tertiary rule. */
+[class*="st-key-cta-tertiary-rta-view-"] [data-testid="stBaseLinkButton-secondary"] {
+    background: transparent !important; border: none !important; color: var(--text-3) !important;
+    padding: 0.15rem 0 !important; font-size: 0.78rem !important; min-height: 0 !important;
+    box-shadow: none !important;
+}
+[class*="st-key-cta-tertiary-rta-view-"] [data-testid="stBaseLinkButton-secondary"]:hover {
+    color: var(--text) !important; background: transparent !important;
+}
+[class*="st-key-cta-tertiary-rta-view-"] { margin-top: 0.1rem !important; text-align: right; }
+
+/* Theme Health: same tighter padding as Recent Theme Activity above, so
+   a card reads closer to that row's own height; internal label/value/
+   count spacing is tightened directly in dashboard.py's own inline
+   styles (no CSS needed for that part). Explore -> right-aligned within
+   its own narrow tile column. */
+[class*="st-key-card-theme-health-"] {
+    padding: var(--space-2) var(--space-3) !important;
+}
+[class*="st-key-cta-tertiary-health-"] { text-align: right; }
 /* Fixed-width date badge so catalyst titles/types start at a consistent
    x-position across rows, regardless of "Sep 5" vs "Dec 25" width. */
 .er-date-badge {
