@@ -1,8 +1,21 @@
 """EevaResearch — Evidence-First Themes MVP (design/DECISIONS.md). The
-public, read-only Themes product surface: a small number of curated,
-cross-company research narratives built from official-source evidence,
-distinct from Radar (individual detected company signals) and from the
-internal Research Case workflow objects, which never appear here.
+public, read-only "Research Theses" product surface (user-facing name
+only — every internal model/table/repository/route identifier stays
+"Theme"/"theme_id"/etc. unchanged, no rename, no data migration): a
+small number of curated, cross-company research narratives built from
+official-source evidence, distinct from Radar (individual detected
+company signals) and from the internal Research Case workflow objects,
+which never appear here.
+
+Open to every signed-in user (Research Theses admin-gate removal,
+design/DECISIONS.md) — app.py's own mandatory Google sign-in gate,
+which runs before any page including this one, is the only
+authentication check this route needs or has. There is deliberately no
+further is_admin()/role check inside this module: admin-only Theme
+*authoring, curation, editing, and visibility transitions* live
+entirely in the separate internal src/ui/pages/theme_workspace.py tool
+(its own admin/feature-flag gate, completely untouched by this file),
+never here — this page only ever reads, never writes.
 
 Display only: no authoring, write, or persistence-mutating call exists
 in this module. Every persisted value is treated as caller-supplied
@@ -13,14 +26,18 @@ ever renders as a clickable link when it starts with http:// or
 https://; anything else renders as plain escaped text.
 
 Read shape: this page uses ONLY backend_factory.get_theme_repository()
-— the published-only protocol. It never imports
+— the published-only protocol (list_published_themes()/
+get_published_theme(), plus evidence_for_theme()/company_map_for_theme()
+scoped to an already-published theme_id). It never imports
 get_theme_curator_repository, theme_store's insert/update functions, or
 scripts/create_theme.py. A theme that is internal/ready_to_publish/
 archived is indistinguishable from a nonexistent one, enforced entirely
 by the repository layer (see backend_factory.ThemeRepositoryProtocol's
 own docstring) — this page performs no additional visibility filtering
 of its own because none is needed or trusted to be sufficient on its
-own.
+own. This is exactly as true for a non-admin visitor as it was
+previously true only for an admin one — removing the is_admin() gate
+above did not change, weaken, or bypass this read boundary in any way.
 
 Deliberate, documented departure from research_cases.py's own "list
 view never reads evidence" discipline: Themes are an intentionally
@@ -41,40 +58,28 @@ import streamlit as st
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.backend_factory import ThemeRepositoryProtocol
+from src.logic.formatting import fmt_datetime_local
 from src.logic.market_map import jurisdiction_for_source
 from src.logic.source_link import public_source_url
 from src.models.theme_research import CompanyRole, ResearchTheme
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
-from src.ui.ui import get_page, is_admin
+from src.ui.ui import get_page
 
-_PAGE_TITLE = "Themes"
+# User-facing product name only — see module docstring's opening note.
+_PAGE_TITLE = "Research Theses"
 _SCOPE_STATEMENT = (
     "Evidence-backed investigations into potential bottlenecks, demand shifts, "
     "and second-order company impacts."
 )
 _FOOTER_DISCLAIMER = "Informational research only; not investment advice."
-_UNAVAILABLE_MESSAGE = "Themes are temporarily unavailable."
+_UNAVAILABLE_MESSAGE = "Research Theses are temporarily unavailable."
 
-_EMPTY_STATE_TITLE = "No active themes yet"
+_EMPTY_STATE_TITLE = "No active research theses yet"
 _EMPTY_STATE_DETAIL = (
     "EevaResearch is monitoring official company disclosures for evidence of emerging bottlenecks, "
-    "demand shifts, and second-order company impacts. Themes are published when multiple official "
-    "sources support a specific, testable research question."
-)
-
-# Beta UI polish pass (design/DECISIONS.md): this route is no longer
-# linked from the public sidebar (see src/ui/ui.py's HIDDEN_FROM_NAV),
-# but a direct/deep URL must still resolve to something deliberate, not
-# a possibly-sparse real index. Gated the same way admin_users.py gates
-# its own hidden page — is_admin() checked before any settings/
-# repository access, so a non-admin visitor never triggers a theme
-# query. Internal/admin access (and the separate theme_workspace.py
-# authoring tool) is completely unaffected.
-_BETA_EXPANDING_TITLE = "Themes are being expanded"
-_BETA_EXPANDING_DETAIL = (
-    "We're still building out this section for the beta. Check back soon, or head to the Dashboard "
-    "for the latest tracked filings and news."
+    "demand shifts, and second-order company impacts. Research Theses are published when multiple "
+    "official sources support a specific, testable research question."
 )
 
 _COMPANY_ROLE_SECTION_ORDER: tuple[CompanyRole, ...] = (
@@ -132,14 +137,6 @@ def _footer_disclaimer() -> None:
 
 
 def render() -> None:
-    if not is_admin():
-        st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
-        empty_state(
-            _BETA_EXPANDING_TITLE, _BETA_EXPANDING_DETAIL,
-            action_label="Go to Dashboard", action_page=get_page("dashboard"), key="themes-beta-expanding",
-        )
-        return
-
     settings = get_settings()
     theme_id = st.query_params.get("theme_id", "").strip()
 
@@ -191,7 +188,10 @@ def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> No
         with top_cols[2]:
             st.markdown(f'<div class="er-card-title">{_esc(theme.title)}</div>', unsafe_allow_html=True)
         with top_cols[3]:
-            st.markdown(f'<div class="er-muted" style="text-align:right;">{_esc(theme.updated_at)}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="er-muted" style="text-align:right;">{_esc(fmt_datetime_local(theme.updated_at))}</div>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown(f'<div style="margin-top:0.3rem;">{_esc(theme.hypothesis)}</div>', unsafe_allow_html=True)
         st.markdown(
@@ -212,7 +212,7 @@ def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> No
 def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
     list_page = get_page("themes")
     if list_page is not None:
-        st.page_link(list_page, label="← All Themes")
+        st.page_link(list_page, label="← All Research Theses")
 
     try:
         theme = repository.get_published_theme(theme_id)
@@ -226,7 +226,10 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
         return
 
     if theme is None:
-        empty_state("Theme not found.", "This research theme does not exist, or is no longer available.", key="theme-not-found")
+        empty_state(
+            "Research Thesis not found.", "This research thesis does not exist, or is no longer available.",
+            key="theme-not-found",
+        )
         return
 
     # Identity safety: only ever render a record whose own theme_id
@@ -239,7 +242,7 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
     st.markdown(f'<div class="er-page-title">{_esc(theme.title)}</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="er-muted">{_enum_label(theme.category)} · {_enum_label(theme.status)} · '
-        f'Updated {_esc(theme.updated_at)}</div>',
+        f'Updated {_esc(fmt_datetime_local(theme.updated_at))}</div>',
         unsafe_allow_html=True,
     )
     _scope_statement()

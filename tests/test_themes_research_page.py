@@ -12,6 +12,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.data_access import theme_store
+from src.logic.formatting import fmt_datetime_local
 from src.models.theme_research import (
     CompanyRole,
     EvidenceDirection,
@@ -104,15 +105,15 @@ class _RaisingRepo:
 
 
 def _run_with_repo(monkeypatch, repo, theme_id=None):
-    # Beta UI polish pass (design/DECISIONS.md): render() now gates on
-    # is_admin() before any settings/repository access (mirroring
-    # admin_users.py's own pattern) — every existing test in this file
-    # exercises the real index/detail view, which is now the admin-only
-    # path, so it signs in as an admin here, the same patch-where-used
-    # convention tests/test_admin_users_page.py already established.
-    # The non-admin/public beta-gate path has its own dedicated tests
-    # below (see "Beta visibility gate for a non-admin/public visitor").
-    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: True)
+    # Research Theses admin-gate removal (design/DECISIONS.md): render()
+    # no longer checks is_admin() at all — the module doesn't import it
+    # any more (see test_page_module_never_imports_is_admin below). Every
+    # test in this file exercises the real index/detail view exactly as
+    # any signed-in user reaches it; app.py's own mandatory sign-in gate
+    # (upstream of this page entirely) is the only auth check involved,
+    # and isn't reachable from this isolated per-page harness in the
+    # first place. Admin-only authoring/curation lives in the separate
+    # theme_workspace.py tool, untouched by and untested in this file.
     monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", lambda settings: repo)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     if theme_id is not None:
@@ -122,65 +123,66 @@ def _run_with_repo(monkeypatch, repo, theme_id=None):
 
 
 # ============================================================
-# Beta visibility gate for a non-admin/public visitor
+# Open to every signed-in user — no admin gate
 # ============================================================
 
 
-def test_non_admin_sees_beta_expanding_state_and_repository_is_never_constructed(monkeypatch):
-    repo_constructed = False
-
-    def _construct(settings):
-        nonlocal repo_constructed
-        repo_constructed = True
-        return _FakeRepo(themes=[_theme()])
-
-    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: False)
-    monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", _construct)
-    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
-    at.run()
-    assert not at.exception
-    all_html = " ".join(m.value for m in at.markdown)
-    assert "Themes are being expanded" in all_html
-    assert "Test theme" not in all_html  # the real (possibly sparse) index content never renders
-    assert repo_constructed is False
-
-
-def test_non_admin_beta_expanding_state_links_to_dashboard_wired_at_source_level():
-    """get_page("dashboard") only resolves to a real Page object when run
-    through app.py's real entry point — the isolated per-page AppTest
-    harness never populates st.session_state["_pages"], the same
-    limitation test_ui_audit_phase_d.py's own Signals-page tests already
-    document for get_page("themes")/get_page("radar_inbox"). Checked at
-    the source level instead, following that same established
-    convention."""
-    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
-    assert 'action_label="Go to Dashboard"' in source
-    assert 'action_page=get_page("dashboard")' in source
-
-
-def test_non_admin_direct_theme_id_url_also_sees_beta_expanding_state(monkeypatch):
-    # The gate runs before render() even inspects st.query_params, so a
-    # non-admin deep-linking straight to a specific theme_id sees the
-    # same beta state, never the real detail view.
-    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: False)
-    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
-    at.query_params["theme_id"] = "some-theme-id"
-    at.run()
-    assert not at.exception
-    all_html = " ".join(m.value for m in at.markdown)
-    assert "Themes are being expanded" in all_html
-
-
-def test_admin_still_sees_real_index_not_the_beta_expanding_state(monkeypatch):
-    # Complements _run_with_repo's own admin sign-in used by every other
-    # test in this file — an explicit end-to-end check that admin access
-    # is genuinely preserved, not just assumed from the shared helper.
+def test_non_admin_style_visitor_sees_the_real_index_with_no_gate_at_all(monkeypatch):
+    """No is_admin() patch anywhere in this test — proving the real
+    index renders for any caller, not just one explicitly granted admin
+    status. This is the direct behavioral proof that the former
+    "Themes are being expanded" admin-only gate is gone."""
     theme = _theme()
     at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]))
     assert not at.exception
     all_html = " ".join(m.value for m in at.markdown)
     assert "Test theme" in all_html
-    assert "Themes are being expanded" not in all_html
+    assert "being expanded" not in all_html.lower()
+
+
+def test_non_admin_style_visitor_sees_the_real_detail_page_with_no_gate_at_all(monkeypatch):
+    theme = _theme()
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert theme.working_thesis in all_html
+    assert "being expanded" not in all_html.lower()
+
+
+def test_page_module_never_imports_or_uses_is_admin():
+    """AST-based, not substring-based (mirrors
+    test_page_module_never_imports_curator_seam_or_authoring_script's
+    own technique below) — locks in the admin-gate removal so it can't
+    silently regress. Admin-only Theme authoring/curation/editing/
+    visibility-transition controls belong solely to the separate
+    theme_workspace.py tool, which this module still never imports
+    (see test_page_module_never_imports_curator_seam_or_authoring_script)."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
+    tree = ast.parse(source, filename="themes_research.py")
+    imported_names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported_names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            imported_names.update(alias.name for alias in node.names)
+    used_names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    assert "is_admin" not in imported_names
+    assert "is_admin" not in used_names
+
+
+def test_page_module_never_imports_theme_workspace():
+    """theme_workspace.py is the separate, still fully admin/feature-flag
+    -gated internal authoring tool (design/DECISIONS.md) — untouched by
+    this change, and this page must never import it, mirroring the
+    curator-seam check below for the same reason."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
+    tree = ast.parse(source, filename="themes_research.py")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            assert not (node.module == "src.ui.pages.theme_workspace" or node.module.startswith("src.ui.pages.theme_workspace."))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                assert not (alias.name == "src.ui.pages.theme_workspace" or alias.name.startswith("src.ui.pages.theme_workspace."))
 
 
 # ============================================================
@@ -192,8 +194,55 @@ def test_empty_state_renders_when_zero_published_themes(monkeypatch):
     at = _run_with_repo(monkeypatch, _FakeRepo(themes=()))
     assert not at.exception
     all_html = " ".join(m.value for m in at.markdown)
-    assert "No active themes yet" in all_html
-    assert "Themes are published when multiple official sources" in all_html
+    assert "No active research theses yet" in all_html
+    assert "Research Theses are published when multiple official sources" in all_html
+
+
+# ============================================================
+# Public wording is "Research Theses" — internal naming is unaffected
+# ============================================================
+
+
+def test_index_page_title_is_research_theses(monkeypatch):
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[_theme()]))
+    all_html = " ".join(m.value for m in at.markdown)
+    assert '<div class="er-page-title">Research Theses</div>' in all_html
+
+
+def test_detail_back_link_says_all_research_theses():
+    """get_page("themes") only resolves to a real Page object when run
+    through app.py's real entry point — the isolated per-page AppTest
+    harness never populates st.session_state["_pages"] (same documented
+    limitation as test_non_admin_beta_expanding_state_links_to_dashboard_
+    wired_at_source_level used to check for "Go to Dashboard", and as
+    tests/test_navigation.py's own module docstring explains generally).
+    Checked at the source level instead."""
+    source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
+    assert 'st.page_link(list_page, label="← All Research Theses")' in source
+
+
+def test_unpublished_detail_not_found_message_says_research_thesis(monkeypatch):
+    class _RepoWithNothing(_FakeRepo):
+        def get_published_theme(self, theme_id):
+            return None
+
+    at = _run_with_repo(monkeypatch, _RepoWithNothing(themes=[]), theme_id="theme-missing")
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Research Thesis not found." in all_html
+    assert "research thesis does not exist" in all_html
+
+
+def test_internal_model_and_storage_naming_is_unaffected_by_the_public_rename():
+    """The rename is user-facing text only — every internal identifier
+    (class name, dataclass field names, id-factory prefixes) stays
+    "Theme"-named, exactly as design/DECISIONS.md requires: no data
+    migration, no rename of any model/table/repository/route
+    identifier."""
+    assert ResearchTheme.__name__ == "ResearchTheme"
+    field_names = {f.name for f in dataclasses.fields(ResearchTheme)}
+    assert {"id", "category", "status", "visibility", "title", "working_thesis"} <= field_names
+    assert theme_store.build_theme_id("x", "y").startswith("theme-")
+    assert theme_store.build_theme_evidence_id("theme-x", "https://example.com", "2026-01-01").startswith("theme-evidence-")
 
 
 # ============================================================
@@ -217,7 +266,7 @@ def test_non_published_themes_never_render_in_index(monkeypatch, visibility):
     at = _run_with_repo(monkeypatch, repo)
     all_html = " ".join(m.value for m in at.markdown)
     assert theme.title not in all_html
-    assert "No active themes yet" in all_html
+    assert "No active research theses yet" in all_html
 
 
 @pytest.mark.parametrize("visibility", [ThemeVisibility.INTERNAL, ThemeVisibility.READY_TO_PUBLISH, ThemeVisibility.ARCHIVED])
@@ -296,6 +345,29 @@ def test_what_eeva_tested_is_escaped(monkeypatch):
     all_html = " ".join(m.value for m in at.markdown)
     assert "<script>" not in all_html
     assert "&lt;script&gt;" in all_html
+
+
+# ============================================================
+# Readable, user-local timestamp formatting — never raw ISO UTC
+# ============================================================
+
+
+def test_index_card_shows_readable_local_time_not_raw_iso(monkeypatch):
+    raw_updated_at = "2026-09-14T03:56:49.322027+00:00"
+    theme = _theme(updated_at=raw_updated_at)
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]))
+    all_html = " ".join(m.value for m in at.markdown)
+    assert raw_updated_at not in all_html
+    assert fmt_datetime_local(raw_updated_at) in all_html
+
+
+def test_detail_page_shows_readable_local_time_not_raw_iso(monkeypatch):
+    raw_updated_at = "2026-09-14T03:56:49.322027+00:00"
+    theme = _theme(updated_at=raw_updated_at)
+    at = _run_with_repo(monkeypatch, _FakeRepo(themes=[theme]), theme_id=theme.id)
+    all_html = " ".join(m.value for m in at.markdown)
+    assert raw_updated_at not in all_html
+    assert f"Updated {fmt_datetime_local(raw_updated_at)}" in all_html
 
 
 # ============================================================
@@ -522,7 +594,6 @@ def test_repository_construction_failure_renders_restrained_message(monkeypatch)
     def _boom(settings):
         raise RuntimeError("connection boom - must never reach the UI")
 
-    monkeypatch.setattr(themes_research, "is_admin", lambda *args, **kwargs: True)
     monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", _boom)
     at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
     at.run()

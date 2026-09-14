@@ -237,7 +237,28 @@ def test_sqlite_migration_v7_to_v8_preserves_existing_theme_data():
     try:
         sqlite_schema.migrate(conn)
         assert sqlite_schema.get_schema_version(conn) == 7
-        sqlite_themes.insert_theme(conn, _theme())
+        # Raw INSERT matching V7's own research_themes column set exactly
+        # (no what_eeva_tested — that column doesn't exist until V18) —
+        # sqlite_themes.insert_theme() is the CURRENT write path and
+        # always references the current schema's full column set, so it
+        # can't be used here to simulate a row genuinely written before
+        # a later column existed.
+        theme = _theme()
+        conn.execute(
+            """
+            INSERT INTO research_themes (
+                id, category, status, visibility, title, key_question, hypothesis,
+                working_thesis, why_it_matters, what_could_change_the_view, what_to_watch_next,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                theme.id, theme.category.value, theme.status.value, theme.visibility.value, theme.title,
+                theme.key_question, theme.hypothesis, theme.working_thesis, theme.why_it_matters,
+                theme.what_could_change_the_view, theme.what_to_watch_next, theme.created_at, theme.updated_at,
+            ),
+        )
+        conn.commit()
     finally:
         sqlite_schema._MIGRATIONS = original_migrations
 
