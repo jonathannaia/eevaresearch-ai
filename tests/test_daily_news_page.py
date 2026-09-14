@@ -27,6 +27,7 @@ from src.config.settings import Settings
 from src.data_access.daily_news import daily_news_store, editorial_story_store
 from src.models.daily_news_models import (
     EditorialStory,
+    NewsMaterialityTier,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -34,6 +35,7 @@ from src.models.daily_news_models import (
     SourceClass,
 )
 from src.ui.pages.daily_news import (
+    _NO_HIGH_SIGNAL_EMPTY_STATE,
     _SOURCE_CLASS_LABELS,
     _SUBTITLE,
     _elapsed_seconds,
@@ -1020,3 +1022,153 @@ def test_all_companies_view_editorial_cap_and_content_are_unaffected(tmp_path):
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
     assert "Market news" in markdown_text
+
+
+# ============================================================
+# Signals materiality classification (design/DECISIONS.md) — tier-based
+# presentation: High Signal default feed, Watchlist secondary section,
+# Background behind an explicit control, and the exact empty state.
+# ============================================================
+
+
+def test_high_signal_story_renders_in_the_default_section_with_its_badge(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL, materiality_reasons=("primary_disclosure",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "High Signal" in markdown_text
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert _NO_HIGH_SIGNAL_EMPTY_STATE not in markdown_text
+
+
+def test_watchlist_story_renders_in_its_own_secondary_section_with_its_badge(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(materiality_tier=NewsMaterialityTier.WATCHLIST, materiality_reasons=("on_taxonomy_no_anchor:x",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Watchlist" in markdown_text
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    # No High Signal item exists — the default-feed empty state shows,
+    # even though the page as a whole is not empty (Watchlist has this
+    # one item).
+    assert _NO_HIGH_SIGNAL_EMPTY_STATE in markdown_text
+
+
+def test_background_story_is_excluded_from_the_default_view_and_only_reachable_via_the_toggle(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(materiality_tier=NewsMaterialityTier.BACKGROUND, materiality_reasons=("off_taxonomy_no_anchor",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    # AppTest renders every st.expander's contents regardless of its
+    # collapsed/expanded visual state (Streamlit doesn't conditionally
+    # skip building collapsed content), so this proves the Background
+    # item is retained (never deleted) and specifically reachable inside
+    # the "Show Background" control, not the default High Signal/
+    # Watchlist sections. The expander's own label is a distinct element
+    # type, not a markdown node — checked via at.expander, not
+    # markdown_text.
+    assert any(exp.label.startswith("Show Background") for exp in at.expander)
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert _NO_HIGH_SIGNAL_EMPTY_STATE in markdown_text
+
+
+def test_no_background_control_rendered_when_there_are_zero_background_items(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL)])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert len(at.expander) == 0
+
+
+def test_legacy_unclassified_story_defaults_to_watchlist_for_display_only(tmp_path):
+    """A story persisted before materiality_tier existed (None, the
+    field's own real default — see NewsMaterialityTier's own docstring)
+    must still render safely: shown in Watchlist (a safe display
+    default), never silently hidden like Background, never overclaimed
+    as High Signal."""
+    story = _story()
+    assert story.materiality_tier is None  # the actual persisted/default value — never mutated by this test
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Watchlist" in markdown_text
+    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert len(at.expander) == 0
+
+
+def test_no_high_signal_items_shows_the_exact_approved_empty_state(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.WATCHLIST)])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "No material signals right now. Eeva is monitoring new disclosures and developments." in markdown_text
+
+
+def test_editorial_high_signal_story_renders_with_its_badge_in_the_default_section(tmp_path):
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL, materiality_reasons=("primary_disclosure",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "High Signal" in markdown_text
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+
+
+def test_mixed_tier_items_each_render_in_their_own_section_in_one_page(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="newsitem-nvidia-high", materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+            headline="NVIDIA files 8-K disclosing material agreement",
+        ),
+    ])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            id="editorial-watch", materiality_tier=NewsMaterialityTier.WATCHLIST,
+            headline="Solo developer gets CUDA running on AMD GPUs",
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "High Signal" in markdown_text
+    assert "Watchlist" in markdown_text
+    assert "NVIDIA files 8-K disclosing material agreement" in markdown_text
+    assert "Solo developer gets CUDA running on AMD GPUs" in markdown_text
+    assert _NO_HIGH_SIGNAL_EMPTY_STATE not in markdown_text
