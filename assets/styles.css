@@ -31,14 +31,30 @@
    (4.5:1+) when used as chip/glyph foreground, not just as a 3:1 dot fill.
 
    Motion is restricted to two instances (breadth-bar fill, live-status-dot
-   pulse), both gated by prefers-reduced-motion. */
+   pulse), both gated by prefers-reduced-motion.
+
+   Modern editorial redesign (design/DECISIONS.md, user-approved preview) —
+   a second full token replacement, same "layout/components/copy/mechanics
+   unchanged, only the values feeding them moved" discipline as the pass
+   above: white cards with a visible 1px border (previously borderless,
+   separated by surface value only — now separated by an actual border
+   per the approved Linear/Notion-style direction), indigo-600 accent
+   replacing the previous midnight-blue, Inter loaded for real via Google
+   Fonts (previously specified but never actually fetched, silently
+   falling back to the browser's own sans-serif). Every component below
+   that reads these tokens (cards, buttons, chips, sidebar, focus rings)
+   picks up the new look automatically; only the handful of rules noted
+   inline (card border/hover behavior, button radius, sidebar width) are
+   direct rule edits rather than pure token swaps, since those describe
+   different *shapes*, not just different colors. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
     /* Backgrounds — page / sidebar / card / elevated-hover / native-widget. */
-    --bg: #F8FAFC;
-    --rail: #F1F5F9;
+    --bg: #FAFAFA;
+    --rail: #FFFFFF;
     --surface: #FFFFFF;
-    --surface-2: #F8FBFF;
+    --surface-2: #F3F4F6;
     /* Third elevation tier for track/badge/disabled fills (breadth-bar
        track, unread-count badge, disabled-button background) — not one of
        the seven given tokens (the palette only names 5 surface roles), but
@@ -47,7 +63,7 @@
        remaining internal role the previous palette's --surface-3 also
        filled, kept deliberately subtle (contrast ~1.2:1 against white —
        barely differentiated, by design, for a "track" rather than a card). */
-    --surface-3: #E2E8F0;
+    --surface-3: #E5E7EB;
     --surface-input: #FFFFFF;
     /* Borders: --hairline is decorative (dividers, footer rules, chart
        gridlines) with no contrast floor of its own. --hairline-2 is the
@@ -60,29 +76,40 @@
        white-on-white with their container card, so this border is the
        *only* way an input's boundary is perceivable here — not a
        decorative nicety. */
-    --hairline: #D9E2EC;
+    --hairline: #E5E7EB;
+    /* --hairline-2 stays at its original, contrast-verified value (see
+       the comment above) — it is the FUNCTIONAL border for inputs,
+       secondary buttons, and other controls whose only visible boundary
+       this is; #D1D5DB (the approved card-hover border color) measures
+       ~1.5:1 against white, well under the 3:1 floor those controls
+       actually need, so it is deliberately NOT reused there. The new
+       --card-border-hover token below is the one place #D1D5DB is used —
+       a card's hover state is supplementary (the card's shape/shadow are
+       still visible either way), not the sole way to perceive it. */
     --hairline-2: #7A8DA2;
-    --text: #0F172A;
-    --text-2: #334155;
+    --card-border-hover: #D1D5DB;
+    --text: #111827;
+    --text-2: #374151;
     /* Only three text tiers in this palette (Primary/Secondary/Muted) —
        the previous four-tier ramp's two dimmest steps (text-3/text-4)
-       both collapse onto the one Muted value rather than inventing a
-       shade outside the given palette. Muted (#64748B) clears 4.5:1 on
-       --bg/--surface/--surface-2 (4.55-4.76:1) but falls just short on
-       --rail specifically (4.34:1) — the handful of sidebar-only labels
-       that would otherwise use it are bumped to --text-2 at their call
-       sites below instead (search "sidebar contrast fix" in this file). */
-    --text-3: #64748B;
-    --text-4: #64748B;
-    /* Primary CTA fill/label — same role as before (the button/chip's
-       highest-emphasis pair): midnight-blue fill, white label (14.6:1). */
-    --invert-bg: #102A43;
+       both collapse onto the one Muted value, per spec (#6B7280). --rail
+       is now the same white as --surface (sidebar redesign, above), so
+       the previous --rail-specific contrast shortfall this comment used
+       to document no longer applies — the --text-2 sidebar-label
+       call-site overrides noted below are harmless leftovers (still
+       correct, just no longer strictly required) rather than something
+       that needed reverting. */
+    --text-3: #6B7280;
+    --text-4: #6B7280;
+    /* Primary CTA fill/label — indigo-600 fill, white label (user-approved
+       preview design; ~8.6:1 label contrast). */
+    --invert-bg: #4F46E5;
     --invert-fg: #FFFFFF;
-    --glow: rgba(22, 62, 104, .18);
-    --accent: #102A43;
-    --accent-hover: #163E68;
-    --focus: #2563EB;
-    --link: #1D4ED8;
+    --glow: rgba(79, 70, 229, .18);
+    --accent: #4F46E5;
+    --accent-hover: #4338CA;
+    --focus: #4F46E5;
+    --link: #4F46E5;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
@@ -334,9 +361,17 @@ a:hover { color: var(--accent-hover); }
 .er-alert-neg-note { color: var(--text); font-size: 0.85rem; margin-top: var(--space-1); line-height: 1.5; }
 
 /* ---------- sidebar rail ---------- */
+/* Modern editorial redesign: fixed 240px width (previously unset,
+   Streamlit's own resizable default) and white background (--rail is
+   now the same white as --surface, separated only by the existing
+   border-right) — the approved preview's exact sidebar spec. Width/
+   min-width/max-width all pinned so Streamlit's own sidebar-resize drag
+   handle can't widen/narrow it away from the approved measurement;
+   collapse/expand (a visibility toggle, not a width one) is unaffected. */
 [data-testid="stSidebar"] {
     background: var(--rail) !important;
     border-right: 1px solid var(--hairline);
+    width: 240px !important; min-width: 240px !important; max-width: 240px !important;
 }
 [data-testid="stSidebar"] > div:first-child { padding-top: 1rem; }
 .er-rail-brand {
@@ -425,29 +460,32 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"] {
     background: var(--invert-bg) !important; color: var(--invert-fg) !important;
-    border: none !important; border-radius: 999px !important; font-weight: 600 !important;
-    /* Soft navy-blue aura (not neon): a thin navy-tinted ring, the --glow
-       blur (rgba(22,62,104,.18) — the specified primary-CTA-glow value,
+    /* Modern editorial redesign: 8px radius (--r-sm), not a full pill —
+       matches the approved preview's button shape. Small status chips/
+       badges elsewhere in this file stay pill-shaped on purpose (see
+       .er-chip/.er-status-tag/.er-fresh, untouched by this redesign);
+       only actual buttons changed shape. */
+    border: none !important; border-radius: var(--r-sm) !important; font-weight: 600 !important;
+    /* Soft indigo aura (not neon): a thin indigo-tinted ring, the --glow
+       blur (rgba(79,70,229,.18) — the indigo primary-CTA-glow value,
        reused for the live-status dot and breadth-bar leader, the app's
-       other two glow spots), and a navy-tinted drop shadow for depth
-       (replacing the previous pure-black shadow — reads softer against a
-       white/off-white page than a hard black shadow would). */
-    box-shadow: 0 0 0 1px rgba(16,42,67,.25), 0 0 22px var(--glow), 0 2px 10px rgba(16,42,67,.18) !important;
+       other two glow spots), and an indigo-tinted drop shadow for depth. */
+    box-shadow: 0 0 0 1px rgba(79,70,229,.25), 0 0 22px var(--glow), 0 2px 10px rgba(79,70,229,.18) !important;
     transition: box-shadow .22s ease, background .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(22,62,104,.45), 0 0 26px rgba(22,62,104,.32), 0 4px 16px rgba(22,62,104,.24) !important;
+    box-shadow: 0 0 0 1px rgba(67,56,202,.45), 0 0 26px rgba(67,56,202,.32), 0 4px 16px rgba(67,56,202,.24) !important;
     background: var(--accent-hover) !important;
 }
 /* Restrained pressed state (beta UI polish pass) — a flatter, tighter
    shadow than hover's glow (no added blur/elevation on press), same
-   --accent-hover fill and same rgba(22,62,104,...) hue already used
+   --accent-hover fill and same rgba(67,56,202,...) hue already used
    above, just a smaller ring and no glow — reads as "pressed down,"
    not "still hovering." No new color, no animation. */
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:active {
-    box-shadow: 0 0 0 1px rgba(22,62,104,.55) !important;
+    box-shadow: 0 0 0 1px rgba(67,56,202,.55) !important;
     background: var(--accent-hover) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
@@ -459,7 +497,7 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"] {
     background: transparent !important; border: 1px solid var(--hairline-2) !important;
-    border-radius: 999px !important; color: var(--text) !important;
+    border-radius: var(--r-sm) !important; color: var(--text) !important;
     transition: border-color .15s ease, background-color .15s ease;
 }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:hover,
@@ -595,44 +633,50 @@ a:hover { color: var(--accent-hover); }
 }
 
 /* ---------- cards ----------
+   Modern editorial redesign (design/DECISIONS.md, user-approved preview):
    Streamlit's st.container(border=True) renders a real 1px border by
-   default. Brief §5: "Panels have no outer border; separation is by
-   surface value" — override it away and separate purely by background
-   against --bg, with a small radius instead (12px small cards per §5). */
+   default — the previous pass explicitly removed it ("Panels have no
+   outer border; separation is by surface value") and separated cards by
+   background-on-hover instead. The approved redesign reverses that
+   specific decision on purpose: every card now carries a real, always-
+   visible 1px border (--hairline, #E5E7EB), and hover darkens the border
+   (--card-border-hover, #D1D5DB) rather than changing the fill — the
+   card stays white in both states. Radius/padding/spacing scale are
+   unchanged from before. */
 [class*="st-key-card-"] {
-    border: none !important; border-radius: var(--r-md) !important;
-    background: var(--surface) !important; transition: background-color .15s ease;
+    border: 1px solid var(--hairline) !important; border-radius: var(--r-md) !important;
+    background: var(--surface) !important; transition: border-color .15s ease, box-shadow .15s ease;
     /* Slightly less vertical padding than Streamlit's own default (was a
        uniform 14px) so cards don't consume unnecessary height, matching
        the shared spacing scale rather than a per-card override. */
     padding: var(--space-3) var(--space-4) !important;
 }
-[class*="st-key-card-"]:hover { background: var(--surface-2) !important; }
+[class*="st-key-card-"]:hover {
+    border-color: var(--card-border-hover) !important;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04) !important;
+}
 /* Subtheme/Map cards don't open anything (UX-refinement pass) — suppress
-   the hover brighten so they don't visually imply they're clickable. */
-[class*="st-key-card-subtheme-"]:hover { background: var(--surface) !important; }
+   the hover border-darken so they don't visually imply they're
+   clickable (updated from "suppress hover brighten" for the new
+   border-based hover cue above; same intent, same scoped selector). */
+[class*="st-key-card-subtheme-"]:hover { border-color: var(--hairline) !important; box-shadow: none !important; }
 /* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
    page's one "primary" content well: same shared white card as every
-   other card above, plus a restrained midnight-blue left-edge accent rule
+   other card above, plus a restrained indigo left-edge accent rule
    marking it as the page's lead element. No new fill, gradient, or
    one-off visual system — one border-side on the existing card shape. */
 .st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
 
 /* Daily News card consistency (beta UI polish pass, design/DECISIONS.md):
    the issuer feed card (src/ui/pages/daily_news.py) and the editorial
-   feed card (src/ui/components/editorial_coverage.py) share the same
-   base card-* treatment above, but this app's global card rule
-   deliberately has no border ("Panels have no outer border; separation
-   is by surface value"). Scoped ONLY to these two feed-card key
-   prefixes — not the global rule above, which stays untouched for every
-   other card in the app — so both card types in the unified Daily News
-   feed get one consistent, subtle boundary using the same functional-
-   border token already used elsewhere (--hairline-2). Source-type
-   distinction stays badge-only (each card's own existing status-tag
-   label), never an outer-card treatment difference. */
-[class*="st-key-card-issuer-"], [class*="st-key-card-editorial-"] {
-    border: 1px solid var(--hairline-2) !important;
-}
+   feed card (src/ui/components/editorial_coverage.py) previously needed
+   their own explicit border override, back when the global card rule had
+   none. The global rule above now gives every card the same --hairline
+   border by default, so these two card types read identically to every
+   other card in the app (Dashboard, Filings, Research Theses) without
+   needing a special-case rule any more — removed rather than left
+   redundant. Source-type distinction stays badge-only (each card's own
+   existing status-tag label), never an outer-card treatment difference. */
 
 /* ---------- theme icon motifs ---------- */
 .er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }
