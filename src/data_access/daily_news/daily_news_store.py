@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Protocol
 
 from src.models.daily_news_models import (
+    NewsMaterialityTier,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -54,6 +55,7 @@ def _story_from_dict(data: dict) -> NewsStory:
         NewsStateTransition(status=NewsStoryStatus(h["status"]), at=h["at"], detail=h.get("detail", ""))
         for h in data.get("state_history", [])
     ]
+    materiality_tier_raw = data.get("materiality_tier")
     return NewsStory(
         id=data["id"], company_name=data["company_name"], ticker=data.get("ticker"),
         theme_slug=data.get("theme_slug", ""), headline=data["headline"],
@@ -61,6 +63,12 @@ def _story_from_dict(data: dict) -> NewsStory:
         translation_unavailable=data.get("translation_unavailable", False),
         original_title=data.get("original_title"), sources=sources,
         status=NewsStoryStatus(data["status"]), state_history=history,
+        # Materiality classification (design/DECISIONS.md) — additive,
+        # safe-default: None for every record persisted before this
+        # field existed (never backfilled — see NewsMaterialityTier's
+        # own docstring).
+        materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
+        materiality_reasons=tuple(data.get("materiality_reasons", ())),
     )
 
 

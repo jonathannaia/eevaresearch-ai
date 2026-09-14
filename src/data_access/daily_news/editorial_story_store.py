@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 _CACHE_FILENAME = "daily_news_editorial_stories.json"
 
@@ -29,11 +29,17 @@ def _cache_path(cache_dir: Path, filename: str = _CACHE_FILENAME) -> Path:
 
 
 def _story_from_dict(data: dict) -> EditorialStory:
+    materiality_tier_raw = data.get("materiality_tier")
     return EditorialStory(
         id=data["id"], headline=data["headline"], publisher=data["publisher"],
         source_url=data["source_url"], published_at=data["published_at"], retrieved_at=data["retrieved_at"],
         excerpt=data.get("excerpt"), matched_companies=tuple(data.get("matched_companies", ())),
         matched_themes=tuple(data.get("matched_themes", ())), source_feed_id=data["source_feed_id"],
+        # Materiality classification (design/DECISIONS.md) — same
+        # additive, safe-default contract as daily_news_store.py's own
+        # _story_from_dict.
+        materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
+        materiality_reasons=tuple(data.get("materiality_reasons", ())),
     )
 
 

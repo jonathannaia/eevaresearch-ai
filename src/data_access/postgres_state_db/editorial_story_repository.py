@@ -20,15 +20,22 @@ import json
 import psycopg
 
 from src.data_access.postgres_state_db.connection import transaction
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 
 def _row_to_story(row) -> EditorialStory:
+    materiality_tier_raw = row["materiality_tier"]
     return EditorialStory(
         id=row["id"], headline=row["headline"], publisher=row["publisher"],
         source_url=row["source_url"], published_at=row["published_at"], retrieved_at=row["retrieved_at"],
         excerpt=row["excerpt"], matched_companies=tuple(json.loads(row["matched_companies_json"])),
         matched_themes=tuple(json.loads(row["matched_themes_json"])), source_feed_id=row["source_feed_id"],
+        # Materiality classification (design/DECISIONS.md) — additive,
+        # safe-default: NULL for every row persisted before this column
+        # existed (never backfilled — see NewsMaterialityTier's own
+        # docstring).
+        materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
+        materiality_reasons=tuple(json.loads(row["materiality_reasons"])) if row["materiality_reasons"] else (),
     )
 
 
@@ -42,13 +49,16 @@ def _insert_story(conn: psycopg.Connection, story: EditorialStory) -> None:
         """
         INSERT INTO editorial_stories (
             id, headline, publisher, source_url, published_at, retrieved_at, excerpt,
-            matched_companies_json, matched_themes_json, source_feed_id
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            matched_companies_json, matched_themes_json, source_feed_id,
+            materiality_tier, materiality_reasons
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             story.id, story.headline, story.publisher, story.source_url, story.published_at,
             story.retrieved_at, story.excerpt, json.dumps(list(story.matched_companies)),
             json.dumps(list(story.matched_themes)), story.source_feed_id,
+            story.materiality_tier.value if story.materiality_tier else None,
+            json.dumps(list(story.materiality_reasons)) if story.materiality_reasons else None,
         ),
     )
 

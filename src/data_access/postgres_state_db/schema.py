@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 19
+CURRENT_SCHEMA_VERSION = 20
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -661,6 +661,19 @@ _V19_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE research_themes ADD COLUMN what_eeva_tested TEXT",
 )
 
+# Signals materiality classification (design/DECISIONS.md) — isolated
+# Postgres counterpart to state_db/schema.py's own _V19_STATEMENTS (see
+# that module's comment for the full rationale). Postgres's own
+# editorial_stories table (V16 above, no SQLite equivalent) also gets
+# the same two wholly additive, nullable columns, since Postgres is the
+# only backend where editorial materiality can be persisted at all.
+_V20_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE daily_news_stories ADD COLUMN materiality_tier TEXT",
+    "ALTER TABLE daily_news_stories ADD COLUMN materiality_reasons TEXT",
+    "ALTER TABLE editorial_stories ADD COLUMN materiality_tier TEXT",
+    "ALTER TABLE editorial_stories ADD COLUMN materiality_reasons TEXT",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -685,6 +698,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (17, _V17_STATEMENTS),
     (18, _V18_STATEMENTS),
     (19, _V19_STATEMENTS),
+    (20, _V20_STATEMENTS),
 )
 
 

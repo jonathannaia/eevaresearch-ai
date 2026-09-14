@@ -157,3 +157,34 @@ def test_pre_existing_persisted_story_without_first_discovered_at_still_loads(tm
     loaded = daily_news_store.load_stories(tmp_path)
 
     assert loaded["newsitem-legacy-2"].sources[0].first_discovered_at is None
+
+
+def test_pre_existing_persisted_story_without_materiality_tier_still_loads(tmp_path):
+    """Signals materiality classification (design/DECISIONS.md):
+    reuses the same legacy-payload shape as the first_discovered_at test
+    above (no materiality_tier/materiality_reasons key at all) — must
+    still load cleanly, safely defaulting to None/() rather than raising
+    or fabricating a classification."""
+    import json
+
+    tmp_path.mkdir(exist_ok=True)
+    legacy_payload = {
+        "newsitem-legacy-3": {
+            "id": "newsitem-legacy-3", "company_name": "NVIDIA", "ticker": "NVDA", "theme_slug": "ai-buildout",
+            "headline": "Legacy headline", "eeva_summary": "Legacy summary.", "is_fallback_summary": False,
+            "translation_unavailable": False, "original_title": None,
+            "sources": [{
+                "publisher": "NVIDIA", "source_class": "Official company source",
+                "url": "https://nvidianews.nvidia.com/news/legacy3", "title": "Legacy headline",
+                "published_at": "2026-08-24T12:00:00+00:00", "retrieved_at": "2026-08-24T12:05:00+00:00",
+                "original_language": "English", "excerpt_original": "Legacy summary.",
+            }],
+            "status": "Published", "state_history": [],
+        }
+    }
+    (tmp_path / "daily_news_stories.json").write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    loaded = daily_news_store.load_stories(tmp_path)
+
+    assert loaded["newsitem-legacy-3"].materiality_tier is None
+    assert loaded["newsitem-legacy-3"].materiality_reasons == ()
