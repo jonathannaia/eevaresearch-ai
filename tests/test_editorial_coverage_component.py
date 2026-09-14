@@ -152,7 +152,8 @@ def test_never_shows_investment_or_why_it_matters_framing(tmp_path, monkeypatch)
 
 
 def test_daily_news_heading_renders_once_before_any_editorial_card(tmp_path, monkeypatch):
-    """Exactly one "Daily News" heading — no separate "Editorial
+    """Exactly one "Signals" heading (product-naming separation, design/
+    DECISIONS.md — renamed from "Daily News") — no separate "Editorial
     Coverage" heading exists any more — and it renders before the
     editorial card content that follows it in the unified feed."""
     daily_news_store.upsert_new_stories(tmp_path, [])  # ensure cache_dir exists, issuer side stays empty
@@ -160,7 +161,7 @@ def test_daily_news_heading_renders_once_before_any_editorial_card(tmp_path, mon
     assert not at.exception
     all_text = _main_text(at)
     assert "Editorial Coverage" not in all_text
-    daily_news_title_index = all_text.index("Daily News")
+    daily_news_title_index = all_text.index("Signals")
     headline_index = all_text.index("Oracle Corporation reports strong AI cloud demand")
     assert daily_news_title_index < headline_index
 

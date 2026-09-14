@@ -93,7 +93,7 @@ def _sidebar_page_links(at: AppTest):
     return list(at.sidebar.get("page_link"))
 
 
-def test_workspace_shows_exactly_dashboard_filings_daily_news(monkeypatch):
+def test_workspace_shows_exactly_dashboard_filings_signals(monkeypatch):
     # Watchlists was removed entirely (reader-facing data-integrity
     # pass, design/DECISIONS.md) — session-only, seeded from illustrative
     # data, no live real data of its own. "Research Theses" is absent
@@ -104,7 +104,7 @@ def test_workspace_shows_exactly_dashboard_filings_daily_news(monkeypatch):
     # fixed removal.
     at = _run_to_dashboard(monkeypatch)
     labels = [pl.label for pl in _sidebar_page_links(at)]
-    for expected in ("Dashboard", "Filings", "Daily News"):
+    for expected in ("Dashboard", "Filings", "Signals"):
         assert expected in labels
     assert "Watchlists" not in labels
     assert "Research Theses" not in labels
@@ -118,7 +118,7 @@ def test_filings_label_is_filings_not_radar_or_radar_inbox_in_the_sidebar(monkey
     assert "Radar Inbox" not in labels
 
 
-def test_coverage_signals_research_themes_are_not_visible_sidebar_items(monkeypatch):
+def test_coverage_radar_signals_research_themes_are_not_visible_sidebar_items(monkeypatch):
     """The Evidence-First Themes MVP (design/DECISIONS.md) had
     reintroduced a "Themes" sidebar entry pointing at a new public
     research page, distinct from the legacy demo ticker/theme/subtheme
@@ -131,16 +131,21 @@ def test_coverage_signals_research_themes_are_not_visible_sidebar_items(monkeypa
     it appear again, but only once real content exists to justify it —
     see test_themes_nav_item_appears_once_a_theme_is_published below.
     This test's default (zero published Themes) still keeps it hidden.
-    Coverage/Signals/Research remain unconditionally absent regardless.
-    Its route/data/repository/internal-authoring-workflow are unaffected —
-    only sidebar visibility changed (see
+    Coverage/Radar Signals/Research remain unconditionally absent
+    regardless. Product-naming separation (design/DECISIONS.md): bare
+    "Signals" is deliberately NOT in this removed-label list any more —
+    it's the Daily News rework's own, now-visible PRIMARY_NAV entry (see
+    test_workspace_shows_exactly_dashboard_filings_signals above); only
+    the Radar-derived "Radar Signals" page stays hidden. Its route/data/
+    repository/internal-authoring-workflow are unaffected — only sidebar
+    visibility changed (see
     test_coverage_themes_signals_routes_remain_registered below)."""
     at = _run_to_dashboard(monkeypatch)
     labels = {pl.label for pl in _sidebar_page_links(at)}
     # Exact-label check, not substring — "Methodology & Coverage" legitimately
     # contains "Coverage" as a substring, so a naive "not in joined text"
     # check would false-fail on the one entry that's supposed to remain.
-    for removed_label in ("Coverage", "Signals", "Research", "Research Theses"):
+    for removed_label in ("Coverage", "Radar Signals", "Research", "Research Theses"):
         assert removed_label not in labels
     assert "Theme Browser" not in labels
 
@@ -303,7 +308,7 @@ def test_no_empty_workspace_or_system_group_in_the_rendered_sidebar(monkeypatch)
     # future edit leaving a bare heading with a real page dict that's
     # simply empty for that group.
     labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert labels & {"Dashboard", "Filings", "Daily News", "Watchlists"}
+    assert labels & {"Dashboard", "Filings", "Signals", "Watchlists"}
     assert labels & {"Methodology & Coverage"}
 
 

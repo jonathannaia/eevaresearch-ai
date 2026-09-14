@@ -172,8 +172,8 @@ def _render_coverage_freshness_panel() -> None:
             "and DART (Korea); scheduled hourly."
         )
         st.markdown(
-            "**Daily News** — curated official company news and investor-relations sources; "
-            "scheduled every 30 minutes."
+            "**Signals** — material disclosures and developments from official company and "
+            "editorial sources; scheduled every 30 minutes."
         )
         st.markdown(
             "**Translations** — machine-generated English translations for supported short "

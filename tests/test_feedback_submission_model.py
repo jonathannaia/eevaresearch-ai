@@ -40,7 +40,7 @@ def test_primary_interest_enum_has_exactly_the_approved_choices():
         "U.S. filings (EDGAR)",
         "Korea filings (DART)",
         "Japan filings (EDINET)",
-        "Daily News",
+        "Signals",
         "Theme and supply-chain research",
     ]
 

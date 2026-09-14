@@ -112,7 +112,7 @@ def test_newer_editorial_daily_news_story_outranks_an_older_radar_candidate(tmp_
     rows = recently_updated._select_recently_updated_rows(_settings(tmp_path), now)
 
     assert rows[0].title == "Oracle Corporation reports strong AI cloud demand"
-    assert rows[0].source_label == "Daily News"
+    assert rows[0].source_label == "Signals"
 
 
 # --- Non-qualifying / future-dated / demo / unpublished items can never win ---

@@ -1,6 +1,11 @@
-"""Daily News — an independent, autonomous discovery surface, entirely
-separate from Radar Inbox (see design/DECISIONS.md for the product
-clarification this follows). Reads NewsStory records via
+"""Signals (renamed from "Daily News", product-naming separation, design/
+DECISIONS.md — user-facing label only; internal route key/url_path stay
+"daily_news"/"daily-news") — an independent, autonomous discovery
+surface, entirely separate from Radar Inbox (see design/DECISIONS.md for
+the product clarification this follows). Not to be confused with "Radar
+Signals" (src/ui/pages/signals.py), the renamed, unrelated, Radar-
+filing-derived concept this page's name previously collided with. Reads
+NewsStory records via
 src.data_access.daily_news.daily_news_backend.get_daily_news_repository()
 (JSON by default, unless EDGE_DB_BACKEND selects sqlite/postgres — see
 the Daily News durability workstream) and EditorialStory records via
@@ -126,8 +131,12 @@ _SOURCE_CLASS_LABELS: dict[SourceClass, str] = {
     SourceClass.PRESS_RELEASE_WIRE: "Press-release wire",
     SourceClass.INDEPENDENT_JOURNALISM: "Independent journalism",
 }
-_OFFICIAL_SUBTITLE = "Company updates from official sources."
-_MIXED_SUBTITLE = "Tracked-company and thematic coverage from official and editorial sources."
+# Product-naming separation (design/DECISIONS.md): "Daily News" renamed
+# to "Signals" — the exact, approved subtitle replaces the former two
+# source-mix-dependent variants (_OFFICIAL_SUBTITLE/_MIXED_SUBTITLE),
+# since the approved copy is one fixed sentence regardless of source
+# mix; the per-card source-type label already carries that distinction.
+_SUBTITLE = "Material disclosures and developments across AI infrastructure and global technology supply chains."
 
 
 def _published_stories(settings: Settings) -> list[NewsStory]:
@@ -254,25 +263,9 @@ def _render_card(story: NewsStory, is_historical: bool = False) -> None:
         st.markdown(f"[Read original source →]({source.url})")
 
 
-def _page_subtitle(recent_stories: list[NewsStory]) -> str:
-    """Source-attribution pass (design/DECISIONS.md), future-safe
-    subtitle strategy: computed from the same 7-day, all-companies
-    `recent_stories` set the default view itself shows — an empty set is
-    treated as official-only (the conservative default; nothing visible
-    contradicts it). Never claims every non-official category is
-    "editorial" — the per-card source-type label above is what carries
-    the actual category distinction; this subtitle only ever picks
-    between the two approved, generic sentences."""
-    all_official = all(
-        source.source_class == SourceClass.OFFICIAL_COMPANY
-        for story in recent_stories for source in story.sources
-    )
-    return _OFFICIAL_SUBTITLE if all_official else _MIXED_SUBTITLE
-
-
 def render() -> None:
-    """Unified Daily News feed (design/DECISIONS.md): one page, one
-    "Daily News" heading, issuer and editorial stories interleaved into
+    """Unified Signals feed (design/DECISIONS.md): one page, one
+    "Signals" heading, issuer and editorial stories interleaved into
     one reverse-chronological list. Each lane applies its own existing,
     unmodified rules first (issuer: 7-day window + per-company stale-feed
     fallback; editorial: 72-hour window + per-source/total caps, via
@@ -281,14 +274,10 @@ def render() -> None:
     filtering logic itself."""
     settings = get_settings()
     all_stories = _published_stories(settings)
-    recent_for_subtitle = _recent_stories(all_stories)
     visible_editorial = get_visible_editorial_stories(settings)
 
-    st.markdown('<div class="er-page-title">Daily News</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="er-muted">{_page_subtitle(recent_for_subtitle)}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="er-page-title">Signals</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="er-muted">{_SUBTITLE}</div>', unsafe_allow_html=True)
 
     selected_company = st.selectbox("Companies", options=_company_options(), index=0)
 

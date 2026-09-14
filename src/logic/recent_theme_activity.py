@@ -37,7 +37,7 @@ class ThemeActivityItem:
 
     theme_slug: str
     company_name: str
-    item_type: str  # "Filing" | "Daily News" — verbatim, never inferred beyond what the caller already knows
+    item_type: str  # "Filing" | "Signals" — verbatim, never inferred beyond what the caller already knows
     timestamp: datetime
     display_date: str
     source_url: str | None

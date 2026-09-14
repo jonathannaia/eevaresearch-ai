@@ -57,7 +57,7 @@ def test_signals_empty_state_explains_what_a_signal_is_and_offers_next_actions()
     at = _run_signals_empty()
     assert not at.exception
     all_text = _text_excluding_stylesheet(at)
-    assert "No eligible signals yet" in all_text
+    assert "No eligible Radar Signals yet" in all_text
     assert "Signals appear when a filing matches a tracked theme and meets the confidence threshold" in all_text
     # Internal implementation detail should not leak into this primary
     # empty state's own explanatory copy.
@@ -77,7 +77,7 @@ def test_signals_empty_state_actions_are_wired_at_source_level():
 def test_signals_example_card_is_unmistakably_labeled_and_uses_fictional_content():
     at = _run_signals_empty()
     all_text = _text_excluding_stylesheet(at)
-    assert "What a Signal looks like" in all_text
+    assert "What a Radar Signal looks like" in all_text
     assert ":gray-badge[Example]" in all_text  # demo_badge()'s own st.badge serialization
     assert "Example — not a live result" in all_text
     assert "Fictional Robotics Co." in all_text

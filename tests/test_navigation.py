@@ -117,7 +117,9 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order(mon
     registered (just no longer linked from any visible sidebar group),
     and that every expected dict key exists post-registration."""
     assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news"]
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Daily News"]
+    # Product-naming separation (design/DECISIONS.md): "Daily News"
+    # renamed to "Signals" — route key stays "daily_news".
+    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Signals"]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
     assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
     # Beta UI polish pass (design/DECISIONS.md): "themes" moved back out
@@ -133,6 +135,11 @@ def test_every_registered_page_key_present_with_no_change_to_labels_or_order(mon
     # DECISIONS.md) rather than kept as hidden routes — none had any
     # live real data of their own.
     assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about", "themes"]
+    # Product-naming separation (design/DECISIONS.md): "Signals" (the
+    # Radar-derived concept, route key "signals") renamed to "Radar
+    # Signals" once Daily News's PRIMARY_NAV entry above claimed the bare
+    # "Signals" label for its own, unrelated feed.
+    assert [label for k, label in HIDDEN_FROM_NAV if k == "signals"] == ["Radar Signals"]
 
     _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)

@@ -34,12 +34,10 @@ from src.models.daily_news_models import (
     SourceClass,
 )
 from src.ui.pages.daily_news import (
-    _MIXED_SUBTITLE,
-    _OFFICIAL_SUBTITLE,
     _SOURCE_CLASS_LABELS,
+    _SUBTITLE,
     _elapsed_seconds,
     _is_recent,
-    _page_subtitle,
     _recent_stories,
 )
 
@@ -312,28 +310,17 @@ def test_every_source_class_maps_to_its_exact_approved_label():
     assert set(_SOURCE_CLASS_LABELS) == set(SourceClass)
 
 
-def test_page_subtitle_is_official_only_when_every_visible_story_is_official():
-    stories = [_story(company_name="NVIDIA"), _story(id="newsitem-amd", company_name="Advanced Micro Devices")]
-    assert _page_subtitle(stories) == _OFFICIAL_SUBTITLE
-
-
-def test_page_subtitle_is_mixed_when_any_visible_story_is_non_official():
-    official = _story(company_name="NVIDIA")
-    non_official = _story(
-        id="newsitem-cnbc-x", company_name="NVIDIA",
-        sources=(NewsSourceReference(
-            publisher="CNBC", source_class=SourceClass.INDEPENDENT_JOURNALISM,
-            url="https://www.cnbc.com/x", title="H", published_at=official.sources[0].published_at,
-            retrieved_at=official.sources[0].published_at, original_language="English",
-        ),),
+def test_subtitle_is_the_one_fixed_approved_sentence_regardless_of_source_mix():
+    """Product-naming separation (design/DECISIONS.md): the former
+    official-only-vs-mixed subtitle distinction (_OFFICIAL_SUBTITLE/
+    _MIXED_SUBTITLE via _page_subtitle()) was replaced by one fixed,
+    approved sentence — the per-card source-type label already carries
+    the official/editorial distinction, so the page subtitle itself no
+    longer needs to."""
+    assert _SUBTITLE == (
+        "Material disclosures and developments across AI infrastructure "
+        "and global technology supply chains."
     )
-    assert _page_subtitle([official, non_official]) == _MIXED_SUBTITLE
-
-
-def test_page_subtitle_defaults_to_official_only_with_no_visible_stories():
-    """The conservative default: an empty visible set contains nothing
-    that contradicts the official-only claim."""
-    assert _page_subtitle([]) == _OFFICIAL_SUBTITLE
 
 
 def test_freshness_gate_uses_utc_regardless_of_what_local_calendar_date_it_falls_on():
@@ -382,7 +369,7 @@ def test_subtitle_and_scope_line_render_exactly(tmp_path):
         at.run()
 
     all_text = " ".join(m.value for m in at.markdown)
-    assert "Company updates from official sources." in all_text
+    assert _SUBTITLE in all_text
     assert "Autonomously discovered company updates" not in all_text
     assert "Showing tracked coverage from the past 7 days." in all_text
 
@@ -421,7 +408,7 @@ def test_public_card_shows_the_source_type_label_but_never_radar_terminology(tmp
         assert forbidden not in all_text
 
 
-def test_official_only_visible_stories_render_the_official_subtitle(tmp_path):
+def test_official_only_visible_stories_render_the_fixed_subtitle(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_story()])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
@@ -429,8 +416,7 @@ def test_official_only_visible_stories_render_the_official_subtitle(tmp_path):
         at.run()
 
     all_text = " ".join(m.value for m in at.markdown)
-    assert _OFFICIAL_SUBTITLE in all_text
-    assert _MIXED_SUBTITLE not in all_text
+    assert _SUBTITLE in all_text
     # EDINET-safety-review correction (design/DECISIONS.md): the static
     # freshness caption must read as a neutral coverage statement, not a
     # second, contradictory official-only claim.
@@ -438,7 +424,12 @@ def test_official_only_visible_stories_render_the_official_subtitle(tmp_path):
     assert "Showing official company updates from the past 7 days." not in all_text
 
 
-def test_mixed_source_classes_render_the_generalized_subtitle(tmp_path):
+def test_mixed_source_classes_render_the_same_fixed_subtitle(tmp_path):
+    """Product-naming separation (design/DECISIONS.md): the subtitle no
+    longer varies by source mix — proves the same fixed sentence renders
+    whether visible coverage is official-only or mixed, and that the
+    per-card source-type label (never a blanket "editorial" claim) is
+    what actually carries the category distinction."""
     official = _story(id="newsitem-nvidia-abc123", company_name="NVIDIA")
     non_official = _story(
         id="newsitem-cnbc-xyz", company_name="NVIDIA", headline="CNBC coverage of NVIDIA",
@@ -456,9 +447,7 @@ def test_mixed_source_classes_render_the_generalized_subtitle(tmp_path):
         at.run()
 
     all_text = " ".join(m.value for m in at.markdown)
-    assert _MIXED_SUBTITLE in all_text
-    assert _OFFICIAL_SUBTITLE not in all_text
-    # Category distinction preserved per-card — never a blanket "editorial" claim.
+    assert _SUBTITLE in all_text
     assert "Official company source" in all_text
     assert "Independent journalism" in all_text
     # EDINET-safety-review correction (design/DECISIONS.md): the static

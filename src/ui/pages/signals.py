@@ -1,8 +1,15 @@
-"""Signals — structured, filterable view of every tracked signal (brief §4:
-absorbs Signal Board). Sourced from real DART/EDINET Radar candidates
-(src/data_access/live/radar_signal_repository.py) — only candidates
-eligible per src/logic/signal_promotion.py are ever shown; no demo/sample
-rows appear here.
+"""Radar Signals (product-naming separation, design/DECISIONS.md) —
+structured, filterable view of every tracked filing-derived signal
+(brief §4: absorbs Signal Board). Renamed from the bare "Signals" label
+to "Radar Signals" once the Daily News rework claimed "Signals" for its
+own, unrelated, cross-source disclosure feed — this page's own model
+(Signal), repository interface (SignalRepository), route key
+("signals"), URL path, and underlying Radar promotion logic are
+UNCHANGED; only the user-facing title/labels moved. Sourced from real
+DART/EDINET Radar candidates (src/data_access/live/
+radar_signal_repository.py) — only candidates eligible per
+src/logic/signal_promotion.py are ever shown; no demo/sample rows
+appear here.
 
 Opening this page is the trigger that advances `last_seen_at` (brief §10)
 — read the previous baseline first (for unread-dot display and the sidebar
@@ -46,7 +53,7 @@ def _render_example_signal_card() -> None:
     default "Sample" label, since Signals is the one page in the app whose
     entire premise is real, non-demo data."""
     st.markdown(
-        '<div class="er-muted" style="font-size:0.78rem; margin:1rem 0 0.4rem 0;">What a Signal looks like</div>',
+        '<div class="er-muted" style="font-size:0.78rem; margin:1rem 0 0.4rem 0;">What a Radar Signal looks like</div>',
         unsafe_allow_html=True,
     )
     with st.container(border=True, key="card-example-signal"):
@@ -105,12 +112,12 @@ def render(signal_repository: SignalRepository | None = None) -> None:
 
     header_cols = st.columns([4, 2])
     with header_cols[0]:
-        st.markdown('<div class="er-page-title">Signals</div>', unsafe_allow_html=True)
+        st.markdown('<div class="er-page-title">Radar Signals</div>', unsafe_allow_html=True)
     with header_cols[1]:
         st.markdown('<div style="text-align:right; margin-top:0.8rem;">', unsafe_allow_html=True)
         freshness_chip("live", key="fresh-signals-head")
         st.markdown("</div>", unsafe_allow_html=True)
-    st.write("Every tracked signal in one place — sourced from real DART and EDINET filings, filterable by theme, direction, strength, and time horizon.")
+    st.write("Filing-derived evidence promoted from Eeva's Radar monitoring.")
 
     if not signals:
         # Phase D (design/DECISIONS.md): user-facing explanation of what a
@@ -118,8 +125,8 @@ def render(signal_repository: SignalRepository | None = None) -> None:
         # here" line that reads as broken. Both actions route through the
         # app's own existing pages — no new route.
         empty_state(
-            "No eligible signals yet",
-            "Signals appear when a filing matches a tracked theme and meets the confidence threshold — "
+            "No eligible Radar Signals yet",
+            "Radar Signals appear when a filing matches a tracked theme and meets the confidence threshold — "
             "nothing has cleared that bar yet in this environment.",
             action_label="Review Radar Inbox →",
             action_page=get_page("radar_inbox"),
