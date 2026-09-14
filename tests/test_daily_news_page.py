@@ -509,8 +509,19 @@ def test_all_companies_default_shows_every_recent_company_newest_first(tmp_path)
 
     markdown_text = " ".join(m.value for m in at.markdown)
     assert markdown_text.index("NVIDIA") < markdown_text.index("Intel Corp.")
+    # System-wide company-matched-news fix (design/DECISIONS.md): the
+    # selector now lists the full Daily News company universe (every
+    # tracked company plus Daily-News-only stubs), not only companies
+    # with an existing persisted issuer story — Intel Corp./NVIDIA are
+    # both real tracked companies and so are present alongside every
+    # other one, in the same sorted order daily_news_company_names()
+    # itself returns.
+    from src.data_access.daily_news.company_aliases import daily_news_company_names
+
     select_options = at.selectbox[0].options
-    assert select_options == ["All companies", "Intel Corp.", "NVIDIA"]
+    assert select_options == ["All companies"] + list(daily_news_company_names())
+    assert "Intel Corp." in select_options
+    assert "NVIDIA" in select_options
 
 
 def test_selecting_a_company_shows_only_that_companys_stories(tmp_path):
@@ -530,9 +541,12 @@ def test_selecting_a_company_shows_only_that_companys_stories(tmp_path):
 
 
 def test_selected_company_with_only_stale_stories_shows_notice_and_fallback_stories(tmp_path):
-    # Intel has only a stale story — appears in the selector (it has a
-    # persisted PUBLISHED story) but has nothing recent once selected.
-    # Stale-feed fallback pass: this must no longer show an empty state
+    # Intel has only a stale story and nothing recent once selected —
+    # Intel is selectable regardless (the selector now lists the full
+    # Daily News company universe, not only companies with an existing
+    # persisted issuer story; see the system-wide company-matched-news
+    # fix, design/DECISIONS.md). Stale-feed fallback pass: this must no
+    # longer show an empty state
     # indistinguishable from "Intel has never published anything" — it
     # shows the neutral notice plus Intel's own latest available story,
     # still carrying its real (stale) published date.
@@ -576,12 +590,15 @@ def test_selected_company_with_recent_stories_shows_no_fallback_notice(tmp_path)
 
 
 def test_stories_for_company_returns_empty_list_when_company_has_no_persisted_stories():
-    # The real dropdown can never actually offer a company with zero
-    # persisted stories (_company_options only lists companies that
-    # already have one) — this proves the pure input/output mapping
-    # render()'s own "true empty state" branch depends on directly,
-    # the same boundary-logic-as-pure-function pattern already used for
-    # _is_recent/_recent_stories above.
+    # The real dropdown CAN now offer a company with zero persisted
+    # issuer stories (the selector lists the full Daily News company
+    # universe — see the system-wide company-matched-news fix, design/
+    # DECISIONS.md); this proves the pure input/output mapping render()'s
+    # own "true empty state" branch depends on directly, the same
+    # boundary-logic-as-pure-function pattern already used for
+    # _is_recent/_recent_stories above. See
+    # test_selecting_a_company_with_no_coverage_at_all_shows_the_honest_empty_state
+    # below for the real, now-reachable UI path.
     from src.ui.pages.daily_news import _stories_for_company
 
     only_nvidia = [_story(id="s-nvidia", company_name="NVIDIA")]
@@ -762,3 +779,255 @@ def test_all_daily_news_image_layout_css_has_been_removed():
         ".er-card-header", ".er-card-thumb", ".er-news-card-content", ".er-news-card-text", ".er-news-card-thumb",
     ):
         assert removed_class not in css
+
+
+# ============================================================
+# System-wide company-matched-news fix (design/DECISIONS.md) —
+# generic, multi-company coverage: the per-company editorial query
+# bypasses the global cross-company cap, the selector offers the full
+# Daily News company universe (including Daily-News-only stubs like
+# HPE), stale-official cards are unmistakably labeled Historical, and
+# the "no updates" notice never obscures real current editorial
+# coverage. Companies used below span the U.S., Japan, and South Korea,
+# and both a real tracked company and a Daily-News-only stub — none of
+# this is Amazon-specific.
+# ============================================================
+
+
+def test_a_story_crowded_out_of_the_global_top_twenty_still_appears_for_its_company(tmp_path):
+    # The core fix (requirement 1), exercised at the UI level: Oracle's
+    # own matched story is ranked outside the shared "All companies"
+    # top-20 by 25 newer, unrelated Intel stories, yet still appears when
+    # Oracle Corporation is selected directly.
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            id="oracle-crowded-out", published_at_offset=timedelta(hours=50),
+            headline="Oracle Corporation reports strong AI cloud demand",
+            matched_companies=("Oracle Corporation",), matched_themes=(),
+        ),
+    ])
+    crowd = [
+        _editorial_story(
+            id=f"intel-crowd-{n}-{i}", published_at_offset=timedelta(hours=i),
+            headline=f"Intel Corp. update {n}-{i}", publisher=f"Source{n}",
+            source_feed_id=f"src-crowd-{n}", matched_companies=("Intel Corp.",), matched_themes=(),
+        )
+        for n in range(5) for i in range(5)
+    ]
+    editorial_story_store.upsert_new_stories(tmp_path, crowd)
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        all_companies_text = " ".join(m.value for m in at.markdown)
+        assert "Oracle Corporation reports strong AI cloud demand" not in all_companies_text  # crowded out globally
+
+        at.selectbox[0].select("Oracle Corporation").run()
+
+    company_text = " ".join(m.value for m in at.markdown)
+    assert "Oracle Corporation reports strong AI cloud demand" in company_text
+
+
+def test_daily_news_only_stub_company_is_selectable_and_shows_its_own_official_coverage(tmp_path):
+    # Hewlett Packard Enterprise Company is a Daily-News-only
+    # issuer_registry.DISCOVERY_STUBS entry, never in tracked_companies.py
+    # — proves the universe/selector genuinely includes it, not only
+    # real tracked companies.
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="s-hpe", company_name="Hewlett Packard Enterprise Company",
+            headline="HPE Announces New AI Server Platform",
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        assert "Hewlett Packard Enterprise Company" in at.selectbox[0].options
+        at.selectbox[0].select("Hewlett Packard Enterprise Company").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "HPE Announces New AI Server Platform" in markdown_text
+
+
+def test_daily_news_only_stub_company_with_zero_coverage_shows_the_honest_empty_state(tmp_path):
+    # No issuer store, no editorial store seeded at all — a company with
+    # genuinely zero content in either lane is now reachable via the
+    # selector (the universe includes every company, not only ones with
+    # an existing persisted story) and must show a true, honest empty
+    # state, never an error or a misleading notice.
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        assert "Hewlett Packard Enterprise Company" in at.selectbox[0].options
+        at.selectbox[0].select("Hewlett Packard Enterprise Company").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "No recent official or qualified market coverage for Hewlett Packard Enterprise Company right now." in markdown_text
+
+
+def test_historical_badge_appears_on_stale_fallback_issuer_cards(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results",
+            published_at_offset=timedelta(days=30),
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Historical — not from the last 7 days" in markdown_text
+
+
+def test_historical_badge_never_appears_on_a_fresh_issuer_card(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(id="s-intel-fresh", company_name="Intel Corp.", headline="Intel Reports Quarterly Results"),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Historical" not in markdown_text
+
+
+def test_historical_badge_never_appears_on_the_all_companies_view(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Historical" not in markdown_text
+
+
+def test_no_updates_notice_is_suppressed_when_fresh_editorial_coverage_exists(tmp_path):
+    # Requirement 5: a quiet official IR feed must never imply "no
+    # company news" when real, current editorial coverage exists —
+    # Intel's official feed is stale, but Intel has fresh, correctly
+    # matched editorial coverage, so the page-level notice is suppressed
+    # (the per-card Historical label still discloses the official
+    # card's own age).
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results",
+            published_at_offset=timedelta(days=30),
+        ),
+    ])
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            id="editorial-intel-fresh", headline="Intel Corp. unveils new foundry roadmap",
+            matched_companies=("Intel Corp.",), matched_themes=(), published_at_offset=timedelta(hours=2),
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Showing the latest available official updates." not in markdown_text
+    assert "Intel Reports Quarterly Results" in markdown_text  # historical card still shown
+    assert "Historical — not from the last 7 days" in markdown_text  # still unmistakably labeled
+    assert "Intel Corp. unveils new foundry roadmap" in markdown_text  # fresh editorial coverage shown
+
+
+def test_no_updates_notice_still_shows_when_no_editorial_coverage_exists_either(tmp_path):
+    # The counterpart to the test above: with no fresh editorial
+    # coverage at all, the page-level notice is exactly as before.
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="s-intel-stale", company_name="Intel Corp.", headline="Intel Reports Quarterly Results",
+            published_at_offset=timedelta(days=30),
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Intel Corp.").run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Showing the latest available official updates." in markdown_text
+
+
+def test_multi_company_story_appears_on_both_matched_companies_pages(tmp_path):
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            id="joint-story", headline="Amazon and Alphabet both announce new AI data center investment",
+            matched_companies=("Amazon.com, Inc.", "Alphabet Inc."), matched_themes=(),
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        at.selectbox[0].select("Amazon.com, Inc.").run()
+        amazon_text = " ".join(m.value for m in at.markdown)
+
+        at2 = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at2.run()
+        at2.selectbox[0].select("Alphabet Inc.").run()
+        google_text = " ".join(m.value for m in at2.markdown)
+
+    assert "Amazon and Alphabet both announce new AI data center investment" in amazon_text
+    assert "Amazon and Alphabet both announce new AI data center investment" in google_text
+
+
+def test_japan_and_korea_tracked_companies_are_selectable_with_matched_editorial_coverage(tmp_path):
+    # Parameterized across regions — not U.S.-only. Samsung Electronics
+    # (South Korea) and Murata Manufacturing Co., Ltd. (Japan) are both
+    # real tracked companies with their own established mechanical
+    # aliases; no company-specific code path is involved.
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            id="samsung-story", headline="Samsung posts strong memory chip demand",
+            matched_companies=("Samsung Electronics",), matched_themes=(),
+        ),
+        _editorial_story(
+            id="murata-story", headline="Murata expands capacitor production capacity",
+            matched_companies=("Murata Manufacturing Co., Ltd.",), matched_themes=(),
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+        assert "Samsung Electronics" in at.selectbox[0].options
+        assert "Murata Manufacturing Co., Ltd." in at.selectbox[0].options
+
+        at.selectbox[0].select("Samsung Electronics").run()
+        samsung_text = " ".join(m.value for m in at.markdown)
+
+        at2 = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at2.run()
+        at2.selectbox[0].select("Murata Manufacturing Co., Ltd.").run()
+        murata_text = " ".join(m.value for m in at2.markdown)
+
+    assert "Samsung posts strong memory chip demand" in samsung_text
+    assert "Murata expands capacitor production capacity" not in samsung_text
+    assert "Murata expands capacitor production capacity" in murata_text
+    assert "Samsung posts strong memory chip demand" not in murata_text
+
+
+def test_all_companies_view_editorial_cap_and_content_are_unaffected(tmp_path):
+    # Regression: the "All companies" path must stay byte-for-byte
+    # unchanged — still reads visible_editorial (the cross-company-capped
+    # list), not the new per-company query.
+    editorial_story_store.upsert_new_stories(tmp_path, [_editorial_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
+    assert "Market news" in markdown_text

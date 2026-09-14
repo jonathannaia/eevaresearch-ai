@@ -341,12 +341,13 @@ def test_present_description_produces_a_real_extractive_excerpt(tmp_path, monkey
 
 def _story(
     story_id: str, source_feed_id: str, hours_ago: float, headline: str = "Oracle Corporation AI news",
+    matched_companies: tuple[str, ...] = ("Oracle Corporation",),
 ) -> EditorialStory:
     published_at = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
     return EditorialStory(
         id=story_id, headline=headline, publisher="CNBC", source_url=f"https://www.cnbc.com/{story_id}.html",
         published_at=published_at, retrieved_at=published_at, excerpt=None,
-        matched_companies=("Oracle Corporation",), matched_themes=(), source_feed_id=source_feed_id,
+        matched_companies=matched_companies, matched_themes=(), source_feed_id=source_feed_id,
     )
 
 
@@ -387,6 +388,120 @@ def test_select_visible_sorts_newest_first():
 
 def test_select_visible_empty_store_returns_empty_tuple():
     assert editorial_pipeline.select_visible_editorial_stories({}) == ()
+
+
+# ============================================================
+# System-wide company-matched-news fix (design/DECISIONS.md) —
+# select_visible_editorial_stories_for_company(): the per-company
+# counterpart, queried against the FULL persisted store, never the
+# cross-company-capped select_visible_editorial_stories() output above.
+# Generic — no company-specific test setup beyond the company_name
+# argument itself.
+# ============================================================
+
+
+def test_for_company_filters_by_matched_companies_membership():
+    stories = {
+        "a": _story("a", "src-1", hours_ago=1, matched_companies=("Oracle Corporation",)),
+        "b": _story("b", "src-1", hours_ago=1, matched_companies=("Intel Corp.",)),
+    }
+    visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Oracle Corporation")
+    assert [s.id for s in visible] == ["a"]
+
+
+def test_for_company_excludes_stories_older_than_72_hours():
+    stories = {
+        "a": _story("a", "src-1", hours_ago=1),
+        "b": _story("b", "src-1", hours_ago=73),
+    }
+    visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Oracle Corporation")
+    assert [s.id for s in visible] == ["a"]
+
+
+def test_for_company_still_caps_at_five_per_source():
+    stories = {
+        f"s{i}": _story(f"s{i}", "src-1", hours_ago=i, matched_companies=("Oracle Corporation",))
+        for i in range(8)
+    }
+    visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Oracle Corporation")
+    assert len(visible) == 5
+    assert [s.id for s in visible] == ["s0", "s1", "s2", "s3", "s4"]  # newest (smallest hours_ago) first
+
+
+def test_for_company_sorts_newest_first():
+    stories = {
+        "old": _story("old", "src-1", hours_ago=10),
+        "new": _story("new", "src-1", hours_ago=1),
+    }
+    visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Oracle Corporation")
+    assert [s.id for s in visible] == ["new", "old"]
+
+
+def test_for_company_never_applies_the_cross_company_total_cap():
+    # The core fix (requirement 1): a story matched to "Oracle
+    # Corporation" ranked outside the shared top-20 (25 unrelated,
+    # newer stories from 5 other companies/sources crowd it out of
+    # select_visible_editorial_stories()) must still appear for its own
+    # company via select_visible_editorial_stories_for_company().
+    stories = {
+        "oracle-story": _story(
+            "oracle-story", "src-oracle", hours_ago=50, matched_companies=("Oracle Corporation",),
+        ),
+    }
+    for source_n in range(5):
+        for i in range(5):  # 5 sources * 5 each = 25 newer, unrelated stories
+            key = f"crowd-{source_n}-{i}"
+            stories[key] = _story(
+                key, f"src-crowd-{source_n}", hours_ago=i, matched_companies=("Intel Corp.",),
+            )
+
+    # Confirm the crowding actually happens against the unmodified,
+    # cross-company-capped selection — Oracle's story is excluded there.
+    global_visible = editorial_pipeline.select_visible_editorial_stories(stories)
+    assert len(global_visible) == 20
+    assert "oracle-story" not in {s.id for s in global_visible}
+
+    # But it still appears for its own company, un-crowded-out.
+    company_visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Oracle Corporation")
+    assert [s.id for s in company_visible] == ["oracle-story"]
+
+
+def test_for_company_multi_company_story_appears_for_every_matched_company():
+    stories = {
+        "joint": _story(
+            "joint", "src-1", hours_ago=1, headline="Amazon and Google both announced new AI infrastructure",
+            matched_companies=("Amazon.com, Inc.", "Alphabet Inc."),
+        ),
+    }
+    amazon_visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Amazon.com, Inc.")
+    google_visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Alphabet Inc.")
+    assert [s.id for s in amazon_visible] == ["joint"]
+    assert [s.id for s in google_visible] == ["joint"]
+    unrelated_visible = editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Intel Corp.")
+    assert unrelated_visible == ()
+
+
+def test_for_company_empty_store_returns_empty_tuple():
+    assert editorial_pipeline.select_visible_editorial_stories_for_company({}, "Oracle Corporation") == ()
+
+
+def test_for_company_unmatched_company_returns_empty_tuple_not_an_error():
+    stories = {"a": _story("a", "src-1", hours_ago=1, matched_companies=("Oracle Corporation",))}
+    assert editorial_pipeline.select_visible_editorial_stories_for_company(stories, "Intel Corp.") == ()
+
+
+def test_global_select_visible_is_unaffected_by_the_new_per_company_function():
+    # Regression: select_visible_editorial_stories() itself (the "All
+    # companies" path) must stay byte-for-byte unchanged — same 72h
+    # freshness, same 5-per-source cap, same 20-total cap — proven again
+    # here alongside the new function's own tests for direct comparison.
+    stories = {}
+    for source_n in range(6):
+        for i in range(5):
+            key = f"src{source_n}-{i}"
+            stories[key] = _story(key, f"src-{source_n}", hours_ago=source_n * 10 + i)
+    visible = editorial_pipeline.select_visible_editorial_stories(stories)
+    assert len(visible) == 20
 
 
 # ============================================================
