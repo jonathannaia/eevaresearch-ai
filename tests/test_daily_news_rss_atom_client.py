@@ -3,6 +3,7 @@ monkeypatching of requests.get, zero real network calls. Covers RSS 2.0,
 Atom, malformed content, and network-failure isolation."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -61,6 +62,90 @@ def test_valid_rss_feed_is_parsed(monkeypatch):
     assert entry.link == "https://example.com/news/example-announces-something"
     assert entry.summary == "Example did a thing today."
     assert entry.published_at.startswith("2026-08-24")
+
+
+# --- Future-timestamp bug (beta-blocker): a source date with no discoverable
+# timezone offset (confirmed live for TheElec's own <pubDate>) is echoed by
+# feedparser as literal, unshifted wall-clock digits — this codebase's own
+# _parse_published_at() must never blindly trust that as UTC when doing so
+# would land the story in the future for an EDT reader. -----------------------
+
+
+def _naive_rss_fixture(pub_date_text: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>TheElec</title>
+<item>
+  <title>Samsung Electronics Shares Chip Fab Operations Expertise</title>
+  <link>https://www.thelec.net/news/articleView.html?idxno=13883</link>
+  <description>A Korea-sourced story, naive source timestamp.</description>
+  <pubDate>{pub_date_text}</pubDate>
+</item>
+</channel></rss>""".encode("utf-8")
+
+
+def test_thelec_style_naive_korea_time_never_displays_as_a_future_date(monkeypatch):
+    # Reproduces the exact reported bug: TheElec's real <pubDate> carries
+    # no timezone marker at all (confirmed live: "2026-09-14 07:26:41" —
+    # no "Z", no numeric offset, no zone name), and is genuinely Korea
+    # local time (UTC+9). Modeled here as "current KST wall-clock time,
+    # written naively" — the exact shape that, mislabeled as UTC, would
+    # place the story ~9 hours in the future and cross into the next EDT
+    # calendar date, exactly as reported ("Sep 14, 03:26 EDT" for a
+    # Sep 13 article).
+    naive_kst_now = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S")
+    monkeypatch.setattr(
+        rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_naive_rss_fixture(naive_kst_now)),
+    )
+
+    result = rss_atom_client.fetch_entries("https://www.thelec.net/rss/allArticle.xml")
+
+    assert result.failure_code is None
+    entry = result.entries[0]
+    parsed = datetime.fromisoformat(entry.published_at)
+    assert parsed.tzinfo is not None  # always timezone-aware UTC, never naive
+    assert parsed <= datetime.now(timezone.utc) + rss_atom_client._FUTURE_TOLERANCE  # never materially future
+    # Source URL/title/excerpt are untouched by this fix.
+    assert entry.link == "https://www.thelec.net/news/articleView.html?idxno=13883"
+    assert entry.title == "Samsung Electronics Shares Chip Fab Operations Expertise"
+    assert entry.summary == "A Korea-sourced story, naive source timestamp."
+
+
+def test_a_properly_offset_timestamp_far_in_the_past_is_unaffected(monkeypatch):
+    # The common, correct case (a real RFC822 offset/zone feedparser can
+    # already normalize) must render through completely unchanged by
+    # this fix — proven with a fixed past date, mirroring
+    # test_valid_rss_feed_is_parsed's own fixture convention.
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(_RSS_FIXTURE))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    entry = result.entries[0]
+    assert entry.published_at == "2026-08-24T12:00:00+00:00"
+
+
+def test_a_timestamp_within_the_future_tolerance_is_not_treated_as_future(monkeypatch):
+    # A few seconds/minutes of ordinary clock skew between the source
+    # server and this process must never trigger the fallback — only a
+    # materially future value (the actual bug shape) should.
+    almost_now = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    fixture = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<item>
+  <title>Example Announces Something</title>
+  <link>https://example.com/news/example</link>
+  <description>Example did a thing today.</description>
+  <pubDate>{almost_now}</pubDate>
+</item>
+</channel></rss>""".encode("utf-8")
+    monkeypatch.setattr(rss_atom_client.requests, "get", lambda *a, **k: _mock_response(fixture))
+
+    result = rss_atom_client.fetch_entries("https://example.com/rss")
+
+    entry = result.entries[0]
+    parsed = datetime.fromisoformat(entry.published_at)
+    # Not silently replaced with "now" — the original, real, within-tolerance value survives.
+    assert abs((parsed - (datetime.now(timezone.utc) + timedelta(minutes=1))).total_seconds()) < 5
 
 
 def test_valid_atom_feed_is_parsed(monkeypatch):

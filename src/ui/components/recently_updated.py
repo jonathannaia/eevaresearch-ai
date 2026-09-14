@@ -1,26 +1,52 @@
-"""Recently Updated — Dashboard Batch 1 (design/DECISIONS.md). A single,
-compact, reverse-chronological feed merging real filing events from SEC
-EDGAR/DART/EDINET (via the same backend_factory.
-get_filing_event_repository() regional_brief.py already reads) with real
-Daily News stories (via daily_news_backend.get_daily_news_repository()).
+"""Recently Updated ("Latest") — Dashboard Batch 1 (design/DECISIONS.md),
+beta-blocker data-integrity fix (design/DECISIONS.md). A single, compact,
+reverse-chronological feed merging three already-existing, already-real
+data sources — never a new one, never a seeded/demo one:
+
+  1. Real Radar CandidateSignals for SEC EDGAR/DART/EDINET (via
+     backend_factory.get_candidate_repository()) — never a raw
+     FilingEvent, which may never have qualified as a candidate at all.
+  2. Real, currently-PUBLISHED Daily News issuer stories (via
+     daily_news_backend.get_daily_news_repository()).
+  3. Real Daily News editorial stories that already passed the existing
+     high-signal eligibility rules (via src.ui.components.
+     editorial_coverage.get_visible_editorial_stories() — the exact same
+     function the Daily News page itself calls; previously absent from
+     this feed entirely).
+
 No new source, no new network call, no new cache format — purely a
-different read-time merge/sort/render over two already-existing,
-already-real data sources.
+different read-time merge/sort/render over data every source already
+produces through its own existing, unmodified pipeline.
 
 Sort key, per row (approved rule, design/DECISIONS.md):
-  Filings: filing.filed_at when present and parseable; else filing.
-    rcept_dt parsed as a source-claimed filing date; else filing.
+  Radar candidates: filing.filed_at when present and parseable; else
+    filing.rcept_dt parsed as a source-claimed filing date; else filing.
     retrieved_at as the final fallback.
-  Daily News: source.published_at exactly as stored — already resolved
-    to publisher-claimed-or-retrieved at write time by
-    daily_news_pipeline.py, so no further fallback is applied here.
+  Daily News (issuer and editorial): published_at exactly as stored —
+    already resolved to publisher-claimed-or-retrieved at write time by
+    daily_news_pipeline.py/editorial_pipeline.py, so no further fallback
+    is applied here.
 Every parsed instant with no explicit UTC offset is treated as UTC for
 sorting purposes only (same "naive input assumed UTC" convention
 src.logic.formatting already documents); a bare filing date (rcept_dt)
 is combined with UTC midnight for sorting only — never displayed as a
 fabricated time when the source didn't supply one (see
 _filing_display_date, which falls back to a date-only label in that
-case).
+case). Ties break on a content-derived identity key (_row_identity_key),
+never on list-build/source order, so the shown order is fully
+deterministic across reruns.
+
+Eligibility (beta-blocker fix, design/DECISIONS.md) — a row is excluded,
+never clamped or guessed, when: its own sort key is unparseable; its own
+sort key is materially in the future (more than _FUTURE_TOLERANCE past
+"now" — never trusted, since a genuine publication can't postdate the
+moment this process is looking at it); a Radar candidate's own status
+means archived/rejected (_ARCHIVED_OR_REJECTED_CANDIDATE_STATUSES); a
+Radar filing is stale seed/demo data (filing.is_demo); or a Daily News
+issuer story isn't currently PUBLISHED. A row that duplicates an
+already-kept row's own content-derived identity key is dropped. If
+nothing survives all of the above, the feed shows its own honest empty
+state — never old/seed content standing in for a live result.
 
 No claim-type, confidence, strength, importance, priority, score,
 summary, "why it matters", or bullish/bearish language anywhere — this
@@ -61,7 +87,7 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import streamlit as st
 
@@ -73,10 +99,33 @@ from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
-from src.models.models import FilingEvent
+from src.models.daily_news_models import NewsStoryStatus
+from src.models.models import CandidateStatus, FilingEvent
+from src.ui.components.editorial_coverage import get_visible_editorial_stories
 from src.ui.ui import get_page
 
 PREVIEW_COUNT = 8
+
+# Beta-blocker fix (design/DECISIONS.md) — "Latest"/Recently Updated must
+# be driven entirely by live, currently-eligible data: real Radar
+# CandidateSignals (never a raw FilingEvent that never qualified as a
+# candidate), real PUBLISHED Daily News issuer stories, and real,
+# already-high-signal-gated Daily News editorial stories (the same
+# fail-closed matching + freshness + per-source-cap rules
+# get_visible_editorial_stories() already enforces for the Daily News
+# page itself — reused here unchanged, never reimplemented). A status
+# that means "a human/system already archived or rejected this" is
+# never eligible to be the freshest thing shown on the dashboard.
+_ARCHIVED_OR_REJECTED_CANDIDATE_STATUSES = frozenset({CandidateStatus.DISMISSED, CandidateStatus.NOT_MATERIAL})
+
+# Same guard, same tolerance, and the same reasoning as
+# rss_atom_client._FUTURE_TOLERANCE: a genuine publication/filing can
+# never be timestamped later than the moment this process is looking at
+# it. A handful of minutes of ordinary clock skew is tolerated; anything
+# more is never trusted enough to win "Latest" — excluded outright here
+# (never clamped to "now", which would let an untrustworthy timestamp
+# win the very top spot it's least entitled to).
+_FUTURE_TOLERANCE = timedelta(minutes=5)
 
 _FILING_SOURCE_LABEL = {
     "SEC EDGAR": "SEC EDGAR",
@@ -121,6 +170,10 @@ def _esc(value: object) -> str:
 
 def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _is_materially_future(dt: datetime, now: datetime) -> bool:
+    return dt > now + _FUTURE_TOLERANCE
 
 
 def _parse_iso(raw: str | None) -> datetime | None:
@@ -169,16 +222,29 @@ def _filing_display_date(filing: FilingEvent) -> str:
     return ""
 
 
-def _load_filing_rows(settings: Settings) -> list[_Row]:
+def _load_filing_rows(settings: Settings, now: datetime) -> list[_Row]:
+    """Real Radar CandidateSignals only (design/DECISIONS.md beta-blocker
+    fix) — never a raw FilingEvent, which may never have qualified as a
+    candidate at all (routine/non-matching filings are never promoted;
+    see edgar_rules.py/dart_rules.py/edinet_rules.py). A candidate whose
+    own status means "archived"/"rejected" (_ARCHIVED_OR_REJECTED_
+    CANDIDATE_STATUSES), a stale seed/demo filing (filing.is_demo), or a
+    filing whose own sort key is unparseable or materially future is
+    never eligible to appear here — excluded, never clamped."""
     rows: list[_Row] = []
     for source in REGION_SOURCE.values():
         try:
-            filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
+            candidates = backend_factory.get_candidate_repository(settings, source).load_candidates()
         except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the feed
             continue
-        for filing in filings:
+        for candidate in candidates.values():
+            if candidate.status in _ARCHIVED_OR_REJECTED_CANDIDATE_STATUSES:
+                continue
+            filing = candidate.filing
+            if filing.is_demo:
+                continue
             sort_key = _filing_sort_key(filing)
-            if sort_key is None:
+            if sort_key is None or _is_materially_future(sort_key, now):
                 continue
             rows.append(_Row(
                 sort_key=sort_key,
@@ -198,18 +264,28 @@ def _load_filing_rows(settings: Settings) -> list[_Row]:
     return rows
 
 
-def _load_daily_news_rows(settings: Settings) -> list[_Row]:
+def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
+    """Real, currently-PUBLISHED Daily News issuer stories only (beta-
+    blocker fix, design/DECISIONS.md) — a DISCOVERED/SUMMARIZED story
+    (still in progress) or a SUPPRESSED one (no valid canonical URL) was
+    previously shown here unfiltered; both are now excluded, matching
+    the exact status gate src.ui.pages.daily_news._published_stories()
+    already applies to the Daily News page itself. A story whose own
+    published_at is unparseable or materially future is excluded, never
+    clamped — same reasoning as _load_filing_rows above."""
     rows: list[_Row] = []
     try:
         stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
     except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
         return rows
     for story in stories.values():
+        if story.status != NewsStoryStatus.PUBLISHED:
+            continue
         if not story.sources:
             continue
         source_ref = story.sources[0]
         sort_key = _parse_iso(source_ref.published_at)
-        if sort_key is None:
+        if sort_key is None or _is_materially_future(sort_key, now):
             continue
         rows.append(_Row(
             sort_key=sort_key,
@@ -218,6 +294,40 @@ def _load_daily_news_rows(settings: Settings) -> list[_Row]:
             source_label="Daily News",
             display_date=fmt_datetime_local(source_ref.published_at),
             source_url=source_ref.url or None,
+        ))
+    return rows
+
+
+def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
+    """Real Daily News editorial stories that already passed the
+    existing high-signal eligibility rules (beta-blocker fix, design/
+    DECISIONS.md) — get_visible_editorial_stories() is the exact same,
+    unmodified function src.ui.pages.daily_news itself calls: fail-closed
+    company/theme matching, 72-hour freshness, and the existing per-
+    source/total display caps are all already applied by the time this
+    function receives them. Previously absent from this feed entirely —
+    only issuer stories were ever considered, so a real, matched,
+    high-signal editorial item (CNBC, Reuters-style wire coverage, etc.)
+    could never win "Latest" no matter how new it was. A materially
+    future published_at is excluded here too, as a local, independent
+    safety net — this component's own guarantee never depends on any
+    other page's own freshness gate alone."""
+    rows: list[_Row] = []
+    try:
+        stories = get_visible_editorial_stories(settings)
+    except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
+        return rows
+    for story in stories:
+        sort_key = _parse_iso(story.published_at)
+        if sort_key is None or _is_materially_future(sort_key, now):
+            continue
+        rows.append(_Row(
+            sort_key=sort_key,
+            company_name=", ".join(story.matched_companies),
+            title=story.headline,
+            source_label="Daily News",
+            display_date=fmt_datetime_local(story.published_at),
+            source_url=story.source_url or None,
         ))
     return rows
 
@@ -367,12 +477,43 @@ def _render_row(row: _Row, settings: Settings) -> None:
             )
 
 
+def _select_recently_updated_rows(settings: Settings, now: datetime | None = None) -> list[_Row]:
+    """Pure selection logic (beta-blocker fix, design/DECISIONS.md) —
+    load, exclude, deduplicate, and deterministically sort every eligible
+    row across all three real sources, with no Streamlit rendering. Kept
+    separate from render_recently_updated() so the actual selection
+    outcome (what wins "Latest", and why) is directly testable without
+    driving a full page render."""
+    now = now or datetime.now(timezone.utc)
+    rows = _load_filing_rows(settings, now) + _load_daily_news_rows(settings, now) + _load_editorial_rows(settings, now)
+
+    # Duplicate-row safety net (beta-blocker fix, design/DECISIONS.md):
+    # keeps the first occurrence of each content-derived identity key
+    # (see _row_identity_key's own docstring) and drops any later repeat
+    # — each real source is already deduplicated at ingestion, so this
+    # only ever guards against the same record loading twice within one
+    # render, never against two genuinely different real items.
+    seen_keys: set[str] = set()
+    deduped: list[_Row] = []
+    for row in rows:
+        key = _row_identity_key(row)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(row)
+
+    # Deterministic sort: newest sort_key first; a content-derived
+    # identity key (never list-build/source order) breaks an exact-
+    # timestamp tie, so the shown order never depends on which source
+    # happened to be loaded first.
+    deduped.sort(key=lambda r: (r.sort_key.timestamp(), _row_identity_key(r)), reverse=True)
+    return deduped
+
+
 def render_recently_updated(settings: Settings) -> None:
     st.markdown('<div class="er-section-label">Recently Updated</div>', unsafe_allow_html=True)
 
-    rows = _load_filing_rows(settings) + _load_daily_news_rows(settings)
-    rows.sort(key=lambda r: r.sort_key, reverse=True)
-    shown = rows[:PREVIEW_COUNT]
+    shown = _select_recently_updated_rows(settings)[:PREVIEW_COUNT]
 
     with st.container(border=True, key="card-recently-updated-feed"):
         if not shown:
