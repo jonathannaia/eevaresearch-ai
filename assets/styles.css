@@ -643,6 +643,7 @@ a:hover { color: var(--accent-hover); }
 
 [data-testid="stPageLink"] a:focus-visible,
 [data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stPopoverButton"]:focus-visible,
 [data-testid="stSidebarNavLink"]:focus-visible,
 [data-testid="stTextInput"] input:focus-visible,
 [data-testid="stTextArea"] textarea:focus-visible,
@@ -651,6 +652,14 @@ a:hover { color: var(--accent-hover); }
 [data-testid="stChatInput"] textarea:focus-visible {
     outline: 2px solid var(--focus) !important; outline-offset: 2px;
 }
+/* stPopoverButton (the top bar's circular avatar trigger,
+   [class*="st-key-topbar-avatar-"] rule above) carries only its own
+   testid, never stBaseButton-secondary — found during the redesign's
+   keyboard/focus audit, since every other button in the app happens to
+   carry stBaseButton-secondary and was already covered. Its focus ring
+   is round to match the circular button shape, not the app's default
+   squared outline. */
+[data-testid="stPopoverButton"]:focus-visible { outline-offset: 2px; border-radius: 50%; }
 
 /* ---------- native widget surfaces (light editorial redesign) ----------
    Text inputs, selects, multiselects, date inputs, chat input, dataframes,

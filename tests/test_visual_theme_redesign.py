@@ -149,6 +149,28 @@ def test_fonts_are_unchanged():
     assert '--font-serif: "Source Serif 4"' in _CSS
 
 
+# --- Keyboard focus: every focusable control gets a visible ring ---
+
+def test_topbar_avatar_popover_gets_a_visible_focus_ring():
+    """stPopoverButton (the top bar's circular avatar trigger) carries
+    only its own testid, never stBaseButton-secondary — unlike every
+    other button in the app, so it was silently missing from the shared
+    focus-visible selector list until this was caught in a keyboard/
+    focus audit and fixed. This pins two things so the gap can't
+    reappear silently: (1) stPopoverButton is part of the same shared
+    --focus outline rule as every other interactive control, and (2) it
+    gets its own circular outline-radius override so the ring matches
+    the button's circular shape instead of the app's default squared
+    outline."""
+    shared_rule_match = re.search(r'\[data-testid="stPageLink"\] a:focus-visible,.*?\{[^}]*outline:\s*2px solid var\(--focus\)', _CSS, re.DOTALL)
+    assert shared_rule_match, "shared focus-visible rule block not found"
+    assert '[data-testid="stPopoverButton"]:focus-visible' in shared_rule_match.group(0)
+
+    circular_override_match = re.search(r'\[data-testid="stPopoverButton"\]:focus-visible\s*\{([^}]*)\}', _CSS)
+    assert circular_override_match, "stPopoverButton circular focus-ring override not found"
+    assert "border-radius: 50%" in circular_override_match.group(1)
+
+
 # --- .streamlit/config.toml native-widget theme matches the new palette ---
 
 def test_config_toml_theme_matches_new_palette():
