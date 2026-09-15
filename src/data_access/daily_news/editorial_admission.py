@@ -65,7 +65,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
-from src.data_access.daily_news.editorial_matching import match_companies
+from src.data_access.daily_news.editorial_matching import company_mention_spans, match_companies
 from src.models.daily_news_models import NewsMaterialityTier
 
 # --- Alias confidence (audited across the full 106-company alias
@@ -224,6 +224,67 @@ _HARD_MATERIAL_REASON_PREFIXES: tuple[str, ...] = (
     "quantified_change:", "quantified_capital_return:",
 )
 
+# --- Plaintiff-law-firm solicitation exclusion (Signals admission
+# precision fix, P0). Curated, narrow phrases naming the real,
+# distinctive attorney-advertising vocabulary these releases use (the
+# real, live-verified Rosen Law Firm / AST SpaceMobile release series
+# — "ROSEN ... Encourages AST SpaceMobile, Inc. Investors to Secure
+# Counsel Before Important Deadline in Securities Class Action") —
+# never a bare "lawsuit"/"class action"/"securities fraud" ban, which
+# would also catch genuine independent reporting on a real legal
+# action, a company's own primary-source disclosure of litigation (a
+# 10-K risk factor, an 8-K legal-proceedings item), or an SEC
+# enforcement action — none of which use this self-promotional,
+# solicitation-specific phrasing. Same exception shape as the consumer-
+# format exclusion above: a genuine, independently-quantified corporate
+# event about an already-identified subject is never suppressed by
+# this list alone. ---
+_LAW_FIRM_SOLICITATION_PHRASES: tuple[str, ...] = (
+    "encourages investors to secure counsel", "encourages shareholders to secure counsel",
+    "lead plaintiff deadline", "serve as lead plaintiff", "move the court no later than",
+    "shareholder rights law firm", "investor rights law firm", "securities law firm",
+    "law firm reminds", "if you purchased or otherwise acquired", "join the class action",
+    "law offices of", "shareholder alert:", "investor alert:", "national trial lawyers",
+    "top ranked law firm", "trusted investor counsel", "skilled investor counsel",
+    "investigating claims on behalf of",
+)
+_LAW_FIRM_SOLICITATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bencourages\b.{0,40}\binvestors\b.{0,40}\bsecure counsel\b", re.IGNORECASE),
+    re.compile(r"\bencourages\b.{0,40}\bshareholders\b.{0,40}\bsecure counsel\b", re.IGNORECASE),
+)
+
+# --- Personnel/leadership/governance-announcement exclusion (Signals
+# admission precision fix, P0). Curated, narrow phrases naming routine
+# executive/board/organizational-change content — never a bare
+# "executive"/"appoints"/"board" ban (both already appear, deliberately,
+# in _COMPANY_ACTION_KEYWORDS above for a DIFFERENT purpose — granting
+# subject IDENTITY — and stay unchanged there; this is a separate,
+# later, content-SHAPE check that runs only once identity is already
+# resolved). Same exception shape as the other two exclusions above: a
+# leadership change directly coupled to a disclosed transaction, funded
+# program, restructuring, or capital-allocation event remains fully
+# eligible via _HARD_MATERIAL_REASON_PREFIXES (e.g. "Names New Program
+# Executive Officer for $1.2B Resilient GPS Program" keeps its own
+# quantified_change:contract/financing hit). Written to apply generally
+# to any Lane B content this function evaluates — including, once a
+# separate, future change wires it into editorial_pipeline.py's own
+# per-source qualifying loop, content from a source with a broader
+# admission bypass (see this module's own top-of-file docstring: that
+# wiring is explicitly out of this change's file scope). ---
+_PERSONNEL_ANNOUNCEMENT_PHRASES: tuple[str, ...] = (
+    "establishes a new executive", "establishes a new position", "establishes a new role",
+    "creates a new role", "creates a new position", "new portfolio executive",
+    "portfolio executive", "joins the board", "joins as chief", "joins as president",
+    "steps down as", "steps down from", "announces retirement of", "names new chief",
+    "names new president", "succession plan", "board appointment",
+)
+_PERSONNEL_ANNOUNCEMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bappoints\b.{0,40}\b(as|to)\b", re.IGNORECASE),
+    re.compile(r"\bnames\b.{0,40}\bas\b.{0,20}\b(chief|president|executive|director|officer)\b", re.IGNORECASE),
+    re.compile(r"\bestablishes?\b.{0,40}\b(executive|portfolio|position|role)\b", re.IGNORECASE),
+    re.compile(r"\bpromotes?\b.{0,40}\bto\b.{0,20}\b(chief|president|executive|director|officer)\b", re.IGNORECASE),
+)
+
 
 # --- Incidental/historical-mention calibration fix (design/DECISIONS.md,
 # "Signals editorial lane false-positive audit") — has_action_language
@@ -262,23 +323,80 @@ def _sentences(text: str) -> tuple[str, ...]:
     """A deliberately simple sentence split — sufficient to scope the
     action-language check to a company's own vicinity; not intended as
     real sentence-boundary detection. Falls back to treating the whole
-    text as one sentence when no terminal punctuation exists at all."""
-    pieces = re.split(r"(?<=[.!?])\s+", text)
+    text as one sentence when no terminal punctuation exists at all.
+    Also splits on a literal newline (Signals admission precision fix,
+    P0) — _combined_text() joins title and description with exactly one
+    "\\n" and no terminal punctuation on the title itself, so without
+    this, a title ending in a company mention could merge with the
+    description's own first sentence into one blob, letting that
+    company appear deceptively close to an action verb that is really
+    the description's own opening word, not the title's. A real
+    excerpt's own sentences never legitimately contain an embedded raw
+    newline, so this is a strictly safer boundary, not merely scoped to
+    the title/description join."""
+    pieces = re.split(r"(?<=[.!?])\s+|\n+", text)
     return tuple(p for p in pieces if p.strip())
 
 
-def _company_has_nearby_action_language(text: str, company: str) -> bool:
-    """True only when at least one sentence both names this specific
-    company (via match_companies() — the same alias resolution used
-    everywhere else in this codebase) and contains a company-action
-    keyword IN THAT SAME SENTENCE — never merely "both exist somewhere
-    in the article." See this module's own "Incidental/historical-
-    mention calibration fix" comment above for the real false positive
-    this closes."""
-    return any(
-        company in match_companies(sentence) and _contains_any(sentence, _COMPANY_ACTION_KEYWORDS)
-        for sentence in _sentences(text)
-    )
+# Signals admission precision fix (P0, design/SIGNALS_ADMISSION_
+# MATERIALITY_CALIBRATION_2026_09_15.md / design/CURRENT_SIGNALS_
+# POLICY_AND_GAP_INVENTORY_2026_09_15.md) — a code-verified gap the
+# sentence-scoping fix above did not close: the same-sentence check
+# only asked "does SOME action keyword and this company both appear in
+# this sentence," never WHO performs that action. Verified false
+# positive: "New Math Data today announced it has achieved Premier
+# Tier Partner status in the Amazon Web Services (AWS) Partner
+# Network" granted Amazon.com, Inc. identity purely because "announced"
+# and "Amazon Web Services" share a sentence — even though New Math
+# Data, not Amazon, is the one who announced anything; Amazon is named
+# only as the certifying platform. Fixed by requiring the company's own
+# recognized mention to appear CLOSE to the action keyword — either
+# immediately before it (the ordinary "Company announced X" subject-
+# verb order, given a generous lookback) or shortly after it (a
+# tighter lookahead, covering the equally common "Company Announces
+# $10B Expansion of AWS Data Center Capacity" shape, where the
+# sentence's real subject is a short/unaliased form ("Amazon") this
+# codebase's own alias table doesn't recognize on its own, but the
+# recognized alias ("AWS") still appears close by, naming what the
+# company acted upon). The asymmetry is deliberate: Math Data's own
+# false positive has its "Amazon Web Services" mention arriving roughly
+# 60+ characters after "announced," well outside even the tighter
+# lookahead window — the true, load-bearing distinction is proximity,
+# not strict word order. This is a deterministic, bounded-proximity
+# heuristic, not a grammatical parse (this codebase has no parser
+# anywhere) — a real, accepted, narrow limitation, not a claim of full
+# agency detection. Never company-specific: the exact same rule applies
+# to every company in the Daily News universe.
+_ACTOR_LOOKBACK_CHARS = 50
+_ACTOR_LOOKAHEAD_CHARS = 40
+_ACTION_KEYWORD_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(keyword) for keyword in _COMPANY_ACTION_KEYWORDS) + r")\b", re.IGNORECASE,
+)
+
+
+def _company_is_grammatical_actor(text: str, company: str) -> bool:
+    """True only when this company's own name/alias appears close to a
+    company-action keyword in the same sentence — within
+    _ACTOR_LOOKBACK_CHARS immediately before it, or within the tighter
+    _ACTOR_LOOKAHEAD_CHARS immediately after it — approximating "the
+    company is the one performing (or is closely bound to) this
+    action" rather than "the company and some action verb both merely
+    appear somewhere in this sentence," which the prior version
+    conflated (see this function's own preceding comment for the exact
+    false positive this closes, and the asymmetric-window false
+    positive it also had to avoid reintroducing)."""
+    for sentence in _sentences(text):
+        company_spans = company_mention_spans(sentence, company)
+        if not company_spans:
+            continue
+        for match in _ACTION_KEYWORD_PATTERN.finditer(sentence):
+            verb_start, verb_end = match.start(), match.end()
+            for span_start, span_end in company_spans:
+                if span_end <= verb_start and (verb_start - span_end) <= _ACTOR_LOOKBACK_CHARS:
+                    return True
+                if span_start >= verb_end and (span_start - verb_end) <= _ACTOR_LOOKAHEAD_CHARS:
+                    return True
+    return False
 
 
 def _has_historical_background_framing(text: str) -> bool:
@@ -310,6 +428,26 @@ def _matched_consumer_format(text: str) -> str | None:
     stock_hit = _contains_any(text, _STOCK_ROUNDUP_PHRASES)
     if stock_hit:
         return stock_hit[0]
+    return None
+
+
+def _matched_law_firm_solicitation(text: str) -> str | None:
+    hit = _contains_any(text, _LAW_FIRM_SOLICITATION_PHRASES)
+    if hit:
+        return hit[0]
+    for pattern in _LAW_FIRM_SOLICITATION_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
+    return None
+
+
+def _matched_personnel_announcement(text: str) -> str | None:
+    hit = _contains_any(text, _PERSONNEL_ANNOUNCEMENT_PHRASES)
+    if hit:
+        return hit[0]
+    for pattern in _PERSONNEL_ANNOUNCEMENT_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
     return None
 
 
@@ -352,7 +490,7 @@ def _identified_subject_companies(
             continue
         in_title = company in title_companies
         has_action_language = (
-            not historical_background and _company_has_nearby_action_language(text, company)
+            not historical_background and _company_is_grammatical_actor(text, company)
         )
         if company in _AMBIGUOUS_ALIAS_COMPANIES:
             if in_title and has_action_language:
@@ -402,6 +540,39 @@ def assess_admission(
         if identified_companies and _has_anchor_evidence(materiality_reasons):
             return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
         return AdmissionDecision(False, f"consumer_editorial_format:{consumer_format_hit}")
+
+    # Plaintiff-law-firm solicitation exclusion (Signals admission
+    # precision fix, P0) — same exception shape as consumer-format
+    # above: an already-identified subject's genuinely material,
+    # independently-quantified story is never suppressed merely because
+    # a law-firm-solicitation phrase also appears in it.
+    law_firm_hit = _matched_law_firm_solicitation(text)
+    if law_firm_hit:
+        if identified_companies and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
+        return AdmissionDecision(False, f"law_firm_solicitation:{law_firm_hit}")
+
+    # Personnel/leadership/governance-announcement exclusion (Signals
+    # admission precision fix, P0) — a leadership change directly
+    # coupled to a disclosed transaction, funded program, procurement,
+    # or capacity/capital-allocation event remains eligible via anchor_
+    # evidence. Unlike the consumer-format/law-firm exceptions above,
+    # this one is also theme-aware: the fixture this rule specifically
+    # targets (a government-agency source with NO tracked-company
+    # match at all, e.g. "DAF"/"Space Force") can only ever be rescued
+    # through a matched theme, never an identified company — a company-
+    # only exception, copied unchanged from the consumer-format shape,
+    # would permanently block every concrete, funded-program-linked
+    # agency announcement that names no tracked issuer. A theme-only
+    # rescue still requires the SAME genuine anchor_evidence bar as the
+    # company path — never theme membership alone.
+    personnel_hit = _matched_personnel_announcement(text)
+    if personnel_hit:
+        if identified_companies and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
+        if not identified_companies and matched_themes and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"theme_subject:{matched_themes[0]}")
+        return AdmissionDecision(False, f"personnel_announcement:{personnel_hit}")
 
     if matched_companies:
         if identified_companies:

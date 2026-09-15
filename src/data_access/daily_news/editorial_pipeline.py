@@ -29,21 +29,39 @@ store contents for exactly that reason. The overall 20-card total cap
 remains display-only (a cross-feed presentation limit, not an ingestion
 one).
 
-Government / Public Sector Daily News lane (design/DECISIONS.md) — two
-specific, hardcoded exceptions to the fail-closed company-or-theme
-matching gate below, for exactly `_SPACEFORCE_SOURCE_ID` and
-`_NIST_SOURCE_ID`. Deliberately NOT a category-based or generically-
-extensible bypass (e.g. no `_ALWAYS_ELIGIBLE_SOURCE_IDS` frozenset) —
-every other existing and future editorial source, including any other
-entry that happens to use SourceCategory.GOVERNMENT_POLICY, still goes
-through the exact same matched_companies_and_themes() gate unchanged.
-`_SPACEFORCE_SOURCE_ID` may publish with zero company/theme matches
-(every item in that feed is inherently in-scope). `_NIST_SOURCE_ID` may
+Government / Public Sector Daily News lane (design/DECISIONS.md) — one
+specific, hardcoded exception to the fail-closed company-or-theme
+matching gate below, for exactly `_NIST_SOURCE_ID`. Deliberately NOT a
+category-based or generically-extensible bypass (e.g. no
+`_ALWAYS_ELIGIBLE_SOURCE_IDS` frozenset) — every other existing and
+future editorial source, including any other entry that happens to use
+SourceCategory.GOVERNMENT_POLICY, still goes through the exact same
+matched_companies_and_themes() gate unchanged. `_NIST_SOURCE_ID` may
 publish only when `_matches_nist_allow_list()` returns True — a pure,
 source-scoped, strict CHIPS/semiconductor allow-list, checked only
 against the item's own real title/summary, never a fetched article
-body. matched_companies/matched_themes are still computed and stored
-for both sources (harmless, usually empty; correctly tags the rare item
+body; this source never calls assess_admission() at all, unchanged
+from before this module's own admission-precision fix.
+
+Signals admission precision fix (P0.3, design/SIGNALS_ADMISSION_
+MATERIALITY_CALIBRATION_2026_09_15.md / design/CURRENT_SIGNALS_POLICY_
+AND_GAP_INVENTORY_2026_09_15.md) — `_SPACEFORCE_SOURCE_ID` no longer
+has an unconditional admission bypass. It keeps a narrow exemption from
+the fail-closed matched_companies/matched_themes PRECONDITION only
+(every item in that feed is still inherently in-scope for
+consideration, since a routine personnel note or a genuine funded-
+program item alike rarely names a tracked company or a narrow theme
+phrase) — but every Space Force item is now always routed through the
+same assess_admission() call every other non-NIST source already uses.
+editorial_admission.py's own theme-aware personnel-announcement
+exception (unmodified by this fix) is what actually decides
+eligibility: a routine executive/leadership/portfolio/board/
+organizational announcement with no disclosed contract, funded
+program, procurement, mission milestone, regulatory action, or
+measurable operating/capacity change is rejected; a concrete-agency
+item, or a personnel item directly coupled to one, remains eligible.
+matched_companies/matched_themes are still computed and stored for
+both sources (harmless, usually empty; correctly tags the rare item
 that does name a tracked company)."""
 from __future__ import annotations
 
@@ -299,7 +317,7 @@ def run_editorial_discovery(
                 entry.title, entry.summary, source.category,
             )
             # Government / Public Sector Daily News lane (design/DECISIONS.md):
-            # two named, hardcoded source_id exceptions to the general
+            # a named, hardcoded source_id exception to the general
             # fail-closed gate below — see this module's own docstring
             # for why this is deliberately not a category-based or
             # generically-extensible mechanism. Every other source_id,
@@ -308,21 +326,52 @@ def run_editorial_discovery(
             # admission gate (design/DECISIONS.md, the Nintendo/Amazon
             # false-positive audit) — a company/theme keyword match is
             # necessary but no longer sufficient; see editorial_admission.
-            # py's own docstring for the full rule. Deliberately not
-            # applied to SpaceForce/NIST: an existing, narrower,
-            # separately-approved bypass this fix does not touch.
-            if source.source_id == _SPACEFORCE_SOURCE_ID:
-                pass
-            elif source.source_id == _NIST_SOURCE_ID:
+            # py's own docstring for the full rule. NIST keeps its own,
+            # separate, unrelated allow-list mechanism (_matches_nist_
+            # allow_list) untouched by this change.
+            if source.source_id == _NIST_SOURCE_ID:
                 if not _matches_nist_allow_list(entry.title, entry.summary):
                     items_no_match += 1
                     continue
-            elif not matched_companies and not matched_themes:
-                items_no_match += 1
-                if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
-                    rejected_examples.append((entry.title, "no_qualifying_company_or_theme_match"))
-                continue
             else:
+                # Signals admission precision fix (P0.3, design/SIGNALS_
+                # ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md / design/
+                # CURRENT_SIGNALS_POLICY_AND_GAP_INVENTORY_2026_09_15.md)
+                # — _SPACEFORCE_SOURCE_ID's own former unconditional
+                # bypass ("if source.source_id == _SPACEFORCE_SOURCE_ID:
+                # pass", which skipped assess_admission() entirely,
+                # admitting every item regardless of content) is removed.
+                # Space Force keeps its own narrow exemption from the
+                # fail-closed company/theme PRECONDITION immediately
+                # below (every item in that feed is still inherently
+                # in-scope for CONSIDERATION — a routine personnel note
+                # names no tracked company and rarely a theme phrase
+                # either, so requiring one first would make the
+                # precision-first admission check below unreachable for
+                # exactly the content it needs to evaluate), but
+                # eligibility itself is now always decided by the same
+                # assess_admission() call every other source already
+                # uses — its own theme-aware personnel-announcement
+                # exception (editorial_admission.py, unmodified by this
+                # change) is what actually admits or rejects a Space
+                # Force item: a routine executive/leadership/portfolio
+                # announcement with no disclosed contract, funded
+                # program, procurement, mission milestone, regulatory
+                # action, or measurable capacity change is rejected
+                # exactly like it would be for any other source; a
+                # concrete-agency item (named contract/award, funded
+                # program/budget, procurement, launch/mission milestone,
+                # regulatory action, measurable operating/capacity
+                # change, or a personnel item directly coupled to one of
+                # those) remains eligible.
+                if (
+                    source.source_id != _SPACEFORCE_SOURCE_ID
+                    and not matched_companies and not matched_themes
+                ):
+                    items_no_match += 1
+                    if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
+                        rejected_examples.append((entry.title, "no_qualifying_company_or_theme_match"))
+                    continue
                 admission = assess_admission(
                     entry.title, entry.summary, matched_companies, matched_themes, materiality_reasons,
                 )

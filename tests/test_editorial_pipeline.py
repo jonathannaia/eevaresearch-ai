@@ -506,12 +506,23 @@ def test_global_select_visible_is_unaffected_by_the_new_per_company_function():
 
 # ============================================================
 # Government / Public Sector Daily News lane (design/DECISIONS.md) —
-# _SPACEFORCE_SOURCE_ID bypasses the company/theme gate entirely;
 # _NIST_SOURCE_ID is gated by _matches_nist_allow_list() instead of
-# matched_companies_and_themes(). Every other source_id (including a
-# plain CNBC/Korea Herald one) keeps the exact existing gate — proven
-# by test_no_match_item_is_not_published above, which is untouched by
-# this batch, plus the mixed-run test below.
+# matched_companies_and_themes(), unchanged. Every other source_id
+# (including a plain CNBC/Korea Herald one) keeps the exact existing
+# gate — proven by test_no_match_item_is_not_published above, which is
+# untouched by this batch, plus the mixed-run test below.
+#
+# Signals admission precision fix (P0.3, design/SIGNALS_ADMISSION_
+# MATERIALITY_CALIBRATION_2026_09_15.md) — _SPACEFORCE_SOURCE_ID no
+# longer bypasses the company/theme gate entirely. It keeps only a
+# narrow exemption from the fail-closed matched_companies/matched_
+# themes PRECONDITION; every Space Force item is now always routed
+# through the same assess_admission() call every other non-NIST source
+# already uses, so a routine personnel/leadership announcement with no
+# disclosed contract, funded program, procurement, mission milestone,
+# regulatory action, or measurable capacity change is rejected exactly
+# like it would be for any other source (see the P0.3 regression tests
+# below, after the original SpaceForce/NIST coverage in this block).
 # ============================================================
 
 _GOVERNMENT_LICENSING = "U.S. federal government work test fixture."
@@ -538,7 +549,14 @@ def _nist_source(source_id: str = "nist-news-rss") -> DailyNewsSourceEntry:
     )
 
 
-def test_spaceforce_item_with_no_company_or_theme_match_still_publishes(tmp_path, monkeypatch):
+def test_spaceforce_item_with_no_company_or_theme_match_is_now_rejected(tmp_path, monkeypatch):
+    # P0.3: this item is still exempt from the fail-closed company/theme
+    # PRECONDITION (items_no_match stays 0, unlike an ordinary source),
+    # but it is no longer unconditionally admitted — with no matched
+    # company, no matched theme, and no personnel/consumer-format/law-
+    # firm phrase, assess_admission() has no basis to admit it and falls
+    # through to its final no_qualifying_subject_evidence rejection, the
+    # same as it would for any other source's evidence-free item.
     source = _spaceforce_source()
     no_match_item = _entry(
         title="US Space Force selects Texas as preferred location for third DARC site",
@@ -549,12 +567,10 @@ def test_spaceforce_item_with_no_company_or_theme_match_still_publishes(tmp_path
 
     report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
 
-    assert report.stories_published == 1
-    assert report.items_no_match == 0
-    story = next(iter(load_stories(tmp_path).values()))
-    assert story.matched_companies == ()
-    assert story.matched_themes == ()
-    assert story.source_feed_id == "spaceforce-news-rss"
+    assert report.stories_published == 0
+    assert report.items_no_match == 0  # exempted from the precondition
+    assert report.items_not_subject_relevant == 1  # but rejected by assess_admission() itself
+    assert load_stories(tmp_path) == {}
 
 
 def test_spaceforce_stale_item_is_still_excluded(tmp_path, monkeypatch):
@@ -689,16 +705,26 @@ def test_nist_duplicate_within_one_run_is_still_deduplicated(tmp_path, monkeypat
 def test_mixed_run_cnbc_gate_is_unaffected_by_government_sources(tmp_path, monkeypatch):
     # Proves the CNBC (INDEPENDENT_NEWS) source_id still goes through
     # the exact, unmodified company-or-theme gate in the same run that
-    # also processes Space Force (always-eligible) and NIST (allow-list
-    # gated) sources — the three eligibility paths never interfere.
+    # also processes Space Force (precondition-exempt, but subject to
+    # assess_admission() since P0.3) and NIST (allow-list gated)
+    # sources — the three eligibility paths never interfere. The Space
+    # Force item here names a funded program (a launch contract tied to
+    # a satellite constellation mission) so it is genuinely admitted via
+    # assess_admission()'s own theme match, proving this run's one
+    # publish is a real admission decision, not a leftover bypass.
     cnbc = _source()
     spaceforce = _spaceforce_source()
     nist = _nist_source()
 
     cnbc_off_topic = _entry(title="Record U.S. cyclosporiasis outbreak is over, CDC says", summary=None)
     spaceforce_item = _entry(
-        title="US Space Force selects Texas as preferred location for third DARC site",
-        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+        title="U.S. Space Force Awards $400 Million Launch Contract for National Security Satellite "
+              "Constellation Mission",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/launch-contract/",
+        summary=(
+            "The U.S. Space Force awarded a $400 million launch contract to support a national security "
+            "satellite constellation mission, funding a dedicated launch vehicle."
+        ),
     )
     nist_off_topic = _entry(
         title="NIST-Developed Quantum Sensors Improve Nuclear Monitoring",
@@ -717,6 +743,99 @@ def test_mixed_run_cnbc_gate_is_unaffected_by_government_sources(tmp_path, monke
     stories = load_stories(tmp_path)
     assert len(stories) == 1
     assert next(iter(stories.values())).source_feed_id == "spaceforce-news-rss"
+
+
+# ============================================================
+# P0.3 production wiring (Signals admission precision fix, design/
+# SIGNALS_ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md / design/
+# CURRENT_SIGNALS_POLICY_AND_GAP_INVENTORY_2026_09_15.md) — the DAF/
+# Fixture-C regression already covered under "Signals admission/
+# materiality precision fix — full regression matrix" further below
+# (test_regression_daf_portfolio_executive_announcement_is_rejected,
+# test_regression_space_executive_tied_to_funded_program_is_eligible)
+# exercises the real run_editorial_discovery() pipeline, but through a
+# generic, non-Space-Force source_id — so the rejecting fixture never
+# actually reaches Space Force's own narrowed precondition exemption;
+# it is blocked earlier, by the ordinary company/theme precondition,
+# exactly like it would be for any other source, exemption or not. The
+# three tests below use the real spaceforce-news-rss source_id (via
+# _spaceforce_source()) to prove the exemption itself is wired
+# correctly: a no-evidence item reaches assess_admission() and is
+# rejected there (not merely blocked earlier), a substantive item
+# remains eligible, and an ordinary source's own behavior is untouched.
+# ============================================================
+
+
+def test_p03_spaceforce_daf_portfolio_executive_is_rejected_via_real_pipeline(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    daf_item = _entry(
+        title="DAF establishes space technology portfolio executive",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/9900001/daf-portfolio-executive/",
+        summary=(
+            "The Department of the Air Force announced the establishment of a new space technology "
+            "portfolio executive position within the Space Force. The new portfolio executive will "
+            "oversee acquisition strategy across multiple space technology programs."
+        ),
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(daf_item,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 0  # exempted from the precondition, reached assess_admission()
+    assert report.items_not_subject_relevant == 1  # rejected there instead — personnel_announcement, no anchor
+    assert load_stories(tmp_path) == {}
+
+
+def test_p03_spaceforce_item_with_named_funded_program_remains_eligible(tmp_path, monkeypatch):
+    source = _spaceforce_source()
+    item = _entry(
+        title="U.S. Space Force Awards $400 Million Launch Contract for National Security Satellite "
+              "Constellation Mission",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/9900002/launch-contract/",
+        summary=(
+            "The U.S. Space Force awarded a $400 million launch contract to support a national security "
+            "satellite constellation mission, funding a dedicated launch vehicle and ground segment "
+            "integration work."
+        ),
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(item,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.matched_themes == ("space",)
+    assert story.source_feed_id == "spaceforce-news-rss"
+
+
+def test_p03_non_spaceforce_source_admission_behavior_is_unchanged(tmp_path, monkeypatch):
+    # Regression guard: the same DAF/portfolio-executive fixture, when
+    # it arrives from an ordinary non-Space-Force, non-NIST source, is
+    # still rejected by the same pre-existing company/theme precondition
+    # it always was (items_no_match, not items_not_subject_relevant) —
+    # proving Space Force's new, narrower precondition exemption
+    # (source.source_id != _SPACEFORCE_SOURCE_ID) has not broadened
+    # eligibility for any other Lane B source; this is not a broad Lane
+    # B regression.
+    source = _source()  # ordinary CNBC-pattern source — not Space Force, not NIST
+    daf_item = _entry(
+        title="DAF establishes space technology portfolio executive",
+        link="https://www.cnbc.com/2026/09/15/daf-portfolio-executive.html",
+        summary=(
+            "The Department of the Air Force announced the establishment of a new space technology "
+            "portfolio executive position within the Space Force. The new portfolio executive will "
+            "oversee acquisition strategy across multiple space technology programs."
+        ),
+    )
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(daf_item,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1  # blocked by the ordinary precondition, never reached assess_admission()
+    assert report.items_not_subject_relevant == 0
+    assert load_stories(tmp_path) == {}
 
 
 # ============================================================
@@ -1600,3 +1719,273 @@ def test_japan_times_business_real_worker_fetch_signature_returns_403(tmp_path):
         import pytest
         pytest.skip("no network access available in this environment")
     assert response.status_code == 403
+
+
+# ============================================================
+# Signals admission/materiality precision fix — full regression matrix
+# (design/SIGNALS_ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md,
+# design/CURRENT_SIGNALS_POLICY_AND_GAP_INVENTORY_2026_09_15.md). Every
+# fixture runs end-to-end through the real run_editorial_discovery() —
+# the same call the real worker makes — proving the P0/P1/P2 fixes
+# (implemented in editorial_admission.py, editorial_matching.py,
+# materiality_classification.py) are correctly wired through editorial_
+# pipeline.py's own qualifying loop, not merely correct in isolation.
+# Every fixture below uses a generic, non-Space-Force source_id, so it
+# exercises the ordinary company/theme precondition + assess_admission()
+# path shared by every source; editorial_pipeline.py's own P0.3 change
+# (removing Space Force's unconditional bypass) has its own dedicated,
+# real-source_id coverage in the "P0.3 production wiring" block above.
+# ============================================================
+
+
+def _regression_source(source_id: str, attribution_label: str) -> DailyNewsSourceEntry:
+    return _source(source_id=source_id, attribution_label=attribution_label)
+
+
+def _run_single_item(tmp_path, monkeypatch, title: str, summary: str | None, source_id: str = "test-regression-rss"):
+    source = _regression_source(source_id, "Test Wire")
+    entry = _entry(title=title, summary=summary, link=f"https://www.cnbc.com/2026/09/15/{source_id}.html")
+    _patch_fetch(monkeypatch, {source.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(source,))
+    return report, load_stories(tmp_path)
+
+
+# --- A: Intel unconfirmed/tipster rumor -> reject High Signal -------
+
+
+def test_regression_intel_rumor_does_not_reach_high_signal(tmp_path, monkeypatch):
+    """This exact reconstruction is rejected at BOTH layers today: Intel
+    is an ambiguous-alias company (see editorial_admission._AMBIGUOUS_
+    ALIAS_COMPANIES) that needs both title placement AND grammatical-
+    actor action language to establish identity, and no sentence here
+    pairs "Intel" with a recognized action keyword — so admission
+    itself rejects it (company_mention_not_subject_worthy), never
+    reaching materiality at all. The stronger assertion (never
+    published) subsumes the weaker one (never High Signal even if it
+    somehow were published) — both are true here."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Intel reportedly cans 12Xe option for Nova Lake-S desktop — gaming APU design said to resurface "
+        "with Razor Lake",
+        "According to tipster Jaykihn, Intel has cancelled the 12 Xe3P graphics core option for its Nova "
+        "Lake-S desktop lineup. The leaker says the design has been cancelled and Intel intends to pick it "
+        "back up with Razor Lake. The chipmaker has not officially confirmed the change.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_official_intel_confirmation_is_eligible_for_high_signal(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Intel officially confirmed a new $2 billion investment in Arizona fab capacity",
+        "Intel today officially confirmed it will invest $2 billion to expand fab capacity at its Arizona "
+        "facility, adding new wafer fabrication equipment.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- B: Math Data generic AWS partner-tier -> reject, no Amazon -----
+
+
+def test_regression_generic_aws_partner_tier_announcement_is_rejected(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "New Math Data Achieves Premier Tier Status in the Amazon Web Services Partner Network",
+        "New Math Data today announced it has achieved Premier Tier Partner status in the Amazon Web "
+        "Services (AWS) Partner Network. As an AWS Premier Tier Partner, New Math Data has met rigorous "
+        "requirements around technical certifications and customer satisfaction.",
+    )
+    assert report.stories_published == 0
+    assert report.items_not_subject_relevant == 1
+    assert stories == {}
+
+
+def test_regression_named_material_aws_contract_is_eligible_with_correct_attribution(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "AWS Signs $500 Million Multi-Year Cloud Contract With Acme Logistics",
+        "Amazon Web Services today announced it signed a $500 million multi-year contract to provide "
+        "cloud infrastructure and capacity for Acme Logistics operations worldwide.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ("Amazon.com, Inc.",)
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- C: DAF portfolio executive -> reject; funded-program-linked change eligible ---
+
+
+def test_regression_daf_portfolio_executive_announcement_is_rejected(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "DAF establishes space technology portfolio executive",
+        "The Department of the Air Force announced the establishment of a new space technology portfolio "
+        "executive position within the Space Force. The new portfolio executive will oversee acquisition "
+        "strategy across multiple space technology programs.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_space_executive_tied_to_funded_program_is_eligible(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "DAF Names New Space Technology Portfolio Executive to Lead $800 Million Satellite Constellation "
+        "Contract",
+        "The Department of the Air Force named a new space technology portfolio executive to lead an "
+        "$800 million satellite constellation contract, overseeing capacity expansion across the "
+        "program.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_themes == ("space",)
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- D: Kirkwood-style podcast -> non-High-Signal; quantified interview eligible ---
+
+
+def test_regression_kirkwood_style_podcast_without_new_disclosure_is_not_high_signal(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Scott Bergs, CEO of Kirkwood IG: Fiber and the AI Data Center Buildout",
+        "In this interview, Scott Bergs discusses how Kirkwood IG is expanding its fiber network to "
+        "support the AI data center buildout across the Southeast, describing the capacity investment "
+        "needed to keep pace with hyperscale demand.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_regression_interview_with_attributable_quantified_commitment_is_eligible(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Scott Bergs, CEO of Kirkwood IG: Fiber and the AI Data Center Buildout",
+        "In this interview, Scott Bergs disclosed a $300 million expansion of the company fiber route, "
+        "adding 40,000 route-miles by 2027 to support AI data center capacity in the Southeast.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- E/F: first-party launch calibration; Nvidia positive control ---
+
+
+def test_regression_meta_one_type_launch_defaults_to_background_or_below(tmp_path, monkeypatch):
+    """Runs this fixture through Lane B (theme_subject admission, via
+    the "AI infrastructure" theme phrase — no company ever attaches,
+    since bare "Meta"/"Meta One" is not a recognized alias) — a
+    shared-mechanism proof that the same Gate C sentence-locality fix
+    (materiality_classification.py, used by both lanes) demotes this
+    content shape correctly, not a literal simulation of Meta's own
+    real Lane A issuer-feed path (see the module-level note below this
+    test for where that exact lane's own positive control lives)."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Introducing Meta One: A Subscription Service With More Features and AI to Create, Connect, and "
+        "Stand Out",
+        "Meta today introduced Meta One, a subscription service bringing together premium features "
+        "across Instagram, Facebook, and WhatsApp, with plans supporting continued investment in the "
+        "platform. It offers plans starting at $3.99 per month, with higher AI creation tools available "
+        "in top tiers for creators. As we continue to invest in AI infrastructure to power new "
+        "experiences for people worldwide, we are excited about what is ahead for our community.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+# A first-party launch WITH material scale/adoption/revenue evidence
+# ("Meta One Premium has already reached 50 million paid subscribers,
+# adding an estimated $2 billion in annualized subscription revenue")
+# is Meta's own official-issuer content — Lane A (daily_news_
+# pipeline.py, classify_issuer_story()), never Lane B/editorial_
+# pipeline.py, which this file tests. A bare "Meta"/"Meta One" mention
+# with no ai-buildout theme phrase correctly never reaches Lane B's own
+# fail-closed company/theme pre-check at all (confirmed directly this
+# session: matched_companies=(), matched_themes=() for this exact
+# text), so it cannot be meaningfully exercised through run_editorial_
+# discovery() here. The positive-control coverage for this exact case
+# lives in tests/test_daily_news_materiality_classification.py::
+# test_first_party_launch_with_material_scale_evidence_reaches_high_
+# signal, which calls classify_issuer_story() directly — the real
+# function daily_news_pipeline.py itself invokes for this lane.
+
+
+def test_regression_nvidia_quantified_ai_factory_evidence_reaches_high_signal(tmp_path, monkeypatch):
+    """The required positive control, run end-to-end through the real
+    pipeline — proves the P0/P1/P2 tightening does not suppress
+    genuine, quantified first-party AI-infrastructure/power/cooling
+    material."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "From Megawatts to Tokens: How NVIDIA Maximizes AI Factory Production",
+        "NVIDIA now delivers 50 megawatts of AI factory capacity per rack-scale deployment, a major new "
+        "investment in cooling and power delivery infrastructure across the data center.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- G: Rosen/ASTS solicitation -> reject; substantive legal event eligible ---
+
+
+def test_regression_rosen_asts_law_firm_solicitation_is_rejected(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "ROSEN, A LEADING LAW FIRM, Encourages AST SpaceMobile, Inc. Investors to Secure Counsel Before "
+        "Important Deadline in Securities Class Action - ASTS",
+        "Rosen Law Firm reminds purchasers of securities of AST SpaceMobile, Inc. (NASDAQ: ASTS) of the "
+        "important June 17, 2024 lead plaintiff deadline in the securities class action. If you wish to "
+        "serve as lead plaintiff, you must move the Court no later than June 17, 2024.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_substantive_court_or_issuer_legal_event_is_eligible(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "AST SpaceMobile Discloses $150 Million Settlement in Securities Litigation, Court Filing Shows",
+        "According to a regulatory filing, AST SpaceMobile disclosed it has agreed to a $150 million "
+        "settlement resolving the pending securities class action, according to court documents filed "
+        "this week.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ("AST SpaceMobile, Inc.",)
+
+
+# --- H: KSAT/Intuitive Machines mission-services selection -> eligible via Space taxonomy ---
+
+
+def test_regression_ksat_intuitive_machines_mission_selection_is_eligible(tmp_path, monkeypatch):
+    """No source registry/config change is made by this fix — this
+    fixture proves the taxonomy/admission RULES correctly admit this
+    content shape once it reaches the pipeline via an already-
+    configured source, per this change's own explicit non-goal (no new
+    sources/registry entries added)."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "KSAT Selected by Intuitive Machines to Support NASA JPL EAGLE-VSWIR Mission",
+        "Intuitive Machines selected KSAT to provide ground segment support for the EAGLE-VSWIR mission, "
+        "delivering the spacecraft platform and mission operations under a new contract. The mission is "
+        "targeted for launch in 2028 as part of a broader NASA Earth Science Division program.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ("Intuitive Machines, Inc.",)
+    assert story.matched_themes == ("space",)
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    # Never asserts launch completion, revenue recognition, or mission
+    # completion — only the selection/contract event actually disclosed.
+    for reason in story.materiality_reasons:
+        assert "launched" not in reason.lower()
+        assert "completed" not in reason.lower()

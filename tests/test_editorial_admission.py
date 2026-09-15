@@ -783,3 +783,161 @@ def test_new_retail_lexicon_phrases_never_include_a_company_gpu_or_price_term_st
         lowered = phrase.lower()
         for forbidden in forbidden_standalone_terms:
             assert forbidden not in lowered, (phrase, forbidden)
+
+
+# ============================================================
+# Signals admission precision fix (design/SIGNALS_ADMISSION_
+# MATERIALITY_CALIBRATION_2026_09_15.md, design/CURRENT_SIGNALS_
+# POLICY_AND_GAP_INVENTORY_2026_09_15.md) — P0 grammatical-agency-aware
+# attribution, plaintiff-law-firm solicitation exclusion, personnel/
+# leadership-announcement exclusion. Every fixture is a realistic
+# reconstruction of the exact named case, run end-to-end via _assess().
+# ============================================================
+
+# --- P0: grammatical-agency-aware company attribution (Fixture B — Math Data/AWS) ---
+
+
+def test_generic_aws_partner_tier_announcement_rejects_with_no_amazon_attribution():
+    """The exact reported case: a third-party's own generic AWS
+    partner-tier/certification announcement must not attach Amazon —
+    "announced"/"achieved" are New Math Data's own actions, not
+    Amazon's; "Amazon Web Services"/"AWS" appear only as the certifying
+    platform's name, well outside the grammatical-actor proximity
+    window."""
+    decision = _assess(
+        "New Math Data Achieves Premier Tier Status in the Amazon Web Services Partner Network",
+        "New Math Data today announced it has achieved Premier Tier Partner status in the Amazon Web "
+        "Services (AWS) Partner Network. This designation recognizes New Math Data for its proven "
+        "customer success and deep AWS expertise. As an AWS Premier Tier Partner, New Math Data has met "
+        "rigorous requirements around technical certifications and customer satisfaction.",
+    )
+    assert decision.admitted is False
+    assert "Amazon" not in decision.reason
+
+
+def test_named_material_aws_contract_remains_eligible_with_correct_attribution():
+    """Positive control: a genuine, named, material AWS/Amazon
+    announcement — where Amazon/AWS is grammatically the actor
+    ("AWS...signed") — must remain admitted and correctly attached to
+    Amazon.com, Inc."""
+    decision = _assess(
+        "AWS Signs $500 Million Multi-Year Cloud Contract With Acme Logistics",
+        "Amazon Web Services today announced it signed a $500 million multi-year contract to provide "
+        "cloud infrastructure and capacity for Acme Logistics operations worldwide.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Amazon.com, Inc."
+
+
+def test_amazon_leading_subject_with_aws_object_further_in_sentence_still_admits():
+    """Regression guard for the fix's own asymmetric lookahead window:
+    "Amazon Announces $10B Expansion of AWS Data Center Capacity" — the
+    recognized alias span is "AWS" (appearing AFTER "Announces," naming
+    what was expanded, not who announced it), but it is close enough
+    (within the tighter lookahead) to still correctly credit Amazon as
+    the real actor, distinguishing this from the Math Data case above,
+    where the AWS mention arrives roughly 50+ characters later."""
+    decision = _assess(
+        "Amazon Announces $10 Billion Expansion of AWS Data Center Capacity in Virginia",
+        "Amazon today announced a $10 billion investment to expand AWS data center capacity, adding new "
+        "facilities across Virginia over the next three years.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Amazon.com, Inc."
+
+
+# --- P0: plaintiff-law-firm solicitation exclusion (Fixture G — Rosen/ASTS) ---
+
+
+def test_law_firm_lead_plaintiff_solicitation_rejects():
+    """The exact reported case: a Rosen Law Firm / PR Newswire-shaped
+    securities-fraud lead-plaintiff solicitation for AST SpaceMobile
+    must reject — never a claim that the underlying lawsuit is false or
+    that fraud has been established, simply that attorney-advertising
+    solicitation content does not qualify for admission on its own."""
+    decision = _assess(
+        "ROSEN, A LEADING LAW FIRM, Encourages AST SpaceMobile, Inc. Investors to Secure Counsel Before "
+        "Important Deadline in Securities Class Action - ASTS",
+        "WHY: Rosen Law Firm reminds purchasers of securities of AST SpaceMobile, Inc. (NASDAQ: ASTS) "
+        "between November 14, 2023 and April 1, 2024 of the important June 17, 2024 lead plaintiff "
+        "deadline in the securities class action. If you wish to serve as lead plaintiff, you must move "
+        "the Court no later than June 17, 2024.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("law_firm_solicitation:")
+
+
+def test_substantive_independent_legal_reporting_remains_eligible():
+    """Positive control: genuine independent reporting on a real,
+    material court/regulatory development — no attorney-advertising
+    solicitation language present — remains admitted normally."""
+    decision = _assess(
+        "AST SpaceMobile Discloses $150 Million Settlement in Securities Litigation, Court Filing Shows",
+        "According to a regulatory filing, AST SpaceMobile disclosed it has agreed to a $150 million "
+        "settlement resolving the pending securities class action, according to court documents filed "
+        "this week.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:AST SpaceMobile, Inc."
+
+
+def test_law_firm_solicitation_phrases_never_contain_a_bare_lawsuit_or_company_term():
+    """Structural guard, matching this codebase's own established
+    pattern (see test_new_retail_lexicon_phrases_never_include_a_
+    company_gpu_or_price_term_standalone above): the law-firm-
+    solicitation phrase list must never itself be a bare "lawsuit"/
+    "class action"/"securities fraud" ban — every entry names the
+    distinctive SOLICITATION language specifically (encourages,
+    secure counsel, lead plaintiff, ...), never the mere topic."""
+    forbidden_bare_terms = ("lawsuit", "class action", "securities fraud", "litigation")
+    for phrase in editorial_admission._LAW_FIRM_SOLICITATION_PHRASES:
+        assert phrase.lower() not in forbidden_bare_terms
+
+
+# --- P0: personnel/leadership/governance-announcement exclusion (Fixture C — DAF) ---
+
+
+def test_daf_portfolio_executive_announcement_rejects():
+    """The exact reported case: a routine DAF/Space Force executive-
+    portfolio announcement, with no disclosed contract, budget,
+    program award, launch, or operating change, must reject."""
+    decision = _assess(
+        "DAF establishes space technology portfolio executive",
+        "The Department of the Air Force announced the establishment of a new space technology portfolio "
+        "executive position within the Space Force, reporting to the Assistant Secretary of the Air "
+        "Force. The new portfolio executive will oversee acquisition strategy across multiple space "
+        "technology programs.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("personnel_announcement:")
+
+
+def test_leadership_change_tied_to_funded_program_remains_eligible():
+    """Positive control: a named leadership change directly coupled to
+    a disclosed, funded, quantified program/contract remains eligible
+    — rescued via the theme-only anchor-evidence exception, since a
+    government-agency source (no tracked company) can only ever be
+    identified via a matched theme, never a company."""
+    decision = _assess(
+        "DAF Names New Space Technology Portfolio Executive to Lead $800 Million Satellite Constellation "
+        "Contract",
+        "The Department of the Air Force named a new space technology portfolio executive to lead an "
+        "$800 million satellite constellation contract, overseeing capacity expansion across the "
+        "program.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "theme_subject:space"
+
+
+def test_routine_personnel_note_with_no_theme_or_company_also_rejects_upstream():
+    """A personnel-shaped announcement naming neither a tracked company
+    nor a space-theme phrase would already be excluded by the caller's
+    own fail-closed pre-check before assess_admission() is ever
+    invoked — documented here as the pre-existing, unmodified upstream
+    behavior this fix's own personnel-exclusion check is layered on
+    top of, not a new gate this fix introduces."""
+    companies, themes = matched_companies_and_themes(
+        "Executive Portfolio Changes Announced", "A company announced new portfolio executive changes.",
+    )
+    assert not companies
+    assert not themes
