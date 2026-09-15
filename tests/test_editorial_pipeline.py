@@ -1407,3 +1407,196 @@ def test_default_dry_run_false_persists_exactly_as_before_and_examples_stay_empt
     assert len(load_stories(tmp_path)) == 1
     assert report.admitted_examples == ()
     assert report.rejected_examples == ()
+
+
+# ============================================================
+# Gated Japan/Korea source expansion (design/DECISIONS.md) — Business
+# Korea (Industries + Science & Technology sections) and Japan Times
+# Business. Uses the REAL, registry-derived GATED_JP_KR_SOURCE_REGISTRY
+# entries (not synthetic fixtures), same discipline as the market-news
+# section above. Never present in EDITORIAL_SOURCE_REGISTRY — passed
+# explicitly as source_entries in every test below.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import GATED_JP_KR_SOURCE_REGISTRY
+
+_bk_industries = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-industries-rss")
+_bk_sci_tech = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-science-tech-rss")
+_jp_times_business = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "japan-times-business-rss")
+
+
+def test_bk_science_tech_matching_item_publishes_with_correct_attribution(tmp_path, monkeypatch):
+    """The exact real headline observed in this session's own live dry
+    run of businesskorea-science-tech-rss — Samsung is tracked, memory
+    theme."""
+    entry = _entry(
+        title="Samsung Unveils Processing DRAM as HBM Alternative",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=275535",
+        summary="Samsung Electronics has unveiled a new processing-in-memory DRAM technology positioned as an alternative to HBM.",
+    )
+    _patch_fetch(monkeypatch, {_bk_sci_tech.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_sci_tech,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Business Korea"
+    assert story.source_feed_id == "businesskorea-science-tech-rss"
+    assert story.source_url == entry.link
+
+
+def test_bk_industries_matching_item_publishes(tmp_path, monkeypatch):
+    entry = _entry(
+        title="Samsung Electronics Expands Chip Packaging Capacity in Pyeongtaek",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=999001",
+        summary="Samsung Electronics announced an expansion of advanced chip packaging capacity at its Pyeongtaek campus.",
+    )
+    _patch_fetch(monkeypatch, {_bk_industries.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_industries,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Business Korea"
+    assert story.source_feed_id == "businesskorea-industries-rss"
+
+
+def test_bk_off_domain_link_is_rejected(tmp_path, monkeypatch):
+    entry = _entry(
+        title="Samsung Unveils Processing DRAM as HBM Alternative",
+        link="https://not-businesskorea.example.com/samsung-dram",
+        summary="Samsung Electronics has unveiled a new processing-in-memory DRAM technology.",
+    )
+    _patch_fetch(monkeypatch, {_bk_sci_tech.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_sci_tech,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_bk_stale_item_beyond_72_hours_is_excluded(tmp_path, monkeypatch):
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=200)).isoformat()
+    entry = _entry(
+        title="Samsung Unveils Processing DRAM as HBM Alternative",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=275535",
+        published_at=stale_at,
+        summary="Samsung Electronics has unveiled a new processing-in-memory DRAM technology.",
+    )
+    _patch_fetch(monkeypatch, {_bk_sci_tech.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_sci_tech,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+
+
+def test_bk_off_topic_item_does_not_publish(tmp_path, monkeypatch):
+    """No company/theme match at all — a routine macro-policy headline
+    naming no tracked company."""
+    entry = _entry(
+        title="Bank of Korea Holds Rates Steady Amid Inflation Concerns",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=999002",
+        summary="The Bank of Korea's monetary policy board kept its benchmark rate unchanged amid ongoing inflation concerns.",
+    )
+    _patch_fetch(monkeypatch, {_bk_industries.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_industries,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1
+
+
+def test_bk_consumer_deals_item_naming_a_company_fails_the_admission_gate(tmp_path, monkeypatch):
+    """Rejection under the precision-first admission gate specifically:
+    matches a tracked company (Samsung) but is a consumer deals format,
+    not a genuine corporate development."""
+    entry = _entry(
+        title="Best Samsung Electronics Galaxy Deals This Chuseok Holiday",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=999003",
+        summary="We rounded up the best Samsung Electronics Galaxy phone deals available this Chuseok holiday season.",
+    )
+    _patch_fetch(monkeypatch, {_bk_industries.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_industries,))
+
+    assert report.stories_published == 0
+    assert report.items_not_subject_relevant == 1
+    assert load_stories(tmp_path) == {}
+
+
+def test_bk_disco_word_collision_fails_admission(tmp_path, monkeypatch):
+    """Disco Corporation (TSE-tracked) has an ambiguous mechanical alias
+    ("Disco") — a K-pop-party-shaped headline naming it incidentally
+    must fail admission, exactly the same gate already proven for this
+    exact alias on other sources."""
+    entry = _entry(
+        title="Best Disco Playlists for Your K-Pop Dance Party",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=999004",
+        summary="From retro classics to modern remixes, here is our ultimate disco playlist for your next K-pop dance party.",
+    )
+    _patch_fetch(monkeypatch, {_bk_industries.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_industries,))
+
+    assert report.stories_published == 0
+    assert load_stories(tmp_path) == {}
+
+
+def test_bk_export_control_policy_item_is_admitted(tmp_path, monkeypatch):
+    """A genuine regulatory/export-control development naming a tracked
+    company — the exact shape the design brief calls out."""
+    entry = _entry(
+        title="SK Hynix Faces New US Export Control Review on HBM Chips",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=999005",
+        summary="SK Hynix said it is reviewing new US export control measures affecting HBM chip sales to certain markets.",
+    )
+    _patch_fetch(monkeypatch, {_bk_sci_tech.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_sci_tech,))
+
+    assert report.stories_published == 1
+
+
+def test_bk_failed_fetch_is_recorded_and_never_published(tmp_path, monkeypatch):
+    _patch_fetch(monkeypatch, {_bk_industries.canonical_url: FeedFetchResult(entries=(), failure_code="HTTPError:503")})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_industries,))
+
+    assert report.stories_published == 0
+    assert report.source_failures == {"businesskorea-industries-rss": "HTTPError:503"}
+
+
+def test_bk_duplicate_within_one_run_is_deduplicated(tmp_path, monkeypatch):
+    entry = _entry(
+        title="Samsung Unveils Processing DRAM as HBM Alternative",
+        link="https://www.businesskorea.co.kr/news/articleView.html?idxno=275535",
+        summary="Samsung Electronics has unveiled a new processing-in-memory DRAM technology.",
+    )
+    _patch_fetch(monkeypatch, {_bk_sci_tech.canonical_url: FeedFetchResult(entries=(entry, entry), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_bk_sci_tech,))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_japan_times_business_real_worker_fetch_signature_returns_403(tmp_path):
+    """Documents this session's own real, reproduced finding: under the
+    exact rss_atom_client the real worker uses, this specific feed
+    returns HTTPError:403 (the already-live general japan-times-rss
+    does not, under the identical header — see this source's own
+    registry notes). Not mocked here on purpose — a real, live network
+    call, matching how this exact failure was originally found. Skipped
+    automatically if network access is unavailable in this environment,
+    never treated as a hard CI dependency."""
+    import requests
+
+    try:
+        response = requests.get(
+            _jp_times_business.canonical_url, timeout=15, headers={"User-Agent": "EevaResearch-DailyNews/1.0"},
+        )
+    except requests.RequestException:
+        import pytest
+        pytest.skip("no network access available in this environment")
+    assert response.status_code == 403

@@ -129,8 +129,13 @@ from typing import Iterator
 import psycopg
 
 from src.config.settings import Settings, get_settings
-from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, editorial_pipeline
-from src.data_access.daily_news.market_news_sources import enabled_gated_sources
+from src.data_access.daily_news import (
+    daily_news_backend,
+    daily_news_pipeline,
+    editorial_pipeline,
+    jp_kr_sources,
+    market_news_sources,
+)
 from src.data_access.daily_news.daily_news_backend import (
     DailyNewsScanStatusRepositoryProtocol,
     PostgresDailyNewsScanStatusRepository,
@@ -434,19 +439,23 @@ def _run_editorial_tick(worker_settings: Settings) -> None:
     EDITORIAL_SOURCE_REGISTRY's own always-on 36 sources PLUS any gated
     market-news source explicitly present in worker_settings.daily_news_
     enabled_market_news_sources (EDGE_DAILY_NEWS_ENABLED_SOURCES — see
-    market_news_sources.enabled_gated_sources()'s own docstring). With
-    that allow-list empty (the default), enabled_gated_sources() returns
-    an empty tuple and this call is byte-identical to the pre-existing
+    market_news_sources.enabled_gated_sources()'s own docstring) PLUS
+    any gated Japan/Korea source explicitly present in worker_settings.
+    daily_news_enabled_jp_kr_sources (EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR
+    — a SEPARATE allow-list from the market-news one, see jp_kr_sources.
+    enabled_gated_sources()'s own docstring). With both allow-lists
+    empty (the default), both enabled_gated_sources() calls return an
+    empty tuple and this call is byte-identical to the pre-existing
     "pass no source_entries override" behavior — zero change for every
     one of the 36 always-on sources, zero fetch/match/persist for any
-    gated source. The editorial repository is constructed explicitly
-    from `worker_settings` — the same worker-scoped Settings object
-    (db_backend="postgres" in live mode, forced by
-    _build_worker_settings()) already used for the issuer repository two
-    lines above this function's own call site — never the function's own
-    optional default, which would silently fall back to a local JSON
-    cache file instead of the shared production database. Per-source
-    fetch/parse failures are already isolated inside
+    gated source in either expansion. The editorial repository is
+    constructed explicitly from `worker_settings` — the same worker-
+    scoped Settings object (db_backend="postgres" in live mode, forced
+    by _build_worker_settings()) already used for the issuer repository
+    two lines above this function's own call site — never the
+    function's own optional default, which would silently fall back to
+    a local JSON cache file instead of the shared production database.
+    Per-source fetch/parse failures are already isolated inside
     run_editorial_discovery() itself (recorded in its own
     source_failures dict, never raised); this function adds no
     additional isolation of its own, only the correctly-scoped
@@ -456,7 +465,11 @@ def _run_editorial_tick(worker_settings: Settings) -> None:
     _run_tick_body(), never here — see that call site's own comment for
     why."""
     editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
-    source_entries = editorial_pipeline.EDITORIAL_SOURCE_REGISTRY + enabled_gated_sources(worker_settings)
+    source_entries = (
+        editorial_pipeline.EDITORIAL_SOURCE_REGISTRY
+        + market_news_sources.enabled_gated_sources(worker_settings)
+        + jp_kr_sources.enabled_gated_sources(worker_settings)
+    )
     report = editorial_pipeline.run_editorial_discovery(
         worker_settings.cache_dir, source_entries=source_entries, editorial_repository=editorial_repository,
     )
