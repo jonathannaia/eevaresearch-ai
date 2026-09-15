@@ -41,6 +41,20 @@ class ThemeActivityItem:
     timestamp: datetime
     display_date: str
     source_url: str | None
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — additive, optional;
+    # empty/"" for every Daily News item and every non-EDINET filing. No
+    # new data source: still populated only from the same already-loaded
+    # FilingEvent this item's other fields already come from. Carries a
+    # compact EDINET display title (native title, with the curated
+    # English category phrase prefixed when this filing's own
+    # ordinance/form/docType triplet is a live-verified entry — see
+    # src.logic.filing_display.edinet_type_label) and the public 4-digit
+    # securities code (src.logic.filing_display.
+    # edinet_display_securities_code), so this row's compact rendering
+    # can show them without reading a CandidateSignal or any new store.
+    edinet_title: str = ""
+    edinet_stock_code: str = ""
 
 
 @dataclass(frozen=True)
