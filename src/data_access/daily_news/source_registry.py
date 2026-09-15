@@ -1586,3 +1586,163 @@ GATED_MARKET_NEWS_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
         ),
     ),
 )
+
+# Gated Japan/Korea source expansion (design/DECISIONS.md) — a SEPARATE
+# gated registry and allow-list flag from GATED_MARKET_NEWS_SOURCE_
+# REGISTRY above (EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR, not
+# EDGE_DAILY_NEWS_ENABLED_SOURCES — see
+# src.data_access.daily_news.jp_kr_sources.enabled_gated_sources()),
+# kept independent on purpose so either expansion can be reverted or
+# extended without touching the other. Same discipline as every gated
+# entry above: dormant unless its own source_id is explicitly present
+# in the allow-list; never merged into EDITORIAL_SOURCE_REGISTRY.
+#
+# Read-only audit (design/DECISIONS.md) — the 8 JP/KR sources already
+# in EDITORIAL_SOURCE_REGISTRY (japan-times-rss, jpx-market-news-rss,
+# fsa-japan-news-rss, korea-herald-business-rss, yonhap-news-rss,
+# korea-times-rss, korea-it-times-rss, thelec-rss) are already live —
+# a real read-only dry run this batch (310 items fetched across all 8)
+# found japan-times-rss, jpx-market-news-rss, fsa-japan-news-rss, and
+# yonhap-news-rss each admitted ZERO stories in that sample (each is
+# real and fetching correctly — zero source_failures — but their own
+# content is too broad/general to name a tracked company or theme);
+# korea-herald-business-rss/korea-times-rss/korea-it-times-rss/
+# thelec-rss admitted 11 combined. Japan in particular has no real
+# observed admitted coverage from its 3 existing sources in this
+# sample — the gap this batch's Japan candidate directly targets.
+#
+# Japan — Japan Times Business section (japantimes.co.jp/business/feed/).
+# A browser-context fetch confirmed it live (HTTP 200, real
+# application/rss+xml, 20 dated items, newest published same day, all
+# on-domain) and genuinely on-theme — its first 6 items alone included
+# "SoftBank gets upsized $11.9 billion loan in OpenAI funding push"
+# (SoftBank is tracked, ai-buildout theme), meaningfully higher on-theme
+# density than the already-registered general japan-times-rss
+# (japantimes.co.jp/feed/, same publisher/robots.txt). robots.txt
+# confirmed permissive for this exact path: Disallow: /rss and
+# /rssFeed/* (a legacy path this site no longer uses) but NOT /feed/ or
+# /business/feed/. HOWEVER — a real worker-context read-only dry run
+# this same batch (scripts/daily_news_jp_kr_dry_run.py, the real
+# rss_atom_client User-Agent) got HTTPError:403 specifically on this
+# path, while the already-live general /feed/ path returns 200 under
+# the identical header (reproduced directly, not a one-off). Added to
+# this registry as PENDING_REVIEW, not VERIFIED, with allow-list
+# activation NOT recommended until this is resolved — see this entry's
+# own notes for the full finding. Same posture this registry's own
+# meta-newsroom-rss entry (EXPANSION_BATCH_2_SOURCE_REGISTRY above)
+# already established for an identical "browser-confirmed, worker-
+# blocked" situation.
+#
+# Other Japan candidates attempted this batch and NOT added, with the
+# specific reason — never silently dropped:
+#   - METI (meti.go.jp/ml_index_en_atom.xml): re-verified — still real
+#     and live, but newest item is still dated 2026-06-19, unchanged
+#     from the prior audit 3 months earlier. Confirmed persistently
+#     stale, not a transient snapshot. Same exclusion as before.
+#   - NHK World: no RSS/Atom link declared on the English news page;
+#     the only discoverable feed (www3.nhk.or.jp/rss/news/cat0.xml) is
+#     Japanese-language, itself over a month stale, and every item link
+#     is plain http:// (would fail the https-only canonical-URL gate
+#     regardless) — three independent disqualifiers.
+#   - JETRO, Kyodo News (english.kyodonews.net), Yomiuri's Japan News
+#     (japannews.yomiuri.co.jp), SEMI (semi.org): no RSS/Atom feed
+#     discoverable via a declared <link> tag or conventional path on
+#     any of these sites this batch.
+#   - Japan Today (japantoday.com/feed): real, live, permissive
+#     robots.txt, but its content is a general world-news aggregate
+#     (politics, sport, celebrity) with essentially no Japan-corporate/
+#     market content in a live sample — legally fine, thematically
+#     unsuitable.
+#
+# Korea — Business Korea, two English-language section feeds
+# (businesskorea.co.kr publishes both Korean- and English-language
+# sections under numbered RSS paths; the "allArticle" feed mixes both
+# languages and was deliberately not used, same discipline as korea-
+# it-times-rss's own existing entry). robots.txt confirmed permissive:
+# only /admin/ disallowed, no legal notice, no blanket prohibition.
+#   - Industries (gns_S1N17.xml): live-verified, HTTP 200, 20 dated
+#     items, newest published same day, all on-domain. Real examples
+#     from this batch: "Chinese Kingnet Joins Wemade Acquisition
+#     Consortium", "South Korea ICT Exports Surpass 60% of Total".
+#   - Science & Technology (gns_S1N27.xml): live-verified, HTTP 200, 20
+#     dated items. Lower cadence than Industries (newest item ~6 days
+#     old at verification, not every day) but exceptionally high
+#     on-theme density: "Samsung Unveils Processing DRAM as HBM
+#     Alternative" (Samsung is tracked, memory theme), "Samsung
+#     Develops New Tech to Overcome Interconnect Limits in AI Chips"
+#     (ai-buildout theme). Same "low cadence, not stale/broken"
+#     precedent already established for microchip-newsroom-rss above.
+GATED_JP_KR_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="japan-times-business-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.japantimes.co.jp/business/feed/",
+        domains=("www.japantimes.co.jp",),
+        # NOT VERIFIED — see notes. A browser-context fetch confirmed
+        # this feed live and on-theme, but the real worker's own fetch
+        # signature (rss_atom_client's "EevaResearch-DailyNews/1.0"
+        # User-Agent) gets HTTPError:403 on this exact path — reproduced
+        # directly via requests.get() with that same header, not a
+        # one-off. Same posture as the existing meta-newsroom-rss entry
+        # (EXPANSION_BATCH_2_SOURCE_REGISTRY above): a browser navigation
+        # confirming "live" does not confirm the worker's own distinct
+        # fetch signature avoids the same block — only a real
+        # worker-context fetch attempt can resolve that. PENDING_REVIEW
+        # until re-verified working under the real fetch signature;
+        # never treated as a live, trustworthy source until then.
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.PENDING_REVIEW,
+        attribution_label="The Japan Times", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Gated Japan/Korea source expansion (2026-09-15) — browser-context fetch confirmed "
+            "live, HTTP 200, application/rss+xml, 20 dated items, all on-domain "
+            "(www.japantimes.co.jp/business/...), genuinely on-theme content. BUT: a real "
+            "worker-context read-only dry run this same batch (scripts/daily_news_jp_kr_dry_run.py, "
+            "using the same requests-based client and 'EevaResearch-DailyNews/1.0' User-Agent the "
+            "real worker uses) recorded source_failures={'japan-times-business-rss': "
+            "'HTTPError:403'} — reproduced directly and deterministically via requests.get() with "
+            "that same header. The already-registered general japan-times-rss (/feed/, same "
+            "publisher/robots.txt) returns 200 under the identical header — this 403 is specific "
+            "to the /business/ section, not a general Japan Times block. Do not enable via the "
+            "allow-list until this is resolved (e.g., a different worker-safe User-Agent, or "
+            "direct confirmation from Japan Times) — zero stories would publish from this feed "
+            "as configured today. Shares attribution_label 'The Japan Times' with the "
+            "already-registered general japan-times-rss (same real-world publisher, two "
+            "sections) — same convention as The Register's pair in EDITORIAL_SOURCE_REGISTRY."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="businesskorea-industries-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.businesskorea.co.kr/rss/gns_S1N17.xml",
+        domains=("www.businesskorea.co.kr",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Business Korea", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Gated Japan/Korea source expansion (2026-09-15) — live-verified, HTTP 200, "
+            "application/xml, 20 dated items, newest published same day, all on-domain "
+            "(www.businesskorea.co.kr/news/articleView.html?...). This is the English-language "
+            "'Industries' section (gns_S1N17.xml), confirmed by reading real item titles — "
+            "other numbered sections on this same site are Korean-language and were not used, "
+            "same discipline as korea-it-times-rss's own existing entry. Shares attribution_label "
+            "'Business Korea' with businesskorea-science-tech-rss below (same publisher, two "
+            "sections)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="businesskorea-science-tech-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.businesskorea.co.kr/rss/gns_S1N27.xml",
+        domains=("www.businesskorea.co.kr",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Business Korea", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Gated Japan/Korea source expansion (2026-09-15) — live-verified, HTTP 200, "
+            "application/xml, 20 dated items, all on-domain. This is the English-language "
+            "'Science & Technology' section (gns_S1N27.xml). Lower cadence than the Industries "
+            "feed above (newest item ~6 days old at verification) but exceptionally high "
+            "on-theme density in a live sample — see this registry's own module-level comment "
+            "above for real examples. Shares attribution_label 'Business Korea' with "
+            "businesskorea-industries-rss above."
+        ),
+    ),
+)

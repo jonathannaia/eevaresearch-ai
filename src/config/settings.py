@@ -229,6 +229,21 @@ class Settings:
     daily_news_enabled_market_news_sources: frozenset[str] = field(
         default_factory=lambda: _parse_source_id_allowlist("EDGE_DAILY_NEWS_ENABLED_SOURCES")
     )
+    # Gated Japan/Korea source expansion (design/DECISIONS.md) — the
+    # allow-list gate for src.data_access.daily_news.source_registry.
+    # GATED_JP_KR_SOURCE_REGISTRY (currently: japan-times-business-rss,
+    # businesskorea-industries-rss, businesskorea-science-tech-rss).
+    # Deliberately a SEPARATE env var/field from daily_news_enabled_
+    # market_news_sources above — same shape and parser, but its own
+    # allow-list, so this expansion and the market-news one can each be
+    # reverted or extended independently. Comma-separated source_ids;
+    # absent/blank -> empty frozenset -> every gated JP/KR source stays
+    # completely dormant. Does not affect any of the 36 sources in
+    # EDITORIAL_SOURCE_REGISTRY (including the 8 JP/KR sources already
+    # there), which remain unconditionally polled exactly as before.
+    daily_news_enabled_jp_kr_sources: frozenset[str] = field(
+        default_factory=lambda: _parse_source_id_allowlist("EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR")
+    )
     cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cache")
     # Durable-State Phase 1 (dormant — see src/data_access/state_db/).
     # "json" (the default, used whenever this var is unset/blank/

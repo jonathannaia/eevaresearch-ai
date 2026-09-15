@@ -1279,3 +1279,88 @@ def test_gated_market_news_allow_list_does_not_affect_unlisted_gated_sources(tmp
 
     output = capsys.readouterr().out
     assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+
+
+# ============================================================
+# Gated Japan/Korea source expansion (design/DECISIONS.md) — the
+# EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR allow-list, combined at the
+# worker's own editorial-tick call site alongside EDITORIAL_SOURCE_
+# REGISTRY and the (separate) gated market-news allow-list. See
+# src/data_access/daily_news/jp_kr_sources.py's own docstring for the
+# full design.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import GATED_JP_KR_SOURCE_REGISTRY
+
+
+def test_gated_jp_kr_source_dormant_by_default(tmp_path, monkeypatch, capsys):
+    """Default (empty) allow-list: sources_polled stays exactly
+    len(EDITORIAL_SOURCE_REGISTRY) — no gated JP/KR source is ever
+    added, and no network call to any of their URLs occurs."""
+    call_urls: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_urls.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    gated_urls = {e.canonical_url for e in GATED_JP_KR_SOURCE_REGISTRY}
+    assert not (gated_urls & set(call_urls))
+
+
+def test_gated_jp_kr_sources_included_when_explicitly_allow_listed(tmp_path, monkeypatch, capsys):
+    """With both gated JP/KR source_ids present in the allow-list,
+    sources_polled grows by exactly 2, and real fetch attempts are made
+    against both canonical_urls."""
+    call_urls: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_urls.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(
+        tmp_path,
+        daily_news_enabled_jp_kr_sources=frozenset({"businesskorea-industries-rss", "businesskorea-science-tech-rss"}),
+    )
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 2}" in output
+    industries = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-industries-rss")
+    sci_tech = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-science-tech-rss")
+    assert industries.canonical_url in call_urls
+    assert sci_tech.canonical_url in call_urls
+
+
+def test_gated_jp_kr_allow_list_is_independent_of_the_gated_market_news_allow_list(tmp_path, monkeypatch, capsys):
+    """Enabling the market-news gated source must never also enable a
+    JP/KR gated source, and vice versa — proves the two allow-lists are
+    wired independently at the worker's own call site, not merged."""
+    _mock_fetch({}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(
+        tmp_path,
+        daily_news_enabled_market_news_sources=frozenset({"light-reading-rss"}),
+        daily_news_enabled_jp_kr_sources=frozenset(),
+    )
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    # +1 for light-reading-rss only, never +1 for any JP/KR source too.
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 1}" in output
