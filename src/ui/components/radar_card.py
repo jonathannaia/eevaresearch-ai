@@ -124,6 +124,7 @@ import streamlit as st
 from src.logic import filing_display
 from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
+from src.ui.components import radar_status
 from src.ui.components.radar_status import RadarItem
 
 
@@ -391,6 +392,13 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
 
         title = filing_display.display_title(filing, candidate, prefer_translated=show_translated)
         st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(title)}</div>', unsafe_allow_html=True)
+
+        # "Review needed" badge (design/DECISIONS.md) — advisory only,
+        # never blocks or delays publication; see filing_display.
+        # review_needed()'s own docstring for exactly what triggers it.
+        review_needed_tag = radar_status.review_needed_tag_html(item)
+        if review_needed_tag:
+            st.markdown(f'<div style="margin-top:0.3rem;">{review_needed_tag}</div>', unsafe_allow_html=True)
 
         # Filing-card machine-artifact / excerpt-honesty fix: always
         # driven by the ORIGINAL-language excerpt_original's own length —

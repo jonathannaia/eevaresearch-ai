@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
+from src.logic import filing_display
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, TranslationState
 
 
@@ -138,6 +139,26 @@ def translation_unavailable_tag_html(item: RadarItem) -> str | None:
     if item.candidate is not None and item.candidate.translation_state == TranslationState.UNAVAILABLE:
         return '<span class="er-status-tag er-tag-neg">Translation unavailable</span>'
     return None
+
+
+def review_needed_tag_html(item: RadarItem) -> str | None:
+    """"Review needed" badge (design/DECISIONS.md) — reuses the same
+    quiet, dashed "genuinely incomplete, not wrong" er-chip-uncertainty
+    treatment already established for RETRIEVAL_FAILURE_NOTE above,
+    never the loud er-tag-neg pill this codebase reserves for genuine
+    failures. Pure passthrough of filing_display.review_needed()'s own
+    determination — see that function's own docstring for exactly what
+    triggers it and why. Works identically for a bare "New filing" (no
+    CandidateSignal yet) and a fully-processed candidate, since the
+    underlying check reads only FilingEvent's own stored fields. Never
+    hides the filing, never blocks publication — advisory only."""
+    flag = filing_display.review_needed(item.filing)
+    if not flag.flagged:
+        return None
+    return (
+        f'<span class="er-chip er-chip-uncertainty" title="{filing_display.REVIEW_NEEDED_TOOLTIP}">'
+        "Review needed</span>"
+    )
 
 
 # --- Evidence-status panel label mapping (Radar Inbox "Evidence status"

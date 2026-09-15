@@ -57,8 +57,11 @@ from collections import Counter
 import streamlit as st
 
 from src.config.settings import get_settings
+from src.config.tracked_companies import get_tracked_companies
 from src.data_access import backend_factory
 from src.data_access.backend_factory import ThemeRepositoryProtocol
+from src.data_access.daily_news import daily_news_backend
+from src.logic import theme_evidence
 from src.logic.formatting import fmt_datetime_local
 from src.logic.market_map import jurisdiction_for_source
 from src.logic.source_link import public_source_url
@@ -82,6 +85,19 @@ _EMPTY_STATE_DETAIL = (
     "demand shifts, and second-order company impacts. Research Theses are published when multiple "
     "official sources support a specific, testable research question."
 )
+
+# Research Theses — live evidence wiring (design/DECISIONS.md).
+_THESIS_EXPLAINER = (
+    "A Research Thesis connects multiple filings and news items into an evidence-backed "
+    "bottleneck, demand shift, or second-order effect Eeva is tracking across companies."
+)
+_LIVE_EVIDENCE_EXPLAINER = (
+    "Recent official filings and news items tagged to this thesis's companies — shown for context, "
+    "not analyzed or scored. Distinct from the curated Evidence ledger above, which an analyst has "
+    "reviewed and tagged Supports/Contradicts/Mixed."
+)
+_LIVE_EVIDENCE_EMPTY = "No recent evidence yet."
+_LIVE_EVIDENCE_LIMIT = 5
 
 _COMPANY_ROLE_SECTION_ORDER: tuple[CompanyRole, ...] = (
     CompanyRole.DEMAND_DRIVER,
@@ -157,6 +173,7 @@ def render() -> None:
 def _render_index(repository: ThemeRepositoryProtocol) -> None:
     st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
     _scope_statement()
+    st.markdown(f'<div class="er-muted" style="margin-top:0.3rem;">{_esc(_THESIS_EXPLAINER)}</div>', unsafe_allow_html=True)
 
     try:
         themes = repository.list_published_themes()
@@ -189,6 +206,23 @@ def _evidence_direction_chips_html(evidence) -> str:
         f'<span class="er-status-tag {_DIRECTION_TAG_CLASS.get(direction, "er-tag-neutral")}" '
         f'style="margin-right:0.35rem;">{direction} · {count}</span>'
         for direction, count in counts.items()
+    )
+
+
+def _theme_tags_html(company_map) -> str:
+    """Primary theme tags row (design/DECISIONS.md, "Research Theses as
+    a real research surface") — derived purely from TrackedCompany.
+    themes for whichever of this thesis's mapped companies are real
+    tracked companies (see theme_evidence.theme_tags_for_companies's own
+    docstring: an exact company_name match, never a fuzzy lookup). Empty
+    string (render nothing) when no mapped company is a tracked company
+    or the company map itself is empty — never a placeholder tag."""
+    company_names = frozenset(entry.company_name for entry in company_map)
+    tags = theme_evidence.theme_tags_for_companies(company_names, get_tracked_companies())
+    if not tags:
+        return ""
+    return "".join(
+        f'<span class="er-status-tag er-tag-neutral" style="margin-right:0.3rem;">{_esc(tag)}</span>' for tag in tags
     )
 
 
@@ -225,6 +259,9 @@ def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> No
 
         st.markdown(f'<div class="er-card-title" style="margin-top:0.5rem; font-size:1.05rem;">{_esc(theme.title)}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{_esc(theme.working_thesis)}</div>', unsafe_allow_html=True)
+        theme_tags = _theme_tags_html(company_map)
+        if theme_tags:
+            st.markdown(f'<div style="margin-top:0.4rem;">{theme_tags}</div>', unsafe_allow_html=True)
         st.markdown(
             f'<div style="margin-top:0.5rem;"><strong>Key question:</strong> {_esc(theme.key_question)}</div>',
             unsafe_allow_html=True,
@@ -327,6 +364,11 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
                 note = f" — {_esc(entry.note)}" if entry.note else ""
                 st.markdown(f'<div style="margin-left:0.8rem;">{_esc(entry.company_name)}{note}</div>', unsafe_allow_html=True)
 
+    # 6a. Live evidence — recent Radar filings + Daily News items
+    section_header("Live evidence")
+    st.markdown(f'<div class="er-muted">{_esc(_LIVE_EVIDENCE_EXPLAINER)}</div>', unsafe_allow_html=True)
+    _render_live_evidence(company_map)
+
     # 7. What could change the view
     section_header("What could change the view")
     st.markdown(f'<div>{_esc(theme.what_could_change_the_view)}</div>', unsafe_allow_html=True)
@@ -370,3 +412,79 @@ def _render_evidence_row(item) -> None:
             )
         elif item.source_url:
             st.markdown(f'<div class="er-muted" style="margin-top:0.2rem;">{_esc(item.source_url)}</div>', unsafe_allow_html=True)
+
+
+def _load_recent_filing_events() -> tuple:
+    """Reads via the same backend_factory seam this page's own
+    get_theme_repository() call already uses — one call per Radar
+    source, never a new query/matching system. A per-source read
+    failure (misconfigured/unreachable backend) degrades that source to
+    empty rather than taking down the whole Live evidence section,
+    mirroring this app's existing per-source failure-isolation
+    discipline (see radar_inbox.py's own _load_source_items)."""
+    settings = get_settings()
+    filings: list = []
+    for source in ("OpenDART / DART", "SEC EDGAR", "EDINET"):
+        try:
+            filings.extend(backend_factory.get_filing_event_repository(settings, source).load_filing_events())
+        except Exception:  # noqa: BLE001 — fail closed per source
+            continue
+    return tuple(filings)
+
+
+def _load_recent_news_items() -> tuple:
+    """Same seam as _load_recent_filing_events above, for Daily News's
+    two existing repositories (issuer-matched NewsStory, issuer-agnostic
+    EditorialStory) — read-only, no new query system."""
+    settings = get_settings()
+    news_stories: tuple = ()
+    editorial_stories: tuple = ()
+    try:
+        news_stories = tuple(daily_news_backend.get_daily_news_repository(settings).load_stories().values())
+    except Exception:  # noqa: BLE001 — fail closed
+        pass
+    try:
+        editorial_stories = tuple(daily_news_backend.get_editorial_story_repository(settings).load_stories().values())
+    except Exception:  # noqa: BLE001 — fail closed
+        pass
+    return news_stories, editorial_stories
+
+
+def _render_live_evidence(company_map) -> None:
+    company_names = frozenset(entry.company_name for entry in company_map)
+    if not company_names:
+        st.caption(_LIVE_EVIDENCE_EMPTY)
+        return
+
+    filings = _load_recent_filing_events()
+    news_stories, editorial_stories = _load_recent_news_items()
+    filing_links = theme_evidence.recent_filing_evidence(filings, company_names, _LIVE_EVIDENCE_LIMIT)
+    news_links = theme_evidence.recent_daily_news_evidence(news_stories, editorial_stories, company_names, _LIVE_EVIDENCE_LIMIT)
+
+    if not filing_links and not news_links:
+        st.caption(_LIVE_EVIDENCE_EMPTY)
+        return
+
+    for link in filing_links:
+        _render_evidence_link(link)
+    for link in news_links:
+        _render_evidence_link(link)
+
+
+def _render_evidence_link(link) -> None:
+    safe_url = _safe_source_url(link.url)
+    st.markdown(
+        '<div style="margin-top:0.3rem; display:flex; align-items:baseline; gap:0.4rem;">'
+        f'<span class="er-status-tag er-tag-neutral">{_esc(link.kind)}</span>'
+        f'<span class="er-muted">{_esc(link.company)} · {_esc(link.date)}</span>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    if safe_url:
+        st.markdown(
+            f'<div><a href="{html.escape(safe_url, quote=True)}" target="_blank" '
+            f'rel="noopener noreferrer">{_esc(link.title)}</a></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(f'<div>{_esc(link.title)}</div>', unsafe_allow_html=True)

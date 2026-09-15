@@ -1780,3 +1780,90 @@ def test_no_evidence_location_leaves_existing_readability_gate_as_the_sole_decis
     assert "er-tag-neutral" not in "".join(
         m.value for m in at.markdown if "Filing summary" in m.value
     )
+
+
+# ============================================================
+# "Review needed" badge (design/DECISIONS.md) — end-to-end proof that
+# the badge renders on a real card exactly when filing_display.
+# review_needed() says it should, and never otherwise. The pure
+# predicate itself is exhaustively tested in test_filing_display.py;
+# these tests exist to prove the wiring through radar_status.py into
+# the actual rendered card.
+# ============================================================
+
+
+def test_review_needed_badge_shows_for_a_filing_missing_its_issuer_code(tmp_path):
+    filing = FilingEvent(
+        rcept_no="S100Z0AMB", corp_code="", corp_name="Ambiguous Issuer Co.", stock_code="40630",
+        report_nm="臨時報告書", rcept_dt="2026-09-04", flr_nm="Ambiguous Issuer Co.",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0AMB",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Review needed" in all_text
+    assert "Issuer or role unresolved. Evidence collected, mapping under review." in all_text
+    # The filing is still fully published and readable — advisory only.
+    assert "臨時報告書" in all_text
+
+
+def test_review_needed_badge_shows_for_a_filing_missing_its_exchange_ticker(tmp_path):
+    _seed_corp_codes(tmp_path)
+    filing = FilingEvent(
+        rcept_no="20260812000002", corp_code="00126380", corp_name="삼성전자", stock_code="",
+        report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="삼성전자",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000002",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [filing])
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Review needed" in all_text
+
+
+def test_review_needed_badge_does_not_show_for_a_normal_unambiguous_filing(tmp_path):
+    """The exact same Korean fixture used throughout this file's own
+    "approved fields" contract tests — both corp_code and stock_code
+    populated — must never show the badge."""
+    _seed_corp_codes(tmp_path)
+    filing = FilingEvent(
+        rcept_no="20260812000001", corp_code="00126380", corp_name="삼성전자", stock_code="005930",
+        report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="삼성전자",
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000001",
+        retrieved_at=_now_iso(),
+    )
+    _seed_dart_filing_events(tmp_path, [filing])
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Review needed" not in all_text
+
+
+def test_review_needed_badge_applies_to_a_bare_new_filing_with_no_candidate_yet(tmp_path):
+    """Derived purely from FilingEvent's own stored fields — never
+    requires a CandidateSignal to exist, so a "New filing" card (rule
+    engine looked at it, did not flag it) still gets the badge when its
+    own identifiers are incomplete."""
+    filing = FilingEvent(
+        rcept_no="S100Z0AMB2", corp_code="", corp_name="Ambiguous Issuer Co.", stock_code="40630",
+        report_nm="四半期報告書", rcept_dt="2026-09-04", flr_nm="Ambiguous Issuer Co.",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0AMB2",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    # No candidate saved — this stays a bare "New filing" card.
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Review needed" in all_text

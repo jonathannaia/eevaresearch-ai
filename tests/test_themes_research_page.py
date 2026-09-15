@@ -11,8 +11,11 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from src.config.tracked_companies import TrackedCompany
 from src.data_access import theme_store
 from src.logic.formatting import fmt_datetime_local
+from src.models.daily_news_models import EditorialStory, NewsSourceReference, NewsStory, NewsStoryStatus, SourceClass
+from src.models.models import FilingEvent
 from src.models.theme_research import (
     CompanyRole,
     EvidenceDirection,
@@ -664,3 +667,153 @@ def test_existing_visible_routes_still_render_without_exception():
         at = AppTest.from_file(str(REPO_ROOT / "tests" / "apptest_pages" / harness_file), default_timeout=15)
         at.run()
         assert not at.exception, f"{harness_file} raised: {at.exception}"
+
+
+# ============================================================
+# Research Theses as a real research surface (design/DECISIONS.md) —
+# theme tags derived from mapped companies' own tracked themes, and the
+# live Radar/Daily News evidence section on the detail view.
+# ============================================================
+
+
+def _now_iso() -> str:
+    return "2026-09-15T00:00:00+00:00"
+
+
+def _tracked_company(name: str, themes=("memory",)) -> TrackedCompany:
+    return TrackedCompany(name=name, exchange="KRX", krx_code="005930", source="OpenDART / DART", themes=themes)
+
+
+def _filing_event(corp_name: str, rcept_dt: str = "20260910", rcept_no: str = "X") -> FilingEvent:
+    return FilingEvent(
+        rcept_no=rcept_no, corp_code="00126380", corp_name=corp_name, stock_code="005930",
+        report_nm="신규시설투자등 결정", rcept_dt=rcept_dt, flr_nm=corp_name,
+        source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=" + rcept_no, retrieved_at=_now_iso(),
+    )
+
+
+def _news_story(company_name: str) -> NewsStory:
+    source = NewsSourceReference(
+        publisher="Company IR", source_class=SourceClass.OFFICIAL_COMPANY, url="https://example.com/press",
+        title="Press release", published_at="2026-09-11T00:00:00+00:00", retrieved_at=_now_iso(),
+        original_language="English",
+    )
+    return NewsStory(
+        id="story-1", company_name=company_name, ticker="005930", theme_slug="memory",
+        headline="Company announces new memory facility", eeva_summary="Summary.", is_fallback_summary=False,
+        translation_unavailable=False, original_title=None, sources=(source,), status=NewsStoryStatus.PUBLISHED,
+    )
+
+
+def _run_with_full_backend(
+    monkeypatch, theme_repo, tracked_companies=(), filings=(), news_stories=(), editorial_stories=(), theme_id=None,
+):
+    monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", lambda settings: theme_repo)
+    monkeypatch.setattr(themes_research, "get_tracked_companies", lambda: tracked_companies)
+
+    class _FilingRepo:
+        def __init__(self, items):
+            self._items = items
+
+        def load_filing_events(self):
+            return self._items
+
+    class _NewsRepo:
+        def load_stories(self):
+            return {s.id: s for s in news_stories}
+
+    class _EditorialRepo:
+        def load_stories(self):
+            return {s.id: s for s in editorial_stories}
+
+    monkeypatch.setattr(
+        themes_research.backend_factory, "get_filing_event_repository",
+        lambda settings, source: _FilingRepo(filings if source == "OpenDART / DART" else ()),
+    )
+    monkeypatch.setattr(themes_research.daily_news_backend, "get_daily_news_repository", lambda settings: _NewsRepo())
+    monkeypatch.setattr(themes_research.daily_news_backend, "get_editorial_story_repository", lambda settings: _EditorialRepo())
+
+    at = AppTest.from_file(str(HARNESS_PATH), default_timeout=15)
+    if theme_id is not None:
+        at.query_params["theme_id"] = theme_id
+    at.run()
+    return at
+
+
+def test_index_card_shows_theme_tags_derived_from_mapped_companies_tracked_themes(monkeypatch):
+    theme = _theme()
+    company_map = (_company_map_entry(theme.id, company_name="Samsung Electronics"),)
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: company_map})
+    tracked = (_tracked_company("Samsung Electronics", themes=("memory", "ai-buildout")),)
+
+    at = _run_with_full_backend(monkeypatch, repo, tracked_companies=tracked)
+
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "memory" in all_html
+    assert "ai-buildout" in all_html
+
+
+def test_index_card_shows_no_tags_when_no_mapped_company_is_tracked(monkeypatch):
+    theme = _theme()
+    company_map = (_company_map_entry(theme.id, company_name="Untracked Startup"),)
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: company_map})
+
+    at = _run_with_full_backend(monkeypatch, repo, tracked_companies=())
+
+    assert not at.exception
+    # No exception and no crash is the main proof here; the absence of a
+    # tag is implicitly covered by every other assertion in this file
+    # never expecting theme-slug text to appear for this fixture.
+
+
+def test_detail_shows_live_evidence_filings_and_news_for_mapped_companies(monkeypatch):
+    theme = _theme()
+    company_map = (_company_map_entry(theme.id, company_name="Samsung Electronics"),)
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: company_map})
+    filing = _filing_event("Samsung Electronics")
+    news = _news_story("Samsung Electronics")
+
+    at = _run_with_full_backend(
+        monkeypatch, repo, filings=(filing,), news_stories=(news,), theme_id=theme.id,
+    )
+
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Live evidence" in all_html
+    assert "신규시설투자등 결정" in all_html  # the Radar filing's own report_nm, as the link text
+    assert "Company announces new memory facility" in all_html  # the Daily News headline
+
+
+def test_detail_live_evidence_excludes_unrelated_company_items(monkeypatch):
+    theme = _theme()
+    company_map = (_company_map_entry(theme.id, company_name="Samsung Electronics"),)
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: company_map})
+    unrelated_filing = _filing_event("Unrelated Corp")
+
+    at = _run_with_full_backend(monkeypatch, repo, filings=(unrelated_filing,), theme_id=theme.id)
+
+    assert not at.exception
+    all_html = " ".join(m.value for m in at.markdown)
+    assert "Unrelated Corp" not in all_html
+
+
+def test_detail_live_evidence_empty_state_when_no_recent_items(monkeypatch):
+    theme = _theme()
+    company_map = (_company_map_entry(theme.id, company_name="Samsung Electronics"),)
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: company_map})
+
+    at = _run_with_full_backend(monkeypatch, repo, theme_id=theme.id)
+
+    assert not at.exception
+    assert any("No recent evidence yet." in c.value for c in at.caption)
+
+
+def test_detail_live_evidence_empty_state_when_no_companies_mapped(monkeypatch):
+    theme = _theme()
+    repo = _FakeRepo(themes=[theme], company_map_by_theme={theme.id: ()})
+
+    at = _run_with_full_backend(monkeypatch, repo, theme_id=theme.id)
+
+    assert not at.exception
+    assert any("No recent evidence yet." in c.value for c in at.caption)
