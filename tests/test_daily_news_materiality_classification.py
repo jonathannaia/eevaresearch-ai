@@ -591,3 +591,73 @@ def test_actual_earnings_release_with_reported_figures_remains_high_signal_after
     )
     assert tier == NewsMaterialityTier.HIGH_SIGNAL
     assert any(r.startswith("formal_earnings_materials:") for r in reasons)
+
+
+# ============================================================
+# Signals editorial lane false-positive audit (design/DECISIONS.md) —
+# consumer deal/discount pricing must never reach HIGH_SIGNAL merely
+# because a retail dollar/percent figure co-occurs with the same
+# "pricing"/"price cut"/"price increase" keywords a genuine corporate
+# pricing action uses.
+# ============================================================
+
+
+def test_gaming_pc_deal_with_a_dollar_discount_and_price_cut_language_is_never_high_signal():
+    """The verified false positive: a $560-off gaming PC deal reached
+    HIGH_SIGNAL via quantified_change:price cut, purely from retail
+    marketing copy — zero corporate materiality anywhere in the text."""
+    tier, reasons = classify_editorial_story(
+        "Save 25% ($560) on This Gaming PC Packed With AMD and Nvidia Hardware",
+        "This gaming PC deal pairs an AMD Ryzen 7 processor with an Nvidia GeForce RTX 4070 graphics "
+        "card, marking one of the biggest price cut deals we've seen on this configuration this year.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+    assert not any(r.startswith("quantified_change:price") or r.startswith("taxonomy_anchored_consequence:") for r in reasons)
+
+
+def test_dollar_off_consumer_deal_phrasing_alone_is_never_high_signal():
+    tier, reasons = classify_editorial_story(
+        "This Laptop Deal Saves You $300 Right Now",
+        "The discounted laptop configuration marks a real price cut compared to last month's listing.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_percent_off_consumer_deal_phrasing_alone_is_never_high_signal():
+    tier, reasons = classify_editorial_story(
+        "Grab This Monitor While It's 40% Off",
+        "This is one of the best price cuts we've tracked on this monitor all year.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_genuine_corporate_price_increase_still_reaches_high_signal():
+    """The calibration fix must never suppress a real corporate pricing
+    action — only "save $X"/"$X off"/"X% off" retail-deal phrasing is
+    excluded; ordinary corporate pricing-action language is untouched."""
+    tier, reasons = classify_editorial_story(
+        "Nvidia Raises GPU Prices by 15% Amid Tariff Pressures",
+        "Nvidia confirmed a 15% price increase across its GPU lineup will take effect next quarter, "
+        "citing new import tariffs on semiconductor components.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:price increase") for r in reasons)
+
+
+def test_quantified_capacity_infrastructure_event_is_unaffected_by_the_consumer_deal_fix():
+    """Positive control: the consumer-deal-price fix is scoped to
+    exactly the "pricing"/"price increase"/"price cut" anchor keywords
+    — a real quantified capacity/lease event must be completely
+    unaffected, since "capacity" is never in the affected keyword set."""
+    tier, reasons = classify_editorial_story(
+        "Polarise to Lease 15MW of Data Center Capacity in Prague",
+        "Polarise has signed an agreement to lease 15MW of data center capacity in Prague, expanding "
+        "its footprint in Central Europe as demand for AI infrastructure grows across the region.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:capacity") for r in reasons)
