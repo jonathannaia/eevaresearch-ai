@@ -89,3 +89,26 @@ def test_match_is_symmetric_regardless_of_which_side_is_the_non_english_candidat
     time/title, never which side is the "new" one."""
     reverse_order = _base_kwargs(candidate_language="English", existing_language="French")
     assert localization_dedup.is_localized_duplicate(**reverse_order) is True
+
+
+# --- Daily News Cohort 1 batch (2026-09-15) — Yaskawa's registry entry
+# is deliberately curated language="English" (see design/
+# DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md), specifically
+# to avoid ever exercising this cross-language mechanism for that
+# source. This fixture proves the direct consequence: two same-company,
+# both-declared-English Yaskawa items are never flagged as localized
+# duplicates by this module — the existing gate (candidate_language ==
+# existing_language -> no match) already covers this; no new code is
+# needed or added. ---
+
+
+def test_yaskawa_same_language_items_are_never_flagged_as_localized_duplicates():
+    same_language = dict(
+        candidate_company="YASKAWA Electric Corporation", candidate_source_class=SourceClass.OFFICIAL_COMPANY,
+        candidate_language="English", candidate_published_at_epoch=1_000_000.0,
+        candidate_translated_title="Yaskawa Launches Collaborative Robot MOTOMAN-HC12",
+        existing_company="YASKAWA Electric Corporation", existing_source_class=SourceClass.OFFICIAL_COMPANY,
+        existing_language="English", existing_published_at_epoch=1_000_000.0 + 3600,
+        existing_title="Yaskawa Launches Collaborative Robot MOTOMAN-HC12",
+    )
+    assert localization_dedup.is_localized_duplicate(**same_language) is False
