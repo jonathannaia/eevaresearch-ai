@@ -34,12 +34,26 @@ def _mock_fetch(entries_by_url: dict[str, FeedFetchResult], monkeypatch) -> None
 
 
 def test_editorial_only_flag_runs_editorial_discovery_and_persists_a_real_story(tmp_path, monkeypatch, capsys):
+    # P0.3 (Signals admission precision fix): Space Force items are now
+    # always routed through assess_admission(), so this CLI-routing/
+    # persistence smoke test uses a substantive, clearly admissible
+    # fixture (a named funded launch contract) rather than the now-
+    # rejected evidence-free DARC-location announcement — see
+    # tests/test_daily_news_worker.py's own dedicated Space Force
+    # admission-behavior coverage for the rejection case.
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_daily_news_discovery, "get_settings", lambda: settings)
     entry = RawFeedEntry(
-        title="US Space Force selects Texas as preferred location for third DARC site",
-        link="https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
-        published_at=datetime.now(timezone.utc).isoformat(), summary=None, image_url=None, image_alt=None,
+        title="U.S. Space Force Awards $400 Million Launch Contract for National Security Satellite "
+              "Constellation Mission",
+        link="https://www.spaceforce.mil/News/Article-Display/Article/9900002/launch-contract/",
+        published_at=datetime.now(timezone.utc).isoformat(),
+        summary=(
+            "The U.S. Space Force awarded a $400 million launch contract to support a national security "
+            "satellite constellation mission, funding a dedicated launch vehicle and ground segment "
+            "integration work."
+        ),
+        image_url=None, image_alt=None,
     )
     _mock_fetch({_SPACEFORCE_URL: FeedFetchResult(entries=(entry,), failure_code=None)}, monkeypatch)
     monkeypatch.setattr(sys, "argv", ["run_daily_news_discovery", "--editorial-only"])

@@ -903,13 +903,26 @@ def test_unexpected_editorial_exception_logs_degraded_failed_line_and_does_not_p
 def test_one_editorial_source_failure_reported_with_correct_aggregate_and_does_not_block_others(
     tmp_path, monkeypatch, capsys,
 ):
+    # P0.3 (Signals admission precision fix): Space Force items are now
+    # always routed through assess_admission(), so this failure-
+    # aggregation test (not about Space Force admission itself) uses a
+    # substantive, clearly admissible fixture — a named funded launch
+    # contract — to prove the Space Force item still published despite
+    # CNBC's failure. This also serves as this file's worker-level
+    # positive fixture for a substantive, admissible Space Force event.
     _mock_fetch({
         _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
         _CNBC_TOP_NEWS_URL: FeedFetchResult(entries=(), failure_code="HTTPError:503"),
         _SPACEFORCE_URL: FeedFetchResult(
             entries=(_editorial_entry(
-                "US Space Force selects Texas as preferred location for third DARC site",
-                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+                "U.S. Space Force Awards $400 Million Launch Contract for National Security Satellite "
+                "Constellation Mission",
+                "https://www.spaceforce.mil/News/Article-Display/Article/9900002/launch-contract/",
+                summary=(
+                    "The U.S. Space Force awarded a $400 million launch contract to support a national "
+                    "security satellite constellation mission, funding a dedicated launch vehicle and "
+                    "ground segment integration work."
+                ),
             ),), failure_code=None,
         ),
     }, monkeypatch)
@@ -965,7 +978,19 @@ def test_cnbc_item_with_no_company_or_theme_match_is_not_published_through_the_w
     assert editorial_repository.load_stories() == {}
 
 
-def test_spaceforce_item_with_no_match_still_publishes_through_the_worker(tmp_path, monkeypatch):
+def test_spaceforce_item_with_no_admission_evidence_is_not_published_through_the_worker(tmp_path, monkeypatch, capsys):
+    # P0.3 (Signals admission precision fix): the former unconditional
+    # Space Force bypass is gone. Space Force keeps only its narrow
+    # exemption from the fail-closed company/theme-match PRECONDITION —
+    # proven here by items_no_match=0 in the worker's own printed
+    # summary line, i.e. this item was never blocked at the precondition
+    # the way an ordinary source's no-match item would be (see
+    # test_cnbc_item_with_no_company_or_theme_match_is_not_published_
+    # through_the_worker above, whose item is blocked there instead) —
+    # but it still must pass assess_admission(), and this evidence-free
+    # DARC-location announcement names no funded program, contract/
+    # award, procurement, mission milestone, budget, or measurable
+    # operating/capacity evidence, so it is rejected and never published.
     _mock_fetch({
         _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
         _SPACEFORCE_URL: FeedFetchResult(
@@ -981,12 +1006,11 @@ def test_spaceforce_item_with_no_match_still_publishes_through_the_worker(tmp_pa
 
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
+    output = capsys.readouterr().out
+    assert "items_no_match=0" in output  # exempted from the precondition, not blocked there
+    assert "stories_published=0" in output  # rejected by assess_admission() instead
     editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
-    stories = editorial_repository.load_stories()
-    assert len(stories) == 1
-    story = next(iter(stories.values()))
-    assert story.matched_companies == ()
-    assert story.source_feed_id == "spaceforce-news-rss"
+    assert editorial_repository.load_stories() == {}
 
 
 def test_nist_off_topic_item_is_not_published_and_on_topic_item_is_through_the_worker(tmp_path, monkeypatch):
@@ -1046,12 +1070,22 @@ def test_korea_herald_matching_item_still_publishes_through_the_worker(tmp_path,
 
 
 def test_repeated_ticks_with_the_same_editorial_item_do_not_duplicate(tmp_path, monkeypatch):
+    # P0.3 (Signals admission precision fix): uses a substantive, clearly
+    # admissible fixture — this test's subject is cross-tick dedup, not
+    # Space Force admission, and the item must actually publish on the
+    # first tick for the dedup assertion below to be meaningful.
     _mock_fetch({
         _NVDA_SOURCE.feed_url: FeedFetchResult(entries=(), failure_code=None),
         _SPACEFORCE_URL: FeedFetchResult(
             entries=(_editorial_entry(
-                "US Space Force selects Texas as preferred location for third DARC site",
-                "https://www.spaceforce.mil/News/Article-Display/Article/4592096/darc-texas/",
+                "U.S. Space Force Awards $400 Million Launch Contract for National Security Satellite "
+                "Constellation Mission",
+                "https://www.spaceforce.mil/News/Article-Display/Article/9900002/launch-contract/",
+                summary=(
+                    "The U.S. Space Force awarded a $400 million launch contract to support a national "
+                    "security satellite constellation mission, funding a dedicated launch vehicle and "
+                    "ground segment integration work."
+                ),
             ),), failure_code=None,
         ),
     }, monkeypatch)

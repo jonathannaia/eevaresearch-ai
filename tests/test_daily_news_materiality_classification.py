@@ -661,3 +661,236 @@ def test_quantified_capacity_infrastructure_event_is_unaffected_by_the_consumer_
     )
     assert tier == NewsMaterialityTier.HIGH_SIGNAL
     assert any(r.startswith("quantified_change:capacity") for r in reasons)
+
+
+# ============================================================
+# Signals admission/materiality precision fix (design/SIGNALS_
+# ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md, design/CURRENT_
+# SIGNALS_POLICY_AND_GAP_INVENTORY_2026_09_15.md) — P0 negation-aware
+# confirmation, P1 interview/podcast guard + first-party launch
+# sentence-locality, P2 space taxonomy. Every fixture below is a
+# realistic reconstruction of the exact named case (this environment
+# has no live editorial-lane cache/Postgres access — see this file's
+# own module docstring convention above), run through the real,
+# unmodified classify_editorial_story()/classify_issuer_story().
+# ============================================================
+
+# --- P0: negation-aware confirmation (Fixture A — Intel rumor) ------
+
+
+def test_unconfirmed_tipster_rumor_does_not_reach_high_signal():
+    """The exact reported case: a Tom's Hardware-shaped rumor sourced to
+    a named tipster, with the chipmaker's own non-confirmation — must
+    not qualify for High Signal via Gate D."""
+    tier, reasons = classify_editorial_story(
+        "Intel reportedly cans 12Xe option for Nova Lake-S desktop — gaming APU design said to resurface "
+        "with Razor Lake",
+        "According to tipster Jaykihn, Intel has cancelled the 12 Xe3P graphics core option for its Nova "
+        "Lake-S desktop lineup. The leaker says the design has been cancelled and Intel intends to pick it "
+        "back up with Razor Lake, the generation that will follow Nova Lake. The chipmaker has not "
+        "officially confirmed the change.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+    assert not any(r.startswith("credible_editorial_reporting:") for r in reasons)
+
+
+def test_genuine_official_confirmation_reaches_high_signal():
+    """Positive control: a genuine, non-negated, non-rumor confirmation
+    of a quantified event must remain fully eligible."""
+    tier, reasons = classify_editorial_story(
+        "Intel officially confirmed a new $2 billion investment in Arizona fab capacity",
+        "Intel today officially confirmed it will invest $2 billion to expand fab capacity at its Arizona "
+        "facility, adding new wafer fabrication equipment.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_confirmation_after_earlier_rumor_recap_remains_eligible():
+    """A piece that both recaps earlier, now-resolved speculation AND
+    separately reports the company's own subsequent, non-negated
+    confirmation must not be suppressed by the earlier rumor language —
+    the per-occurrence negation check (at least one clean confirmation
+    is enough) plus the independent quantified-change gate both keep
+    this eligible."""
+    tier, reasons = classify_editorial_story(
+        "Intel confirms Arizona expansion after weeks of speculation",
+        "The plans had not been confirmed for weeks, with reports relying on unnamed sources close to the "
+        "matter. Intel officially confirmed the $2 billion Arizona fab capacity expansion in a statement "
+        "today, ending the speculation.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_denied_report_does_not_reach_high_signal():
+    tier, reasons = classify_editorial_story(
+        "Company denies reports of upcoming layoffs",
+        "A spokesperson denied earlier reports that the company was planning layoffs, calling the "
+        "speculation inaccurate and disclosed nothing further about internal plans.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- P1: interview/podcast guard (Fixture D — Kirkwood IG) -----------
+
+
+def test_interview_without_new_measurable_disclosure_does_not_reach_high_signal():
+    tier, reasons = classify_editorial_story(
+        "Scott Bergs, CEO of Kirkwood IG: Fiber and the AI Data Center Buildout",
+        "In this interview, Scott Bergs discusses how Kirkwood IG is expanding its fiber network to "
+        "support the AI data center buildout across the Southeast, describing the capacity investment "
+        "needed to keep pace with hyperscale demand.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+    assert not any(r.startswith("taxonomy_anchored_consequence:") for r in reasons)
+
+
+def test_interview_with_attributable_quantified_commitment_reaches_high_signal():
+    """Positive control: the interview-format guard suppresses Gate C
+    only — a genuine quantified disclosure made during the interview
+    still qualifies via Gate B, unaffected."""
+    tier, reasons = classify_editorial_story(
+        "Scott Bergs, CEO of Kirkwood IG: Fiber and the AI Data Center Buildout",
+        "In this interview, Scott Bergs disclosed a $300 million expansion of the company fiber route, "
+        "adding 40,000 route-miles by 2027 to support AI data center capacity in the Southeast.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:") for r in reasons)
+
+
+def test_podcast_format_marker_alone_suppresses_gate_c():
+    tier, reasons = classify_editorial_story(
+        "AI Infrastructure Weekly Podcast: Data Center Capacity Trends",
+        "This week's podcast covers general trends in AI infrastructure and data center capacity "
+        "planning across the industry.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- P1: first-party launch calibration (Fixture E — Meta One; Fixture F — Nvidia) ---
+
+
+def test_first_party_launch_with_unrelated_boilerplate_capex_language_defaults_low():
+    """The exact reported case: a first-party subscription/product
+    launch whose only "AI infrastructure" language is generic capex
+    boilerplate, several sentences away from the actual product-launch
+    content — must not inflate to High Signal via Gate C's former
+    "anywhere in the document" pairing."""
+    tier, reasons = classify_issuer_story(
+        "Introducing Meta One: A Subscription Service With More Features and AI to Create, Connect, "
+        "and Stand Out",
+        "Meta today introduced Meta One, a subscription service bringing together premium features "
+        "across Instagram, Facebook, and WhatsApp, with plans supporting continued investment in the "
+        "platform. It offers plans starting at $3.99 per month, with higher AI creation tools available "
+        "in top tiers for creators. Meta One Premium also includes early access to new features as they "
+        "roll out to eligible users. As we continue to invest in AI infrastructure to power new "
+        "experiences for people worldwide, we are excited about what is ahead for our community.",
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_first_party_launch_with_material_scale_evidence_reaches_high_signal():
+    """Positive control: a first-party launch WITH a real, concrete
+    materiality anchor (here, disclosed adoption + revenue scale in the
+    same sentence) remains fully eligible."""
+    tier, reasons = classify_issuer_story(
+        "Introducing Meta One: A Subscription Service With More Features and AI to Create, Connect, "
+        "and Stand Out",
+        "Meta today introduced Meta One. Meta One Premium has already reached 50 million paid "
+        "subscribers, adding an estimated $2 billion in annualized subscription revenue.",
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:revenue") for r in reasons)
+
+
+def test_nvidia_quantified_ai_factory_power_flexibility_remains_high_signal():
+    """The required positive control: NVIDIA's own quantified AI-
+    factory/power-flexibility disclosure must be unaffected by any of
+    the P0/P1 tightening — reaches High Signal via the same-sentence
+    Gate C pairing (and, independently, Gate B's own real MW figure)."""
+    tier, reasons = classify_issuer_story(
+        "From Megawatts to Tokens: How NVIDIA Maximizes AI Factory Production",
+        "NVIDIA now delivers 50 megawatts of AI factory capacity per rack-scale deployment, a major new "
+        "investment in cooling and power delivery infrastructure across the data center.",
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:") for r in reasons)
+    assert any(r.startswith("taxonomy_anchored_consequence:") for r in reasons)
+
+
+def test_nvidia_forward_looking_projection_is_still_eligible():
+    """Explicit forward-looking-statement check (required by the P1
+    scope): a first-party projection ("could enable," "is expected to")
+    that still states a real, quantified figure remains eligible —
+    this fix never distinguishes measured-vs-projected for eligibility
+    purposes, only whether a concrete materiality anchor exists at
+    all."""
+    tier, reasons = classify_issuer_story(
+        "NVIDIA Outlines Path to Higher AI Factory Power Efficiency",
+        "NVIDIA said its next-generation architecture could enable up to 100 megawatts of additional AI "
+        "factory capacity at the same power envelope, a projected investment the company expects to "
+        "translate into higher token throughput per watt.",
+        SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+# --- P2: space taxonomy route (Fixture C positive control; Fixture H) ---
+
+
+def test_space_mission_award_with_contract_anchor_reaches_high_signal():
+    """The new space taxonomy bucket + an existing anchor ("contract")
+    in the same sentence qualifies via Gate C — proving the new bucket
+    integrates with the existing anchor-pairing/sentence-locality
+    machinery rather than requiring new anchor vocabulary."""
+    tier, reasons = classify_editorial_story(
+        "KSAT Selected by Intuitive Machines to Support NASA JPL EAGLE-VSWIR Mission",
+        "Intuitive Machines selected KSAT to provide ground segment support for the EAGLE-VSWIR mission, "
+        "delivering the spacecraft platform and mission operations under a new contract. The mission is "
+        "targeted for launch in 2028 as part of a broader NASA Earth Science Division program.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("taxonomy_anchored_consequence:space_missions_and_launch:") for r in reasons)
+
+
+def test_space_mission_selection_never_asserts_launch_or_revenue_completion():
+    """Explicit check that the space taxonomy route's own qualifying
+    reason never itself claims a launch, revenue recognition, or
+    mission completion — the underlying fixture text states only a
+    selection/contract event with a future-targeted launch date, and
+    the reason string is a fixed, generic gate label, never free text
+    describing an unverified outcome."""
+    tier, reasons = classify_editorial_story(
+        "KSAT Selected by Intuitive Machines to Support NASA JPL EAGLE-VSWIR Mission",
+        "Intuitive Machines selected KSAT to provide ground segment support for the EAGLE-VSWIR mission "
+        "under a new contract. The mission is targeted for launch in 2028.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    for reason in reasons:
+        assert "launched" not in reason.lower()
+        assert "completed" not in reason.lower()
+        assert "revenue recognition" not in reason.lower()
+
+
+def test_routine_personnel_note_with_broad_aerospace_commentary_stays_off_taxonomy():
+    """The space taxonomy bucket must not elevate routine personnel or
+    broad, non-specific aerospace commentary — no launch/mission/
+    spacecraft/contract phrase appears in this fixture at all, so
+    neither Gate C nor the Watchlist "on_taxonomy" fallback fires."""
+    tier, reasons = classify_editorial_story(
+        "Aerospace Industry Roundup: Executive Moves and Market Commentary",
+        "Several aerospace companies announced routine leadership changes this week. Industry analysts "
+        "commented broadly on the state of the space sector heading into next year.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.BACKGROUND
