@@ -342,7 +342,7 @@ def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_s
 
     # Summary must be the honest metadata-only fallback — never the raw
     # translation, never an ellipsis, never a partial sentence.
-    assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
+    assert "ispace, inc. filed Extraordinary Report — 臨時報告書 on Jul 1, 2026." in all_text
     assert "…" not in all_text
     assert "..." not in all_text
     assert raw_like_translation not in all_text
@@ -396,7 +396,7 @@ def test_edinet_readable_translation_with_no_early_boundary_falls_back_to_metada
     _rerun(at, tmp_path)
     all_text = _text(at)
 
-    assert "ispace, inc. filed 臨時報告書 on Jul 1, 2026." in all_text
+    assert "ispace, inc. filed Extraordinary Report — 臨時報告書 on Jul 1, 2026." in all_text
     assert "…" not in all_text
     assert "..." not in all_text
     assert late_boundary_translation not in all_text
@@ -1257,12 +1257,15 @@ def test_edinet_with_stored_title_and_excerpt_translation_defaults_to_original_w
     all_text = _text(at)
 
     # Default state: native title + native excerpt summary shown — the
-    # translated versions exist but are not shown until the user
-    # explicitly switches to English. The card's own title element
-    # specifically (er-card-title) must be the native title.
+    # translated EXCERPT is not shown until the user explicitly switches
+    # to English. The card's own title element (er-card-title) IS
+    # already prefixed with the known event category's plain-English
+    # phrase even in native mode (cross-market filing-card title clarity
+    # fix, design/DECISIONS.md) — this candidate's matched_rules already
+    # establish "share_buyback_status", independent of the toggle.
     card_title = next(m.value for m in at.markdown if 'class="er-card-title"' in m.value)
     assert "自己株券買付状況報告書" in card_title
-    assert "Status Report of Purchase of Own Shares" not in card_title
+    assert "Status Report of Purchase of Own Shares" in card_title
     assert "自己株券買付状況報告書の記載内容の抜粋です。" in all_text
     assert "This is an excerpt from the status report of purchase of own shares." not in all_text
 
@@ -1384,7 +1387,7 @@ def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_p
     # No stored translation — Summary falls back to the neutral metadata
     # sentence; the native excerpt is still reachable, but only behind
     # its own quality-gated toggle.
-    assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text
+    assert "삼성전자 filed Earnings or Results Report — 실적 발표 on Aug 12, 2026." in all_text
     assert "실적 관련 원문." not in all_text
     assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
@@ -1421,7 +1424,7 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "삼성전자 filed 실적 발표 on Aug 12, 2026." in all_text  # metadata-only Summary, no translation stored
+    assert "삼성전자 filed Earnings or Results Report — 실적 발표 on Aug 12, 2026." in all_text  # metadata-only Summary, no translation stored
     assert "실적 관련 원문 종결." not in all_text  # native excerpt collapsed behind its own toggle
     assert "English translation is being prepared." not in all_text
     assert "Translated filing excerpt</strong>" not in all_text
