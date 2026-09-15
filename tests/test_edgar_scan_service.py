@@ -292,3 +292,67 @@ def test_real_schedule_13g_form_creates_ownership_change_candidate(tmp_path):
 
     assert len(result.new_candidate_signals) == 1
     assert result.new_candidate_signals[0].matched_rules == ["ownership_change:SC 13G"]
+
+
+# ============================================================
+# EDGAR foreign-private-issuer 20-F/6-K admission, Phase 1
+# (design/DECISIONS.md) — end-to-end scan() proof, mirroring the exact
+# real ASML/Arm evidence gathered for the design document.
+# ============================================================
+
+
+def test_20f_creates_a_candidate_signal_end_to_end(tmp_path):
+    client = _client({"filings": {"recent": _recent(["0001046179-26-000001"], forms=["20-F"])}})
+
+    result = scan_service.scan(client, [_NVDA], tmp_path)
+
+    assert len(result.new_candidate_signals) == 1
+    assert result.new_candidate_signals[0].matched_rules == ["earnings_or_results:20-F"]
+    # The bare FilingEvent is created regardless — same "always ingest"
+    # contract every other form type already has.
+    assert len(result.new_filing_events) == 1
+
+
+def test_material_6k_creates_a_candidate_signal_end_to_end(tmp_path):
+    client = _client({
+        "filings": {"recent": _recent(
+            ["0000937966-26-000001"], forms=["6-K"], primary_docs=["form6-kquarterlyfilings.htm"],
+        )},
+    })
+
+    result = scan_service.scan(client, [_NVDA], tmp_path)
+
+    assert len(result.new_candidate_signals) == 1
+    assert result.new_candidate_signals[0].matched_rules == ["foreign_issuer_current_report:6-K:quarterly"]
+
+
+def test_routine_6k_creates_no_candidate_signal_but_still_ingests_as_a_filing_event(tmp_path):
+    """The exact real ASML AGM-disclosure shape — proves the filename
+    gate correctly suppresses a routine 6-K end to end, while the filing
+    itself still appears as a bare FilingEvent, never silently dropped."""
+    client = _client({
+        "filings": {"recent": _recent(
+            ["0000937966-26-000002"], forms=["6-K"], primary_docs=["form6-kagmdisclosureofagmr.htm"],
+        )},
+    })
+
+    result = scan_service.scan(client, [_NVDA], tmp_path)
+
+    assert len(result.new_candidate_signals) == 0
+    assert len(result.new_filing_events) == 1
+    assert result.new_filing_events[0].pblntf_ty == "6-K"
+
+
+def test_opaque_arm_style_6k_creates_no_candidate_signal_end_to_end(tmp_path):
+    """The exact real Arm Holdings filename shape — documents the known
+    Phase 1 limitation end to end: ingests, never promotes."""
+    client = _client({
+        "filings": {"recent": _recent(
+            ["0001973239-26-000001"], forms=["6-K"], primary_docs=["arm-20260910.htm"],
+        )},
+    })
+
+    result = scan_service.scan(client, [_NVDA], tmp_path)
+
+    assert len(result.new_candidate_signals) == 0
+    assert len(result.new_filing_events) == 1

@@ -71,6 +71,20 @@ EIGHT_K_ITEM_CATEGORIES: dict[str, str] = {
 FORM_TYPE_CATEGORIES: dict[str, str] = {
     "10-Q": "earnings_or_results",
     "10-K": "earnings_or_results",
+    # Foreign-private-issuer annual report (design/DECISIONS.md, "EDGAR
+    # foreign-private-issuer 20-F/6-K admission", Phase 1). SEC's own
+    # designated 10-K equivalent for a foreign private issuer — always a
+    # comprehensive, substantive annual filing, structurally never a
+    # "routine" or ambiguous document the way a 6-K can be (see 6-K's own
+    # handling below, deliberately NOT in this dict). Mapped to the exact
+    # same category 10-K already uses — no new category, no new gate,
+    # the narrowest possible change. 20-F/A (amendment) is explicitly
+    # OUT OF SCOPE for this phase — not observed live for TSMC/ASML in
+    # the design document's own evidence, and left unmapped here
+    # deliberately rather than guessed; falls through to the existing
+    # "unrecognized form type" behavior (confidence=None) exactly like
+    # today's already-existing, separately-unresolved 10-K/A gap.
+    "20-F": "earnings_or_results",
     "SC 13D": "ownership_change",
     "SC 13D/A": "ownership_change",
     "SC 13G": "ownership_change",
@@ -101,6 +115,75 @@ _FORM_ALIASES: dict[str, str] = {
 _GENERIC_8K_CATEGORY = "material_event_8k_pending_items"
 
 _ITEM_NUMBER_PATTERN = re.compile(r"\bItem\s+(\d{1,2}\.\d{2})\b", re.IGNORECASE)
+
+# --- 6-K foreign-private-issuer current-report gate (design/
+# DECISIONS.md, "EDGAR foreign-private-issuer 20-F/6-K admission",
+# Phase 1). A 6-K is a general-purpose "furnish anything a foreign
+# issuer wants to disclose" wrapper — unlike 10-K/10-Q/20-F (always
+# substantive) or 8-K (SEC provides structured Item-number metadata at
+# scan time), a 6-K carries no SEC-provided sub-classification at scan
+# time. Live evidence gathered for the design document (real ASML and
+# Arm Holdings submissions, fetched 2026-09-15) confirmed
+# `primaryDocDescription` is non-informative — it is literally the
+# string "6-K" for every row of both filers, never a real description —
+# so this gate reads `primaryDocument` (the filing's own filename)
+# instead, the only other scan-time-available field with real signal,
+# and only when that filer's own naming convention happens to be
+# descriptive (confirmed true for ASML's real filenames, e.g.
+# "form6-kquarterlyfilings.htm" vs. "form6-kagmdisclosureofagmr.htm";
+# confirmed NOT true for Arm's own real filenames, which are opaque and
+# date-stamped, e.g. "arm-20260910.htm").
+#
+# PHASE 1 LIMITATION, preserved deliberately: this filename-only gate
+# WILL MISS materially relevant 6-K filings from issuers whose own
+# naming convention is opaque (Arm Holdings is the confirmed, real
+# example) — an opaque filename fails closed exactly like an unknown
+# form type today, which is a known, accepted trade-off for this phase,
+# not an oversight. A future phase could recover these by reading the
+# actual document/exhibit text once fetched (the same two-stage
+# scan-time-coarse-pass + post-extraction-refinement shape already
+# established for 8-K via refine_8k_evaluation()/
+# merge_8k_item_evaluation() below) — deliberately NOT built here.
+#
+# Deny-list checked BEFORE the allow-list, so a routine/governance term
+# always wins over an incidental substantive-sounding word elsewhere in
+# the same filename — never the reverse.
+_SIX_K_ROUTINE_CONTENT_TERMS: tuple[str, ...] = (
+    "agm", "annualgeneralmeeting", "annual-general-meeting", "shareholder",
+    "proxy", "governance", "administrative", "notice",
+)
+# Directly observed in this filer's own real, live filenames (design
+# document evidence, ASML CIK 0000937966, fetched 2026-09-15):
+# "quarterly" (form6-kquarterlyfilings.htm), "annualreport"
+# (form6-kannualreportbasedon.htm). The remaining terms are a direct,
+# narrow implementation of the approved category list (financial/
+# quarterly/annual results, earnings, guidance, investor presentation,
+# acquisition/transaction, financing, material contract/order,
+# capacity/operational event) — never a broad or speculative addition
+# beyond it.
+#
+# Final allow-list review (design/DECISIONS.md, "EDGAR foreign-private-
+# issuer 20-F/6-K admission, Phase 1 allow-list review"): removed three
+# terms present in the original draft — "financial", "results", "order"
+# — as individually too generic/ambiguous to prove materiality on their
+# own. Each is subsumed by a more specific, already-present term that
+# still fully covers its intended category without the added collision
+# risk: "financial"/"results" -> "financialresults" (the compound form
+# is what a genuine results filing would actually say; bare "results"
+# alone risks matching a routine item like an AGM VOTE results
+# announcement — exactly the class of routine/procedural 6-K this gate
+# exists to reject); "order" -> "contract" (the "material contract/
+# order" category is still represented; bare "order" alone is too short
+# and generic to trust without a co-occurring, more specific term).
+# Every surviving term is a real word or compound at least 6 characters
+# long, chosen specifically to minimize the chance of matching inside
+# an unrelated word by coincidence.
+_SIX_K_MATERIAL_CONTENT_TERMS: tuple[str, ...] = (
+    "quarterly", "annualreport", "financialresults",
+    "earnings", "guidance", "investorday", "investorpresentation",
+    "acquisition", "merger", "transaction", "financing", "contract",
+    "capacity", "expansion",
+)
 
 
 @dataclass(frozen=True)
@@ -139,6 +222,66 @@ def evaluate_form_type(form_type: str) -> RuleEvaluation:
     if category is None:
         return RuleEvaluation(matched_rules=(), confidence=None)
     return RuleEvaluation(matched_rules=(f"{category}:{normalized}",), confidence="Moderate")
+
+
+_FOREIGN_ISSUER_CURRENT_REPORT_CATEGORY = "foreign_issuer_current_report"
+
+
+_KNOWN_DOCUMENT_EXTENSIONS: tuple[str, ...] = (".htm", ".html", ".txt", ".pdf")
+
+
+def _normalized_filename(primary_document: str | None) -> str:
+    """Lowercases and strips a recognized trailing file extension —
+    the file extension carries no content signal and must never
+    participate in either term list's matching. Deliberately does NOT
+    attempt true regex word-boundary (\\b) matching: real, live filer
+    filenames (ASML CIK 0000937966, fetched 2026-09-15 — e.g.
+    "form6-kquarterlyfilings.htm") concatenate words with no internal
+    separator at all ("k" runs directly into "quarterly", which runs
+    directly into "filings") — a strict \\b boundary would never match
+    "quarterly" inside that real filename, which this gate is required
+    to keep matching. Substring-collision risk is instead controlled at
+    the term-list level (see _SIX_K_MATERIAL_CONTENT_TERMS's own
+    comment): every retained term is a real word or compound at least 6
+    characters long, specifically chosen to make an accidental match
+    inside an unrelated word implausible, rather than a false
+    guarantee of true linguistic boundaries this filename convention
+    cannot support."""
+    lowered = (primary_document or "").strip().lower()
+    for extension in _KNOWN_DOCUMENT_EXTENSIONS:
+        if lowered.endswith(extension):
+            return lowered[: -len(extension)]
+    return lowered
+
+
+def evaluate_six_k(primary_document: str | None) -> RuleEvaluation:
+    """Scan-time-only evaluation for a 6-K row — no document fetch, pure
+    function, no I/O. Deliberately NOT reachable via evaluate_form_type()/
+    FORM_TYPE_CATEGORIES (6-K is never added to that dict) — a bare 6-K
+    form type alone must never promote a candidate; only a filename that
+    passes this gate may. See this module's own "6-K foreign-private-
+    issuer current-report gate" comment above _SIX_K_ROUTINE_CONTENT_
+    TERMS for the full rationale, evidence, and Phase 1 limitation, and
+    _normalized_filename()'s own docstring for why filename matching
+    here is normalized-and-curated rather than regex-word-boundary-safe
+    in the strict sense.
+
+    Fails closed on every path: an empty/missing primary_document, a
+    filename matching any _SIX_K_ROUTINE_CONTENT_TERMS entry (checked
+    first, always wins), or a filename matching none of
+    _SIX_K_MATERIAL_CONTENT_TERMS all return confidence=None — stay a
+    bare FilingEvent, never promoted. Only a filename containing one of
+    the curated material-content terms, with no routine-content term
+    present, returns confidence="Moderate"."""
+    filename = _normalized_filename(primary_document)
+    if not filename:
+        return RuleEvaluation(matched_rules=(), confidence=None)
+    if any(term in filename for term in _SIX_K_ROUTINE_CONTENT_TERMS):
+        return RuleEvaluation(matched_rules=(), confidence=None)
+    hit = next((term for term in _SIX_K_MATERIAL_CONTENT_TERMS if term in filename), None)
+    if hit is None:
+        return RuleEvaluation(matched_rules=(), confidence=None)
+    return RuleEvaluation(matched_rules=(f"{_FOREIGN_ISSUER_CURRENT_REPORT_CATEGORY}:6-K:{hit}",), confidence="Moderate")
 
 
 def parse_items_metadata(raw: str | None) -> tuple[str, ...]:
