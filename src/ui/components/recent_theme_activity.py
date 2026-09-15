@@ -58,6 +58,7 @@ import streamlit as st
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import daily_news_backend
+from src.logic import filing_display
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.recent_theme_activity import ThemeActivityItem, ThemeActivityRow, build_recent_theme_activity
@@ -138,6 +139,7 @@ def _load_filing_items(settings: Settings) -> list[ThemeActivityItem]:
             timestamp = _filing_timestamp(filing)
             if timestamp is None:
                 continue
+            is_edinet = filing.source_name == filing_display.EDINET_SOURCE_NAME
             items.append(ThemeActivityItem(
                 theme_slug=filing.theme_slug, company_name=filing.corp_name, item_type="Filing",
                 timestamp=timestamp, display_date=_filing_display_date(filing),
@@ -147,6 +149,12 @@ def _load_filing_items(settings: Settings) -> list[ThemeActivityItem]:
                 # disclosure portal root; every other source passes through
                 # unchanged.
                 source_url=public_source_url(filing.source_url) or None,
+                # EDINET filing-source usability fix (design/
+                # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): compact-tier
+                # display fields, EDINET only — see ThemeActivityItem's
+                # own docstring.
+                edinet_title=filing_display.edinet_type_label(filing) if is_edinet else "",
+                edinet_stock_code=filing_display.edinet_display_securities_code(filing.stock_code) if is_edinet else "",
             ))
     return items
 
@@ -192,10 +200,25 @@ def _render_row(row: ThemeActivityRow) -> None:
         item_word = "item" if row.count == 1 else "items"
         left, right = st.columns([3.4, 1.3], vertical_alignment="center")
         with left:
+            # EDINET filing-source usability fix (design/
+            # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): compact-tier —
+            # the 4-digit public securities code appended to the company
+            # name, and (only when a curated/native EDINET title is
+            # available) a second small line showing it. Empty/"" for
+            # every non-EDINET item, so this is a no-op for EDGAR/DART/
+            # Daily News rows.
+            company_html = _esc(row.most_recent.company_name)
+            if row.most_recent.edinet_stock_code:
+                company_html += f" ({_esc(row.most_recent.edinet_stock_code)})"
+            title_html = (
+                f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.1rem;">{_esc(row.most_recent.edinet_title)}</div>'
+                if row.most_recent.edinet_title else ""
+            )
             st.markdown(
                 f'<div class="er-card-title" style="font-size:0.92rem;">{_esc(row.theme_name)}</div>'
                 f'<div class="er-muted" style="font-size:0.8rem; margin-top:0.15rem;">'
-                f"{_esc(row.most_recent.company_name)} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>",
+                f"{company_html} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>"
+                f"{title_html}",
                 unsafe_allow_html=True,
             )
         with right:

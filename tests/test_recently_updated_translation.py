@@ -38,6 +38,7 @@ DASHBOARD_HARNESS = Path(__file__).parent / "apptest_pages" / "dashboard_page.py
 _CANDIDATE_FILENAME_BY_FILING_FILENAME = {
     "dart_filing_events.json": "dart_candidates.json",
     "edgar_filing_events.json": "edgar_candidates.json",
+    "edinet_filing_events.json": "edinet_candidates.json",
 }
 
 
@@ -74,6 +75,16 @@ def _edgar_filing(rcept_no: str = "0000320193-26-000100") -> FilingEvent:
         report_nm="Quarterly results announcement", rcept_dt="2026-09-01", flr_nm="Apple Inc.",
         source_name="SEC EDGAR", source_url="https://example.invalid/" + rcept_no,
         retrieved_at="2026-09-01T00:00:00+00:00", original_language="English",
+    )
+
+
+def _edinet_filing(rcept_no: str = "S100Z0ID") -> FilingEvent:
+    return FilingEvent(
+        rcept_no=rcept_no, corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_name="EDINET", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/" + rcept_no,
+        retrieved_at="2026-09-04T00:00:00+00:00", original_language="Japanese",
     )
 
 
@@ -411,3 +422,44 @@ def test_preserves_source_issuer_date_and_link_unchanged_after_translation(tmp_p
     assert "삼성전자" in all_text  # company/issuer unchanged
     assert "Korea DART" in all_text  # source label unchanged
     assert "dart.fss.or.kr" in all_text  # source link unchanged
+
+
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md)
+# ============================================================
+
+
+def test_edinet_row_shows_the_filing_specific_instruction_next_to_the_bare_portal_link(tmp_path):
+    _seed_filing_event(tmp_path, _edinet_filing(), "edinet_filing_events.json")
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+
+    # The EDINET source link itself is still the bare, non-specific
+    # portal homepage — never a fabricated per-document URL.
+    assert "https://disclosure2.edinet-fsa.go.jp/" in all_text
+    assert "api.edinet-fsa.go.jp" not in all_text
+    # The new instruction supplies the filing-specific context that link
+    # alone cannot: issuer, 4-digit securities code (never the padded
+    # "40630"), filing type, filed date, and document ID.
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" in all_text
+    assert "Shin-Etsu Chemical Co., Ltd." in all_text
+    assert "securities code 4063" in all_text
+    assert "40630" not in all_text
+    assert "filed Sep 4, 2026" in all_text
+    assert "document ID S100Z0ID" in all_text
+
+
+def test_edgar_and_dart_rows_show_no_edinet_instruction(tmp_path):
+    _seed_filing_event(tmp_path, _dart_filing(), "dart_filing_events.json")
+    _seed_filing_event(tmp_path, _edgar_filing(), "edgar_filing_events.json")
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" not in all_text

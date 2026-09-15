@@ -18,7 +18,7 @@ from streamlit.testing.v1 import AppTest
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.container import get_repositories
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
+from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, Translation
 from src.models.theme_research import (
     EvidenceDirection,
     ResearchTheme,
@@ -299,6 +299,64 @@ def test_priority_signals_has_no_demo_or_sample_wording(tmp_path, monkeypatch):
     priority_chunk = all_text[priority_start : priority_start + 2000]
     for word in _MOCK_WORDS:
         assert word not in priority_chunk.lower()
+
+
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — priority_signal_row's
+# title is already possibly-translated (signal_promotion._title); for
+# EDINET, an unlabeled translated title reads as a description rather
+# than a translated title. A native-title caption, explicitly labeled,
+# is added underneath for EDINET only.
+# ============================================================
+
+
+def test_priority_signals_edinet_title_is_labeled_as_a_translation(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", source_name="EDINET",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        retrieved_at="2026-09-04T01:00:00+00:00", original_language="Japanese", theme_slug="ai-buildout",
+    )
+    candidate = CandidateSignal(
+        id="edinet-cand-title-label", filing=filing, matched_rules=["share_buyback_status:010:170000:220"],
+        confidence="High", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="自己株券買付状況報告書の記載内容です。",
+        title_translation=Translation(
+            translated_text="Status Report of Purchase of Own Shares", provider="DeepL",
+            source_lang="ja", target_lang="en", translated_at="2026-09-04T01:00:00+00:00",
+        ),
+        state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at="2026-09-04T00:00:00+00:00")],
+    )
+    backend_factory.get_candidate_repository(settings, "EDINET").upsert_new_candidates([candidate])
+    _patch_dashboard_settings(monkeypatch, settings)
+
+    at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
+    at.run()
+    assert not at.exception
+    all_text = _main_text(at)
+
+    assert "Radar Signals" in all_text
+    assert "Status Report of Purchase of Own Shares" in all_text  # the (translated) title heading, unchanged
+    assert "Title translation. Original:" in all_text
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title now retained
+
+
+def test_priority_signals_edgar_title_shows_no_translation_label(tmp_path, monkeypatch):
+    """EDGAR never requests a translation, so title_translated is always
+    empty — this task's title-labeling fix must never add wording for a
+    source that never carries a translation."""
+    settings = _settings(tmp_path)
+    _seed_real_signal(settings, corp_name="Apple Inc.")
+    _patch_dashboard_settings(monkeypatch, settings)
+
+    at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
+    at.run()
+    assert not at.exception
+    all_text = _main_text(at)
+    assert "Title translation." not in all_text
 
 
 # ============================================================

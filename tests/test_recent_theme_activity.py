@@ -390,3 +390,52 @@ def test_dashboard_other_sections_still_render(tmp_path):
     all_text = _text(at)
     assert "Recently Updated" in all_text
     assert "Regional Brief" in all_text
+
+
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — compact-tier: native
+# title/curated type label plus the 4-digit securities code, no
+# CandidateSignal or new data path.
+# ============================================================
+
+
+def test_dashboard_recent_theme_activity_edinet_row_shows_curated_label_and_4_digit_code(tmp_path):
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_name="EDINET", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        original_language="Japanese", theme_slug="ai-buildout", filed_at=_now_iso(timedelta(days=1)),
+    )
+    _seed_filing_event(tmp_path, filing, "edinet_filing_events.json")
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+
+    rta_start = all_text.index("Recent Theme Activity")
+    chunk = all_text[rta_start:rta_start + 600]
+    assert "Shin-Etsu Chemical Co., Ltd. (4063)" in chunk  # 4-digit, never the padded "40630"
+    assert "Status Report of Purchase of Own Shares" in chunk  # curated triplet mapping
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in chunk  # native title retained
+
+
+def test_dashboard_recent_theme_activity_edgar_row_shows_no_edinet_enrichment(tmp_path):
+    filing = FilingEvent(
+        rcept_no="0000320193-26-000099", corp_code="0000320193", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="Test 8-K Filing", rcept_dt="2026-09-05", flr_nm="NVIDIA",
+        source_name="SEC EDGAR", source_url="https://example.invalid/filing", theme_slug="ai-buildout",
+        filed_at=_now_iso(timedelta(days=1)),
+    )
+    _seed_filing_event(tmp_path, filing, "edgar_filing_events.json")
+    settings = _settings(tmp_path)
+
+    at = _run_dashboard(settings)
+    assert not at.exception
+    all_text = _text(at)
+
+    rta_start = all_text.index("Recent Theme Activity")
+    chunk = all_text[rta_start:rta_start + 600]
+    assert "NVIDIA (" not in chunk  # no appended securities code for a non-EDINET row

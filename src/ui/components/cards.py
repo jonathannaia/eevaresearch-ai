@@ -13,6 +13,7 @@ import html
 
 import streamlit as st
 
+from src.logic import filing_display
 from src.logic.evidence import source_label
 from src.logic.formatting import fmt_date, fmt_pct
 from src.logic.market_map import jurisdiction_for_source
@@ -42,6 +43,25 @@ def _safe_url(url: object) -> str | None:
     if lowered.startswith("https://") or lowered.startswith("http://"):
         return stripped
     return None
+
+
+def _edinet_display_exchange_symbol(signal: Signal) -> str | None:
+    """EDINET filing-source usability fix (design/
+    EDINET_FILING_SOURCE_USABILITY_DESIGN.md): signal.exchange_symbol is
+    built by signal_promotion.py as "{exchange}:{krx_code}" — for an
+    EDINET signal, krx_code is EDINET's own padded 5-character internal
+    code (src/config/tracked_companies.py's own convention), shown here
+    with that code converted to the public 4-digit form instead.
+    EDGAR/DART pass through unchanged (this task's scope is EDINET
+    usability only). A pure render-time display transform — never
+    touches Signal itself or signal_promotion.py's own promotion-time
+    computation."""
+    if signal.source_name != filing_display.EDINET_SOURCE_NAME or not signal.exchange_symbol:
+        return signal.exchange_symbol
+    exchange, sep, code = signal.exchange_symbol.partition(":")
+    if not sep:
+        return signal.exchange_symbol
+    return f"{exchange}:{filing_display.edinet_display_securities_code(code)}"
 
 
 def _display_theme_name(signal: Signal, theme_name: str | None) -> str:
@@ -174,7 +194,7 @@ def signal_card(
                 # source name/date copied verbatim from the filing, never
                 # inferred. Empty for every demo signal. exchange_symbol
                 # only appears on an exact tracked-company registry match.
-                identity = f"{signal.issuer} · {signal.exchange_symbol}" if signal.exchange_symbol else signal.issuer
+                identity = f"{signal.issuer} · {_edinet_display_exchange_symbol(signal)}" if signal.exchange_symbol else signal.issuer
                 jurisdiction = jurisdiction_for_source(signal.source_name)
                 source_label_text = f"{signal.source_name} · {jurisdiction}" if jurisdiction else signal.source_name
                 st.markdown(
@@ -251,7 +271,17 @@ def signal_card(
             # design/DECISIONS.md) — the Company page these used to link
             # to had no live real data and was removed; there is no
             # per-ticker detail route to link to today.
-            tickers = ", ".join(signal.related_tickers)
+            # EDINET filing-source usability fix (design/
+            # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): for an EDINET
+            # signal, related_tickers holds the padded 5-character
+            # internal EDINET code (signal_promotion.py's own
+            # [filing.stock_code]) — shown here as the public 4-digit
+            # code instead. EDGAR/DART tickers pass through unchanged.
+            display_tickers = (
+                [filing_display.edinet_display_securities_code(t) for t in signal.related_tickers]
+                if signal.source_name == filing_display.EDINET_SOURCE_NAME else signal.related_tickers
+            )
+            tickers = ", ".join(display_tickers)
             st.markdown(f'<div class="er-muted" style="font-size:0.78rem;">Related: {tickers}</div>', unsafe_allow_html=True)
         # EDINET-safety fix (design/DECISIONS.md): public_source_url()
         # rewrites a raw, key-required EDINET API URL to the public
@@ -341,11 +371,25 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
             st.markdown(f'<div style="margin-top:0.15rem;">{marker}</div>', unsafe_allow_html=True)
         with row[1]:
             tag_line = signal.theme_slug + (f" / {signal.subtheme_slug}" if signal.subtheme_slug else "")
-            st.markdown(
+            title_html = (
                 f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {_esc(signal.title)}</div>'
-                f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>',
-                unsafe_allow_html=True,
+                f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>'
             )
+            # EDINET filing-source usability fix (design/
+            # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): signal.title
+            # above is already the stored translation when one exists
+            # (signal_promotion._title) — shown bare and unlabeled, it
+            # can read as a description of the filing rather than a
+            # translation of its title. For an EDINET signal, the native
+            # title is added underneath and explicitly labeled as a
+            # title translation. EDGAR/DART are unchanged (this task's
+            # scope is EDINET usability only).
+            if signal.source_name == filing_display.EDINET_SOURCE_NAME and signal.title_translated:
+                title_html += (
+                    f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">'
+                    f'Title translation. Original: {_esc(signal.title_native)}</div>'
+                )
+            st.markdown(title_html, unsafe_allow_html=True)
             jurisdiction = jurisdiction_for_source(signal.source_name)
             provenance = [p for p in (signal.issuer, jurisdiction, signal.source_name) if p]
             if signal.last_updated:

@@ -98,6 +98,7 @@ from src.data_access import backend_factory
 from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
+from src.logic import filing_display
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
@@ -166,6 +167,15 @@ class _Row:
     # Stable per-row cache/session key — the filing's own (source_name,
     # corp_code, rcept_no) dedup key for a filing row; None for Daily News.
     translation_document_id: str | None = None
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — additive, EDINET-only;
+    # None for every non-EDINET filing row and every Daily News row. A
+    # filing-specific EDINET-portal instruction (issuer, 4-digit
+    # securities code, filing type/title, filed date, document ID),
+    # shown next to "View source ↗" whenever that link resolves to the
+    # bare, non-specific EDINET portal homepage rather than a real
+    # per-document URL.
+    edinet_instruction: str | None = None
 
 
 def _esc(value: object) -> str:
@@ -266,6 +276,10 @@ def _load_filing_rows(settings: Settings, now: datetime) -> list[_Row]:
                 source_url=public_source_url(filing.source_url) or None,
                 original_language=filing.original_language,
                 translation_document_id=f"recently-updated:{filing.source_name}:{filing.corp_code}:{filing.rcept_no}",
+                edinet_instruction=(
+                    filing_display.edinet_source_instruction(filing, candidate, _filing_display_date(filing))
+                    if filing.source_name == filing_display.EDINET_SOURCE_NAME else None
+                ),
             ))
     return rows
 
@@ -486,6 +500,19 @@ def _render_row(row: _Row, settings: Settings) -> None:
             f'<div class="er-row" style="display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap;">'
             f"{content_html}"
             f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): "View source ↗" above
+    # resolves to the bare EDINET portal homepage, never a per-document
+    # URL (see src.logic.source_link.public_source_url) — this
+    # filing-specific instruction carries the context a reader needs to
+    # actually find the filing there. None/absent for every non-EDINET
+    # row, so this is a no-op for EDGAR/DART/Daily News.
+    if row.edinet_instruction:
+        st.markdown(
+            f'<div class="er-muted" style="font-size:0.76rem; margin-top:0.2rem;">{_esc(row.edinet_instruction)}</div>',
             unsafe_allow_html=True,
         )
 
