@@ -558,3 +558,65 @@ def test_official_filing_reference_omits_absent_fields():
     )
     reference = filing_display.official_filing_reference(filing, None)
     assert reference == "Provider: EDINET"
+
+
+# ============================================================
+# G: review_needed — the "Review needed" badge's pure predicate
+# ============================================================
+
+
+def test_review_needed_is_false_for_a_normal_dart_filing_with_both_identifiers():
+    filing = _dart_filing("신규시설투자등 결정")
+    flag = filing_display.review_needed(filing)
+    assert flag.flagged is False
+    assert flag.reason is None
+
+
+def test_review_needed_is_false_for_a_normal_edinet_filing_with_both_identifiers():
+    filing = _edinet_filing("臨時報告書", pblntf_ty="053000", pblntf_detail_ty="180", ordinance_code="010")
+    assert filing_display.review_needed(filing).flagged is False
+
+
+def test_review_needed_is_false_for_a_normal_edgar_filing():
+    filing = _edgar_filing("10-K")
+    assert filing_display.review_needed(filing).flagged is False
+
+
+def test_review_needed_flags_a_missing_issuer_code():
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="", corp_name="Ambiguous Issuer Co.", stock_code="40630",
+        report_nm="臨時報告書", rcept_dt="2026-09-04", flr_nm="Ambiguous Issuer Co.",
+        retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    flag = filing_display.review_needed(filing)
+    assert flag.flagged is True
+    assert flag.reason == "missing_issuer_code"
+
+
+def test_review_needed_flags_a_missing_exchange_ticker():
+    filing = FilingEvent(
+        rcept_no="20260812000001", corp_code="00126380", corp_name="Ambiguous Issuer Co.", stock_code="",
+        report_nm="신규시설투자등 결정", rcept_dt="20260812", flr_nm="Ambiguous Issuer Co.", retrieved_at=_now_iso(),
+    )
+    flag = filing_display.review_needed(filing)
+    assert flag.flagged is True
+    assert flag.reason == "missing_exchange_ticker"
+
+
+def test_review_needed_flags_both_identifiers_missing_with_the_combined_reason():
+    filing = FilingEvent(
+        rcept_no="X", corp_code="", corp_name="Ambiguous Issuer Co.", stock_code="",
+        report_nm="Unresolved Filing", rcept_dt="2026-09-04", flr_nm="Ambiguous Issuer Co.",
+        retrieved_at=_now_iso(),
+    )
+    flag = filing_display.review_needed(filing)
+    assert flag.flagged is True
+    assert flag.reason == "missing_issuer_code_and_ticker"
+
+
+def test_review_needed_treats_whitespace_only_identifiers_as_missing():
+    filing = FilingEvent(
+        rcept_no="X", corp_code="   ", corp_name="Ambiguous Issuer Co.", stock_code="40630",
+        report_nm="臨時報告書", rcept_dt="2026-09-04", flr_nm="Ambiguous Issuer Co.", retrieved_at=_now_iso(),
+    )
+    assert filing_display.review_needed(filing).flagged is True

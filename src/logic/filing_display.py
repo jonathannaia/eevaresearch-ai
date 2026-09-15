@@ -25,6 +25,7 @@ None of these three call each other or `extractive_summary`/
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from src.data_access.edgar.edgar_rules import normalize_form_type
 from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
@@ -578,3 +579,61 @@ def metadata_only_summary(filing: FilingEvent, display_title_text: str, filed_la
     if filed_label:
         return f"{company} filed {display_title_text} on {filed_label}."
     return f"{company} filed {display_title_text}."
+
+
+# ============================================================
+# G: "Review needed" badge (design/DECISIONS.md)
+# ============================================================
+#
+# Deliberately narrow scope, grounded in a real architectural audit, not
+# a new identity-resolution/admission system: every tracked-company
+# code-resolution path in this codebase (dart/corp_code_resolver.py,
+# edinet/edinet_code_resolver.py, edgar/cik_resolver.py) already excludes
+# a company ENTIRELY — never scanned, never a FilingEvent — the moment
+# its own identifier can't be resolved unambiguously (a zero match or an
+# "ambiguous multi-match" is left unresolved, not guessed). Company
+# Discovery's own separate QUARANTINED status (entity_resolution.py, for
+# the Simmtech-style parent/subsidiary case) works the same way: a
+# quarantined candidate never becomes a tracked company, so it never
+# reaches Radar either. Both of the literal trigger cases this badge was
+# originally scoped around are therefore, by this app's own existing
+# design, already impossible to reach a real FilingEvent/CandidateSignal
+# — not a gap this badge fixes, a property of the fail-closed resolution
+# architecture that predates it.
+#
+# The one trigger that CAN genuinely vary per already-persisted
+# FilingEvent, with no new resolution/scoring/admission logic and no
+# change to what gets scanned: this specific record's own stored
+# corp_code (issuer code) or stock_code (exchange/ticker) is blank.
+# Every entry in tracked_companies.py has both fields populated by
+# construction, and every resolver above excludes rather than proceeds
+# on an unresolved code, so this is a real, currently-dormant safety net
+# against a future/imported/malformed record — never a rendering
+# artifact, never a manual toggle, never a change to what gets
+# published. A "review needed" filing is still fully published,
+# displayed, and readable exactly like any other — this is advisory
+# metadata only.
+REVIEW_NEEDED_TOOLTIP = "Issuer or role unresolved. Evidence collected, mapping under review."
+
+
+@dataclass(frozen=True)
+class ReviewNeededFlag:
+    flagged: bool
+    reason: str | None = None  # "missing_issuer_code" | "missing_exchange_ticker" | "missing_issuer_code_and_ticker"
+
+
+def review_needed(filing: FilingEvent) -> ReviewNeededFlag:
+    """Pure, deterministic, no I/O — reads only two fields FilingEvent
+    already stores. See this section's own module-level comment above
+    for the full architectural rationale (why this is the one legitimate
+    trigger, and why issuer-identity ambiguity and discovery-quarantine
+    cases cannot reach this function's input at all today)."""
+    missing_issuer_code = not (filing.corp_code or "").strip()
+    missing_ticker = not (filing.stock_code or "").strip()
+    if missing_issuer_code and missing_ticker:
+        return ReviewNeededFlag(True, "missing_issuer_code_and_ticker")
+    if missing_issuer_code:
+        return ReviewNeededFlag(True, "missing_issuer_code")
+    if missing_ticker:
+        return ReviewNeededFlag(True, "missing_exchange_ticker")
+    return ReviewNeededFlag(False, None)
