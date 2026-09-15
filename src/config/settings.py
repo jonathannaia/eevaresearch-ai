@@ -36,6 +36,17 @@ def _parse_beta_allowed_emails(var_name: str) -> frozenset[str]:
     return frozenset(email for email in (part.strip().lower() for part in raw.split(",")) if email)
 
 
+def _parse_source_id_allowlist(var_name: str) -> frozenset[str]:
+    """Same shape as _parse_beta_allowed_emails above (comma-separated,
+    stripped, lowercased, empty/blank entries dropped) — reused for a
+    different allow-list: Daily News gated market-news source_ids (see
+    source_registry.GATED_MARKET_NEWS_SOURCE_REGISTRY). Absent/blank env
+    var -> empty frozenset -> every gated source stays dormant, matching
+    every other allow-list on this class."""
+    raw = os.getenv(var_name) or ""
+    return frozenset(source_id for source_id in (part.strip().lower() for part in raw.split(",")) if source_id)
+
+
 @dataclass(frozen=True)
 class Settings:
     app_version: str = APP_VERSION
@@ -199,6 +210,24 @@ class Settings:
     )
     edinet_filing_candidate_shadow_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_EDINET_FILING_CANDIDATE_SHADOW_ENABLED")
+    )
+    # Gated market-news source expansion (design/DECISIONS.md) — the
+    # single allow-list gate for src.data_access.daily_news.
+    # source_registry.GATED_MARKET_NEWS_SOURCE_REGISTRY (currently:
+    # Light Reading, source_id "light-reading-rss"). Comma-separated
+    # source_ids; absent/blank -> empty frozenset -> every gated source
+    # stays completely dormant (see market_news_sources.
+    # enabled_gated_sources() — zero entries means the real worker never
+    # fetches, matches, classifies, or persists anything for that
+    # source). This is also, deliberately, the one and only "production-
+    # ready switch" for turning a specific gated source's real
+    # persistence on — there is no separate master boolean, since a
+    # per-source allow-list already satisfies "off by default, on only
+    # for exactly the source(s) named." Does not affect any of the 36
+    # sources in EDITORIAL_SOURCE_REGISTRY, which remain unconditionally
+    # polled exactly as before this flag existed.
+    daily_news_enabled_market_news_sources: frozenset[str] = field(
+        default_factory=lambda: _parse_source_id_allowlist("EDGE_DAILY_NEWS_ENABLED_SOURCES")
     )
     cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cache")
     # Durable-State Phase 1 (dormant — see src/data_access/state_db/).

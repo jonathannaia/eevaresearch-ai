@@ -70,6 +70,10 @@ _MAX_EXCERPT_CHARS = 400
 _PER_SOURCE_CAP = 5  # enforced both at persistence time (run_editorial_discovery) and display time (select_visible_editorial_stories)
 _TOTAL_DISPLAY_CAP = 20
 _FRESHNESS_WINDOW_HOURS = 72
+# Controlled dry-run harness (design/DECISIONS.md) — bounds
+# EditorialScanReport.admitted_examples/rejected_examples; a reporting
+# sample size only, never a gate/cap on what actually qualifies.
+_DRY_RUN_SAMPLE_SIZE = 5
 
 # Government / Public Sector Daily News lane (design/DECISIONS.md) — see
 # this module's own docstring for why these are two named, hardcoded
@@ -125,6 +129,16 @@ class EditorialScanReport:
     items_capped: int  # qualified (passed every gate) but excluded by the 5-per-feed persistence cap this run
     stories_published: int  # newly persisted this run
     source_failures: dict[str, str]  # source_id -> sanitized failure_code
+    # Controlled dry-run harness (design/DECISIONS.md) — populated ONLY
+    # when run_editorial_discovery(dry_run=True); empty tuples for every
+    # normal (non-dry-run) call, including every existing production
+    # worker tick, which never sets dry_run and never reads these two
+    # fields. A small, bounded sample (see _DRY_RUN_SAMPLE_SIZE) of
+    # admitted headlines and (rejected headline, reason) pairs — reuses
+    # the exact same admission/materiality reasons this module already
+    # computes for every item, never a separate/duplicated gate.
+    admitted_examples: tuple[str, ...] = ()
+    rejected_examples: tuple[tuple[str, str], ...] = ()
 
 
 def _story_id(canonical_link: str) -> str:
@@ -194,11 +208,22 @@ def run_editorial_discovery(
     cache_dir: Path,
     source_entries: tuple[DailyNewsSourceEntry, ...] = EDITORIAL_SOURCE_REGISTRY,
     editorial_repository: "EditorialStoryRepositoryProtocol | None" = None,
+    dry_run: bool = False,
 ) -> EditorialScanReport:
     """One bounded discovery run across every configured editorial feed.
     One source's fetch failure is isolated (recorded in source_failures)
     and never blocks the others — same discipline as
-    daily_news_pipeline.run_discovery()."""
+    daily_news_pipeline.run_discovery().
+
+    `dry_run` (default False — controlled dry-run harness, design/
+    DECISIONS.md): when True, every real fetch/match/materiality/
+    admission step still runs exactly as normal — the only difference is
+    that the final persistence call (editorial_story_store.
+    upsert_new_stories()/editorial_repository.upsert_new_stories()) is
+    skipped. The returned EditorialScanReport's stories_published still
+    reports the count that WOULD have been persisted, for an accurate
+    dry-run summary. Existing callers omitting this parameter are
+    completely unaffected."""
     scan_id = f"editorial-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
     now = datetime.now(timezone.utc)
@@ -223,6 +248,8 @@ def run_editorial_discovery(
     items_capped = 0
     newly_published: list[EditorialStory] = []
     source_failures: dict[str, str] = {}
+    admitted_examples: list[str] = []
+    rejected_examples: list[tuple[str, str]] = []
 
     for source in source_entries:
         fetch_result = rss_atom_client.fetch_entries(source.canonical_url)
@@ -292,6 +319,8 @@ def run_editorial_discovery(
                     continue
             elif not matched_companies and not matched_themes:
                 items_no_match += 1
+                if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
+                    rejected_examples.append((entry.title, "no_qualifying_company_or_theme_match"))
                 continue
             else:
                 admission = assess_admission(
@@ -299,6 +328,8 @@ def run_editorial_discovery(
                 )
                 if not admission.admitted:
                     items_not_subject_relevant += 1
+                    if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
+                        rejected_examples.append((entry.title, admission.reason))
                     continue
 
             # Provisionally registered so a second duplicate of THIS SAME
@@ -332,8 +363,10 @@ def run_editorial_discovery(
                 materiality_tier=materiality_tier, materiality_reasons=materiality_reasons,
             )
             newly_published.append(story)
+            if dry_run and len(admitted_examples) < _DRY_RUN_SAMPLE_SIZE:
+                admitted_examples.append(story.headline)
 
-    if newly_published:
+    if newly_published and not dry_run:
         if editorial_repository is None:
             editorial_story_store.upsert_new_stories(cache_dir, newly_published)
         else:
@@ -346,6 +379,7 @@ def run_editorial_discovery(
         items_no_match=items_no_match, items_not_subject_relevant=items_not_subject_relevant,
         items_duplicate=items_duplicate, items_already_seen=items_already_seen,
         items_capped=items_capped, stories_published=len(newly_published), source_failures=source_failures,
+        admitted_examples=tuple(admitted_examples), rejected_examples=tuple(rejected_examples),
     )
 
 

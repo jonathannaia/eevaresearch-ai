@@ -1203,3 +1203,79 @@ def test_issuer_source_additions_do_not_change_the_registry_derived_editorial_ag
 
     output = capsys.readouterr().out
     assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+
+# ============================================================
+# Gated market-news source expansion (design/DECISIONS.md) — the
+# EDGE_DAILY_NEWS_ENABLED_SOURCES allow-list, combined at the worker's
+# own editorial-tick call site with EDITORIAL_SOURCE_REGISTRY's own
+# always-on 36 sources. See src/data_access/daily_news/
+# market_news_sources.py's own docstring for the full design.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import GATED_MARKET_NEWS_SOURCE_REGISTRY
+
+
+def test_gated_market_news_source_dormant_by_default(tmp_path, monkeypatch, capsys):
+    """Default (empty) allow-list: sources_polled stays exactly
+    len(EDITORIAL_SOURCE_REGISTRY) — no gated source is ever added, and
+    no network call to the gated source's own URL occurs."""
+    call_urls: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_urls.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(tmp_path)
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    gated_urls = {e.canonical_url for e in GATED_MARKET_NEWS_SOURCE_REGISTRY}
+    assert not (gated_urls & set(call_urls))
+
+
+def test_gated_market_news_source_included_when_explicitly_allow_listed(tmp_path, monkeypatch, capsys):
+    """With the gated source's own source_id present in the allow-list,
+    sources_polled grows by exactly the number of gated sources enabled,
+    and a real fetch attempt is made against its own canonical_url."""
+    call_urls: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_urls.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(
+        tmp_path, daily_news_enabled_market_news_sources=frozenset({"light-reading-rss"}),
+    )
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 1}" in output
+    light_reading = next(e for e in GATED_MARKET_NEWS_SOURCE_REGISTRY if e.source_id == "light-reading-rss")
+    assert light_reading.canonical_url in call_urls
+
+
+def test_gated_market_news_allow_list_does_not_affect_unlisted_gated_sources(tmp_path, monkeypatch, capsys):
+    """An allow-list naming an unknown/unrelated source_id enables
+    nothing — never falls back to "enable everything"."""
+    _mock_fetch({}, monkeypatch)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(
+        tmp_path, daily_news_enabled_market_news_sources=frozenset({"some-other-source-not-in-the-gated-registry"}),
+    )
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
