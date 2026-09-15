@@ -207,14 +207,26 @@ def _evaluate_row(row: dict) -> edgar_rules.RuleEvaluation:
     well-formed, via edgar_rules.refine_8k_evaluation — the full
     category+confidence immediately, no document fetch needed. Falls
     back to the coarse evaluate_form_type() classification when `items`
-    is absent/malformed, exactly as before this fix. Every other form
-    type is unaffected — evaluate_form_type() already gives a complete
-    signal for those."""
+    is absent/malformed, exactly as before this fix.
+
+    For 6-K filings (design/DECISIONS.md, "EDGAR foreign-private-issuer
+    20-F/6-K admission", Phase 1), routes to edgar_rules.evaluate_six_k()
+    instead of evaluate_form_type() — 6-K is deliberately never a key in
+    FORM_TYPE_CATEGORIES, so a bare 6-K form type alone can never
+    promote a candidate via the generic path; only a filename that
+    passes evaluate_six_k()'s own fail-closed gate can. See that
+    function's own docstring for the full rationale.
+
+    Every other form type is unaffected — evaluate_form_type() already
+    gives a complete signal for those."""
     form = row.get("form", "")
-    if form.strip().upper() == "8-K":
+    normalized_form = form.strip().upper()
+    if normalized_form == "8-K":
         item_numbers = edgar_rules.parse_items_metadata(row.get("items", ""))
         if item_numbers:
             return edgar_rules.refine_8k_evaluation(item_numbers)
+    elif normalized_form == "6-K":
+        return edgar_rules.evaluate_six_k(row.get("primaryDocument", ""))
     return edgar_rules.evaluate_form_type(form)
 
 
