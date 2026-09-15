@@ -941,3 +941,114 @@ def test_routine_personnel_note_with_no_theme_or_company_also_rejects_upstream()
     )
     assert not companies
     assert not themes
+
+
+# ============================================================
+# Daily News Cohort 1 batch (2026-09-15) — SpaceNews and The Robot
+# Report are both Lane B (INDEPENDENT_NEWS), so the full assess_
+# admission() gate applies to them exactly like every other editorial
+# source, unchanged. These fixtures exercise the real, unmodified
+# admission code against the two new sources' real content shapes
+# (theme-only coverage of a private/untracked company, and coverage
+# naming a tracked issuer by name) — no new admission logic is added by
+# this batch. See design/DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_
+# 2026_09_15.md.
+# ============================================================
+
+
+def test_spacenews_theme_only_item_admitted_without_a_tracked_company():
+    """SpaceNews routinely covers private/untracked companies (e.g.
+    SpaceX). A theme-only item — no tracked company named — is
+    correctly admitted via theme_subject, with zero company attached,
+    exactly matching the existing, unmodified theme-only admission path
+    every other Lane B source already uses."""
+    decision = _assess(
+        "SpaceX prepares for next Starship orbital launch as regulators review permit",
+        None,
+    )
+    assert decision.admitted is True
+    assert decision.reason == "theme_subject:space"
+
+
+def test_robot_report_theme_only_item_admitted_without_a_tracked_company():
+    """The Robot Report routinely covers private/untracked robotics
+    companies (e.g. Agility Robotics — a private-ecosystem entity, not
+    a tracked issuer). Same theme-only admission path as SpaceNews
+    above."""
+    decision = _assess(
+        "Agility Robotics unveils new humanoid robot capabilities for warehouse robotics deployment",
+        None,
+    )
+    assert decision.admitted is True
+    assert decision.reason == "theme_subject:humanoids"
+
+
+def test_spacenews_item_naming_firefly_aerospace_admitted_as_company_subject():
+    """Cross-lane overlap fixture (design's own §2/§1.3 risk note):
+    Firefly Aerospace has its own Lane A newsroom feed AND may be
+    independently covered by SpaceNews (Lane B) — this proves the
+    shared entity-resolution/admission machinery both lanes' output
+    flows through identifies Firefly Aerospace identically regardless
+    of which lane the coverage came from, the necessary precondition
+    for select_canonical_stories()'s existing cross-source
+    canonicalization to correctly treat the two as the same story."""
+    decision = _assess(
+        "Firefly Aerospace Signs Contract with SSC Space for Two Alpha Launches from Esrange Space Center",
+        None,
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Firefly Aerospace Inc."
+
+
+def test_spacenews_item_naming_l3harris_admitted_as_company_subject_without_a_space_theme_match():
+    """Cross-lane overlap fixture, paired with the L3Harris non-space-
+    tagging proof below: a real L3Harris headline shape (proximity-
+    sensor production, not literally a `space`-theme phrase) is
+    correctly identified as an L3Harris story via title placement alone
+    (L3Harris is not an ambiguous-alias company — see
+    _AMBIGUOUS_ALIAS_COMPANIES) — matched_themes is empty here, proving
+    company identification never depends on a space-theme keyword
+    match."""
+    companies, themes = matched_companies_and_themes(
+        "L3Harris Technologies Advances Production of Proximity Sensors for US Air Force", None,
+    )
+    assert companies == ("L3Harris Technologies, Inc.",)
+    assert themes == ()  # no `space` theme phrase in this headline — confirmed, not assumed
+    decision = _assess(
+        "L3Harris Technologies Advances Production of Proximity Sensors for US Air Force", None,
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:L3Harris Technologies, Inc."
+
+
+def test_l3harris_non_space_content_gets_no_theme_tag_from_source_or_issuer_association_alone():
+    """The exact requirement this design's own scope targets: L3Harris's
+    own registry entry carries no `space` theme field (DailyNewsSourceEntry
+    has no such field at all — themes are never stored per-source), and
+    this codebase's shared matched_companies_and_themes() only ever
+    attaches a theme when one of THEME_KEYWORDS' own narrow, approved
+    compound phrases is literally present in the item's own text — never
+    because the company itself happens to carry a `space` tag in
+    tracked_companies.py. A real, non-space L3Harris press release
+    (proximity sensors, not launch/satellite/spacecraft language) is
+    proof: matched_themes is empty, confirming no "Space Signal" ever
+    gets attached to this story purely from L3Harris's own issuer-level
+    theme association."""
+    _, themes = matched_companies_and_themes(
+        "L3Harris Technologies Advances Production of Proximity Sensors for US Air Force", None,
+    )
+    assert "space" not in themes
+    assert themes == ()
+
+
+def test_robot_report_item_naming_yaskawa_admitted_as_company_subject():
+    """Cross-lane overlap fixture: Yaskawa has its own Lane A newsroom
+    feed AND may be independently covered by The Robot Report (Lane B)
+    — same cross-lane identity-resolution proof as the Firefly/SpaceNews
+    fixture above, for the humanoids theme's own overlap pair."""
+    decision = _assess(
+        "YASKAWA Electric launches new collaborative robot MOTOMAN-HC12",
+        None,
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:YASKAWA Electric Corporation"
