@@ -11,10 +11,12 @@ file's own equivalent fixture convention."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 from src.data_access.daily_news import daily_news_pipeline, daily_news_store, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource
 from src.data_access.daily_news.rss_atom_client import FeedFetchResult, RawFeedEntry
+from src.data_access.translation.interfaces import TranslationApiError
 from src.models.daily_news_models import NewsMaterialityTier, NewsStoryStatus
 
 _NVDA_SOURCE = DailyNewsFeedSource(
@@ -26,6 +28,52 @@ _INTEL_SOURCE = DailyNewsFeedSource(
     company_name="Intel Corp.", feed_url="https://newsroom.intel.com/feed",
     feed_format="rss", canonical_domains=("newsroom.intel.com",),
 )
+
+# Dashboard/Signals quality fix (design/DASHBOARD_SIGNAL_QUALITY_FIX_
+# DESIGN.md) — English and French first-party Meta sources, same
+# company, same canonical domain, differing only by declared language
+# and feed path (mirroring the real meta-ir-rss/meta-newsroom-rss
+# shape: two real, currently-registered English Meta sources already
+# share one company_name today).
+_META_EN_SOURCE = DailyNewsFeedSource(
+    company_name="Meta Platforms, Inc.", feed_url="https://about.fb.com/news/feed/",
+    feed_format="rss", canonical_domains=("about.fb.com",), language="English",
+)
+_META_FR_SOURCE = DailyNewsFeedSource(
+    company_name="Meta Platforms, Inc.", feed_url="https://about.fb.com/fr/news/feed/",
+    feed_format="rss", canonical_domains=("about.fb.com",), language="French",
+)
+
+
+class _FakeTranslationProvider:
+    """Deterministic, dict-keyed fake — returns a fixed translation per
+    exact input text (falling back to the input unchanged for any text
+    not in the map), so a test controls exactly what a "translation"
+    produces without any real DeepL/network call. `calls` records every
+    text actually sent to `.translate()`, so a test can assert a
+    translation was never attempted when no plausible match exists."""
+
+    name = "DeepL"
+
+    def __init__(self, translations: dict[str, str]):
+        self._translations = translations
+        self.calls: list[str] = []
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        self.calls.append(text)
+        return self._translations.get(text, text)
+
+
+class _FailingTranslationProvider:
+    """Always raises — simulates translation being unavailable (no
+    network, rate limit, etc.), proving the localization check degrades
+    to "keep both items" rather than ever comparing raw untranslated
+    text."""
+
+    name = "DeepL"
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        raise TranslationApiError("network", "simulated failure")
 
 
 def _entry(
@@ -1105,3 +1153,382 @@ def test_classification_never_changes_which_items_are_admitted(tmp_path, monkeyp
     assert report.stories_published == 1
     story = next(iter(daily_news_store.load_stories(tmp_path).values()))
     assert story.materiality_tier == NewsMaterialityTier.BACKGROUND
+
+
+# ============================================================
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — cross-language localized-
+# duplicate suppression (Meta English/French "Meta One") and correct
+# non-English source-language classification.
+# ============================================================
+
+
+def test_french_source_language_is_correctly_classified_not_mislabeled_english(tmp_path, monkeypatch):
+    """Root-cause fix: a Latin-script non-English source (French) must
+    never be labeled "English" — the prior heuristic could only detect
+    CJK/Hangul script and defaulted everything else, including French,
+    to "English"."""
+    _mock_fetch({
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_FR_SOURCE,))
+
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.sources[0].original_language == "French"
+
+
+def test_localized_french_duplicate_is_suppressed_when_english_already_exists_same_run(tmp_path, monkeypatch):
+    """The exact reported fixture: Meta's English and French "Meta One"
+    announcement pages, published as localized versions of the same
+    company event, both first-party. Only the English/global version
+    should remain a separate visible story."""
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({"Meta lance Meta One": "Meta Launches Meta One"})
+
+    report = daily_news_pipeline.run_discovery(
+        tmp_path, feed_sources=(_META_EN_SOURCE, _META_FR_SOURCE), translation_provider=provider,
+    )
+
+    assert report.stories_published == 1
+    stories = daily_news_store.load_stories(tmp_path)
+    assert len(stories) == 1
+    story = next(iter(stories.values()))
+    assert story.sources[0].original_language == "English"
+    assert any(
+        reason.startswith("Localized duplicate of https://about.fb.com/news/meta-one")
+        for _, _, reason in report.suppressed_items
+    )
+
+
+def test_english_arriving_after_french_is_preferred_and_french_recorded_as_superseded(tmp_path, monkeypatch):
+    """Reverse discovery order: the French/localized page is discovered
+    FIRST, and the English/global page is found later, within the valid
+    duplicate window. The English item must be preferred; the French
+    alternate is recorded as superseded (traceability), never silently
+    deleted — its own full record stays in the store, just excluded from
+    the canonical display selection."""
+    _mock_fetch({
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({"Meta lance Meta One": "Meta Launches Meta One"})
+    first = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_FR_SOURCE,), translation_provider=provider)
+    assert first.stories_published == 1
+
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_EN_SOURCE,), translation_provider=provider)
+
+    # English is NOT suppressed — both records exist, untouched, in the
+    # raw store (real traceability, not a lossy text-only note).
+    assert second.stories_published == 1
+    stories = daily_news_store.load_stories(tmp_path)
+    assert len(stories) == 2
+    assert any(
+        reason.startswith("Superseded by English/global item https://about.fb.com/news/meta-one")
+        for _, _, reason in second.suppressed_items
+    )
+
+    canonical = daily_news_pipeline.select_canonical_stories(stories, tmp_path)
+    assert len(canonical) == 1
+    assert next(iter(canonical.values())).sources[0].original_language == "English"
+
+
+def test_two_distinct_meta_releases_with_similar_naming_both_persist(tmp_path, monkeypatch):
+    """Two genuinely distinct first-party Meta releases, same language,
+    similar naming — must never collapse. The localization check never
+    even fires here (same declared language on both sides), and the
+    titles are distinct enough that the existing exact-title dedup
+    doesn't collapse them either."""
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(
+                _entry("Meta One Launches Globally", "https://about.fb.com/news/meta-one-launch"),
+                _entry("Meta One Update Adds New Features", "https://about.fb.com/news/meta-one-update"),
+            ),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({})
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_EN_SOURCE,), translation_provider=provider)
+
+    assert report.stories_published == 2
+    assert provider.calls == []
+
+
+def test_ordinary_english_only_story_is_unaffected_and_never_translated(tmp_path, monkeypatch):
+    """A single, ordinary English story with no plausible cross-language
+    match anywhere in the store must never trigger a translation call at
+    all — the structural pre-filter, not the similarity check, is what
+    keeps this cheap."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("NVIDIA Announces Something", "https://nvidianews.nvidia.com/news/announces-something"),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({})
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,), translation_provider=provider)
+
+    assert report.stories_published == 1
+    assert provider.calls == []
+
+
+def test_translation_failure_keeps_both_items_never_compares_raw_untranslated_text(tmp_path, monkeypatch):
+    """If confidence is insufficient (here: the translation call itself
+    fails), both items must be kept — never suppress on a guess."""
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(
+        tmp_path, feed_sources=(_META_EN_SOURCE, _META_FR_SOURCE), translation_provider=_FailingTranslationProvider(),
+    )
+
+    assert report.stories_published == 2
+    assert len(daily_news_store.load_stories(tmp_path)) == 2
+
+
+def test_no_translation_provider_supplied_behaves_exactly_as_before_this_fix(tmp_path, monkeypatch):
+    """Omitted translation_provider (every existing caller before this
+    fix) — the localization check is a complete no-op; both EN/FR items
+    persist exactly as they did before this fix existed."""
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_EN_SOURCE, _META_FR_SOURCE))
+
+    assert report.stories_published == 2
+
+
+# ============================================================
+# Narrow safety/consistency pass (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md follow-up) — render-time purity
+# of select_canonical_stories() and explicit duplicate-visibility
+# invariants.
+# ============================================================
+
+
+def _seed_meta_pair_stories(tmp_path, *, cache_translation: bool):
+    """Seeds an English and a French Meta "Meta One" NewsStory directly
+    into the store (bypassing run_discovery), optionally pre-populating
+    the translation cache exactly the way a prior real discovery run
+    would have — the only way select_canonical_stories can ever see a
+    match, since it never populates the cache itself."""
+    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+
+    now = datetime.now(timezone.utc).isoformat()
+    english = NewsStory(
+        id="newsitem-meta-en", company_name="Meta Platforms, Inc.", ticker="META", theme_slug="ai-buildout",
+        headline="Meta Launches Meta One", eeva_summary=None, is_fallback_summary=False,
+        translation_unavailable=False, original_title=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://about.fb.com/news/meta-one", title="Meta Launches Meta One",
+                published_at=now, retrieved_at=now, original_language="English",
+            ),
+        ),
+        status=NewsStoryStatus.PUBLISHED, state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=now)],
+    )
+    french = NewsStory(
+        id="newsitem-meta-fr", company_name="Meta Platforms, Inc.", ticker="META", theme_slug="ai-buildout",
+        headline="Meta lance Meta One", eeva_summary=None, is_fallback_summary=False,
+        translation_unavailable=False, original_title=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://about.fb.com/fr/news/meta-one", title="Meta lance Meta One",
+                published_at=now, retrieved_at=now, original_language="French",
+            ),
+        ),
+        status=NewsStoryStatus.PUBLISHED, state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=now)],
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [english, french])
+    if cache_translation:
+        from src.data_access.translation import translation_service
+
+        translation_service.translate_cached_with_outcome(
+            _FakeTranslationProvider({"Meta lance Meta One": "Meta Launches Meta One"}),
+            document_id="localization-dedup:Meta Platforms, Inc.:French",
+            text="Meta lance Meta One", cache_dir=tmp_path, source_lang="FR",
+        )
+    return english, french
+
+
+def test_select_canonical_stories_never_calls_the_translation_provider(tmp_path, monkeypatch):
+    """The defining render-time-purity property: select_canonical_
+    stories() must never itself call the translation provider — proven
+    directly by patching translation_service.translate_cached_with_
+    outcome (the ONLY function in this whole app capable of reaching a
+    live TranslationProvider.translate() call) and asserting it is
+    never invoked, for a case that DOES have a cached translation (a
+    real match, resolved via cache only) and separately for a case that
+    does not (kept as two items, still never a live call)."""
+    from src.data_access.translation import translation_service
+
+    # Case 1: translation already cached — a real match is still found,
+    # entirely via the cache, with zero calls to the live-call function.
+    _seed_meta_pair_stories(tmp_path, cache_translation=True)
+    mock_translate = MagicMock()
+    monkeypatch.setattr(translation_service, "translate_cached_with_outcome", mock_translate)
+
+    canonical = daily_news_pipeline.select_canonical_stories(daily_news_store.load_stories(tmp_path), tmp_path)
+
+    mock_translate.assert_not_called()
+    assert len(canonical) == 1  # the match was still found, via cache only
+
+    # Case 2: no cached translation at all — both items kept, and still
+    # zero calls to the live-call function.
+    tmp_path_2 = tmp_path / "uncached"
+    _seed_meta_pair_stories(tmp_path_2, cache_translation=False)
+    mock_translate.reset_mock()
+
+    canonical_uncached = daily_news_pipeline.select_canonical_stories(daily_news_store.load_stories(tmp_path_2), tmp_path_2)
+
+    mock_translate.assert_not_called()
+    assert len(canonical_uncached) == 2
+
+
+def test_uncached_candidate_is_kept_visible_not_incorrectly_suppressed(tmp_path):
+    """A plausible cross-language pair with no cached translation yet
+    (e.g. discovered/persisted since the last real translation) must
+    stay as two fully visible items — "insufficient confidence" always
+    means keep both, never a guess based on structural gates alone."""
+    _seed_meta_pair_stories(tmp_path, cache_translation=False)
+
+    canonical = daily_news_pipeline.select_canonical_stories(daily_news_store.load_stories(tmp_path), tmp_path)
+
+    assert len(canonical) == 2
+    assert {s.sources[0].original_language for s in canonical.values()} == {"English", "French"}
+
+
+def test_confirmed_meta_pair_shows_exactly_one_item_forward_discovery_order(tmp_path, monkeypatch):
+    """English discovered first, French discovered second (forward
+    order) — exactly one item visible via select_canonical_stories,
+    and it is the English/global one."""
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({"Meta lance Meta One": "Meta Launches Meta One"})
+
+    report = daily_news_pipeline.run_discovery(
+        tmp_path, feed_sources=(_META_EN_SOURCE, _META_FR_SOURCE), translation_provider=provider,
+    )
+    stories = daily_news_store.load_stories(tmp_path)
+    canonical = daily_news_pipeline.select_canonical_stories(stories, tmp_path)
+
+    assert report.stories_published == 1  # French never even persisted as a separate story
+    assert len(canonical) == 1
+    visible = next(iter(canonical.values()))
+    assert visible.sources[0].original_language == "English"
+    assert visible.headline == "Meta Launches Meta One"
+
+    # suppressed_items traceability: alternate URL/identifier, language,
+    # canonical target, human-readable reason all present together.
+    matching = [r for _, _, r in report.suppressed_items if r.startswith("Localized duplicate of")]
+    assert len(matching) == 1
+    assert "https://about.fb.com/fr/news/meta-one" not in matching[0]  # the SUPPRESSED item's own URL is the candidate's, not echoed back
+    assert "https://about.fb.com/news/meta-one" in matching[0]  # canonical target URL named
+    assert "(English)" in matching[0]  # canonical target's language named
+
+
+def test_confirmed_meta_pair_shows_exactly_one_item_reverse_discovery_order(tmp_path, monkeypatch):
+    """French discovered first, English discovered second (reverse
+    order) — exactly one item visible via select_canonical_stories,
+    and it is still the English/global one, even though it was
+    discovered/persisted later."""
+    _mock_fetch({
+        _META_FR_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta lance Meta One", "https://about.fb.com/fr/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    provider = _FakeTranslationProvider({"Meta lance Meta One": "Meta Launches Meta One"})
+    daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_FR_SOURCE,), translation_provider=provider)
+
+    _mock_fetch({
+        _META_EN_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry("Meta Launches Meta One", "https://about.fb.com/news/meta-one"),), failure_code=None,
+        ),
+    }, monkeypatch)
+    second = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_META_EN_SOURCE,), translation_provider=provider)
+
+    stories = daily_news_store.load_stories(tmp_path)
+    assert len(stories) == 2  # both records intact in the raw store
+    canonical = daily_news_pipeline.select_canonical_stories(stories, tmp_path)
+
+    assert len(canonical) == 1
+    visible = next(iter(canonical.values()))
+    assert visible.sources[0].original_language == "English"
+    assert visible.headline == "Meta Launches Meta One"
+
+    matching = [r for _, _, r in second.suppressed_items if r.startswith("Superseded by English/global item")]
+    assert len(matching) == 1
+    assert "https://about.fb.com/news/meta-one" in matching[0]  # canonical (English) target URL named
+    assert "(English)" in matching[0]  # canonical target's language named
+
+
+def test_two_distinct_meta_releases_remain_independently_visible_via_select_canonical_stories(tmp_path):
+    """Two genuinely distinct first-party Meta releases (same language)
+    must both remain visible through select_canonical_stories — the
+    language-distinction gate means this check never even considers
+    them a candidate pair."""
+    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _en_story(story_id: str, url: str, headline: str) -> NewsStory:
+        return NewsStory(
+            id=story_id, company_name="Meta Platforms, Inc.", ticker="META", theme_slug="ai-buildout",
+            headline=headline, eeva_summary=None, is_fallback_summary=False,
+            translation_unavailable=False, original_title=None,
+            sources=(
+                NewsSourceReference(
+                    publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                    url=url, title=headline, published_at=now, retrieved_at=now, original_language="English",
+                ),
+            ),
+            status=NewsStoryStatus.PUBLISHED, state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=now)],
+        )
+
+    stories = {
+        "s1": _en_story("s1", "https://about.fb.com/news/meta-one-launch", "Meta One Launches Globally"),
+        "s2": _en_story("s2", "https://about.fb.com/news/meta-one-update", "Meta One Update Adds New Features"),
+    }
+    daily_news_store.upsert_new_stories(tmp_path, list(stories.values()))
+
+    canonical = daily_news_pipeline.select_canonical_stories(stories, tmp_path)
+
+    assert len(canonical) == 2

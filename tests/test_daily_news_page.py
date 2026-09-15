@@ -1172,3 +1172,154 @@ def test_mixed_tier_items_each_render_in_their_own_section_in_one_page(tmp_path)
     assert "NVIDIA files 8-K disclosing material agreement" in markdown_text
     assert "Solo developer gets CUDA running on AMD GPUs" in markdown_text
     assert _NO_HIGH_SIGNAL_EMPTY_STATE not in markdown_text
+
+
+# ============================================================
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — non-English translation
+# control and cross-language localized-duplicate collapsing.
+# ============================================================
+
+
+def _french_story(**overrides) -> NewsStory:
+    published_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    return _story(
+        id="newsitem-meta-fr", company_name="Meta Platforms, Inc.", ticker="META",
+        headline="Meta lance Meta One", eeva_summary=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://about.fb.com/fr/news/meta-one", title="Meta lance Meta One",
+                published_at=published_at, retrieved_at=published_at,
+                original_language="French", excerpt_original=None,
+            ),
+        ),
+        **overrides,
+    )
+
+
+def test_french_item_with_no_translation_shows_explicit_language_and_translate_control(tmp_path):
+    """No translation has been attempted yet — the card must show an
+    explicit source-language indicator and a clearly-labeled Translate
+    control, never silently render as if it were English/untranslated
+    with no signal at all."""
+    daily_news_store.upsert_new_stories(tmp_path, [_french_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    caption_text = " ".join(str(c.value) for c in at.caption)
+    assert "Meta lance Meta One" in markdown_text  # native title, preserved
+    assert "Source language: French" in caption_text
+    assert "Title translation" not in markdown_text  # nothing translated yet
+    translate_buttons = [b for b in at.button if b.label == "Translate"]
+    assert len(translate_buttons) == 1
+
+
+def test_french_item_translate_click_shows_clearly_labeled_title_translation(tmp_path):
+    """Clicking Translate must show the translated headline, explicitly
+    labeled as a title translation, with the native text preserved
+    above it — never presented as source-original text, and never a
+    generated summary/interpretation."""
+    daily_news_store.upsert_new_stories(tmp_path, [_french_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    translate_button = [b for b in at.button if b.label == "Translate"][0]
+    with patch(
+        "src.ui.pages.daily_news.translation_service.translate_cached_with_outcome"
+    ) as mock_translate:
+        from src.data_access.translation.translation_service import TranslationAttempt
+        from src.models.models import Translation
+
+        mock_translate.return_value = TranslationAttempt(
+            translation=Translation(
+                translated_text="Meta Launches Meta One", provider="DeepL",
+                source_lang="fr", target_lang="en", translated_at=datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        translate_button.click()
+        with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+            at.run()
+
+    assert not at.exception
+    mock_translate.assert_called_once()
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Meta lance Meta One" in markdown_text  # native text still preserved
+    assert "Title translation: Meta Launches Meta One" in markdown_text
+
+
+def test_english_item_shows_no_language_indicator_or_translate_control(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    caption_text = " ".join(str(c.value) for c in at.caption)
+    assert "Source language:" not in caption_text
+    assert not any(b.label == "Translate" for b in at.button)
+
+
+def test_meta_english_french_pair_shows_one_preferred_canonical_card(tmp_path):
+    """The Meta English/French localized-release pair, already persisted
+    as two separate NewsStory records (e.g. by a completed discovery
+    run that already translated and cached the French title), must
+    collapse to one visible card on this page — the French alternate
+    stays fully intact in the underlying store, it is simply not
+    rendered here. select_canonical_stories() must read the already-
+    cached translation only — it must never itself call the translation
+    provider during this render (see the render-time-purity test
+    below, which proves this directly at the function level)."""
+    english = _story(
+        id="newsitem-meta-en", company_name="Meta Platforms, Inc.", ticker="META",
+        headline="Meta Launches Meta One", eeva_summary=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://about.fb.com/news/meta-one", title="Meta Launches Meta One",
+                published_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                retrieved_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                original_language="English", excerpt_original=None,
+            ),
+        ),
+    )
+    french = _french_story()
+    daily_news_store.upsert_new_stories(tmp_path, [english, french])
+
+    # Simulate discovery having already translated and cached the
+    # French title (the only way select_canonical_stories can ever see
+    # a match — it never populates the cache itself).
+    from src.data_access.translation import translation_service
+    from src.models.models import Translation
+
+    class _SeedProvider:
+        name = "DeepL"
+
+        def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+            return "Meta Launches Meta One"
+
+    translation_service.translate_cached_with_outcome(
+        _SeedProvider(), document_id="localization-dedup:Meta Platforms, Inc.:French",
+        text="Meta lance Meta One", cache_dir=tmp_path, source_lang="FR",
+    )
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        with patch(
+            "src.ui.pages.daily_news.translation_service.translate_cached_with_outcome"
+        ) as mock_translate_during_render:
+            at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+            at.run()
+
+    assert not at.exception
+    mock_translate_during_render.assert_not_called()
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert markdown_text.count("Meta Launches Meta One") + markdown_text.count("Meta lance Meta One") == 1
+    # The underlying store is untouched — both records still exist.
+    assert len(daily_news_store.load_stories(tmp_path)) == 2

@@ -13,7 +13,16 @@ same way this script does, on its own schedule; none exists yet.
 Never imports anything from src.data_access.dart/edgar/edinet or
 scripts/radar_worker.py. Only prints DailyNewsScanReport's own safe,
 already-sanitized fields — never a raw exception, feed content, or
-credential (this pipeline uses no credentials at all).
+credential. Dashboard/Signals quality fix (design/
+DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): now passes the same shared,
+source-neutral DeepL translation provider EDGAR/DART/EDINET's own
+pilots already use (src.data_access.translation), used only to compare
+a candidate's already-translated title against an existing story when
+deciding whether it is a cross-language localized duplicate of an
+already-published one (see daily_news_pipeline.run_discovery's own
+`translation_provider` parameter) — never for any other purpose here,
+and never a new/separate credential (the same EDGE_TRANSLATION_API_KEY
+every other translation call site already reads).
 
 Editorial Daily News v1 (design/DECISIONS.md): an explicit
 --editorial-only flag, reusing this exact same command, runs
@@ -30,6 +39,7 @@ import sys
 
 from src.config.settings import get_settings
 from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, editorial_pipeline
+from src.data_access.translation.deepl_provider import DeepLProvider
 
 
 def _run_issuer_discovery() -> int:
@@ -39,7 +49,18 @@ def _run_issuer_discovery() -> int:
     # against now follows EDGE_DB_BACKEND like every other repository in
     # this app, instead of being hardcoded to the JSON file.
     repository = daily_news_backend.get_daily_news_repository(settings)
-    report = daily_news_pipeline.run_discovery(settings.cache_dir, daily_news_repository=repository)
+    # Dashboard/Signals quality fix (design/
+    # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — see this module's own
+    # docstring for exactly what this provider is used for. Never raises
+    # if settings.translation_api_key is unset: DeepLProvider's own
+    # constructor never validates the key, and a real translate attempt
+    # then fails closed (caught, treated as "insufficient confidence,
+    # keep both items") — same discipline as every other optional
+    # translation call site in this app.
+    report = daily_news_pipeline.run_discovery(
+        settings.cache_dir, daily_news_repository=repository,
+        translation_provider=DeepLProvider(settings.translation_api_key),
+    )
 
     print(f"Daily News discovery — {report.scan_id}")
     print(f"  sources polled:        {report.sources_polled}")

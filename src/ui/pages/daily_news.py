@@ -102,13 +102,16 @@ story.
 """
 from __future__ import annotations
 
+import html
 from datetime import datetime, timezone
 
 import streamlit as st
 
 from src.config.settings import Settings, get_settings
-from src.data_access.daily_news import daily_news_backend
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
 from src.data_access.daily_news.company_aliases import daily_news_company_names
+from src.data_access.translation import translation_service
+from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.formatting import fmt_datetime_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui.components.editorial_coverage import (
@@ -166,8 +169,20 @@ def _tier_badge_html(tier: NewsMaterialityTier) -> str:
 
 
 def _published_stories(settings: Settings) -> list[NewsStory]:
-    stories = daily_news_backend.get_daily_news_repository(settings).load_stories().values()
-    published = [s for s in stories if s.status == NewsStoryStatus.PUBLISHED]
+    stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+    # Dashboard/Signals quality fix (design/
+    # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): read-time reconciliation
+    # — collapses a cross-language localized-duplicate pair (e.g. an
+    # English/French pair for the same company event) down to its one
+    # preferred (English/global) card. Every story this excludes stays
+    # fully intact in the underlying store; only what this page renders
+    # changes. A no-op whenever no such pair exists in `stories`.
+    # select_canonical_stories() takes no TranslationProvider — it only
+    # ever reads an already-cached translation (translation_service.
+    # get_cached_translation), never triggers a live translation request
+    # during render; see that function's own docstring.
+    canonical = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
+    published = [s for s in canonical.values() if s.status == NewsStoryStatus.PUBLISHED]
     return sorted(published, key=lambda s: s.sources[0].published_at if s.sources else "", reverse=True)
 
 
@@ -238,7 +253,64 @@ def _recent_stories(stories: list[NewsStory], now: datetime | None = None) -> li
     return [s for s in stories if _is_recent(s, now)]
 
 
-def _render_card(story: NewsStory, is_historical: bool = False, tier: NewsMaterialityTier | None = None) -> None:
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — reuses the exact same
+# on-demand, cached, click-triggered translate pattern already proven
+# end-to-end for Dashboard filing rows (recently_updated.py's own
+# _do_translate/_can_translate/session-state convention), extended to
+# this page's issuer-lane headline. Kept as this page's own small,
+# local copy (French added) rather than importing recently_updated.py's
+# private constant — matches this codebase's own established precedent
+# of each component keeping its own copy of a small shared helper (see
+# that module's own docstring for why).
+_LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE: dict[str, str] = {"Korean": "KO", "Japanese": "JA", "French": "FR"}
+
+
+def _can_translate_headline(original_language: str) -> bool:
+    return original_language in _LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE
+
+
+def _translated_headline_key(story_id: str) -> str:
+    return f"signals-translated-headline-{story_id}"
+
+
+def _translate_failed_key(story_id: str) -> str:
+    return f"signals-translate-failed-{story_id}"
+
+
+def _show_translation_key(story_id: str) -> str:
+    return f"signals-show-translation-{story_id}"
+
+
+def _do_translate_headline(story: NewsStory, settings: Settings) -> None:
+    """The one and only place this page ever calls the translation
+    provider — inside a button's on_click handler, never on page load.
+    Translates ONLY the headline/title text (story.headline) — never
+    eeva_summary, never any generated "why it matters" text; a failure
+    is recorded as a concise, non-blocking flag, never raised into the
+    page."""
+    source = story.sources[0]
+    provider = DeepLProvider(settings.translation_api_key)
+    lang_code = _LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE[source.original_language]
+    attempt = translation_service.translate_cached_with_outcome(
+        provider, document_id=f"signals-headline:{story.id}", text=story.headline,
+        cache_dir=settings.cache_dir, source_lang=lang_code,
+    )
+    if attempt.translation is not None:
+        st.session_state[_translated_headline_key(story.id)] = attempt.translation.translated_text
+        st.session_state[_show_translation_key(story.id)] = True
+    else:
+        st.session_state[_translate_failed_key(story.id)] = True
+
+
+def _toggle_show_translation(story_id: str) -> None:
+    key = _show_translation_key(story_id)
+    st.session_state[key] = not st.session_state.get(key, False)
+
+
+def _render_card(
+    story: NewsStory, settings: Settings, is_historical: bool = False, tier: NewsMaterialityTier | None = None,
+) -> None:
     # Text-only layout for every card, regardless of whether a validated
     # image_url/image_alt exists on the story — optional source-image
     # rendering is disabled for now (UI decision; the underlying
@@ -286,6 +358,34 @@ def _render_card(story: NewsStory, is_historical: bool = False, tier: NewsMateri
             st.caption("Translation unavailable — original text shown above.")
         elif story.eeva_summary:
             st.write(story.eeva_summary)
+
+        # Dashboard/Signals quality fix (design/
+        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): a clear source-
+        # language indicator plus an on-demand, clearly-labeled
+        # Translate control for a Latin-script non-English headline
+        # (translation_unavailable/original_title above already handle
+        # the separate, unrelated CJK/Hangul-script case). Never shown
+        # for English content. The translated text — when shown — is
+        # always explicitly labeled "Title translation," a translation
+        # of the headline only, never presented as source-original text
+        # and never turned into a summary/interpretation.
+        if _can_translate_headline(source.original_language):
+            st.caption(f"Source language: {source.original_language}")
+            translated_headline = st.session_state.get(_translated_headline_key(story.id))
+            show_translation = st.session_state.get(_show_translation_key(story.id), False)
+            if translated_headline:
+                if show_translation:
+                    st.markdown(
+                        f'<div class="er-muted" style="font-size:0.82rem;">'
+                        f'Title translation: {html.escape(translated_headline)}</div>',
+                        unsafe_allow_html=True,
+                    )
+                label = "Hide translation" if show_translation else "Show translation"
+                st.button(label, key=f"signals-toggle-translation-{story.id}", on_click=_toggle_show_translation, args=(story.id,))
+            elif st.session_state.get(_translate_failed_key(story.id)):
+                st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable</div>', unsafe_allow_html=True)
+            else:
+                st.button("Translate", key=f"signals-translate-{story.id}", on_click=_do_translate_headline, args=(story, settings))
 
         st.markdown(f"[Read original source →]({source.url})")
 
@@ -413,7 +513,7 @@ def render() -> None:
 
     def _render_item(kind: str, item: NewsStory | EditorialStory, tier: NewsMaterialityTier) -> None:
         if kind == "issuer":
-            _render_card(item, is_historical=issuer_items_are_historical, tier=tier)
+            _render_card(item, settings, is_historical=issuer_items_are_historical, tier=tier)
         else:
             render_editorial_card(item, tier=tier)
 

@@ -138,6 +138,29 @@ def _categorize_failure(exc: TranslationError) -> tuple[str, str, bool]:
     return "unknown", "Translation failed for an unknown reason.", False
 
 
+def get_cached_translation(document_id: str, text: str, cache_dir: Path) -> Translation | None:
+    """Dashboard/Signals quality fix (design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — a pure, read-only cache
+    lookup. Takes no TranslationProvider at all (structurally cannot
+    call one) and never writes to the cache file — returns the already-
+    cached Translation for (document_id, text) if translate_cached_with_
+    outcome() already produced and cached one for this exact pair on a
+    prior call, None otherwise (whether because it was never translated,
+    or cache_dir has no cache file at all). Safe to call from a render-
+    time/read-only code path that must never trigger a live translation
+    request or a network call — see e.g. daily_news_pipeline.
+    select_canonical_stories(), which uses this instead of
+    translate_cached_with_outcome() specifically so Dashboard/Signals
+    rendering can never itself initiate a translation."""
+    if not text:
+        return None
+    cache = _load_cache(cache_dir)
+    cached = cache.get(_cache_key(document_id, text))
+    if cached is None:
+        return None
+    return Translation(**cached)
+
+
 def translate_cached_with_outcome(
     provider: TranslationProvider, document_id: str, text: str, cache_dir: Path, source_lang: str = SOURCE_LANG,
 ) -> TranslationAttempt:

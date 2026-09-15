@@ -72,6 +72,13 @@ class DailyNewsFeedSource:
     # persistence logic, so this carries zero behavioral effect on its
     # own.
     source_id: str = ""
+    # Dashboard/Signals quality fix (design/
+    # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — mirrors
+    # source_registry.DailyNewsSourceEntry.language exactly (see that
+    # field's own docstring). Additive, default-preserving: every
+    # existing direct construction of this dataclass (tests, prior
+    # fixtures) keeps working unchanged, defaulting to "English".
+    language: str = "English"
 
 
 # Derived from source_registry.RUNTIME_SOURCE_REGISTRY — see this

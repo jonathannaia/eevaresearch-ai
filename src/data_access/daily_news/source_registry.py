@@ -202,6 +202,20 @@ class DailyNewsSourceEntry:
     allowed_event_filters: tuple[str, ...] = ()  # optional; empty = no filter (matches today's real behavior)
     image_host: str | None = None  # mirrors DailyNewsFeedSource.image_host exactly — see to_daily_news_feed_source
     notes: str = ""
+    # Dashboard/Signals quality fix (design/
+    # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — a curated, per-source
+    # declared language, the same discipline already used for
+    # attribution_label/jurisdiction/issuer_name (a human-verified fact
+    # about the source, never derived from text). Additive,
+    # default-preserving: every existing entry defaults to "English",
+    # its own real, already-correct language, so no currently-registered
+    # source's behavior changes. Mirrors DailyNewsFeedSource.language
+    # exactly — see to_daily_news_feed_source below. This is the only
+    # reliable signal this app has for a Latin-script non-English source
+    # (e.g. French): the prior mechanism (summary_grounding.py's
+    # non-Latin-script check) can only ever detect CJK/Hangul script,
+    # never a Latin-script language.
+    language: str = "English"
 
 
 def normalize_source_url(url: str) -> str:
@@ -394,6 +408,7 @@ def to_daily_news_feed_source(entry: DailyNewsSourceEntry) -> DailyNewsFeedSourc
         canonical_domains=entry.domains,
         image_host=entry.image_host,
         source_id=entry.source_id,
+        language=entry.language,
     )
 
 

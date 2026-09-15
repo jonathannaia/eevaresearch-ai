@@ -10,6 +10,7 @@ reconstructions run through the real, unmodified admission code, not a
 literal production pull."""
 from __future__ import annotations
 
+from src.data_access.daily_news import editorial_admission
 from src.data_access.daily_news.editorial_admission import AdmissionDecision, assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
@@ -664,3 +665,121 @@ def test_genuine_product_launch_with_real_dollar_pricing_is_still_admitted():
     )
     assert decision.admitted is True
     assert decision.reason == "company_subject:NVIDIA"
+
+
+# ============================================================
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — consumer-retail/scalper
+# purchase-guide false positive (the Asus RTX 5090 anniversary bundle),
+# and positive controls proving the new lexicon never suppresses
+# genuine enterprise NVIDIA coverage.
+# ============================================================
+
+
+def test_asus_rtx_5090_anniversary_bundle_scalper_story_fails_admission():
+    """The exact reported case: a Tom's Hardware consumer purchase-guide
+    article about Asus' RTX 5090 anniversary bundle — "cheapest way to
+    buy," a $10,850 bundle price, retail scarcity, and scalper-listing
+    price comparisons. Pure consumer retail/purchase-guide content, no
+    corporate/data-center/supply-chain/earnings/capex/contract/
+    enterprise-demand substance anywhere in the text — must fail
+    admission entirely, never merely demote to Background."""
+    decision = _assess(
+        "Asus' Nvidia RTX 5090 20th Anniversary Bundle: Here's the Cheapest Way to Buy One Right Now",
+        "Retailers are listing the $10,850 bundle amid retail scarcity, with scalpers relisting units "
+        "well above MSRP on resale marketplaces — here's where to buy it while it's still in stock "
+        "before it sells out again.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
+
+
+def test_semantically_equivalent_consumer_bundle_story_from_a_different_retailer_also_fails_admission():
+    """The rule must cover semantically equivalent consumer bundle/
+    scalper/retailer content generally, not only the exact literal
+    headline/URL of the reported fixture — a different retailer, a
+    different consumer GPU model, and different phrasing of the same
+    underlying shape."""
+    decision = _assess(
+        "Where to Buy the Nvidia RTX 5080 Launch Bundle Before It's Sold Out",
+        "Best Buy and other retailers have the Nvidia RTX 5080 bundle back in stock for a limited time — "
+        "add it to your cart now before scalpers snap up the remaining units.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
+
+
+def test_genuine_nvidia_data_center_capacity_and_supply_story_is_admitted():
+    """Legitimate enterprise GPU capacity/supplier-allocation coverage —
+    named in the design doc's explicit "must not suppress" list — must
+    still be admitted, even though it shares the taxonomy keyword
+    surface (NVIDIA, GPU) with the rejected consumer fixtures above."""
+    decision = _assess(
+        "NVIDIA Expands Data Center GPU Capacity Through New Foundry Supply Agreement",
+        "NVIDIA announced an expanded supply agreement with a major foundry partner to increase "
+        "data center GPU capacity amid surging enterprise AI infrastructure demand.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+def test_genuine_nvidia_earnings_story_is_admitted():
+    decision = _assess(
+        "NVIDIA Reports Fourth Quarter Financial Results as Data Center Revenue Surges",
+        "NVIDIA reported fourth quarter financial results, with data center revenue surging on "
+        "strong enterprise AI chip demand.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+def test_genuine_nvidia_channel_allocation_story_is_admitted():
+    decision = _assess(
+        "NVIDIA Allocates Additional GPU Supply to Cloud Providers Amid Enterprise Demand",
+        "NVIDIA confirmed it is allocating additional GPU capacity to major cloud providers as "
+        "enterprise AI infrastructure demand continues to outpace production.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+def test_new_retail_lexicon_phrase_is_still_excused_by_genuine_anchor_evidence():
+    """The new retail-purchase-guide phrases route through the exact
+    same pre-existing anchor-evidence exception every other consumer-
+    format phrase already uses — a genuine earnings story that happens
+    to also mention "where to buy" (e.g. describing retail channel
+    commentary inside real results coverage) is still admitted, exactly
+    like the existing Oracle "% off their prior close" regression."""
+    decision = assess_admission(
+        "NVIDIA Reports Third-Quarter Financial Results",
+        "NVIDIA reported financial results for its fiscal third quarter; retail analysts also "
+        "commented on where to buy the latest GPUs amid strong demand.",
+        matched_companies=("NVIDIA",), matched_themes=(),
+        materiality_reasons=("formal_earnings_materials:financial results",),
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+def test_new_retail_lexicon_phrases_never_include_a_company_gpu_or_price_term_standalone():
+    """Narrow safety/consistency pass (design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md follow-up) — a structural,
+    code-level guard: the new retail-purchase-guide phrases must never
+    themselves be (or contain as a standalone token) "nvidia", "rtx",
+    "gpu", "$", "price", or a broad hardware-component name. This locks
+    in the design property that the suppression is contextual (retail/
+    shopping-action framing) and can never become a company- or
+    component-name-based exclusion on its own."""
+    forbidden_standalone_terms = (
+        "nvidia", "amd", "intel", "rtx", "gpu", "cpu", "$", "price", "pricing",
+    )
+    new_retail_phrases = (
+        "cheapest way to buy", "where to buy", "in stock now", "back in stock",
+        "sold out", "add to cart", "scalper", "scalpers", "reseller listing",
+        "retail scarcity",
+    )
+    for phrase in new_retail_phrases:
+        assert phrase in editorial_admission._CONSUMER_FORMAT_PHRASES
+        lowered = phrase.lower()
+        for forbidden in forbidden_standalone_terms:
+            assert forbidden not in lowered, (phrase, forbidden)
