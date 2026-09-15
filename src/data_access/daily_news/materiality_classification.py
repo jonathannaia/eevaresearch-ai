@@ -206,6 +206,49 @@ _MATERIALITY_ANCHOR_KEYWORDS: tuple[str, ...] = (
     "pricing", "price increase", "price cut", "expansion", "investment",
 )
 
+# Consumer-deal calibration fix (design/DECISIONS.md, "Signals editorial
+# lane false-positive audit"): "pricing"/"price increase"/"price cut"
+# are meant to anchor a CORPORATE pricing action ("the company announced
+# a price increase across its GPU lineup"), but the same three phrases
+# also appear verbatim in ordinary retail deal write-ups ("marking one
+# of the biggest price cuts we've seen on this configuration"), which
+# routinely co-occur with a real percentage/dollar figure (Gate B's own
+# numeric-magnitude requirement) purely because the deal itself has a
+# discount percentage — e.g. "Save 25% ($560) on This Gaming PC" +
+# "...the biggest price cuts we've seen..." satisfies Gate B (and, via
+# the same three keywords, Gate C) with zero corporate materiality
+# anywhere in the text. Narrow, curated retail-deal phrasings only
+# (never a bare "off"/"discount"/"%" alone, which would be far too
+# broad) — a genuine corporate pricing-action story essentially never
+# uses "save $X"/"$X off"/"X% off" phrasing, so this never suppresses
+# one. Scoped to exactly these three ambiguous anchor keywords; every
+# other anchor (capacity, contract, order, revenue, ...) is unaffected,
+# so a real quantified infrastructure/capex/contract event is never
+# touched by this filter.
+_CONSUMER_DEAL_PRICE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bsave\b.{0,20}\$\d", re.IGNORECASE),
+    re.compile(r"\$\d[\d,.]*\s*(off|discount)\b", re.IGNORECASE),
+    re.compile(r"\d+(\.\d+)?%\s*off\b", re.IGNORECASE),
+)
+_CONSUMER_PRICING_ANCHOR_KEYWORDS = frozenset({"pricing", "price increase", "price cut"})
+
+
+def _is_consumer_deal_price_framing(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _CONSUMER_DEAL_PRICE_PATTERNS)
+
+
+def _strip_consumer_pricing_anchors_if_deal_framed(text: str, anchor_hits: tuple[str, ...]) -> tuple[str, ...]:
+    """Drops only "pricing"/"price increase"/"price cut" from an already-
+    matched anchor_hits tuple, and only when the text itself carries a
+    retail-deal price framing — see this module's own "Consumer-deal
+    calibration fix" comment above _CONSUMER_DEAL_PRICE_PATTERNS. A no-op
+    (returns anchor_hits unchanged) whenever no deal framing is present,
+    or whenever none of the three ambiguous keywords are in anchor_hits
+    at all — every other anchor keyword always survives unchanged."""
+    if not _is_consumer_deal_price_framing(text):
+        return anchor_hits
+    return tuple(hit for hit in anchor_hits if hit not in _CONSUMER_PRICING_ANCHOR_KEYWORDS)
+
 # The deploy/deploys/deployed/deploying/deployment/deployments family,
 # on its own, is excluded from Gate C's taxonomy-pairing (see
 # _TAXONOMY_PAIRING_ANCHOR_KEYWORDS below and "Deployment qualification"
@@ -420,7 +463,7 @@ def _classify_core(
     if dividend_action_hit:
         reasons.append(f"material_dividend_action:{dividend_action_hit[0]}")
 
-    anchor_hits = _contains_any(text, _MATERIALITY_ANCHOR_KEYWORDS)
+    anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(text, _contains_any(text, _MATERIALITY_ANCHOR_KEYWORDS))
     numeric_hit = _has_numeric_magnitude(text)
     if anchor_hits and numeric_hit and not survey_content:
         reasons.append(f"quantified_change:{anchor_hits[0]}")
@@ -436,7 +479,9 @@ def _classify_core(
     # _TAXONOMY_PAIRING_ANCHOR_KEYWORDS' own comment. A deploy-family
     # anchor still reaches High Signal here indirectly whenever it also
     # satisfies Gate B above (a real number is present).
-    taxonomy_pairing_anchor_hits = _contains_any(text, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS)
+    taxonomy_pairing_anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(
+        text, _contains_any(text, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS),
+    )
     taxonomy_hits = _matched_taxonomy_buckets(text)
     if taxonomy_hits and taxonomy_pairing_anchor_hits and not survey_content:
         reasons.append(f"taxonomy_anchored_consequence:{taxonomy_hits[0]}:{taxonomy_pairing_anchor_hits[0]}")

@@ -207,6 +207,66 @@ _HARD_MATERIAL_REASON_PREFIXES: tuple[str, ...] = (
 )
 
 
+# --- Incidental/historical-mention calibration fix (design/DECISIONS.md,
+# "Signals editorial lane false-positive audit") — has_action_language
+# used to be a single, whole-article boolean: any company-action keyword
+# ANYWHERE in the text was enough to grant identity to EVERY matched,
+# non-ambiguous company, even one named only in a sentence that has
+# nothing to do with that keyword. Verified false positive: "LS Cable &
+# System... announced its labor union is threatening [a strike]... The
+# cable maker supplies... customers such as SK Hynix and Samsung
+# Electronics" wrongly identified SK Hynix and Samsung Electronics as
+# subjects via LS Cable's own "announced" — neither company does
+# anything in the text; they're named only as customer context. Fixed
+# below by requiring the action keyword to co-occur in the SAME
+# SENTENCE as this specific company's own mention (see
+# _company_has_nearby_action_language, reusing match_companies() per
+# sentence — the exact same alias resolution already used everywhere
+# else, never a new matching system).
+#
+# A second, narrower fix covers same-sentence cases sentence-scoping
+# alone cannot catch: "Microsoft co-founder Bill Gates ... warns
+# governments" and "Microsoft acquired Mojang... in 2014" both put the
+# company name and an action keyword in ONE sentence, but the action
+# (Gates personally warning; a specific, dated historical acquisition)
+# is not the company's own current activity. A small, curated set of
+# biographical/historical-background markers vetoes the action-language
+# route specifically — never the in-title route, so a company genuinely
+# named in the headline is always unaffected regardless of this veto.
+_HISTORICAL_BACKGROUND_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bco-founders?\b", re.IGNORECASE),
+    re.compile(r"\bfounders?\s+of\b", re.IGNORECASE),
+    re.compile(r"\b(acquired|bought)\b.{0,80}\bin\s+(19|20)\d{2}\b", re.IGNORECASE),
+)
+
+
+def _sentences(text: str) -> tuple[str, ...]:
+    """A deliberately simple sentence split — sufficient to scope the
+    action-language check to a company's own vicinity; not intended as
+    real sentence-boundary detection. Falls back to treating the whole
+    text as one sentence when no terminal punctuation exists at all."""
+    pieces = re.split(r"(?<=[.!?])\s+", text)
+    return tuple(p for p in pieces if p.strip())
+
+
+def _company_has_nearby_action_language(text: str, company: str) -> bool:
+    """True only when at least one sentence both names this specific
+    company (via match_companies() — the same alias resolution used
+    everywhere else in this codebase) and contains a company-action
+    keyword IN THAT SAME SENTENCE — never merely "both exist somewhere
+    in the article." See this module's own "Incidental/historical-
+    mention calibration fix" comment above for the real false positive
+    this closes."""
+    return any(
+        company in match_companies(sentence) and _contains_any(sentence, _COMPANY_ACTION_KEYWORDS)
+        for sentence in _sentences(text)
+    )
+
+
+def _has_historical_background_framing(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _HISTORICAL_BACKGROUND_PATTERNS)
+
+
 @lru_cache(maxsize=None)
 def _boundary_pattern(phrase: str) -> re.Pattern[str]:
     return re.compile(r"\b" + re.escape(phrase) + r"\b", re.IGNORECASE)
@@ -262,12 +322,20 @@ def _identified_subject_companies(
     if not matched_companies:
         return []
     title_companies = set(match_companies(title))
-    has_action_language = bool(_contains_any(text, _COMPANY_ACTION_KEYWORDS))
+    # A historical/biographical background marker anywhere in the text
+    # (see _HISTORICAL_BACKGROUND_PATTERNS's own comment) vetoes the
+    # action-language route for every company this call evaluates —
+    # never the in_title route, so a company genuinely named in the
+    # headline is always unaffected.
+    historical_background = _has_historical_background_framing(text)
     identified: list[str] = []
     for company in matched_companies:
         if _contains_any(text, _RIVAL_ENTITY_EXCLUSION_PHRASES.get(company, ())):
             continue
         in_title = company in title_companies
+        has_action_language = (
+            not historical_background and _company_has_nearby_action_language(text, company)
+        )
         if company in _AMBIGUOUS_ALIAS_COMPANIES:
             if in_title and has_action_language:
                 identified.append(company)

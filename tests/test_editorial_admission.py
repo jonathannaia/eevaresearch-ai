@@ -14,6 +14,7 @@ from src.data_access.daily_news.editorial_admission import AdmissionDecision, as
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
 from src.data_access.daily_news.source_registry import SourceCategory
+from src.models.daily_news_models import NewsMaterialityTier
 
 
 def _assess(title: str, description: str | None) -> AdmissionDecision:
@@ -488,3 +489,178 @@ def test_no_company_or_theme_match_fails_closed():
     )
     assert decision.admitted is False
     assert decision.reason == "no_qualifying_subject_evidence"
+
+
+# ============================================================
+# Signals editorial lane false-positive audit (design/DECISIONS.md) —
+# five verified live false positives, reconstructed from the reported
+# headline shapes (this environment has no live editorial-lane cache or
+# Postgres access — see this file's own opening disclosure). Each fixture
+# covers one of the five requested categories: shopping/deal/discount
+# articles, consumer PC specs/model numbers, game mods/unofficial
+# ports/emulation/hobbyist software, general AI opinion/commentary with
+# no concrete corporate event, and incidental product/company mentions.
+# ============================================================
+
+
+def test_unofficial_game_port_mentioning_the_owning_company_historically_fails_admission():
+    """Hobbyist/mod/unofficial-port category. Real false positive:
+    admitted and tagged to Microsoft Corporation purely because the
+    article mentions, in passing, that Microsoft acquired Mojang (the
+    Minecraft developer) in 2014 — a historical/background fact, not a
+    current Microsoft event. Must not match Microsoft at all."""
+    companies, _ = matched_companies_and_themes(
+        "Modder Rewrites Minecraft Legacy Console Engine to Run on PS2 and Wii in Just 32MB of RAM",
+        "A hobbyist developer has rebuilt Minecraft's legacy console engine from scratch to run on the "
+        "PlayStation 2 and Wii. Microsoft acquired Mojang, the Swedish studio behind Minecraft, for $2.5 "
+        "billion in 2014, and the original console edition was later discontinued on modern platforms.",
+    )
+    assert "Microsoft Corporation" in companies  # matched by keyword, but must not be IDENTIFIED as subject
+    decision = _assess(
+        "Modder Rewrites Minecraft Legacy Console Engine to Run on PS2 and Wii in Just 32MB of RAM",
+        "A hobbyist developer has rebuilt Minecraft's legacy console engine from scratch to run on the "
+        "PlayStation 2 and Wii. Microsoft acquired Mojang, the Swedish studio behind Minecraft, for $2.5 "
+        "billion in 2014, and the original console edition was later discontinued on modern platforms.",
+    )
+    assert decision.admitted is False
+
+
+def test_incidental_customer_mention_in_an_unrelated_labor_story_fails_admission():
+    """Incidental-mention category. Real false positive: an article
+    about LS Cable & System's own labor dispute (LS Cable is not a
+    tracked company) wrongly matched SK Hynix and Samsung Electronics —
+    named only as customers of LS Cable's cable products, doing nothing
+    themselves in the text. Neither company should be identified as the
+    story's subject."""
+    title = "LS Cable & System Workers Threaten First Strike in 37 Years Over Wage Dispute"
+    description = (
+        "LS Cable & System announced its labor union is threatening the company's first strike in 37 "
+        "years after wage talks stalled. The cable maker supplies components used across Korea's "
+        "electronics industry, including customers such as SK Hynix and Samsung Electronics."
+    )
+    companies, _ = matched_companies_and_themes(title, description)
+    assert set(companies) == {"SK Hynix", "Samsung Electronics"}
+    decision = _assess(title, description)
+    assert decision.admitted is False
+    assert decision.reason == "company_mention_not_subject_worthy"
+
+
+def test_incidental_mention_with_an_explicit_relationship_is_still_admitted():
+    """Companion proof to the LS Cable case above: when a company named
+    alongside an unrelated actor's action IS itself the one taking that
+    action (a genuine, explicit relationship — not mere customer-list
+    context), it must still be admitted normally. Tightening the
+    incidental-mention gate must never suppress a real event."""
+    title = "SK Hynix Signs Long-Term Supply Deal With LS Cable & System"
+    description = "SK Hynix signed a multi-year agreement with LS Cable & System to secure cabling components for its new memory fabs."
+    decision = _assess(title, description)
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:SK Hynix"
+
+
+def test_ai_opinion_commentary_mentioning_a_company_only_via_a_founders_history_fails_admission():
+    """General AI opinion/interview commentary category — the exact
+    verified false positive, dedicated regression. A Bill Gates
+    AI-commentary piece was tagged to Microsoft Corporation purely
+    because Gates is described as "Microsoft co-founder" — Gates's own
+    historical company affiliation, not any current Microsoft action.
+    Must be rejected as company_mention_not_subject_worthy; must not
+    create a Microsoft OR Broadcom subject match based solely on the
+    historical/co-founder phrasing and incidental chipmaker
+    name-dropping; and must never reach High Signal regardless of
+    admission (defense in depth — this fixture asserts materiality
+    directly, not merely inferring it from the admission rejection)."""
+    title = "Bill Gates Compares AI to Alien Intelligence, Warns Governments to Prepare"
+    description = (
+        "Microsoft co-founder Bill Gates said artificial intelligence should be treated like contact with "
+        "an alien intelligence and warns governments around the world need to prepare for the societal "
+        "shift AI will bring. AI chipmakers such as Nvidia, AMD, and Broadcom have benefited from the "
+        "surge in demand Gates described."
+    )
+    companies, themes = matched_companies_and_themes(title, description)
+    assert "Microsoft Corporation" in companies  # matched by keyword, but must not be IDENTIFIED as subject
+    assert "Broadcom Inc." in companies  # matched by keyword, but must not be IDENTIFIED as subject
+
+    tier, reasons = classify_editorial_story(title, description, SourceCategory.INDEPENDENT_NEWS)
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+    decision = assess_admission(title, description, companies, themes, reasons)
+    assert decision.admitted is False
+    assert decision.reason == "company_mention_not_subject_worthy"
+
+
+def test_gaming_pc_deal_with_specs_and_a_dollar_discount_is_admitted_but_never_high_signal():
+    """Shopping/deal/discount + consumer PC specs/model numbers
+    category. Real false positive: a $560-off gaming PC deal reached
+    HIGH_SIGNAL purely because the article's own "price cut" marketing
+    copy co-occurred with a percentage figure — pure retail pricing, not
+    corporate quantification. The company match itself (NVIDIA, named
+    in the title) is legitimate and admission is correct to let it
+    through — the defect was materiality tier, verified separately in
+    tests/test_daily_news_materiality_classification.py. This test
+    locks in the admission side only: still admitted, never rejected
+    outright, since a real component vendor is genuinely named."""
+    title = "Save 25% ($560) on This Gaming PC Packed With AMD and Nvidia Hardware"
+    description = (
+        "This gaming PC deal pairs an AMD Ryzen 7 processor with an Nvidia GeForce RTX 4070 graphics "
+        "card, marking one of the biggest price cut deals we've seen on this configuration this year."
+    )
+    decision = _assess(title, description)
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+# ============================================================
+# Preserve legitimate events — the false-positive fixes above must
+# never broadly suppress a real product launch, corporate deployment,
+# supply disruption, labor action, or company-specific regulatory
+# development, even when it shares surface features with a suppressed
+# shape (a named company + an incidental-sounding relationship, a
+# founder mentioned by name, a real dollar figure).
+# ============================================================
+
+
+def test_genuine_labor_action_by_a_tracked_company_is_still_admitted():
+    decision = _assess(
+        "Samsung Electronics Workers Vote to Authorize Strike Over Wage Dispute",
+        "Samsung Electronics' largest labor union voted to authorize a strike after wage negotiations with management broke down this week.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Samsung Electronics"
+
+
+def test_genuine_supply_disruption_is_still_admitted():
+    decision = _assess(
+        "SK Hynix Warns of HBM Supply Constraints Through Next Year",
+        "SK Hynix warned customers that high-bandwidth memory supply will remain constrained through next year amid surging AI demand.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:SK Hynix"
+
+
+def test_genuine_founder_led_company_announcement_is_still_admitted_via_title_placement():
+    """A founder's name appearing alongside a historical-background
+    marker must never suppress the company's OWN identity when the
+    company is genuinely in the title — the historical-background veto
+    only ever blocks the action-language route, never in_title."""
+    decision = _assess(
+        "Microsoft Announces New AI Data Center Investment in Wisconsin",
+        "Microsoft, co-founded by Bill Gates in 1975, announced a new multi-billion-dollar AI data center "
+        "campus in Wisconsin as part of its continued AI infrastructure buildout.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Microsoft Corporation"
+
+
+def test_genuine_product_launch_with_real_dollar_pricing_is_still_admitted():
+    """A genuine corporate pricing action (not a retail deal) must
+    still be admitted and, per the materiality suite, still reach
+    HIGH_SIGNAL — the consumer-deal-price calibration fix is scoped to
+    "save $X"/"$X off"/"X% off" retail-deal phrasing only."""
+    decision = _assess(
+        "Nvidia Raises GPU Prices by 15% Amid Tariff Pressures",
+        "Nvidia confirmed a 15% price increase across its GPU lineup will take effect next quarter, "
+        "citing new import tariffs on semiconductor components.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
