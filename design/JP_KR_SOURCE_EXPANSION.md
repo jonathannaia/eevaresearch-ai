@@ -73,6 +73,78 @@ IDs, e.g. `EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR=businesskorea-industries-rss,bu
 `japan-times-business-rss` should not be added to this list until its
 `PENDING_REVIEW` state is resolved.
 
+## Round 2 audit (2026-09-15) — KR + Light Reading rollout, deeper Japan search
+
+Assumes the operator will set `EDGE_DAILY_NEWS_ENABLED_SOURCES=light-reading-rss`
+and `EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR=businesskorea-industries-rss,
+businesskorea-science-tech-rss` on the Daily News worker. No registry or
+flag default changed by this round — verification and further candidate
+search only.
+
+### Quality-review harness
+
+`scripts/daily_news_quality_review.py` (read-only, no network, no
+writes) classifies a pasted batch of real, already-published Daily News
+titles/snippets — copied by hand from the live app after the rollout —
+into HIGH VALUE / BORDERLINE / IRRELEVANT, reusing the exact same
+matching/materiality/admission functions the production pipeline runs.
+It also prints a rejection-reason histogram for spotting systematic
+noise patterns across a batch. See the script's own docstring for the
+input format and usage; run it against a real pasted sample once the
+worker has been live for 48 hours.
+
+A live production classification pass (real story titles from
+app.eevaresearch.com) was intentionally NOT run this round — Part 1's
+own guardrail is to wait for a human to paste real samples from the
+live app rather than have this session pull production data directly.
+
+### A confirmed noise pattern: personnel-appointment headlines
+
+Constructing representative KR/Light Reading noise-shape fixtures (now
+regression-tested in `tests/test_daily_news_quality_review.py`) surfaced
+one concrete, currently-live gap: a personnel-appointment headline
+naming a tracked company in the title (e.g. "Samsung Electronics
+Appoints New Head of Memory Division") is admitted today as BORDERLINE
+— `editorial_admission.py`'s identity check accepts title placement
+alone as sufficient for a non-ambiguous company, with no distinction for
+a personnel-only action. This is exactly the kind of noise pattern Part
+1 asked to identify; no admission-rule change is made this round (the
+task's own guardrail: propose tweaks from live data, don't act on a
+single constructed example) — flagged here for the next live-data
+review pass, where the harness's IRRELEVANT/BORDERLINE histogram can
+show how frequently this pattern actually recurs in real KR/Light
+Reading output before any rule change is proposed.
+
+### Japan candidate search, round 2
+
+Continuing from round 1's exhausted list (METI, NHK World, JETRO, Kyodo
+News, Yomiuri, SEMI, Japan Today — all still rejected on recheck or
+still unreachable). Five new candidates checked live this round:
+
+| Candidate | Outcome |
+|---|---|
+| Nikkei Asia (`asia.nikkei.com/rss/feed/nar`) | **Rejected** — real RSS 2.0 feed, genuinely on-theme (semiconductor/AI/Asia business content), robots.txt does not technically disallow the feed path for an unlisted UA. But its robots.txt explicitly names and blocks `ClaudeBot`/`Claude-Web`/`Claude-SearchBot`/`Claude-User`/`anthropic-ai` (allowing only a narrow safe list of pages for those bots). This worker is Claude-built; using an unbranded custom User-Agent specifically to access content a publisher has robots.txt-blocked for Claude-branded crawlers would be the same kind of workaround the task's own guardrails forbid for Japan Times Business's 403, even though our literal UA string isn't in the named list. Not added. |
+| The Mainichi (`mainichi.jp/rss/etc/english_latest.rss`) | **Rejected**, two independent reasons: (1) same explicit `ClaudeBot`/`anthropic-ai`/`Claude-Web`/`Claude-SearchBot`/`Claude-User` block in robots.txt (`Disallow: /` with only `/sp/` allowed) as Nikkei Asia, same concern. (2) Even setting that aside, this is the paper's only English feed (no dedicated business/tech section) — a live sample showed centenarians, ninja re-enactments, sumo, and haiku dominating, with only 2/20 items even touching business and none semiconductor/AI-specific — the same near-zero-yield general-news problem the existing `japan-times-rss`/`jpx-market-news-rss`/`fsa-japan-news-rss` sources already have. |
+| Japan Times additional sections (`/tag/technology/feed/`, `/news/business/tech/feed/`, `/news/business/corporate/feed/`, `/asia-pacific/feed/`) | **Rejected** — all four return `HTTPError:403` under the real worker fetch signature, same as `/business/feed/`. No new working Japan Times path found. |
+| JAXA (`global.jaxa.jp`) | **Inconclusive/rejected** — the English press subdomain returns `403` to every fetch attempt from this environment (including a full browser User-Agent), independent of the worker's own UA — plausibly a geo/IP-level block rather than a bot-UA check. Not verifiable as usable; not added without live confirmation. |
+| Japan Industry News (`japan-industry-news.com`) | **Rejected** — domain does not resolve/respond from this environment (DNS/connection failure on both http and https). |
+
+Note for comparison: `japan-times-rss`, `businesskorea.co.kr`, and
+`koreaherald.com` (all already-approved sources) were checked for the
+same named-crawler pattern and carry no such block — plain,
+crawler-agnostic robots.txt. The Nikkei Asia/Mainichi finding is new
+and specific to those two publishers, not a reason to revisit any
+already-approved source.
+
+**Result: 0 new Japan sources added this round**, same disappointing but
+honest outcome as round 1. `japan-times-business-rss` remains
+`PENDING_REVIEW`, unchanged, with no header tricks or workaround
+attempted (per the task's own explicit instruction) — its 403 is still
+unresolved. If a licensing conversation with Nikkei (whose block is a
+named-crawler policy, not a hard technical wall) is ever worth pursuing,
+that would need to happen at the business/licensing level, not by
+routing around robots.txt with a different User-Agent string.
+
 ## Running the dry run
 
 ```

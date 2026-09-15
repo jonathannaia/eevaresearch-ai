@@ -1364,3 +1364,44 @@ def test_gated_jp_kr_allow_list_is_independent_of_the_gated_market_news_allow_li
     output = capsys.readouterr().out
     # +1 for light-reading-rss only, never +1 for any JP/KR source too.
     assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 1}" in output
+
+
+def test_kr_and_light_reading_rollout_combination_enables_exactly_the_three_intended_sources(
+    tmp_path, monkeypatch, capsys,
+):
+    """The exact combination approved for the KR + Light Reading rollout
+    (design/DECISIONS.md) — EDGE_DAILY_NEWS_ENABLED_SOURCES=light-
+    reading-rss plus EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR=businesskorea-
+    industries-rss,businesskorea-science-tech-rss set simultaneously on
+    the real worker. sources_polled must grow by exactly 3 (not 2, not
+    4) and a real fetch attempt must reach all three canonical_urls and
+    no others — proves the two independent allow-lists compose cleanly
+    together, not just in isolation."""
+    call_urls: list[str] = []
+
+    def _fake_fetch_entries(feed_url: str) -> FeedFetchResult:
+        call_urls.append(feed_url)
+        return FeedFetchResult(entries=(), failure_code=None)
+
+    monkeypatch.setattr(rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_pipeline.rss_atom_client, "fetch_entries", _fake_fetch_entries)
+    monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_NVDA_SOURCE,))
+    worker_settings = _sqlite_worker_settings(
+        tmp_path,
+        daily_news_enabled_market_news_sources=frozenset({"light-reading-rss"}),
+        daily_news_enabled_jp_kr_sources=frozenset({"businesskorea-industries-rss", "businesskorea-science-tech-rss"}),
+    )
+    scan_status_repository = daily_news_backend.get_daily_news_scan_status_repository(worker_settings)
+
+    daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
+
+    output = capsys.readouterr().out
+    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 3}" in output
+    light_reading = next(e for e in GATED_MARKET_NEWS_SOURCE_REGISTRY if e.source_id == "light-reading-rss")
+    industries = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-industries-rss")
+    sci_tech = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-science-tech-rss")
+    assert light_reading.canonical_url in call_urls
+    assert industries.canonical_url in call_urls
+    assert sci_tech.canonical_url in call_urls
+    japan_times_business = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "japan-times-business-rss")
+    assert japan_times_business.canonical_url not in call_urls  # PENDING_REVIEW, never in this allow-list
