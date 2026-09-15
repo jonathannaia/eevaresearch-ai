@@ -1169,3 +1169,241 @@ def test_dcd_malformed_entry_missing_title_is_rejected_not_published(tmp_path, m
 
     assert report.stories_published == 0
     assert report.items_no_valid_url == 1
+
+
+# ============================================================
+# Gated market-news source expansion (design/DECISIONS.md) — Light
+# Reading. Uses the REAL, registry-derived GATED_MARKET_NEWS_SOURCE_
+# REGISTRY entry (not a synthetic fixture), same discipline as the
+# batch 2/3 sections above. Never present in EDITORIAL_SOURCE_REGISTRY
+# — passed explicitly as source_entries in every test below, exactly
+# as scripts/daily_news_worker.py's own gated call site does only when
+# the source is allow-listed.
+# ============================================================
+
+from src.data_access.daily_news.source_registry import GATED_MARKET_NEWS_SOURCE_REGISTRY
+
+_light_reading = next(e for e in GATED_MARKET_NEWS_SOURCE_REGISTRY if e.source_id == "light-reading-rss")
+
+
+def test_light_reading_matching_item_publishes_with_correct_attribution_and_canonical_link(tmp_path, monkeypatch):
+    """Parsing + source attribution + canonical original link, using a
+    realistic Light Reading-shaped item — a real event/partnership
+    pattern naming a tracked company (NVIDIA), matching this source's
+    actual editorial beat (confirmed via this session's own read-only
+    dry run against the live feed)."""
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum to help shape the network's future architecture.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 1
+    story = next(iter(load_stories(tmp_path).values()))
+    assert story.publisher == "Light Reading"
+    assert story.source_feed_id == "light-reading-rss"
+    assert story.source_url == entry.link
+
+
+def test_light_reading_off_domain_link_is_rejected(tmp_path, monkeypatch):
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://not-lightreading.example.com/aws-nvidia-verizon",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 0
+    assert report.items_no_valid_url == 1
+
+
+def test_light_reading_stale_item_beyond_72_hours_is_excluded(tmp_path, monkeypatch):
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=200)).isoformat()
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        published_at=stale_at,
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 0
+    assert report.items_stale == 1
+
+
+def test_light_reading_off_topic_item_does_not_publish(tmp_path, monkeypatch):
+    """No company/theme match at all — a real Light Reading pattern
+    (a routine personnel/staffing announcement naming no tracked
+    company) confirmed via this session's own live dry run."""
+    entry = _entry(
+        title="Technetix taps SVP of global operations",
+        link="https://www.lightreading.com/cable-technology/technetix-taps-svp-of-global-operations",
+        summary="Cable technology vendor Technetix has appointed a new senior vice president of global operations.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 0
+    assert report.items_no_match == 1
+
+
+def test_light_reading_generic_best_x_roundup_naming_a_company_fails_the_admission_gate(tmp_path, monkeypatch):
+    """Rejection under the precision-first admission gate specifically
+    (editorial_admission.py), distinct from items_no_match: matches a
+    tracked company (NVIDIA) but is a consumer buying-guide format, not
+    a genuine corporate development."""
+    entry = _entry(
+        title="Best NVIDIA GPUs Under $500 for Home Networking Rigs",
+        link="https://www.lightreading.com/reviews/best-nvidia-gpus-under-500-for-home-networking-rigs",
+        summary="We rounded up the best NVIDIA graphics cards you can buy for under $500 right now.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 0
+    assert report.items_not_subject_relevant == 1
+    assert load_stories(tmp_path) == {}
+
+
+def test_light_reading_failed_fetch_is_recorded_and_never_published(tmp_path, monkeypatch):
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(), failure_code="HTTPError:503")})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 0
+    assert report.source_failures == {"light-reading-rss": "HTTPError:503"}
+
+
+def test_light_reading_duplicate_within_one_run_is_deduplicated(tmp_path, monkeypatch):
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry, entry), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+# ============================================================
+# Controlled dry-run harness (design/DECISIONS.md) —
+# run_editorial_discovery(dry_run=True). Reuses the exact same gate
+# sequence proven above; these tests cover only the dry-run-specific
+# behavior (no persistence, sample population, default unaffected).
+# ============================================================
+
+
+def test_dry_run_never_persists_an_admitted_story(tmp_path, monkeypatch):
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+
+    assert report.stories_published == 1  # would-have-been-admitted count
+    assert load_stories(tmp_path) == {}  # but nothing was actually written
+
+
+def test_dry_run_second_run_does_not_see_the_first_runs_non_persisted_story(tmp_path, monkeypatch):
+    """Proves dry-run truly never writes: a second dry run against the
+    same feed/cache_dir sees the same item as new again, not as
+    already-seen — real persistence would have made it a duplicate."""
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    first = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+    second = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+
+    assert first.stories_published == 1
+    assert second.stories_published == 1
+    assert second.items_already_seen == 0
+
+
+def test_dry_run_populates_admitted_examples(tmp_path, monkeypatch):
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+
+    assert report.admitted_examples == ("AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",)
+
+
+def test_dry_run_populates_rejected_examples_with_reasons(tmp_path, monkeypatch):
+    no_match_entry = _entry(
+        title="Technetix taps SVP of global operations",
+        link="https://www.lightreading.com/cable-technology/technetix-taps-svp-of-global-operations",
+        summary="Cable technology vendor Technetix has appointed a new senior vice president.",
+    )
+    admission_fail_entry = _entry(
+        title="Best NVIDIA GPUs Under $500 for Home Networking Rigs",
+        link="https://www.lightreading.com/reviews/best-nvidia-gpus-under-500-for-home-networking-rigs",
+        summary="We rounded up the best NVIDIA graphics cards you can buy for under $500 right now.",
+    )
+    _patch_fetch(monkeypatch, {
+        _light_reading.canonical_url: FeedFetchResult(entries=(no_match_entry, admission_fail_entry), failure_code=None),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+
+    reasons_by_title = dict(report.rejected_examples)
+    assert reasons_by_title["Technetix taps SVP of global operations"] == "no_qualifying_company_or_theme_match"
+    assert reasons_by_title["Best NVIDIA GPUs Under $500 for Home Networking Rigs"].startswith("consumer_editorial_format:")
+
+
+def test_dry_run_examples_are_bounded_to_the_sample_size(tmp_path, monkeypatch):
+    entries = tuple(
+        _entry(
+            title=f"Technetix taps new exec number {i}",
+            link=f"https://www.lightreading.com/cable-technology/technetix-taps-new-exec-{i}",
+            summary="A routine staffing announcement naming no tracked company.",
+        )
+        for i in range(editorial_pipeline._DRY_RUN_SAMPLE_SIZE + 3)
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=entries, failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,), dry_run=True)
+
+    assert report.items_no_match == editorial_pipeline._DRY_RUN_SAMPLE_SIZE + 3
+    assert len(report.rejected_examples) == editorial_pipeline._DRY_RUN_SAMPLE_SIZE
+
+
+def test_default_dry_run_false_persists_exactly_as_before_and_examples_stay_empty(tmp_path, monkeypatch):
+    """Every existing caller (the real worker included) omits dry_run —
+    proves that default path is completely unaffected: real persistence
+    still happens, and the new example fields stay empty tuples."""
+    entry = _entry(
+        title="AWS, Nvidia among new recruits for Verizon's 6G Innovation Forum",
+        link="https://www.lightreading.com/6g/aws-nvidia-among-new-recruits-for-verizon-s-6g-innovation-forum",
+        summary="Nvidia and AWS have joined Verizon's 6G Innovation Forum.",
+    )
+    _patch_fetch(monkeypatch, {_light_reading.canonical_url: FeedFetchResult(entries=(entry,), failure_code=None)})
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(_light_reading,))
+
+    assert report.stories_published == 1
+    assert len(load_stories(tmp_path)) == 1
+    assert report.admitted_examples == ()
+    assert report.rejected_examples == ()

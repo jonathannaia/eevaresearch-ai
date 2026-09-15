@@ -1531,3 +1531,58 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_3: tuple[DailyNewsSourceEntry, ...] = (
 EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     EDITORIAL_SOURCE_REGISTRY_V1 + EDITORIAL_SOURCE_REGISTRY_BATCH_2 + EDITORIAL_SOURCE_REGISTRY_BATCH_3
 )
+
+# Gated market-news source expansion (design/DECISIONS.md) — deliberately
+# a SEPARATE registry from EDITORIAL_SOURCE_REGISTRY above, never merged
+# into it: every source above is already unconditionally polled by the
+# real worker (scripts/daily_news_worker.py's own _run_editorial_tick
+# calls run_editorial_discovery() with no source_entries override, so it
+# always gets EDITORIAL_SOURCE_REGISTRY's own default — no per-source
+# flag exists for any of those 36 sources today). This registry holds
+# sources that are NOT included by default; a source here is only ever
+# added to a real discovery run when its own source_id is explicitly
+# present in Settings.daily_news_enabled_market_news_sources (parsed
+# from EDGE_DAILY_NEWS_ENABLED_SOURCES) — see
+# src.data_access.daily_news.market_news_sources.enabled_gated_sources().
+# Default empty allow-list means this whole registry contributes zero
+# entries, zero network calls, and zero writes; existing behavior for
+# every one of the 36 always-on sources above is completely unchanged.
+#
+# Light Reading (lightreading.com) — live-verified this batch (real
+# fetch, HTTP 200, RSS 2.0, 50 dated items, newest published minutes
+# before verification, all 50 on-domain). Networking/telecom/optical-
+# infrastructure trade press — closes a real gap already identified in
+# the read-only US/Japan/Korea source audit: photonics is a tracked
+# theme with no dedicated trade-press source anywhere in
+# EDITORIAL_SOURCE_REGISTRY above (only general tech press). robots.txt
+# checked directly (not assumed): `User-agent: *` disallows only a
+# handful of specific paths (/search, /api/health, ...), not a blanket
+# prohibition — RSS/syndication access is permitted for a generic
+# fetcher; the file separately blocks a named list of AI-training
+# crawlers (ClaudeBot, GPTBot, CCBot, ...), a different use case
+# (bulk-training-corpus collection) than this project's own headline+
+# excerpt+direct-link-only policy. MarketWatch (Dow Jones) was checked
+# and explicitly rejected instead: its robots.txt carries an explicit
+# legal notice — "Collection of content ... through automated means is
+# prohibited unless you have express written permission from Dow Jones
+# & Company, Inc." — a real ToS bar this project's own standards
+# (no scraping/ToS-violating integrations) require honoring, not a
+# guess.
+GATED_MARKET_NEWS_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="light-reading-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.lightreading.com/rss.xml",
+        domains=("www.lightreading.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Light Reading", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Gated market-news source expansion (2026-09-15) — live-verified, HTTP 200, RSS 2.0, "
+            "50 dated items, newest published minutes before verification, all 50 on-domain "
+            "(www.lightreading.com/...). robots.txt confirmed permissive for a generic fetcher "
+            "(see this registry's own module-level comment above for the full check). Dormant "
+            "unless 'light-reading-rss' is explicitly present in "
+            "EDGE_DAILY_NEWS_ENABLED_SOURCES — never included in EDITORIAL_SOURCE_REGISTRY."
+        ),
+    ),
+)
