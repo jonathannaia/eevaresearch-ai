@@ -28,6 +28,8 @@ def test_get_tracked_companies_for_source_filters_dart_only():
         "LG Innotek Co., Ltd.", "Hanwha Aerospace Co., Ltd.", "Korea Aerospace Industries, Ltd.",
         "Doosan Robotics Inc.", "Wonik IPS Co., Ltd.", "SFA Engineering Corporation",
         "SFA Semicon Co., Ltd", "Hana Micron Inc.",
+        # Tier 1 Cohort 1 batch (2026-09-15)
+        "Hanmi Semiconductor Co., Ltd.", "HD Hyundai Electric Co., Ltd.",
     }
 
 
@@ -128,16 +130,19 @@ def test_get_tracked_companies_for_source_filters_edinet_only():
         # EDINET Filings Radar issuer-expansion batch (2026-09-04)
         "SCREEN Holdings Co., Ltd.", "Nidec Corporation", "TDK Corporation",
         "Murata Manufacturing Co., Ltd.", "TOWA Corporation",
+        # Tier 1 Cohort 1 batch (2026-09-15)
+        "Nabtesco Corporation", "Harmonic Drive Systems Inc.", "YASKAWA Electric Corporation",
     }
 
 
-def test_edinet_cohort_has_exactly_eighteen_entries():
+def test_edinet_cohort_has_exactly_twenty_one_entries():
     # Was "exactly five" through Gate 7; the Core Issuer Expansion batch
     # (2026-09-04) added 8 more (5 + 8 = 13) — renamed rather than left
     # stale, same discipline Gate 7.1 already established for this file.
     # The EDINET Filings Radar issuer-expansion batch (2026-09-04) then
-    # added 5 more still (13 + 5 = 18).
-    assert len(get_tracked_companies_for_source("EDINET")) == 18
+    # added 5 more still (13 + 5 = 18). The Tier 1 Cohort 1 batch
+    # (2026-09-15) added 3 more still (18 + 3 = 21).
+    assert len(get_tracked_companies_for_source("EDINET")) == 21
 
 
 def test_edinet_cohort_direct_edinet_code_mapping():
@@ -261,7 +266,7 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_105():
+def test_active_tracked_company_count_is_exactly_115():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
     # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
@@ -269,8 +274,10 @@ def test_active_tracked_company_count_is_exactly_105():
     # issuers (62 + 19 = 81), Filings Radar issuer-expansion batch 2
     # (2026-09-04) added 19 more still (81 + 19 = 100), and the EDINET
     # Filings Radar issuer-expansion batch (2026-09-04) added 5 more
-    # EDINET issuers (100 + 5 = 105).
-    assert len(get_tracked_companies(active_only=True)) == 105
+    # EDINET issuers (100 + 5 = 105). The Tier 1 Cohort 1 batch
+    # (2026-09-15) then added 10 more (5 EDGAR + 2 DART + 3 EDINET;
+    # 105 + 10 = 115).
+    assert len(get_tracked_companies(active_only=True)) == 115
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
@@ -520,3 +527,269 @@ def test_filings_radar_batch_2_no_duplicate_identifiers_against_existing_registr
         assert len(codes) == len(set(codes)), f"{source} has a duplicate krx_code"
     names = [c.name for c in companies]
     assert len(names) == len(set(names))
+
+
+# --- Tier 1 Cohort 1 batch (2026-09-15) — 10 net-new active issuers
+# (5 SEC EDGAR, 2 OpenDART / DART, 3 EDINET), added after a bounded,
+# read-only, live official-source identifier verification pass. See
+# design/TIER1_COHORT1_TRACKED_COMPANIES_IMPLEMENTATION_DESIGN_2026_09_15
+# .md, design/TIER1_COHORT1_REGISTRY_READINESS_2026_09_15.md, and
+# design/THEMATIC_COVERAGE_UNIVERSE_AUDIT_2026_09_15.md for the full
+# evidence record. ---
+
+_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES = {
+    "GEV": "GE Vernova Inc.",
+    "DLR": "Digital Realty Trust, Inc.",
+    "EQIX": "Equinix, Inc.",
+    "FLY": "Firefly Aerospace Inc.",
+    "LHX": "L3Harris Technologies, Inc.",
+}
+_TIER1_COHORT1_DART_TICKERS_TO_NAMES = {
+    "042700": "Hanmi Semiconductor Co., Ltd.",
+    "267260": "HD Hyundai Electric Co., Ltd.",
+}
+_TIER1_COHORT1_EDINET_TICKERS_TO_CODES = {
+    "62680": "E01726",   # Nabtesco Corporation
+    "63240": "E01712",   # Harmonic Drive Systems Inc.
+    "65060": "E01741",   # YASKAWA Electric Corporation
+}
+_TIER1_COHORT1_EDINET_TICKERS_TO_NAMES = {
+    "62680": "Nabtesco Corporation",
+    "63240": "Harmonic Drive Systems Inc.",
+    "65060": "YASKAWA Electric Corporation",
+}
+
+
+def test_tier1_cohort1_present_exactly_once_each_and_active():
+    companies = get_tracked_companies(active_only=True)
+    by_ticker = {c.krx_code: c for c in companies}
+    all_tickers = (
+        tuple(_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_DART_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_EDINET_TICKERS_TO_CODES)
+    )
+    assert len(all_tickers) == 10
+    for ticker in all_tickers:
+        matches = [c for c in companies if c.krx_code == ticker]
+        assert len(matches) == 1, f"{ticker} must appear exactly once"
+        assert by_ticker[ticker].active is True
+
+
+def test_tier1_cohort1_legal_names():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    expected_names = {
+        **_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES,
+        **_TIER1_COHORT1_DART_TICKERS_TO_NAMES,
+        **_TIER1_COHORT1_EDINET_TICKERS_TO_NAMES,
+    }
+    for ticker, expected_name in expected_names.items():
+        assert by_ticker[ticker].name == expected_name
+
+
+def test_tier1_cohort1_source_routing_matches_the_correct_adapter():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES:
+        assert by_ticker[ticker].source == "SEC EDGAR"
+    for ticker in _TIER1_COHORT1_DART_TICKERS_TO_NAMES:
+        assert by_ticker[ticker].source == "OpenDART / DART"
+    for ticker in _TIER1_COHORT1_EDINET_TICKERS_TO_CODES:
+        assert by_ticker[ticker].source == "EDINET"
+
+
+def test_tier1_cohort1_edgar_corp_code_not_hardcoded():
+    # Same convention as every other EDGAR entry — resolved lazily from
+    # data/cache/edgar_ciks.json via with_resolved_ciks(), never stored
+    # statically.
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES:
+        assert by_ticker[ticker].corp_code is None
+
+
+def test_tier1_cohort1_dart_corp_code_not_hardcoded():
+    # Same convention as every other DART entry — resolved lazily via
+    # with_resolved_corp_codes(); the real corp_code values (Hanmi
+    # Semiconductor 00161383, HD Hyundai Electric 01205851) were
+    # independently confirmed live this session but are deliberately
+    # not hardcoded here, matching every other DART entry.
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _TIER1_COHORT1_DART_TICKERS_TO_NAMES:
+        assert by_ticker[ticker].corp_code is None
+
+
+def test_tier1_cohort1_edinet_corp_code_hardcoded():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for krx_code, edinet_code in _TIER1_COHORT1_EDINET_TICKERS_TO_CODES.items():
+        assert by_ticker[krx_code].corp_code == edinet_code
+
+
+def test_tier1_cohort1_edinet_securities_codes_are_five_characters():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    for ticker in _TIER1_COHORT1_EDINET_TICKERS_TO_CODES:
+        assert len(by_ticker[ticker].krx_code) == 5
+        assert by_ticker[ticker].exchange == "TSE"
+
+
+def test_tier1_cohort1_native_names_preserved_exactly():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    assert by_ticker["62680"].native_name == "ナブテスコ株式会社"
+    assert by_ticker["63240"].native_name == "株式会社ハーモニック・ドライブ・システムズ"
+    assert by_ticker["65060"].native_name == "株式会社安川電機"
+    for ticker in tuple(_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES) + tuple(_TIER1_COHORT1_DART_TICKERS_TO_NAMES):
+        assert by_ticker[ticker].native_name == ""
+
+
+def test_tier1_cohort1_hanmi_secondary_theme_mirrors_hbm_bridge_pattern():
+    by_ticker = {c.krx_code: c for c in get_tracked_companies(active_only=True)}
+    assert by_ticker["042700"].themes == ("memory", "ai-buildout")
+
+
+def test_tier1_cohort1_themes_use_only_existing_primary_themes():
+    from src.config.tracked_companies import TRACKED_COMPANIES
+
+    all_tickers = (
+        tuple(_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_DART_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_EDINET_TICKERS_TO_CODES)
+    )
+    valid_themes = {"ai-buildout", "humanoids", "space", "memory", "photonics"}
+    batch = [c for c in TRACKED_COMPANIES if c.krx_code in all_tickers]
+    assert len(batch) == 10
+    for c in batch:
+        assert c.themes, f"{c.name} has no theme"
+        assert set(c.themes) <= valid_themes, f"{c.name} uses an unrecognized theme: {c.themes}"
+
+
+def test_tier1_cohort1_subthemes_only_reuse_existing_vocabulary_or_stay_unset():
+    from src.config.tracked_companies import TRACKED_COMPANIES
+
+    all_tickers = (
+        tuple(_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_DART_TICKERS_TO_NAMES)
+        + tuple(_TIER1_COHORT1_EDINET_TICKERS_TO_CODES)
+    )
+    # Every subtheme string already in use anywhere in the registry
+    # before this batch (unchanged since the Core Issuer Expansion
+    # batch — no new subtheme string has entered the vocabulary since).
+    # 'hbm-packaging-equipment' (Hanmi Semiconductor) and
+    # 'precision-reducers' (Nabtesco, Harmonic Drive Systems) are
+    # deliberately NOT in this set and NOT used on any TrackedCompany
+    # record — they are recorded only in each entry's own `notes` as a
+    # future taxonomy-migration candidate, same discipline the
+    # INDI/AIP/CEVA batch already established.
+    pre_existing_subthemes = {
+        "dram", "hbm", "compute-accelerators", "industrial-automation", "interconnect",
+        "interconnect-switching", "launch", "optical-components", "power-cooling", "semiconductor-test",
+    }
+    batch = [c for c in TRACKED_COMPANIES if c.krx_code in all_tickers]
+    for c in batch:
+        assert set(c.subthemes) <= pre_existing_subthemes, f"{c.name} uses an invented subtheme: {c.subthemes}"
+
+
+def test_tier1_cohort1_no_duplicate_identifiers_against_existing_registry():
+    companies = get_tracked_companies(active_only=False)
+    by_source: dict[str, list[str]] = {}
+    for c in companies:
+        by_source.setdefault(c.source, []).append(c.krx_code)
+    for source, codes in by_source.items():
+        assert len(codes) == len(set(codes)), f"{source} has a duplicate krx_code"
+    corp_codes = [c.corp_code for c in companies if c.corp_code is not None]
+    assert len(corp_codes) == len(set(corp_codes))
+    names = [c.name for c in companies]
+    assert len(names) == len(set(names))
+
+
+def test_tier1_cohort1_not_previously_present_as_a_discovery_stub():
+    # None of these 10 companies were already an unverified DISCOVERY_STUBS
+    # entry that would need to "graduate" (unlike the Arista/Cisco/Quanta/
+    # nVent precedent) — every one is a genuinely fresh addition.
+    from src.config.issuer_registry import DISCOVERY_STUBS
+
+    tier1_cohort1_names = {
+        *_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES.values(),
+        *_TIER1_COHORT1_DART_TICKERS_TO_NAMES.values(),
+        *_TIER1_COHORT1_EDINET_TICKERS_TO_NAMES.values(),
+    }
+    stub_names = {issuer.legal_name for issuer in DISCOVERY_STUBS}
+    assert tier1_cohort1_names.isdisjoint(stub_names)
+
+
+def test_tier1_cohort1_no_alias_collision_with_existing_companies():
+    # Each of the 10 new companies' mechanical Daily News aliases (exact
+    # name + legal-suffix-stripped form) must not exactly match any
+    # existing company's own aliases or curated brand_aliases.
+    from src.data_access.daily_news.company_aliases import build_company_alias_entries
+
+    entries = build_company_alias_entries()
+    tier1_cohort1_names = {
+        *_TIER1_COHORT1_EDGAR_TICKERS_TO_NAMES.values(),
+        *_TIER1_COHORT1_DART_TICKERS_TO_NAMES.values(),
+        *_TIER1_COHORT1_EDINET_TICKERS_TO_NAMES.values(),
+    }
+    by_name = {e.company_name: e for e in entries}
+    for name in tier1_cohort1_names:
+        assert name in by_name, f"{name} missing from the Daily News company universe"
+
+    tier1_cohort1_alias_strings: dict[str, str] = {}
+    for name in tier1_cohort1_names:
+        for alias in by_name[name].aliases:
+            tier1_cohort1_alias_strings[alias] = name
+
+    for entry in entries:
+        if entry.company_name in tier1_cohort1_names:
+            continue
+        for alias in entry.aliases + entry.brand_aliases:
+            assert alias not in tier1_cohort1_alias_strings, (
+                f"Alias '{alias}' collides between {entry.company_name} and "
+                f"{tier1_cohort1_alias_strings.get(alias)}"
+            )
+
+
+def test_tier1_cohort1_no_krx_or_corp_code_collision_with_existing_registry():
+    # Programmatic collision proof (not just the exact-match assertions
+    # above) — every one of the 10 new krx_code/corp_code values must be
+    # unique across the full, live 115-company registry.
+    companies = get_tracked_companies(active_only=False)
+    all_krx_codes = [c.krx_code for c in companies]
+    assert len(all_krx_codes) == len(set(all_krx_codes))
+    all_corp_codes = [c.corp_code for c in companies if c.corp_code is not None]
+    assert len(all_corp_codes) == len(set(all_corp_codes))
+
+
+def test_tier1_cohort1_does_not_include_ase_or_iridium_or_excluded_adapter_blocked_names():
+    # Explicit guard: ASE Technology Holding and Iridium Communications
+    # (both HOLD in the companion readiness document) and TSMC/ASML/
+    # Nanya/Winbond/Innolight/Siemens Energy (adapter-blocked, out of
+    # scope entirely) must never appear anywhere in the registry.
+    companies = get_tracked_companies(active_only=False)
+    names_lower = {c.name.lower() for c in companies}
+    excluded_fragments = (
+        "ase technology", "iridium", "taiwan semiconductor", "asml",
+        "nanya", "winbond", "innolight", "siemens energy",
+    )
+    for fragment in excluded_fragments:
+        assert not any(fragment in name for name in names_lower), f"{fragment} must not appear in the registry"
+    assert "ASX" not in {c.krx_code for c in companies}
+    assert "IRDM" not in {c.krx_code for c in companies}
+
+
+def test_pre_existing_105_companies_retain_prior_behavior_after_tier1_cohort1_batch():
+    # Regression proof: every pre-existing company's own identity/theme
+    # fields are byte-identical to their values before this batch —
+    # spot-checked across a representative sample spanning all three
+    # sources (mirrors the exact assertions test_samsung_identifiers_
+    # and_theme_mapping / test_sk_hynix_identifiers_and_theme_mapping /
+    # test_edgar_cohort_identifiers_and_theme_mapping already make, run
+    # again here to prove this batch did not perturb them).
+    companies = {c.name: c for c in get_tracked_companies(active_only=True)}
+    assert companies["Samsung Electronics"].krx_code == "005930"
+    assert companies["Samsung Electronics"].themes == ("memory", "ai-buildout")
+    assert companies["SK Hynix"].krx_code == "000660"
+    assert companies["NVIDIA"].krx_code == "NVDA"
+    assert companies["NVIDIA"].themes[0] == "ai-buildout"
+    assert companies["Rocket Lab"].krx_code == "RKLB"
+    assert companies["Rocket Lab"].themes[0] == "space"
+    assert companies["FANUC CORPORATION"].corp_code == "E01946"
+    assert companies["FANUC CORPORATION"].krx_code == "69540"
+    # 105 pre-existing + 10 new = 115 total active, confirmed once more
+    # here alongside the identity spot-checks above.
+    assert len(companies) == 115

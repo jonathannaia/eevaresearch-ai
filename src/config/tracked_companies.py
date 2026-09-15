@@ -1529,6 +1529,230 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "structured field): advanced-packaging."
         ),
     ),
+    # Tier 1 Cohort 1 batch (2026-09-15) — 10 net-new active issuers (5
+    # SEC EDGAR, 2 OpenDART / DART, 3 EDINET), added after a bounded,
+    # read-only, live official-source identifier verification pass. See
+    # design/TIER1_COHORT1_TRACKED_COMPANIES_IMPLEMENTATION_DESIGN_2026_09_15
+    # .md, design/TIER1_COHORT1_REGISTRY_READINESS_2026_09_15.md, and
+    # design/THEMATIC_COVERAGE_UNIVERSE_AUDIT_2026_09_15.md for the full
+    # evidence record.
+    TrackedCompany(
+        name="Hanmi Semiconductor Co., Ltd.",
+        exchange="KRX",
+        krx_code="042700",
+        source="OpenDART / DART",
+        themes=("memory", "ai-buildout"),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Memory / HBM thermal-"
+            "compression bonding equipment, ~80% reported global share in "
+            "this equipment category (trade press, TheElec/TrendForce, not "
+            "independently re-verified). Secondary ai-buildout theme "
+            "mirrors the existing SK Hynix/Samsung Electronics HBM-bridge "
+            "pattern. DART corp_code independently confirmed live this "
+            "session as 00161383 (2026-09-15, via DartClient."
+            "fetch_all_corp_codes() against the real bulk corpCode.xml "
+            "endpoint) — a cross-check value only; corp_code left "
+            "unresolved here per the existing DART-entry convention (all "
+            "current DART entries leave it None, resolved lazily via "
+            "with_resolved_corp_codes()). Proposed subtheme "
+            "'hbm-packaging-equipment' does NOT exist in today's subtheme "
+            "vocabulary and is deliberately left unset rather than "
+            "invented — same 'documented, not invented' discipline "
+            "already established for the INDI/AIP/CEVA batch."
+        ),
+    ),
+    TrackedCompany(
+        name="HD Hyundai Electric Co., Ltd.",
+        exchange="KRX",
+        krx_code="267260",
+        source="OpenDART / DART",
+        themes=("ai-buildout",),
+        subthemes=("power-cooling",),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — AI Buildout / transformer "
+            "and grid-interconnect equipment, a bottleneck for new AI-"
+            "datacenter power connections (trade press, general industry "
+            "observation, not a specific named contract). Renamed from "
+            "\"Hyundai Electric & Energy Systems Co., Ltd.\" in March 2023 "
+            "(established public profile, not independently re-verified "
+            "against a primary DART filing) — DART's own corp_eng_name "
+            "field confirms the current legal name. DART corp_code "
+            "independently confirmed live this session as 01205851 "
+            "(2026-09-15) — cross-check value only, corp_code left "
+            "unresolved per convention. `power-cooling` reused as the "
+            "closest existing subtheme fit (imperfect — transformers are a "
+            "narrower category than this tag's current broader usage)."
+        ),
+    ),
+    TrackedCompany(
+        name="Nabtesco Corporation",
+        native_name="ナブテスコ株式会社",
+        exchange="TSE",
+        krx_code="62680",
+        source="EDINET",
+        themes=("humanoids",),
+        subthemes=(),
+        corp_code="E01726",
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Humanoids / precision "
+            "reduction-gear (RV/cycloidal) manufacturer for large-joint "
+            "robot actuation, reported ~60% global RV-reducer share (trade "
+            "press, not independently re-verified). EDINET code and "
+            "securities code independently re-confirmed live this session "
+            "(2026-09-15) against the official EDINET code-list bulk file "
+            "(11,389 entries). Multi-segment company — also reports rail/"
+            "aircraft/construction-equipment segments; event "
+            "classification should filter to the robotics-component "
+            "segment specifically. Proposed subtheme 'precision-reducers' "
+            "does NOT exist in today's vocabulary and is deliberately "
+            "left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="Harmonic Drive Systems Inc.",
+        native_name="株式会社ハーモニック・ドライブ・システムズ",
+        exchange="TSE",
+        krx_code="63240",
+        source="EDINET",
+        themes=("humanoids",),
+        subthemes=(),
+        corp_code="E01712",
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Humanoids / strain-wave "
+            "(harmonic-drive) gear manufacturer, the second dominant "
+            "precision-reduction technology alongside Nabtesco's RV/"
+            "cycloidal gears; together the two cover nearly the entire "
+            "addressable reducer market for robot-joint actuation. EDINET "
+            "code and securities code confirmed live this session "
+            "(2026-09-15) against the official EDINET code-list bulk "
+            "file — fiscal year end 3/31, industry classification 機械 "
+            "(Machinery), listed. Also serves space and semiconductor-"
+            "equipment end-markets — same multi-segment event-filtering "
+            "caveat as Nabtesco. Proposed subtheme 'precision-reducers' "
+            "(shared with Nabtesco) does NOT exist in today's vocabulary "
+            "and is deliberately left unset."
+        ),
+    ),
+    TrackedCompany(
+        name="YASKAWA Electric Corporation",
+        native_name="株式会社安川電機",
+        exchange="TSE",
+        krx_code="65060",
+        source="EDINET",
+        themes=("humanoids",),
+        subthemes=("industrial-automation",),
+        corp_code="E01741",
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Humanoids / one of the "
+            "world's top-three industrial-robot OEMs and a major servo-"
+            "motor/drive maker; the most surprising pre-existing single-"
+            "name gap found in the coverage audit (FANUC already tracked "
+            "as the registry's sole robot-OEM name; Yaskawa is a direct "
+            "peer at comparable scale). EDINET code and securities code "
+            "confirmed live this session (2026-09-15) — fiscal year end "
+            "end-of-February, industry classification 電気機器 "
+            "(Electric Machinery), listed. Two unrelated individual "
+            "filers sharing the same surname (E08569, E40004) confirmed "
+            "distinct by entity type (個人, 'individual', not "
+            "内国法人・組合, 'domestic corporation') and absence "
+            "of a stock code — no collision risk. `industrial-automation` "
+            "reused (already-existing subtheme, matches Doosan Robotics/"
+            "Rockwell/Symbotic/Mitsubishi Electric usage)."
+        ),
+    ),
+    TrackedCompany(
+        name="GE Vernova Inc.",
+        exchange="NYSE",
+        krx_code="GEV",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=("power-cooling",),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — AI Buildout / power-grid "
+            "bottleneck. CIK 0001996810 confirmed live via SEC EDGAR "
+            "submissions API, 2026-09-15 (standard domestic filer: 8-K, "
+            "10-Q, 11-K, Form 4, SD — 2024 spin-off from General Electric). "
+            "corp_code left unresolved per existing SEC EDGAR convention — "
+            "requires a separate cik_resolver.resolve_and_cache() gate "
+            "against data/cache/edgar_ciks.json before scan-ready."
+        ),
+    ),
+    TrackedCompany(
+        name="Digital Realty Trust, Inc.",
+        exchange="NYSE",
+        krx_code="DLR",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — AI Buildout / datacenter "
+            "infrastructure REIT, a first-order buildout-pace signal (direct "
+            "development-pipeline/pre-lease disclosures) distinct from every "
+            "other tracked ai-buildout name, which is a component/equipment "
+            "supplier. CIK 0001297996 confirmed live, 2026-09-15 (Maryland "
+            "incorporation, standard REIT filer: 8-K, 10-Q, Form 4, 424B7, "
+            "Schedule 13G). No existing subtheme fits a REIT; left unset "
+            "rather than reused inaccurately. corp_code left unresolved "
+            "per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Equinix, Inc.",
+        exchange="NASDAQ",
+        krx_code="EQIX",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — AI Buildout / colocation "
+            "and interconnection REIT, recommended alongside Digital Realty "
+            "(DLR) deliberately, for interconnection-specific disclosure "
+            "coverage rather than as a duplicate signal. CIK 0001101239 "
+            "confirmed live, 2026-09-15 (Delaware incorporation, standard "
+            "REIT filer: 8-K, 424B2, 424B5, Form 4/144). No subtheme fits; "
+            "left unset. corp_code left unresolved per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Firefly Aerospace Inc.",
+        exchange="NASDAQ",
+        krx_code="FLY",
+        source="SEC EDGAR",
+        themes=("space",),
+        subthemes=("launch",),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Space / launch, a second, "
+            "independent launch provider alongside the existing Rocket Lab "
+            "(RKLB) entry for direct cadence/manifest comparison. CIK "
+            "0001860160 confirmed live, 2026-09-15 (Delaware incorporation, "
+            "standard domestic filer: Form 4, Schedule 13G/A, 424B3, 10-Q, "
+            "8-K, Form D, Form 3 — reflects its 2025-08-07 IPO, not a "
+            "foreign-filer pattern). corp_code left unresolved per "
+            "convention."
+        ),
+    ),
+    TrackedCompany(
+        name="L3Harris Technologies, Inc.",
+        exchange="NYSE",
+        krx_code="LHX",
+        source="SEC EDGAR",
+        themes=("space",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 1 batch (2026-09-15) — Space / satellite payloads "
+            "and space-domain-awareness systems. Multi-segment company — "
+            "its much larger defense-electronics business is NOT space-"
+            "specific; event classification at implementation time should "
+            "not assume every 8-K is space-relevant (same caveat already "
+            "applied to Nabtesco's rail/aircraft segments above). CIK "
+            "0000202058 confirmed live, 2026-09-15 (Delaware incorporation, "
+            "formerly \"HARRIS CORP /DE/\" prior to the 2019 Harris/L3 "
+            "merger; standard domestic filer: Form 144, Form 4, Form 3, "
+            "8-K, Schedule 13G/A). corp_code left unresolved per "
+            "convention."
+        ),
+    ),
 )
 
 
