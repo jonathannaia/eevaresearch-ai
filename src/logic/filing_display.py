@@ -69,6 +69,65 @@ _EDGAR_FORM_TITLES: dict[str, str] = {
 }
 
 
+# Cross-market filing-card title clarity fix (design/DECISIONS.md):
+# DART/EDINET titles previously fell straight back to the raw native
+# report_nm (or its literal translation) with no English event-type
+# description at all — unlike EDGAR, which always shows a deterministic
+# "Annual Report — Form 10-K"-style phrase via _EDGAR_FORM_TITLES above.
+# These two small tables give DART/EDINET filings the same treatment,
+# but only for a category a rule engine has ALREADY, independently
+# established for this specific candidate — never a new inference made
+# here. Each key is a category slug from the matched_rules format both
+# dart_rules.py (`category:rule_name:keyword`) and edinet_rules.py
+# (`category:ordinanceCode:formCode:docTypeCode`) already produce and
+# store on CandidateSignal.matched_rules; a coverage test
+# (test_filing_display.py) asserts every real category in each rules
+# module has an entry here, so the two can never silently drift apart.
+# Phrasing choices: DART entries are plain-English renderings of each
+# rule's own already-approved rule_name; EDINET entries reuse the exact
+# official English document-type names already documented in
+# edinet_rules.py's own DEFAULT_CODE_CATEGORY_MAP comments (independently
+# live-verified there, not invented here).
+_DART_CATEGORY_TITLES: dict[str, str] = {
+    "earnings": "Earnings or Results Report",
+    "guidance": "Forward-Looking Business Plan",
+    "capex_or_facility_investment": "Facility Investment",
+    "supply_or_sales_contract": "Supply or Sales Contract",
+    "equity_or_jv_investment": "Equity Stake or Investment Decision",
+    "financing": "Capital Raise or Treasury Stock Action",
+    "listing_or_market_event": "Listing Decision",
+    "ownership_change": "Major Shareholder Change",
+    "risk_disclosure": "Risk or Incident Disclosure",
+    "market_rumor_response": "Rumor Inquiry or Response",
+}
+_EDINET_CATEGORY_TITLES: dict[str, str] = {
+    "annual_securities_report": "Annual Securities Report",
+    "share_buyback_status": "Status Report of Purchase of Own Shares",
+    "extraordinary_report": "Extraordinary Report",
+}
+
+
+def _mapped_category_title(
+    candidate: CandidateSignal | None, category_titles: dict[str, str],
+) -> str | None:
+    """The first matched_rules entry (see the two tables above for the
+    `category:...` format both rule engines share) whose leading category
+    slug is one of these curated, human-phrased entries — never just
+    matched_rules[0] blindly, so a future non-category marker
+    (e.g. dart_rules.py's own bare "amendment_or_correction" entry, which
+    carries no category prefix) can never be mistaken for one. None when
+    `candidate` is None or nothing matches — the caller's existing
+    fallback (translated_text or report_nm) is unaffected either way."""
+    if candidate is None:
+        return None
+    for rule in candidate.matched_rules:
+        category = rule.split(":", 1)[0]
+        mapped = category_titles.get(category)
+        if mapped:
+            return mapped
+    return None
+
+
 def is_english_native(filing: FilingEvent) -> bool:
     return filing.original_language == "English"
 
@@ -107,16 +166,38 @@ def display_title(filing: FilingEvent, candidate: CandidateSignal | None, prefer
     translated` has no effect here (EDGAR never requests a translation).
     DART/EDINET: the stored title translation when `prefer_translated` is
     True AND one exists, otherwise the filing's own native official title
-    verbatim. `prefer_translated` defaults to True (the original,
-    pre-toggle behavior every existing call site relied on) — the
-    Dashboard/Filings usability pass's own per-card Original/English
-    toggle (radar_card.py) is the only caller that ever passes False.
-    Never a fabricated or inferred title."""
+    verbatim — call this `native_or_translated` below. `prefer_
+    translated` defaults to True (the original, pre-toggle behavior every
+    existing call site relied on) — the Dashboard/Filings usability
+    pass's own per-card Original/English toggle (radar_card.py) is the
+    only caller that ever passes False.
+
+    Cross-market filing-card title clarity fix (design/DECISIONS.md):
+    when this candidate's matched_rules already establish a known event
+    category (see _mapped_category_title/_DART_CATEGORY_TITLES/
+    _EDINET_CATEGORY_TITLES above), that category's plain-English phrase
+    is prefixed onto native_or_translated — e.g. "Status Report of
+    Purchase of Own Shares — 自己株券買付状況報告書" — so the title always
+    explains what KIND of filing this is, never just the raw native form
+    name alone, without ever discarding that native/translated text
+    itself. Falls back to native_or_translated unchanged whenever no
+    category is known (including every EDGAR call, and any DART/EDINET
+    candidate whose matched category isn't one of the curated entries
+    above) or when native_or_translated is empty. Never a fabricated or
+    inferred title — the category itself was already independently
+    established by dart_rules.py/edinet_rules.py, never guessed here."""
     if is_english_native(filing):
         return _edgar_display_title(filing)
+
+    native_or_translated = filing.report_nm
     if prefer_translated and candidate is not None and candidate.title_translation is not None:
-        return candidate.title_translation.translated_text
-    return filing.report_nm
+        native_or_translated = candidate.title_translation.translated_text
+
+    category_titles = _EDINET_CATEGORY_TITLES if filing.source_name == EDINET_SOURCE_NAME else _DART_CATEGORY_TITLES
+    mapped = _mapped_category_title(candidate, category_titles)
+    if mapped and native_or_translated and mapped.strip() != native_or_translated.strip():
+        return f"{mapped} — {native_or_translated}"
+    return mapped or native_or_translated
 
 
 # ============================================================

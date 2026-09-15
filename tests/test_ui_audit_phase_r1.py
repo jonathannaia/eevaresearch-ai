@@ -211,7 +211,7 @@ def test_card_shows_original_and_english_translation(tmp_path):
     assert "Why flagged:" not in all_text
     # No stored translation — Summary is the neutral metadata fallback;
     # the native excerpt is reachable only behind its own toggle.
-    assert "삼성전자 filed 신규시설투자등 결정 on Aug 12, 2026." in all_text
+    assert "삼성전자 filed Facility Investment — 신규시설투자등 결정 on Aug 12, 2026." in all_text
     assert "신규시설투자등 관련 원문" not in all_text
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1

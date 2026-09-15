@@ -91,6 +91,135 @@ def test_dart_title_falls_back_to_native_official_title_when_untranslated():
 
 
 # ============================================================
+# A2: cross-market filing-card title clarity fix — DART/EDINET
+# event-category prefix (design/DECISIONS.md)
+# ============================================================
+
+
+def _edinet_filing(report_nm: str, pblntf_ty: str = "", pblntf_detail_ty: str = "", ordinance_code: str = "") -> FilingEvent:
+    return FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm=report_nm, rcept_dt="2026-09-04", flr_nm="信越化学工業株式会社",
+        pblntf_ty=pblntf_ty, pblntf_detail_ty=pblntf_detail_ty, ordinance_code=ordinance_code,
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID", retrieved_at=_now_iso(),
+        source_name="EDINET", original_language="Japanese",
+    )
+
+
+def _candidate_with_matched_rules(filing: FilingEvent, matched_rules: list[str], **kwargs) -> CandidateSignal:
+    return CandidateSignal(
+        id="cand-1", filing=filing, matched_rules=matched_rules, confidence="Moderate",
+        status=CandidateStatus.NEEDS_REVIEW,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+        **kwargs,
+    )
+
+
+def test_dart_title_prefixes_with_the_known_event_category_in_native_mode():
+    filing = _dart_filing("신규시설투자등 결정")
+    candidate = _candidate_with_matched_rules(filing, ["capex_or_facility_investment:facility_investment:신규시설투자"])
+    assert filing_display.display_title(filing, candidate) == "Facility Investment — 신규시설투자등 결정"
+
+
+def test_dart_title_prefix_still_applies_over_a_stored_translation():
+    filing = _dart_filing("신규시설투자등 결정")
+    candidate = _candidate_with_matched_rules(
+        filing, ["capex_or_facility_investment:facility_investment:신규시설투자"],
+        title_translation=Translation(
+            translated_text="New facility investment decision", provider="DeepL",
+            source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+    )
+    assert filing_display.display_title(filing, candidate) == "Facility Investment — New facility investment decision"
+
+
+def test_dart_title_never_duplicates_when_mapped_phrase_equals_existing_title():
+    filing = _dart_filing("신규시설투자등 결정")
+    candidate = _candidate_with_matched_rules(
+        filing, ["capex_or_facility_investment:facility_investment:신규시설투자"],
+        title_translation=Translation(
+            translated_text="Facility Investment", provider="DeepL",
+            source_lang="ko", target_lang="en", translated_at=_now_iso(),
+        ),
+    )
+    assert filing_display.display_title(filing, candidate) == "Facility Investment"
+
+
+def test_dart_title_unmapped_category_falls_back_to_unchanged_behavior():
+    filing = _dart_filing("신규시설투자등 결정")
+    candidate = _candidate_with_matched_rules(filing, ["some_future_category:some_rule:keyword"])
+    assert filing_display.display_title(filing, candidate) == "신규시설투자등 결정"
+
+
+def test_dart_title_skips_a_leading_non_category_marker_to_find_the_real_category():
+    """dart_rules.py's own "amendment_or_correction" matched_rules entry
+    carries no category prefix at all (see dart_rules.evaluate_report_
+    name) — a pathological ordering with it first must never be mistaken
+    for a category and must never suppress a real category later in the
+    list."""
+    filing = _dart_filing("[기재정정] 신규시설투자등 결정")
+    candidate = _candidate_with_matched_rules(
+        filing, ["amendment_or_correction", "capex_or_facility_investment:facility_investment:신규시설투자"],
+    )
+    assert filing_display.display_title(filing, candidate) == "Facility Investment — [기재정정] 신규시설투자등 결정"
+
+
+def test_dart_title_with_no_candidate_falls_back_to_unchanged_behavior():
+    filing = _dart_filing("신규시설투자등 결정")
+    assert filing_display.display_title(filing, None) == "신규시설투자등 결정"
+
+
+def test_edinet_title_prefixes_with_the_known_event_category_in_native_mode():
+    filing = _edinet_filing(
+        "自己株券買付状況報告書（法２４条の６第１項に基づくもの）",
+        pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+    )
+    candidate = _candidate_with_matched_rules(filing, ["share_buyback_status:010:170000:220"])
+    assert filing_display.display_title(filing, candidate) == (
+        "Status Report of Purchase of Own Shares — 自己株券買付状況報告書（法２４条の６第１項に基づくもの）"
+    )
+
+
+def test_edinet_title_prefix_collapses_when_translation_already_matches():
+    filing = _edinet_filing("臨時報告書", pblntf_ty="053000", pblntf_detail_ty="180", ordinance_code="010")
+    candidate = _candidate_with_matched_rules(
+        filing, ["extraordinary_report:010:053000:180"],
+        title_translation=Translation(
+            translated_text="Extraordinary Report", provider="DeepL",
+            source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+    )
+    assert filing_display.display_title(filing, candidate) == "Extraordinary Report"
+
+
+def test_edinet_title_unmapped_category_falls_back_to_unchanged_behavior():
+    filing = _edinet_filing("四半期報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    candidate = _candidate_with_matched_rules(filing, [])
+    assert filing_display.display_title(filing, candidate) == "四半期報告書"
+
+
+def test_every_real_dart_lexicon_category_has_a_curated_display_title():
+    """Drift guard: dart_rules.py's own KOREAN_KEYWORD_LEXICON is the one
+    source of truth for which categories are real; _DART_CATEGORY_TITLES
+    must never silently fall behind it."""
+    from src.data_access.dart.dart_rules import KOREAN_KEYWORD_LEXICON
+
+    for category in KOREAN_KEYWORD_LEXICON:
+        assert category in filing_display._DART_CATEGORY_TITLES, category
+
+
+def test_every_real_edinet_mapped_category_has_a_curated_display_title():
+    """Drift guard: edinet_rules.py's own DEFAULT_CODE_CATEGORY_MAP is
+    the one source of truth for which categories are real and live-
+    verified; _EDINET_CATEGORY_TITLES must never silently fall behind
+    it."""
+    from src.data_access.edinet.edinet_rules import DEFAULT_CODE_CATEGORY_MAP
+
+    for category in DEFAULT_CODE_CATEGORY_MAP.values():
+        assert category in filing_display._EDINET_CATEGORY_TITLES, category
+
+
+# ============================================================
 # C: is_readable_extracted_text — the extraction quality gate
 # ============================================================
 
