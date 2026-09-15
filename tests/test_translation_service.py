@@ -13,6 +13,7 @@ from src.data_access.translation.interfaces import (
 from src.data_access.translation.translation_service import (
     MAX_TRANSLATION_RETRY_ATTEMPTS,
     TRANSLATION_RETRY_BACKOFF_MINUTES,
+    get_cached_translation,
     record_translation_attempt,
     retry_translation_for_candidate,
     translate_cached,
@@ -309,3 +310,46 @@ def test_retry_translation_for_candidate_persists_a_second_failure_with_advanced
     assert retried.translation_retry_count == 1
     assert retried.translation_failure_category == "rate_limit"
     assert retried.translation_next_retry_at is not None
+
+
+# ============================================================
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — get_cached_translation, a
+# pure, provider-free cache lookup for render-time callers that must
+# never trigger a live translation request.
+# ============================================================
+
+
+def test_get_cached_translation_returns_none_when_nothing_was_ever_cached(tmp_path):
+    assert get_cached_translation("doc-1", "Bonjour", tmp_path) is None
+
+
+def test_get_cached_translation_returns_the_same_translation_after_a_real_cache_write(tmp_path):
+    provider = _FakeProvider(result="Hello")
+    attempt = translate_cached_with_outcome(provider, "doc-1", "Bonjour", tmp_path, source_lang="FR")
+    assert attempt.translation is not None
+
+    cached = get_cached_translation("doc-1", "Bonjour", tmp_path)
+
+    assert cached is not None
+    assert cached.translated_text == "Hello"
+
+
+def test_get_cached_translation_never_calls_the_provider(tmp_path):
+    """The defining property: this function takes no provider argument
+    at all, so it is structurally incapable of making a live call —
+    this test locks that shape in (a cache miss must never raise or
+    attempt any network access)."""
+    assert get_cached_translation("never-translated-doc", "some text", tmp_path) is None
+
+
+def test_get_cached_translation_is_scoped_by_both_document_id_and_text(tmp_path):
+    provider = _FakeProvider(result="Hello")
+    translate_cached_with_outcome(provider, "doc-1", "Bonjour", tmp_path, source_lang="FR")
+
+    assert get_cached_translation("doc-2", "Bonjour", tmp_path) is None  # different document_id
+    assert get_cached_translation("doc-1", "Salut", tmp_path) is None  # different text
+
+
+def test_get_cached_translation_returns_none_for_empty_text(tmp_path):
+    assert get_cached_translation("doc-1", "", tmp_path) is None

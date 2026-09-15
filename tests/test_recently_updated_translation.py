@@ -188,7 +188,12 @@ def test_translate_action_failure_shows_concise_status_and_keeps_original_title(
     assert not any(b.label == "Translate to English" for b in at.button)  # no retry affordance
 
 
-def test_daily_news_row_never_shows_a_translate_action(tmp_path):
+def test_english_daily_news_row_never_shows_a_translate_action(tmp_path):
+    """Dashboard/Signals quality fix (design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) note: Daily News issuer rows
+    CAN now show a translate action, for a non-English row — see the new
+    French fixture below. An ordinary English row must still never show
+    one, exactly as before this fix."""
     from src.data_access.daily_news import daily_news_store
     from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
 
@@ -214,6 +219,63 @@ def test_daily_news_row_never_shows_a_translate_action(tmp_path):
     all_text = _text(at)
     assert "Apple announces new product" in all_text
     assert not any(b.label == "Translate to English" for b in at.button)
+
+
+def test_french_daily_news_row_shows_translate_action_and_translates_on_click(tmp_path):
+    """Dashboard/Signals quality fix (design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): a Daily News issuer row
+    correctly classified as French (not mislabeled "English") now shows
+    the same on-demand translate control filing rows already have,
+    reusing the exact same shared component."""
+    from datetime import datetime, timezone
+
+    from src.data_access.daily_news import daily_news_store
+    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+
+    published_at = datetime.now(timezone.utc).isoformat()
+    story = NewsStory(
+        id="newsitem-meta-fr", company_name="Meta Platforms, Inc.", ticker="META", theme_slug="ai-buildout",
+        headline="Meta lance Meta One", eeva_summary=None, is_fallback_summary=False,
+        translation_unavailable=False, original_title=None,
+        sources=(
+            NewsSourceReference(
+                publisher="Meta Platforms, Inc.", source_class=SourceClass.OFFICIAL_COMPANY,
+                url="https://about.fb.com/fr/news/meta-one", title="Meta lance Meta One",
+                published_at=published_at, retrieved_at=published_at, original_language="French",
+            ),
+        ),
+        status=NewsStoryStatus.PUBLISHED,
+        state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=published_at)],
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+    settings = _settings(tmp_path)
+
+    with patch(
+        "src.ui.components.recently_updated.translation_service.translate_cached_with_outcome"
+    ) as mock_translate:
+        at = _run_dashboard(settings)
+
+    assert not at.exception
+    mock_translate.assert_not_called()  # never on page load
+    all_text = _text(at)
+    assert "Meta lance Meta One" in all_text  # native title shown by default
+    translate_action = [b for b in at.button if b.label == "Translate to English"]
+    assert len(translate_action) == 1
+
+    translation = Translation(
+        translated_text="Meta Launches Meta One", provider="DeepL",
+        source_lang="FR", target_lang="EN", translated_at=published_at,
+    )
+    with patch(
+        "src.ui.components.recently_updated.translation_service.translate_cached_with_outcome",
+        return_value=TranslationAttempt(translation=translation),
+    ):
+        translate_action[0].click()
+        _rerun(at, settings)
+
+    all_text = _text(at)
+    assert "Meta Launches Meta One" in all_text
+    assert any(b.label == "Original" for b in at.button)
 
 
 def test_translation_control_renders_inside_the_same_per_row_container_as_its_row_content(tmp_path, monkeypatch):

@@ -21,10 +21,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.data_access.daily_news import canonical_url, daily_news_store, dedup, rss_atom_client
+from src.data_access.daily_news import canonical_url, daily_news_store, dedup, localization_dedup, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_FEEDS, tracked_company_for
 from src.data_access.daily_news.materiality_classification import classify_issuer_story
 from src.data_access.daily_news.summary_grounding import generate_summary
+from src.data_access.translation import translation_service
 from src.models.daily_news_models import (
     NewsSourceReference,
     NewsStateTransition,
@@ -35,6 +36,21 @@ from src.models.daily_news_models import (
 
 if TYPE_CHECKING:  # avoids a hard import-time dependency on daily_news_backend.py's own connection-acquisition chain
     from src.data_access.daily_news.daily_news_backend import DailyNewsRepositoryProtocol
+    from src.data_access.translation.interfaces import TranslationProvider
+
+# Dashboard/Signals quality fix (design/DASHBOARD_SIGNAL_QUALITY_FIX_
+# DESIGN.md) — DeepL source-language codes for every language a real
+# Daily News source declares today (source_registry.DailyNewsSourceEntry.
+# language). "English" is deliberately absent: it is never the text
+# actually sent to the translation provider (see
+# _evaluate_localization_match's own docstring — only the non-English
+# side of a candidate/existing pair is ever translated). Kept as this
+# module's own small, local copy rather than importing recently_updated.
+# py's private constant — matches this codebase's own established
+# precedent (see that module's own docstring on why it keeps its own
+# copy rather than reaching across a module boundary for a private
+# symbol).
+_LANGUAGE_CODE_BY_NAME: dict[str, str] = {"Korean": "KO", "Japanese": "JA", "French": "FR"}
 
 
 @dataclass(frozen=True)
@@ -162,10 +178,265 @@ class _IssuerCandidate:
     original_index: int
 
 
+def _find_localizable_existing_story(
+    store: dict[str, NewsStory], company_name: str, candidate_language: str, published_dt: datetime,
+) -> NewsStory | None:
+    """Structural pre-filter only (same company, first-party
+    OFFICIAL_COMPANY, a different declared language, publication within
+    localization_dedup.MAX_PUBLISH_GAP_SECONDS) — returns the first
+    already-persisted story that could plausibly be a cross-language
+    localized duplicate, before any translation is ever attempted, so a
+    candidate/company pair that cannot possibly match never spends a
+    translation call. Real title-similarity is decided later, only for
+    a match this function returns, by localization_dedup.is_localized_duplicate."""
+    for story in store.values():
+        if story.company_name != company_name or not story.sources:
+            continue
+        existing_ref = story.sources[0]
+        if existing_ref.source_class != SourceClass.OFFICIAL_COMPANY:
+            continue
+        if existing_ref.original_language == candidate_language:
+            continue
+        existing_dt = _parse_utc_datetime(existing_ref.published_at)
+        if existing_dt is None:
+            continue
+        if abs((published_dt - existing_dt).total_seconds()) > localization_dedup.MAX_PUBLISH_GAP_SECONDS:
+            continue
+        return story
+    return None
+
+
+@dataclass(frozen=True)
+class _LocalizationMatch:
+    existing_story: NewsStory
+    # True when the CANDIDATE (the newly-evaluated side) is the
+    # English/global side and existing_story is the non-English side —
+    # the "reverse discovery order" case, where the candidate is
+    # preferred and the older story becomes the now-superseded
+    # alternate, rather than the candidate itself being suppressed.
+    candidate_is_preferred: bool
+
+
+def _translate_and_compare(
+    translation_provider: "TranslationProvider | None",
+    cache_dir: Path,
+    company_name: str, candidate_language: str, candidate_title: str, published_dt: datetime,
+    existing_story: NewsStory,
+) -> _LocalizationMatch | None:
+    """Translation-assisted core of the localized-duplicate check, given
+    an ALREADY-FOUND candidate existing_story (see
+    _find_localizable_existing_story for discovery-time lookup, and
+    select_canonical_stories for the read-time pairwise variant — both
+    call this same function so the translate-and-compare logic itself
+    never diverges between the two call sites). Returns None whenever no
+    translation was attempted or available — "insufficient confidence"
+    always means keeping both items, never comparing raw text in two
+    different languages directly. Only ever translates the ONE
+    non-English title in the pair (whichever side that is), reusing the
+    exact same cached, generic translation_service.
+    translate_cached_with_outcome() every other translation call site in
+    this app already uses — never a new provider, never a new cache."""
+    if translation_provider is None:
+        return None
+    existing_ref = existing_story.sources[0]
+    existing_dt = _parse_utc_datetime(existing_ref.published_at)
+    if existing_dt is None:
+        return None
+
+    if candidate_language == "English":
+        non_english_title, non_english_lang = existing_story.headline, existing_ref.original_language
+    else:
+        non_english_title, non_english_lang = candidate_title, candidate_language
+    lang_code = _LANGUAGE_CODE_BY_NAME.get(non_english_lang)
+    if lang_code is None:
+        return None
+
+    attempt = translation_service.translate_cached_with_outcome(
+        translation_provider, document_id=f"localization-dedup:{company_name}:{non_english_lang}",
+        text=non_english_title, cache_dir=cache_dir, source_lang=lang_code,
+    )
+    if attempt.translation is None:
+        return None
+    translated = attempt.translation.translated_text
+
+    candidate_translated_title = translated if candidate_language != "English" else candidate_title
+    existing_title_for_compare = existing_story.headline if candidate_language != "English" else translated
+
+    is_duplicate = localization_dedup.is_localized_duplicate(
+        candidate_company=company_name, candidate_source_class=SourceClass.OFFICIAL_COMPANY,
+        candidate_language=candidate_language, candidate_published_at_epoch=published_dt.timestamp(),
+        candidate_translated_title=candidate_translated_title,
+        existing_company=existing_story.company_name, existing_source_class=existing_ref.source_class,
+        existing_language=existing_ref.original_language, existing_published_at_epoch=existing_dt.timestamp(),
+        existing_title=existing_title_for_compare,
+    )
+    if not is_duplicate:
+        return None
+    candidate_is_preferred = candidate_language == "English" and existing_ref.original_language != "English"
+    return _LocalizationMatch(existing_story=existing_story, candidate_is_preferred=candidate_is_preferred)
+
+
+def _evaluate_localization_match(
+    translation_provider: "TranslationProvider | None",
+    cache_dir: Path,
+    company_name: str, candidate_language: str, candidate_title: str, published_dt: datetime,
+    store: dict[str, NewsStory],
+) -> _LocalizationMatch | None:
+    """Discovery-time convenience wrapper: finds a plausible existing
+    match via the cheap, translation-free structural pre-filter
+    (_find_localizable_existing_story), then delegates to
+    _translate_and_compare only for that one candidate — never
+    translates anything for a company/store with no plausible match at
+    all."""
+    if translation_provider is None:
+        return None
+    existing_story = _find_localizable_existing_story(store, company_name, candidate_language, published_dt)
+    if existing_story is None:
+        return None
+    return _translate_and_compare(
+        translation_provider, cache_dir, company_name, candidate_language, candidate_title, published_dt, existing_story,
+    )
+
+
+def _compare_using_cached_translation_only(
+    cache_dir: Path,
+    company_name: str, candidate_language: str, candidate_title: str, published_dt: datetime,
+    existing_story: NewsStory,
+) -> _LocalizationMatch | None:
+    """Render-time-safe counterpart to _translate_and_compare — same
+    gates/similarity logic (delegates to the identical localization_
+    dedup.is_localized_duplicate call), but takes NO TranslationProvider
+    at all, so it is structurally incapable of making a live translation
+    request or any other network call. Reads only translation_service.
+    get_cached_translation() — a pure cache lookup, never a write, never
+    a call to _translate_with_retry. Returns None (keep both items:
+    "insufficient confidence") whenever the one non-English title in the
+    pair has no ALREADY-cached translation — a plausible cross-language
+    pair discovered/persisted since the last time discovery actually
+    translated it simply stays visible as two separate stories until a
+    future discovery run (or an explicit user-triggered Translate
+    action) populates the cache; render time never populates it itself."""
+    existing_ref = existing_story.sources[0]
+    existing_dt = _parse_utc_datetime(existing_ref.published_at)
+    if existing_dt is None:
+        return None
+
+    if candidate_language == "English":
+        non_english_title, non_english_lang = existing_story.headline, existing_ref.original_language
+    else:
+        non_english_title, non_english_lang = candidate_title, candidate_language
+    if non_english_lang not in _LANGUAGE_CODE_BY_NAME:
+        return None
+
+    cached = translation_service.get_cached_translation(
+        document_id=f"localization-dedup:{company_name}:{non_english_lang}",
+        text=non_english_title, cache_dir=cache_dir,
+    )
+    if cached is None:
+        return None
+    translated = cached.translated_text
+
+    candidate_translated_title = translated if candidate_language != "English" else candidate_title
+    existing_title_for_compare = existing_story.headline if candidate_language != "English" else translated
+
+    is_duplicate = localization_dedup.is_localized_duplicate(
+        candidate_company=company_name, candidate_source_class=SourceClass.OFFICIAL_COMPANY,
+        candidate_language=candidate_language, candidate_published_at_epoch=published_dt.timestamp(),
+        candidate_translated_title=candidate_translated_title,
+        existing_company=existing_story.company_name, existing_source_class=existing_ref.source_class,
+        existing_language=existing_ref.original_language, existing_published_at_epoch=existing_dt.timestamp(),
+        existing_title=existing_title_for_compare,
+    )
+    if not is_duplicate:
+        return None
+    candidate_is_preferred = candidate_language == "English" and existing_ref.original_language != "English"
+    return _LocalizationMatch(existing_story=existing_story, candidate_is_preferred=candidate_is_preferred)
+
+
+def select_canonical_stories(stories: dict[str, NewsStory], cache_dir: Path) -> dict[str, NewsStory]:
+    """Read-time reconciliation (Dashboard/Signals quality fix, design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): given every currently-
+    persisted NewsStory (as returned by a DailyNewsRepositoryProtocol's
+    own load_stories()), returns the subset that should actually be
+    DISPLAYED — collapsing a cross-language localized-duplicate pair
+    (see localization_dedup.py) down to its one preferred story
+    (English/global preferred over a non-English alternate, regardless
+    of which side was discovered/published first) without ever
+    mutating, deleting, or reordering the underlying store: every story
+    this function excludes from its return value is still fully
+    present, unmodified, and independently retrievable from `stories`
+    itself — real traceability by construction, never a separate
+    lossy record.
+
+    Call this immediately after repository.load_stories() in any
+    surface that renders issuer-lane NewsStory cards (see
+    src/ui/pages/daily_news.py and src/ui/components/recently_updated.py)
+    — never inside run_discovery() itself, which already makes its own
+    write-time decision for the common (English-first) case via
+    _evaluate_localization_match and only ever needs this function to
+    additionally hide an already-persisted alternate for the reverse-
+    order case.
+
+    PURE/READ-ONLY with respect to external services, by construction:
+    takes no TranslationProvider parameter at all (there is nothing here
+    to pass one to), and its one collaborator,
+    _compare_using_cached_translation_only, calls only translation_
+    service.get_cached_translation() — a cache-file read, never
+    translate_cached_with_outcome() and never anything that can reach a
+    TranslationProvider.translate() call or the network. A plausible
+    cross-language pair whose one non-English title has no already-
+    cached translation is left as two separate, fully visible stories
+    ("insufficient confidence" always means keep both) — discovery-time
+    comparison/caching (_evaluate_localization_match, inside
+    run_discovery) and the explicit, user-triggered Translate action in
+    the UI remain the only two places this app ever calls a translation
+    provider; this function is neither."""
+    if len(stories) < 2:
+        return stories
+    superseded_ids: set[str] = set()
+    story_list = list(stories.values())
+    for i, candidate in enumerate(story_list):
+        if candidate.id in superseded_ids or not candidate.sources:
+            continue
+        candidate_ref = candidate.sources[0]
+        candidate_dt = _parse_utc_datetime(candidate_ref.published_at)
+        if candidate_dt is None:
+            continue
+        for other in story_list[i + 1:]:
+            if other.id in superseded_ids or not other.sources:
+                continue
+            match = _compare_using_cached_translation_only(
+                cache_dir, candidate.company_name, candidate_ref.original_language,
+                candidate.headline, candidate_dt, other,
+            )
+            if match is None:
+                continue
+            other_ref = other.sources[0]
+            if candidate_ref.original_language == "English" and other_ref.original_language != "English":
+                superseded_ids.add(other.id)
+            elif other_ref.original_language == "English" and candidate_ref.original_language != "English":
+                superseded_ids.add(candidate.id)
+                break  # candidate itself is superseded; stop comparing it further
+            else:
+                # Neither side is English (outside this fix's named
+                # fixtures) — deterministic tie-break only: keep
+                # whichever published first, never an arbitrary pick.
+                other_dt = _parse_utc_datetime(other_ref.published_at)
+                if other_dt is not None and candidate_dt <= other_dt:
+                    superseded_ids.add(other.id)
+                else:
+                    superseded_ids.add(candidate.id)
+                    break
+    if not superseded_ids:
+        return stories
+    return {story_id: story for story_id, story in stories.items() if story_id not in superseded_ids}
+
+
 def run_discovery(
     cache_dir: Path,
     feed_sources: tuple[DailyNewsFeedSource, ...] = PILOT_FEEDS,
     daily_news_repository: DailyNewsRepositoryProtocol | None = None,
+    translation_provider: "TranslationProvider | None" = None,
 ) -> DailyNewsScanReport:
     """One bounded discovery run across every configured pilot feed.
     Never loops, never sleeps, never retries on its own — a single pass,
@@ -181,7 +452,18 @@ def run_discovery(
     below is exactly today's JSON behavior via daily_news_store.py.
     Supplied, every store touch in this one call routes through the
     given collaborator instead — see
-    src.data_access.daily_news.daily_news_backend.get_daily_news_repository."""
+    src.data_access.daily_news.daily_news_backend.get_daily_news_repository.
+
+    `translation_provider` (Dashboard/Signals quality fix, design/
+    DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) is additive and optional,
+    the same seam shape as EDGAR/DART/EDINET's own translation_provider
+    parameter. Omitted, the localized-duplicate check below is a no-op
+    for every entry (see _evaluate_localization_match: None provider ->
+    None match -> both items always kept) — every existing caller that
+    doesn't pass one behaves exactly as before this fix. Supplied, it is
+    used ONLY to translate the one non-English title in a plausible
+    cross-language duplicate pair before comparing — never for any other
+    purpose in this pipeline."""
     scan_id = f"daily-news-scan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(timezone.utc).isoformat()
 
@@ -273,6 +555,44 @@ def run_discovery(
                 suppressed_items.append((source.company_name, entry.title, "Older than the 7x24h freshness window"))
                 continue
 
+            # Dashboard/Signals quality fix (design/
+            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — cross-language
+            # localized-duplicate check, run only after the existing
+            # same-language exact-title dedup above already failed to
+            # catch it. `store` is live and run-updated (see the
+            # `store[story.id] = story` write below), so this also
+            # catches a same-run pair discovered from two different
+            # sources, not only a cross-run one. See
+            # _evaluate_localization_match's own docstring for exactly
+            # why an unavailable/failed translation always means keeping
+            # both items, never comparing raw untranslated text.
+            localization_match = _evaluate_localization_match(
+                translation_provider, cache_dir, source.company_name, source.language, entry.title, published_dt, store,
+            )
+            if localization_match is not None:
+                if localization_match.candidate_is_preferred:
+                    # Reverse discovery order: this English/global entry
+                    # arrived after a non-English original was already
+                    # persisted. Prefer English — the candidate is NOT
+                    # suppressed (falls through to admission below); the
+                    # older story's own record is left fully intact,
+                    # unmutated, in the store (real traceability, not
+                    # just a text note) — this only adds a report-level
+                    # entry naming it as the now-superseded alternate.
+                    superseded = localization_match.existing_story
+                    suppressed_items.append((
+                        superseded.company_name, superseded.headline,
+                        f"Superseded by English/global item {entry.link} ({source.language})",
+                    ))
+                else:
+                    items_deduplicated += 1
+                    superseded_ref = localization_match.existing_story.sources[0]
+                    suppressed_items.append((
+                        source.company_name, entry.title,
+                        f"Localized duplicate of {superseded_ref.url} ({superseded_ref.original_language})",
+                    ))
+                    continue
+
             queued_headlines_this_source.append((source.company_name, entry.title))
             qualifying.append(_IssuerCandidate(entry=entry, story_id=story_id, published_dt=published_dt, original_index=original_index))
 
@@ -298,7 +618,18 @@ def run_discovery(
             source_reference = NewsSourceReference(
                 publisher=source.company_name, source_class=SourceClass.OFFICIAL_COMPANY, url=entry.link,
                 title=entry.title, published_at=entry.published_at or retrieved_at, retrieved_at=retrieved_at,
-                original_language="Non-Latin script" if summary_result.translation_unavailable else "English",
+                # Dashboard/Signals quality fix (design/
+                # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): the source's
+                # own curated, declared language (source_registry.
+                # DailyNewsSourceEntry.language, default "English") —
+                # replaces the former "Non-Latin script"/"English"
+                # heuristic, which could only ever detect CJK/Hangul
+                # script and always mislabeled a Latin-script non-English
+                # source (e.g. French) as "English". summary_result.
+                # translation_unavailable/original_title (the separate,
+                # unrelated non-Latin-script summary-extraction fallback)
+                # are untouched by this change.
+                original_language=source.language,
                 excerpt_original=entry.summary,
                 image_url=image_url, image_alt=image_alt,
                 # Set once, at this exact construction site only — an
@@ -336,6 +667,14 @@ def run_discovery(
 
             newly_published.append(story)
             existing_headlines.append((source.company_name, entry.title))
+            # Dashboard/Signals quality fix (design/
+            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): keeps `store` live
+            # and run-updated, mirroring existing_headlines' own
+            # liveness above — so _evaluate_localization_match can catch
+            # a same-run pair discovered from two different sources
+            # (e.g. an English source processed before a French one in
+            # this same feed_sources list), not only a cross-run one.
+            store[story.id] = story
 
     if newly_published:
         if daily_news_repository is None:

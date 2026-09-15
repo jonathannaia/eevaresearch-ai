@@ -62,15 +62,17 @@ src/ui/components/radar_card.py and src/ui/pages/themes_research.py
 already establish for the same category of data.
 
 On-demand title translation (Dashboard/Filings usability pass, design/
-DECISIONS.md): a filing row whose FilingEvent.original_language is a
+DECISIONS.md; extended to Daily News issuer rows by the Dashboard/
+Signals quality fix, design/DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): a
+filing OR Daily News issuer row whose own original_language is a
 non-English language this app's existing translation_service.py already
-supports ("Korean"/"Japanese" — the same two values every DART/EDINET
-FilingEvent already carries) shows a `Translate to English` action. The
-original title is always the initial/default display — nothing is
-translated automatically on page load, and no Daily News row ever gets
-this control (original_language is deliberately left None for Daily News
-rows below; Daily News issuer translation is out of scope for this pass,
-design/DECISIONS.md). On click, this calls the existing
+supports ("Korean"/"Japanese"/"French") shows a `Translate to English`
+action. The original title is always the initial/default display —
+nothing is translated automatically on page load. Editorial rows
+(_load_editorial_rows) are unaffected: every currently-registered
+editorial source is English-language, so original_language/
+translation_document_id stay unset (None) for those rows, same as
+before this fix. On click, this calls the existing
 translation_service.translate_cached_with_outcome() exactly once,
 through the same DeepLProvider/cache_dir/cache-file convention
 src.data_access.dart.radar_service._translation_provider and
@@ -93,7 +95,7 @@ import streamlit as st
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
-from src.data_access.daily_news import daily_news_backend
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.formatting import fmt_date, fmt_datetime_local
@@ -142,7 +144,11 @@ _FILING_SOURCE_LABEL = {
 # Deliberately only the two languages FilingEvent.original_language ever
 # actually carries for a non-English source (Korean for DART, Japanese
 # for EDINET) — English/unmapped values never show a translate action.
-_LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE = {"Korean": "KO", "Japanese": "JA"}
+# Dashboard/Signals quality fix (design/
+# DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): French added — Daily News
+# issuer rows now reach this same map (see _load_daily_news_rows below),
+# and DeepL already supports FR natively; no provider change needed.
+_LANGUAGE_CODE_BY_ORIGINAL_LANGUAGE = {"Korean": "KO", "Japanese": "JA", "French": "FR"}
 
 
 @dataclass(frozen=True)
@@ -276,6 +282,19 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
     rows: list[_Row] = []
     try:
         stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+        # Dashboard/Signals quality fix (design/
+        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): read-time
+        # reconciliation — collapses a cross-language localized-
+        # duplicate pair (e.g. an English/French pair for the same
+        # company event) down to its one preferred (English/global)
+        # row, the same call src.ui.pages.daily_news._published_stories
+        # already makes. Every story this excludes stays fully intact
+        # in the underlying store; only what this row list shows
+        # changes. A no-op whenever no such pair exists.
+        # select_canonical_stories() takes no TranslationProvider — it
+        # only ever reads an already-cached translation, never triggers
+        # a live translation request during render.
+        stories = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
     except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
         return rows
     for story in stories.values():
@@ -294,6 +313,16 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
             source_label="Signals",
             display_date=fmt_datetime_local(source_ref.published_at),
             source_url=source_ref.url or None,
+            # Dashboard/Signals quality fix (design/
+            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): wires Daily News
+            # issuer rows into this component's existing, already-
+            # tested on-demand translate control (previously
+            # deliberately None for every Daily News row — see this
+            # module's own docstring) — the same shared, non-filing
+            # translation component filing rows above already use, now
+            # safely reused here too.
+            original_language=source_ref.original_language,
+            translation_document_id=f"recently-updated-signals:{story.id}",
         ))
     return rows
 

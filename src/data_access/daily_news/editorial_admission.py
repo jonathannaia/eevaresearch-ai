@@ -171,6 +171,24 @@ _CONSUMER_FORMAT_PHRASES: tuple[str, ...] = (
     "gift guide", "buying guide", "holiday gift", "product roundup",
     "gear roundup", "top picks", "what to watch", "streaming this weekend",
     "movie review", "album review", "red carpet", "customer appreciation sale",
+    # Dashboard/Signals quality fix (design/
+    # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md) — retail purchase-guide/
+    # marketplace/scalper framing, verified false positive: a Tom's
+    # Hardware article about a consumer GPU anniversary bundle ("cheapest
+    # way to buy," retail scarcity, scalper-listing price comparisons).
+    # Every phrase below is purchase-guide/shopping-action language in
+    # its own right (never a bare company name, product name, hardware
+    # term, or price) — none references NVIDIA/GPU/RTX/a price at all,
+    # so this can never single out any one company, product line, or
+    # dollar figure; it only ever routes an already-identified subject's
+    # story into the SAME anchor-evidence-required exception below,
+    # never a direct rejection on its own. A genuine capacity/supply/
+    # earnings/capex/contract/first-party-disclosure story is unaffected
+    # regardless of whether one of these phrases also appears in it (see
+    # _HARD_MATERIAL_REASON_PREFIXES below).
+    "cheapest way to buy", "where to buy", "in stock now", "back in stock",
+    "sold out", "add to cart", "scalper", "scalpers", "reseller listing",
+    "retail scarcity",
 )
 _CONSUMER_FORMAT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bwhich\b.{0,40}\bshould you buy\b", re.IGNORECASE),
