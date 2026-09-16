@@ -78,7 +78,12 @@ def test_edinet_identifiers_survive_migration_exactly():
     assert edinet_issuers["TDK Corporation"].identifiers["EDINET"] == "E01780"
     assert edinet_issuers["Murata Manufacturing Co., Ltd."].identifiers["EDINET"] == "E01914"
     assert edinet_issuers["TOWA Corporation"].identifiers["EDINET"] == "E01708"
-    assert len(edinet_issuers) == 18
+    # Tier 1 Cohort 1 batch (2026-09-15) — 3 more hardcoded EDINET
+    # identifiers, same live-verified-hardcoding convention.
+    assert edinet_issuers["Nabtesco Corporation"].identifiers["EDINET"] == "E01726"
+    assert edinet_issuers["Harmonic Drive Systems Inc."].identifiers["EDINET"] == "E01712"
+    assert edinet_issuers["YASKAWA Electric Corporation"].identifiers["EDINET"] == "E01741"
+    assert len(edinet_issuers) == 21
 
 
 def test_dart_and_edgar_seed_issuers_have_no_invented_identifiers():
@@ -124,7 +129,10 @@ def test_discovery_stubs_never_appear_in_compatibility_output():
     # ticker (including LG Innotek's own stub, "011070.KS" — a different
     # literal string from this batch's DART krx_code "011070", so it
     # never collided in the first place) remains correctly excluded.
-    _known_redundant_tickers = {"PWR", "NVT", "ANET", "CSCO"}
+    # Tier 1 Cohort 2 batch (2026-09-16) adds a fifth exception: Hewlett
+    # Packard Enterprise (HPE) graduated the same way — see
+    # test_hpe_is_now_also_a_real_tracked_company_via_the_tier1_cohort2_batch.
+    _known_redundant_tickers = {"PWR", "NVT", "ANET", "CSCO", "HPE"}
     stub_tickers = {i.primary_ticker for i in DISCOVERY_STUBS} - _known_redundant_tickers
     compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
     assert stub_tickers.isdisjoint(compat_tickers)
@@ -152,10 +160,13 @@ def test_get_tracked_companies_for_source_is_untouched_by_discovery_stubs():
     # Core Issuer Expansion batch (2026-09-04) exception — same four
     # already-flagged, already-approved name collisions as
     # test_discovery_stubs_never_appear_in_compatibility_output above.
+    # Tier 1 Cohort 2 batch (2026-09-16) adds a fifth: Hewlett Packard
+    # Enterprise Company.
     from src.config.tracked_companies import get_tracked_companies_for_source
 
     _known_redundant_names = {
         "Quanta Services, Inc.", "nVent Electric plc", "Arista Networks, Inc.", "Cisco Systems, Inc.",
+        "Hewlett Packard Enterprise Company",
     }
     for source in ("OpenDART / DART", "SEC EDGAR", "EDINET"):
         names = {c.name for c in get_tracked_companies_for_source(source)}
@@ -220,17 +231,19 @@ def test_mrvl_and_tsem_registry_themes_are_unchanged_by_ontology_module():
 
 # --- INDI/AIP/CEVA batch (2026-08-20) — grew the registry from 29 to 32 ---
 
-def test_seed_issuer_count_is_105_after_the_edinet_filings_radar_expansion_batch():
+def test_seed_issuer_count_is_123_after_the_tier1_cohort2_batch():
     # Was "exactly 32 after the INDI/AIP/CEVA batch" through that batch;
     # renamed and updated (Gate 7.1's own established discipline for a
     # stale count/name) after the Core Issuer Expansion batch
     # (2026-09-04) added 30 more (32 + 30 = 62), again after the Filings
     # Radar issuer-expansion batch (2026-09-04) added 19 more SEC EDGAR
     # issuers (62 + 19 = 81), again after Filings Radar issuer-expansion
-    # batch 2 (2026-09-04) added 19 more still (81 + 19 = 100), and again
+    # batch 2 (2026-09-04) added 19 more still (81 + 19 = 100), again
     # after the EDINET Filings Radar issuer-expansion batch (2026-09-04)
-    # added 5 more EDINET issuers (100 + 5 = 105).
-    assert len(SEED_ISSUERS) == 105
+    # added 5 more EDINET issuers (100 + 5 = 105), again after the Tier 1
+    # Cohort 1 batch (2026-09-15) added 10 more (105 + 10 = 115), and
+    # again after the Tier 1 Cohort 2 batch added 8 more (115 + 8 = 123).
+    assert len(SEED_ISSUERS) == 123
 
 
 def test_indi_aip_ceva_appear_exactly_once_each_in_seed_issuers():
@@ -259,11 +272,12 @@ def test_discovery_stubs_are_unaffected_by_the_indi_aip_ceva_batch():
     assert len(DISCOVERY_STUBS) >= 21
     stub_tickers = {i.primary_ticker for i in DISCOVERY_STUBS}
     assert stub_tickers.isdisjoint({"INDI", "AIP", "CEVA"})
-    # Core Issuer Expansion batch (2026-09-04) exception — see
+    # Core Issuer Expansion batch (2026-09-04) exception, plus the Tier 1
+    # Cohort 2 batch (2026-09-16)'s HPE graduation — see
     # test_discovery_stubs_never_appear_in_compatibility_output's own
-    # comment for the four already-flagged, already-approved collisions
+    # comment for the five already-flagged, already-approved collisions
     # (unrelated to INDI/AIP/CEVA, which this test is actually about).
-    _known_redundant_tickers = {"PWR", "NVT", "ANET", "CSCO"}
+    _known_redundant_tickers = {"PWR", "NVT", "ANET", "CSCO", "HPE"}
     compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
     assert (stub_tickers - _known_redundant_tickers).isdisjoint(compat_tickers)
 
@@ -291,13 +305,15 @@ def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_quanta():
     # later added 30 more for an unrelated reason (32 + 30 = 62), the
     # Filings Radar issuer-expansion batch (2026-09-04) added 19 more
     # still (62 + 19 = 81), Filings Radar issuer-expansion batch 2
-    # (2026-09-04) added 19 more still (81 + 19 = 100), and the EDINET
+    # (2026-09-04) added 19 more still (81 + 19 = 100), the EDINET
     # Filings Radar issuer-expansion batch (2026-09-04) added 5 more
-    # still (100 + 5 = 105) — see
+    # still (100 + 5 = 105), the Tier 1 Cohort 1 batch (2026-09-15)
+    # added 10 more (105 + 10 = 115), and the Tier 1 Cohort 2 batch
+    # added 8 more still (115 + 8 = 123) — see
     # test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch
     # below for Quanta's own, now-changed status specifically.
-    assert len(get_tracked_companies(active_only=False)) == 105
-    assert len(SEED_ISSUERS) == 105
+    assert len(get_tracked_companies(active_only=False)) == 123
+    assert len(SEED_ISSUERS) == 123
 
 
 def test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -341,9 +357,9 @@ def test_discovery_stubs_grew_by_exactly_one_for_nvent_electric():
 
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_nvent():
     # True as of the nVent-only addition — see the matching Quanta test
-    # above for why this now asserts 105, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 105
-    assert len(SEED_ISSUERS) == 105
+    # above for why this now asserts 123, not 32.
+    assert len(get_tracked_companies(active_only=False)) == 123
+    assert len(SEED_ISSUERS) == 123
 
 
 def test_nvent_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -388,9 +404,9 @@ def test_discovery_stubs_grew_by_exactly_two_for_arista_and_cisco():
 
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_arista_and_cisco():
     # True as of the Arista/Cisco-only addition — see the matching Quanta
-    # test above for why this now asserts 105, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 105
-    assert len(SEED_ISSUERS) == 105
+    # test above for why this now asserts 123, not 32.
+    assert len(get_tracked_companies(active_only=False)) == 123
+    assert len(SEED_ISSUERS) == 123
 
 
 def test_arista_and_cisco_are_now_also_real_tracked_companies_via_the_core_expansion_batch():
@@ -429,21 +445,35 @@ def test_discovery_stubs_includes_hpe_with_the_expected_fields():
 
 
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_hpe():
-    # HPE is Daily-News-only (DISCOVERY_STUBS), never added to
-    # tracked_companies.py/SEED_ISSUERS — both remain 105, unchanged.
-    assert len(get_tracked_companies(active_only=False)) == 105
-    assert len(SEED_ISSUERS) == 105
+    # True as of the HPE-stub-only addition (Daily News source-expansion
+    # batch 5, 2026-09-13) — at that point in this file's own history,
+    # HPE lived only in DISCOVERY_STUBS and TRACKED_COMPANIES/SEED_ISSUERS
+    # stayed at 105, unchanged. The Tier 1 Cohort 1 batch (2026-09-15)
+    # later added 10 more for an unrelated reason (105 + 10 = 115), and
+    # the Tier 1 Cohort 2 batch added 8 more still, including HPE itself
+    # graduating to a real tracked company (115 + 8 = 123) — see
+    # test_hpe_is_now_also_a_real_tracked_company_via_the_tier1_cohort2_batch
+    # below for HPE's own, now-changed status specifically.
+    assert len(get_tracked_companies(active_only=False)) == 123
+    assert len(SEED_ISSUERS) == 123
 
 
-def test_hpe_is_structurally_excluded_from_tracked_companies_from_issuer_registry():
-    # Proves HPE, unlike Arista/Cisco, has NOT graduated to a real
-    # tracked company — tracked_companies_from_issuer_registry() only
-    # ever reads SEED_ISSUERS, and DISCOVERY_STUBS (where HPE lives) is
-    # structurally unreachable from it, per that function's own
-    # docstring.
+def test_hpe_is_now_also_a_real_tracked_company_via_the_tier1_cohort2_batch():
+    # Supersedes the former "structurally excluded"/"has NOT graduated"
+    # claims, both true only through the HPE-stub-only addition. The
+    # Tier 1 Cohort 2 batch, a separate and later, explicitly-approved
+    # action, added Hewlett Packard Enterprise Company as a real,
+    # verified TrackedCompany/SEED_ISSUERS entry too — mirroring the
+    # same stub-to-tracked-company graduation already proven for Quanta/
+    # nVent/Arista/Cisco above. HPE's own DISCOVERY_STUBS entry was
+    # deliberately left untouched (out of this batch's strict scope),
+    # and is now redundant.
     compat_tickers = {c.krx_code for c in tracked_companies_from_issuer_registry(active_only=False)}
-    assert "HPE" not in compat_tickers
+    assert "HPE" in compat_tickers
     from src.config.tracked_companies import get_tracked_companies_for_source
 
     edgar_names = {c.name for c in get_tracked_companies_for_source("SEC EDGAR", active_only=False)}
-    assert "Hewlett Packard Enterprise Company" not in edgar_names
+    assert "Hewlett Packard Enterprise Company" in edgar_names
+    # It also still exists, unchanged, as its own separate DISCOVERY_STUBS entry.
+    stub_tickers = {i.primary_ticker for i in DISCOVERY_STUBS}
+    assert "HPE" in stub_tickers

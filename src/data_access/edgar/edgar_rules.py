@@ -183,6 +183,17 @@ _SIX_K_MATERIAL_CONTENT_TERMS: tuple[str, ...] = (
     "earnings", "guidance", "investorday", "investorpresentation",
     "acquisition", "merger", "transaction", "financing", "contract",
     "capacity", "expansion",
+    # Tier 1 Cohort 2 batch (2026-09-16): directly observed in this
+    # filer's own real, live filename (design/TIER1_COHORT2_
+    # IMPLEMENTATION_READINESS_2026_09_16.md — Taiwan Semiconductor
+    # Manufacturing Co Ltd, CIK 0001046179, filename
+    # "tsm-revenue20260910.htm", fetched 2026-09-16) — its recurring
+    # monthly revenue disclosure was previously admitted by no existing
+    # term. A real word, 7 characters, inherently substantive (unlike
+    # the already-rejected bare "financial"/"results"/"order" — see this
+    # module's own "6-K allow-list final review" above), so no
+    # collision risk with any existing allow-list or deny-list term.
+    "revenue",
 )
 
 
