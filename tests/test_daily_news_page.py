@@ -35,9 +35,14 @@ from src.models.daily_news_models import (
     SourceClass,
 )
 from src.ui.pages.daily_news import (
+    _DEFAULT_TIER_QUERY_VALUE,
+    _HIGH_SIGNALS_QUERY_VALUE,
     _NO_HIGH_SIGNAL_EMPTY_STATE,
+    _NO_WATCHLIST_EMPTY_STATE,
     _SOURCE_CLASS_LABELS,
     _SUBTITLE,
+    _TIER_QUERY_PARAM,
+    _WATCHLIST_QUERY_VALUE,
     _elapsed_seconds,
     _is_recent,
     _recent_stories,
@@ -66,6 +71,17 @@ def _story(published_at_offset: timedelta = timedelta(hours=1), **overrides) -> 
         ),
         status=NewsStoryStatus.PUBLISHED,
         state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=published_at)],
+        # High Signals / Watchlist tier navigation (design/DAILY_NEWS_
+        # HIGH_SIGNALS_WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md) —
+        # High Signals is now the default view a bare AppTest run lands
+        # on, so this shared fixture defaults to High-Signal tier too,
+        # keeping every pre-existing, tier-agnostic test (company
+        # selection, freshness, translation, image handling, dedup, ...)
+        # visible without individually adding a `tier=watchlist` query
+        # param. Any test that needs a different tier (or the true
+        # materiality_tier=None default) passes its own override, which
+        # always wins over this default (defaults.update(overrides)).
+        materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
     )
     defaults.update(overrides)
     return NewsStory(**defaults)
@@ -79,6 +95,8 @@ def _editorial_story(published_at_offset: timedelta = timedelta(hours=1), **over
         retrieved_at=published_at, excerpt="Oracle Corporation said AI cloud demand drove revenue higher.",
         matched_companies=("Oracle Corporation",), matched_themes=("ai-buildout",),
         source_feed_id="cnbc-technology-rss",
+        # Same rationale as _story()'s own materiality_tier default above.
+        materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
     )
     defaults.update(overrides)
     return EditorialStory(**defaults)
@@ -1047,32 +1065,55 @@ def test_high_signal_story_renders_in_the_default_section_with_its_badge(tmp_pat
     assert _NO_HIGH_SIGNAL_EMPTY_STATE not in markdown_text
 
 
-def test_watchlist_story_renders_in_its_own_secondary_section_with_its_badge(tmp_path):
+def test_watchlist_story_renders_in_watchlist_view_with_its_badge(tmp_path):
+    """High Signals / Watchlist tier navigation — Watchlist is no longer
+    part of the default page load (that is now High Signals only, see
+    the URL-state tests below); this test explicitly opens
+    ?tier=watchlist, its own real, intended context."""
     daily_news_store.upsert_new_stories(tmp_path, [
         _story(materiality_tier=NewsMaterialityTier.WATCHLIST, materiality_reasons=("on_taxonomy_no_anchor:x",)),
     ])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
         at.run()
 
     assert not at.exception
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "Watchlist" in markdown_text
     assert "NVIDIA Announces Financial Results" in markdown_text
-    # No High Signal item exists — the default-feed empty state shows,
-    # even though the page as a whole is not empty (Watchlist has this
-    # one item).
-    assert _NO_HIGH_SIGNAL_EMPTY_STATE in markdown_text
 
 
-def test_background_story_is_excluded_from_the_default_view_and_only_reachable_via_the_toggle(tmp_path):
+def test_background_story_is_absent_from_high_signals(tmp_path):
+    """Background must never appear in High Signals — not behind an
+    expander, not anywhere — verified by construction (the Watchlist/
+    Background render branch is never reached at all while High Signals
+    is active), not merely by an added exclusion check."""
     daily_news_store.upsert_new_stories(tmp_path, [
         _story(materiality_tier=NewsMaterialityTier.BACKGROUND, materiality_reasons=("off_taxonomy_no_anchor",)),
     ])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "high_signal"
+        at.run()
+
+    assert not at.exception
+    assert len(at.expander) == 0
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" not in markdown_text
+    assert _NO_HIGH_SIGNAL_EMPTY_STATE in markdown_text
+
+
+def test_background_story_is_reachable_only_via_the_collapsed_toggle_inside_watchlist(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(materiality_tier=NewsMaterialityTier.BACKGROUND, materiality_reasons=("off_taxonomy_no_anchor",)),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
         at.run()
 
     assert not at.exception
@@ -1080,21 +1121,21 @@ def test_background_story_is_excluded_from_the_default_view_and_only_reachable_v
     # collapsed/expanded visual state (Streamlit doesn't conditionally
     # skip building collapsed content), so this proves the Background
     # item is retained (never deleted) and specifically reachable inside
-    # the "Show Background" control, not the default High Signal/
-    # Watchlist sections. The expander's own label is a distinct element
-    # type, not a markdown node — checked via at.expander, not
-    # markdown_text.
+    # the "Show Background" control, not the primary Watchlist list. The
+    # expander's own label is a distinct element type, not a markdown
+    # node — checked via at.expander, not markdown_text.
     assert any(exp.label.startswith("Show Background") for exp in at.expander)
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" in markdown_text
-    assert _NO_HIGH_SIGNAL_EMPTY_STATE in markdown_text
+    assert _NO_WATCHLIST_EMPTY_STATE in markdown_text  # the primary Watchlist list itself is empty
 
 
-def test_no_background_control_rendered_when_there_are_zero_background_items(tmp_path):
-    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL)])
+def test_no_background_control_rendered_within_watchlist_when_there_are_zero_background_items(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.WATCHLIST)])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
         at.run()
 
     assert len(at.expander) == 0
@@ -1105,13 +1146,16 @@ def test_legacy_unclassified_story_defaults_to_watchlist_for_display_only(tmp_pa
     field's own real default — see NewsMaterialityTier's own docstring)
     must still render safely: shown in Watchlist (a safe display
     default), never silently hidden like Background, never overclaimed
-    as High Signal."""
-    story = _story()
+    as High Signal. Explicitly overrides the shared _story() fixture's
+    own new High-Signal default (see that function's own comment) back
+    to the true, real persisted default this test is about."""
+    story = _story(materiality_tier=None)
     assert story.materiality_tier is None  # the actual persisted/default value — never mutated by this test
     daily_news_store.upsert_new_stories(tmp_path, [story])
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
         at.run()
 
     assert not at.exception
@@ -1126,10 +1170,22 @@ def test_no_high_signal_items_shows_the_exact_approved_empty_state(tmp_path):
 
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()  # no tier query param — the default view is High Signals
+
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "No High Signals match the current filters." in markdown_text
+
+
+def test_no_watchlist_items_shows_the_exact_approved_empty_state(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.HIGH_SIGNAL)])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
         at.run()
 
     markdown_text = " ".join(m.value for m in at.markdown)
-    assert "No material signals right now. Eeva is monitoring new disclosures and developments." in markdown_text
+    assert "No Watchlist items match the current filters." in markdown_text
 
 
 def test_editorial_high_signal_story_renders_with_its_badge_in_the_default_section(tmp_path):
@@ -1147,7 +1203,7 @@ def test_editorial_high_signal_story_renders_with_its_badge_in_the_default_secti
     assert "Oracle Corporation reports strong AI cloud demand" in markdown_text
 
 
-def test_mixed_tier_items_each_render_in_their_own_section_in_one_page(tmp_path):
+def _seed_mixed_tier_items(tmp_path) -> None:
     daily_news_store.upsert_new_stories(tmp_path, [
         _story(
             id="newsitem-nvidia-high", materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
@@ -1161,17 +1217,221 @@ def test_mixed_tier_items_each_render_in_their_own_section_in_one_page(tmp_path)
         ),
     ])
 
+
+def test_high_signals_view_shows_only_high_signal_items(tmp_path):
+    """High Signals / Watchlist tier navigation — supersedes the former
+    single-page "each render in their own section" test: only one tier
+    section renders per page view now. High Signals must show the
+    High-Signal item and never the Watchlist item."""
+    _seed_mixed_tier_items(tmp_path)
+
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "high_signal"
         at.run()
 
     assert not at.exception
     markdown_text = " ".join(m.value for m in at.markdown)
-    assert "High Signal" in markdown_text
-    assert "Watchlist" in markdown_text
     assert "NVIDIA files 8-K disclosing material agreement" in markdown_text
+    assert "Solo developer gets CUDA running on AMD GPUs" not in markdown_text
+    # "Watchlist" alone also appears in unrelated global chrome (sidebar/
+    # CSS comments) — the section heading itself is the precise check.
+    assert "Watchlist (" not in markdown_text
+    assert len(at.expander) == 0  # Background is unreachable while High Signals is active
+
+
+def test_watchlist_view_shows_only_watchlist_and_none_tier_items(tmp_path):
+    """Watchlist must show the Watchlist item and never the High-Signal
+    item — the exact counterpart of the High Signals test above."""
+    _seed_mixed_tier_items(tmp_path)
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
+        at.run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
     assert "Solo developer gets CUDA running on AMD GPUs" in markdown_text
+    assert "NVIDIA files 8-K disclosing material agreement" not in markdown_text
     assert _NO_HIGH_SIGNAL_EMPTY_STATE not in markdown_text
+
+
+# ============================================================
+# High Signals / Watchlist URL-state navigation (design/DAILY_NEWS_HIGH_
+# SIGNALS_WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md) — reading,
+# validating, normalizing, and switching the canonical `tier` query
+# parameter.
+# ============================================================
+
+
+def test_bare_page_load_defaults_to_high_signals_and_normalizes_the_url(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])  # High-Signal tier by the shared fixture's own default
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()  # no tier query param set at all
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+
+
+def test_tier_high_signal_query_param_opens_high_signals_directly(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "high_signal"
+        at.run()
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+
+
+def test_tier_watchlist_query_param_opens_watchlist_directly(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story(materiality_tier=NewsMaterialityTier.WATCHLIST)])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
+        at.run()
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_WATCHLIST_QUERY_VALUE]
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+
+
+def test_invalid_tier_value_normalizes_to_high_signals(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "not-a-real-tier"
+        at.run()
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Announces Financial Results" in markdown_text
+
+
+def test_repeated_or_ambiguously_resolved_tier_value_normalizes_to_high_signals(tmp_path):
+    """AppTest's own `query_params` is a plain dict — it cannot literally
+    represent a repeated query-string key ("?tier=a&tier=b"), so a truly
+    repeated URL cannot be constructed through this harness. What IS
+    directly verified: _resolve_active_tier_view() performs no special-
+    case handling based on repetition at all — it only ever validates
+    whatever single string st.query_params.get("tier", "") resolves to
+    (Streamlit's own QueryParams.get() is documented to resolve a
+    repeated key to its last occurrence) against the two valid values.
+    This test exercises that same single-value validation path with an
+    arbitrary, clearly-invalid string standing in for "whatever a
+    repeated key resolved to" — functionally identical to the invalid-
+    value case above, which is the real guarantee this requirement
+    reduces to given the harness's own limitation."""
+    daily_news_store.upsert_new_stories(tmp_path, [_story()])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist-then-overwritten-to-something-else"
+        at.run()
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+
+
+def test_switching_the_segmented_control_updates_the_canonical_tier_url(tmp_path):
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="newsitem-nvidia-high", materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+            headline="NVIDIA High Signal headline",
+        ),
+        _story(
+            id="newsitem-nvidia-watch", materiality_tier=NewsMaterialityTier.WATCHLIST,
+            headline="NVIDIA Watchlist headline",
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "high_signal"
+        at.run()
+        assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+        markdown_before = " ".join(m.value for m in at.markdown)
+        assert "NVIDIA High Signal headline" in markdown_before
+        assert "NVIDIA Watchlist headline" not in markdown_before
+
+        at.segmented_control[0].set_value("Watchlist").run()
+
+    assert not at.exception
+    assert at.query_params.get(_TIER_QUERY_PARAM) == [_WATCHLIST_QUERY_VALUE]
+    markdown_after = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA Watchlist headline" in markdown_after
+    assert "NVIDIA High Signal headline" not in markdown_after  # the High-Signal item, now hidden
+
+
+def test_company_filter_applies_within_the_active_tier_without_leaking_other_tiers(tmp_path):
+    """The one existing filter (company selector) must keep working
+    identically inside each tier view — no reordering of the existing
+    filter pipeline, per the implementation plan's own §1.5 reasoning."""
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="newsitem-nvidia-high", company_name="NVIDIA", materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+            headline="NVIDIA High Signal headline",
+        ),
+        _story(
+            id="newsitem-oracle-watch", company_name="Oracle Corporation", ticker="ORCL",
+            materiality_tier=NewsMaterialityTier.WATCHLIST, headline="Oracle Watchlist headline",
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
+        at.run()
+        at.selectbox[0].select("NVIDIA").run()
+
+    # Selecting NVIDIA while viewing Watchlist must show neither company's
+    # item (NVIDIA's own only item is High-Signal, out of this tier;
+    # Oracle's Watchlist item belongs to a different company) — proving
+    # the company filter and the tier filter both apply, never one
+    # overriding or leaking past the other.
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "NVIDIA High Signal headline" not in markdown_text
+    assert "Oracle Watchlist headline" not in markdown_text
+
+
+def test_company_filter_shows_the_matching_item_within_the_active_tier(tmp_path):
+    """Positive counterpart to the no-leak test above: selecting the
+    company that genuinely has a Watchlist item, while viewing
+    Watchlist, must show it."""
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story(
+            id="newsitem-nvidia-high", company_name="NVIDIA", materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+            headline="NVIDIA High Signal headline",
+        ),
+        _story(
+            id="newsitem-oracle-watch", company_name="Oracle Corporation", ticker="ORCL",
+            materiality_tier=NewsMaterialityTier.WATCHLIST, headline="Oracle Watchlist headline",
+        ),
+    ])
+
+    with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.query_params["tier"] = "watchlist"
+        at.run()
+        at.selectbox[0].select("Oracle Corporation").run()
+
+    assert not at.exception
+    markdown_text = " ".join(m.value for m in at.markdown)
+    assert "Oracle Watchlist headline" in markdown_text
+    assert "NVIDIA High Signal headline" not in markdown_text
 
 
 # ============================================================

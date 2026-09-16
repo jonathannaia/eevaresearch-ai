@@ -150,7 +150,77 @@ _TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
     NewsMaterialityTier.WATCHLIST: "er-tag-mix",
     NewsMaterialityTier.BACKGROUND: "er-tag-neutral",
 }
-_NO_HIGH_SIGNAL_EMPTY_STATE = "No material signals right now. Eeva is monitoring new disclosures and developments."
+_NO_HIGH_SIGNAL_EMPTY_STATE = "No High Signals match the current filters."
+_NO_WATCHLIST_EMPTY_STATE = "No Watchlist items match the current filters."
+
+# High Signals / Watchlist tier navigation (design/DAILY_NEWS_HIGH_
+# SIGNALS_WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md) — the canonical
+# query parameter and its exactly two valid values. Deliberately
+# separate string constants from NewsMaterialityTier.value (never an
+# alias of "High Signal"/"Watchlist") — this is the URL's own vocabulary,
+# not the persisted model's, so the two can evolve independently.
+_TIER_QUERY_PARAM = "tier"
+_HIGH_SIGNALS_QUERY_VALUE = "high_signal"
+_WATCHLIST_QUERY_VALUE = "watchlist"
+_DEFAULT_TIER_QUERY_VALUE = _HIGH_SIGNALS_QUERY_VALUE
+_VALID_TIER_QUERY_VALUES = (_HIGH_SIGNALS_QUERY_VALUE, _WATCHLIST_QUERY_VALUE)
+_TIER_SWITCH_LABELS: dict[str, str] = {
+    _HIGH_SIGNALS_QUERY_VALUE: "High Signals", _WATCHLIST_QUERY_VALUE: "Watchlist",
+}
+_TIER_SWITCH_VALUE_BY_LABEL: dict[str, str] = {v: k for k, v in _TIER_SWITCH_LABELS.items()}
+
+
+def _resolve_active_tier_view() -> str:
+    """Reads, validates, and (only when necessary) normalizes the
+    canonical `tier` query parameter — the single source of truth for
+    which primary view is active. Missing, invalid, repeated (resolved
+    by st.query_params' own single-value .get()), or any unsupported
+    value all take the same path: normalize to High Signals. Mutating
+    st.query_params only when the current raw value actually differs
+    from the target is what keeps this from ever looping — the very
+    next rerun reads the now-canonical value and this function returns
+    immediately without writing again. Every OTHER query parameter is
+    left completely untouched (st.query_params is a mapping over the
+    full query string; this function only ever reads/writes its own
+    "tier" key, never touches or clears any other key)."""
+    raw = st.query_params.get(_TIER_QUERY_PARAM, "").strip()
+    if raw not in _VALID_TIER_QUERY_VALUES:
+        if raw != _DEFAULT_TIER_QUERY_VALUE:
+            st.query_params[_TIER_QUERY_PARAM] = _DEFAULT_TIER_QUERY_VALUE
+        return _DEFAULT_TIER_QUERY_VALUE
+    return raw
+
+
+def _handle_tier_switch_change(widget_key: str) -> None:
+    """The segmented control's own on_change callback — reads the
+    widget's just-updated session-state value (Streamlit sets this
+    before invoking on_change) and writes it back to the canonical
+    `tier` query parameter, the single source of truth. The guard
+    mirrors _resolve_active_tier_view()'s own "only write if different"
+    discipline; a genuine click always differs, so this is defense-in-
+    depth, not a load-bearing condition here."""
+    selected_label = st.session_state[widget_key]
+    new_value = _TIER_SWITCH_VALUE_BY_LABEL[selected_label]
+    if st.query_params.get(_TIER_QUERY_PARAM, "") != new_value:
+        st.query_params[_TIER_QUERY_PARAM] = new_value
+
+
+def _render_tier_switch(active_tier_query_value: str) -> None:
+    """Two-option, URL-synchronized segmented control. Keyed off the
+    currently-resolved tier value itself (not a fixed key) — this is
+    what prevents stale widget session-state from ever overriding a
+    freshly-read URL (e.g. the address bar edited directly to a
+    different `tier` value): whenever the resolved tier changes, for
+    any reason, Streamlit sees a brand-new widget key and starts that
+    widget fresh at `default`, rather than reusing a stored selection
+    from a previous, now-stale key."""
+    widget_key = f"daily-news-tier-switch-{active_tier_query_value}"
+    st.segmented_control(
+        "View", options=list(_TIER_SWITCH_LABELS.values()),
+        default=_TIER_SWITCH_LABELS[active_tier_query_value],
+        key=widget_key, on_change=_handle_tier_switch_change, args=(widget_key,),
+        label_visibility="collapsed",
+    )
 
 
 def _effective_tier(item: NewsStory | EditorialStory) -> NewsMaterialityTier:
@@ -403,8 +473,12 @@ def render() -> None:
     all_stories = _published_stories(settings)
     visible_editorial = get_visible_editorial_stories(settings)
 
+    active_tier_view = _resolve_active_tier_view()
+
     st.markdown('<div class="er-page-title">Signals</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="er-muted">{_SUBTITLE}</div>', unsafe_allow_html=True)
+
+    _render_tier_switch(active_tier_view)
 
     selected_company = st.selectbox("Companies", options=_company_options(), index=0)
 
@@ -517,27 +591,38 @@ def render() -> None:
         else:
             render_editorial_card(item, tier=tier)
 
-    section_header("High Signal")
-    if high_signal_items:
-        for kind, item in high_signal_items:
-            _render_item(kind, item, NewsMaterialityTier.HIGH_SIGNAL)
+    # High Signals / Watchlist tier navigation (design/DAILY_NEWS_HIGH_
+    # SIGNALS_WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md) — the three
+    # buckets above are computed unconditionally, exactly as before;
+    # only which section(s) render below now depends on active_tier_view.
+    # Background is reachable only from inside the Watchlist branch —
+    # never rendered at all while High Signals is active, by construction
+    # (not by an added exclusion check), so it can never appear there.
+    if active_tier_view == _HIGH_SIGNALS_QUERY_VALUE:
+        section_header(f"High Signals ({len(high_signal_items)})")
+        if high_signal_items:
+            for kind, item in high_signal_items:
+                _render_item(kind, item, NewsMaterialityTier.HIGH_SIGNAL)
+        else:
+            # This is NOT the same as the true "zero coverage at all"
+            # empty state above (which already returned): items exist
+            # (in Watchlist/Background), just none reached the High
+            # Signal bar, or none matched the current company filter.
+            empty_state(_NO_HIGH_SIGNAL_EMPTY_STATE)
     else:
-        # High Signal is the default Signals feed (design/DECISIONS.md) —
-        # this is NOT the same as the true "zero coverage at all" empty
-        # state above (which already returned): items exist (in
-        # Watchlist/Background below), just none reached the High Signal
-        # bar yet.
-        empty_state(_NO_HIGH_SIGNAL_EMPTY_STATE)
+        section_header(f"Watchlist ({len(watchlist_items)})", "Relevant but early, unquantified, or not yet material.")
+        if watchlist_items:
+            for kind, item in watchlist_items:
+                _render_item(kind, item, _effective_tier(item))
+        else:
+            empty_state(_NO_WATCHLIST_EMPTY_STATE)
 
-    if watchlist_items:
-        section_header("Watchlist", "Relevant but early, unquantified, or not yet material.")
-        for kind, item in watchlist_items:
-            _render_item(kind, item, _effective_tier(item))
-
-    if background_items:
-        # Retained, never deleted — accessible only through this explicit
-        # control, excluded from the default feed above (design/
-        # DECISIONS.md).
-        with st.expander(f"Show Background ({len(background_items)})"):
-            for kind, item in background_items:
-                _render_item(kind, item, NewsMaterialityTier.BACKGROUND)
+        if background_items:
+            # Retained, never deleted — accessible only through this
+            # explicit control, excluded from the primary Watchlist list
+            # above, and reachable only from within Watchlist itself
+            # (design/DECISIONS.md; design/DAILY_NEWS_HIGH_SIGNALS_
+            # WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md).
+            with st.expander(f"Show Background ({len(background_items)})"):
+                for kind, item in background_items:
+                    _render_item(kind, item, NewsMaterialityTier.BACKGROUND)
