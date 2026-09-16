@@ -894,3 +894,82 @@ def test_routine_personnel_note_with_broad_aerospace_commentary_stays_off_taxono
         SourceCategory.INDEPENDENT_NEWS,
     )
     assert tier == NewsMaterialityTier.BACKGROUND
+
+
+# ============================================================
+# Signals precision follow-up (design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_
+# BOILERPLATE_GUIDANCE_2026_09_16.md) — financial-guidance
+# disambiguation and the denial/rumor Watchlist-fallback fix. Every
+# fixture below is the exact live item confirmed in design/POST_MERGE_
+# DAILY_NEWS_SIGNAL_PERFORMANCE_AUDIT_2026_09_16.md, or a required
+# positive control, run through the real, unmodified
+# classify_editorial_story().
+# ============================================================
+
+
+def test_terminal_guidance_national_security_item_never_matches_financial_guidance():
+    """The exact confirmed live collision: "terminal guidance" (a
+    weapons-targeting term in a genuine, non-boilerplate sentence about
+    an Anthropic threat-intelligence report) must never count as a
+    financial-guidance anchor. No taxonomy/anchor local pairing exists
+    here at all once "guidance" is correctly excluded, so this item
+    never reaches Gate B, C, or D via the word "guidance"."""
+    tier, reasons = classify_editorial_story(
+        "Autonomous drone swarm developed with AI assistance, threat report finds",
+        "Researchers built swarm coordination, computer vision, and terminal guidance software for a "
+        "drone program, according to a new threat intelligence report examining dual-use AI risks.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert not any("guidance" in r for r in reasons)
+    assert tier != NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_earnings_guidance_with_no_disqualifying_modifier_remains_eligible():
+    """Positive control: a genuine, unmodified financial-guidance
+    disclosure — issued, raised, lowered, reaffirmed, or revised —
+    remains a fully valid anchor. "guidance" is not broadly banned; only
+    a small, curated set of disqualifying local modifiers (terminal,
+    navigation, travel, ...) excludes one specific occurrence."""
+    tier, reasons = classify_editorial_story(
+        "Company X narrows full-year guidance, citing stronger-than-expected demand",
+        "Company X today narrowed its full-year guidance to $4.2 billion to $4.4 billion, citing "
+        "stronger-than-expected demand for its core cloud products.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:guidance") for r in reasons)
+
+
+def test_denial_rumor_article_reaching_only_the_taxonomy_fallback_is_demoted_to_background():
+    """The exact confirmed live Watchlist-tier defect: a denial story
+    ("SK hynix denies ... rumors") reached visible Watchlist via the
+    on_taxonomy_no_anchor fallback, which — unlike Gates C/D — was not
+    gated by the existing rumor/negation/denial guard. Now demoted to
+    Background; still admitted (the company match itself is genuine),
+    just no longer surfaced by default."""
+    tier, reasons = classify_editorial_story(
+        "SK hynix denies US production rumors linked to Intel",
+        "SK hynix has denied reports that it is in talks with Intel over memory chip manufacturing in the "
+        "United States, calling the speculation premature.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.BACKGROUND
+    assert reasons == ("off_taxonomy_no_anchor",)
+
+
+def test_material_denial_with_concrete_settlement_and_anchor_reaches_high_signal():
+    """Positive control: an attributable denial that is itself a
+    substantive issuer/regulatory/legal development — a real anchor
+    (revenue) and a real quantified figure both present — must still
+    reach HIGH_SIGNAL under the existing, unmodified hard gates (A/A2/
+    A4/B/B2), all of which uncertain_reporting never touches."""
+    tier, reasons = classify_editorial_story(
+        "AST SpaceMobile's regulatory filing formally denies allegations, resolving matter with $50 "
+        "million settlement",
+        "According to a regulatory filing, AST SpaceMobile formally denied the allegations, but agreed to "
+        "a $50 million settlement, recording a corresponding one-time reduction to quarterly revenue, the "
+        "company disclosed in its 8-K filing this week.",
+        SourceCategory.INDEPENDENT_NEWS,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert any(r.startswith("quantified_change:revenue") for r in reasons)

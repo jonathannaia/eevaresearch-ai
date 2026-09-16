@@ -115,6 +115,37 @@ def test_full_discovery_run_publishes_valid_entries(tmp_path, monkeypatch):
     assert story.ticker == "NVDA"  # reused from tracked_companies.py
 
 
+def test_related_content_boilerplate_never_inflates_materiality_tier(tmp_path, monkeypatch):
+    """Content-boundary fix (Signals precision follow-up, design/
+    SIGNALS_PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md)
+    — Lane A shares the same defect pattern as Lane B (classify_issuer_
+    story() previously received raw, un-stripped entry.summary). A
+    routine issuer item whose own real content has no material anchor
+    at all, but whose raw HTML carries a trailing "Go deeper with"
+    related-content block naming an unrelated capacity/contract figure,
+    must not be inflated to a higher tier by that trailing block."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces New Office Opening",
+                "https://nvidianews.nvidia.com/news/new-office-opening",
+                summary=(
+                    "<article><p>NVIDIA today announced the opening of a new regional office.</p>"
+                    "<p>Go deeper with more coverage: Rival Signs $500 Million Capacity Expansion "
+                    "Contract</p></article>"
+                ),
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    story = next(iter(daily_news_store.load_stories(tmp_path).values()))
+    assert story.materiality_tier == NewsMaterialityTier.BACKGROUND
+
+
 def test_missing_url_entry_is_suppressed_and_never_persisted(tmp_path, monkeypatch):
     _mock_fetch({
         _NVDA_SOURCE.feed_url: FeedFetchResult(

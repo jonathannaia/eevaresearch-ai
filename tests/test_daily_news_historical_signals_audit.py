@@ -229,8 +229,15 @@ def test_bill_gates_commentary_is_never_a_microsoft_or_broadcom_high_signal():
     assert "Broadcom Inc." not in result.recomputed_identified_companies
 
 
-def test_gaming_pc_discount_is_retiered_down_from_high_signal():
-    """Gaming-PC discount — should not be High Signal."""
+def test_gaming_pc_discount_is_suppressed():
+    """Gaming-PC discount — should not be High Signal, and (Signals
+    precision follow-up, design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_
+    BOILERPLATE_GUIDANCE_2026_09_16.md, retail/deal/scarcity rule)
+    should no longer be admitted at all under current rules — "save
+    25% ($560)" is itself a curated consumer-format deal pattern, and
+    NVIDIA being a genuine title-placed subject no longer rescues a
+    deal-framed story on its own (the rescue requires real, non-weak
+    anchor evidence, which a pure retail write-up has none of)."""
     record = _record(
         headline="Save 25% ($560) on This Gaming PC Packed With AMD and Nvidia Hardware",
         excerpt=(
@@ -241,9 +248,8 @@ def test_gaming_pc_discount_is_retiered_down_from_high_signal():
         materiality_reasons=("quantified_change:price cut",),
     )
     result = audit_record(record)
-    assert result.disposition == "RETIER_BACKGROUND"
-    assert result.recomputed_tier == "Background"
-    assert result.admitted is True  # NVIDIA is a genuine title-placed subject — still shown, just demoted
+    assert result.disposition == "SUPPRESS_FROM_USER_FEED"
+    assert result.admitted is False
 
 
 def test_unknown_source_feed_id_needs_human_review():

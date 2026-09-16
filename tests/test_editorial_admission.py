@@ -590,25 +590,27 @@ def test_ai_opinion_commentary_mentioning_a_company_only_via_a_founders_history_
     assert decision.reason == "company_mention_not_subject_worthy"
 
 
-def test_gaming_pc_deal_with_specs_and_a_dollar_discount_is_admitted_but_never_high_signal():
-    """Shopping/deal/discount + consumer PC specs/model numbers
-    category. Real false positive: a $560-off gaming PC deal reached
-    HIGH_SIGNAL purely because the article's own "price cut" marketing
-    copy co-occurred with a percentage figure — pure retail pricing, not
-    corporate quantification. The company match itself (NVIDIA, named
-    in the title) is legitimate and admission is correct to let it
-    through — the defect was materiality tier, verified separately in
-    tests/test_daily_news_materiality_classification.py. This test
-    locks in the admission side only: still admitted, never rejected
-    outright, since a real component vendor is genuinely named."""
+def test_gaming_pc_deal_with_specs_and_a_dollar_discount_is_rejected():
+    """Shopping/deal/discount + consumer PC specs/model numbers category
+    (Signals precision follow-up, design/SIGNALS_PRECISION_FOLLOWUP_
+    RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md, retail/deal/scarcity
+    rule) — supersedes this test's own prior "admitted, materiality-
+    only fix" design: a $560-off gaming PC deal is now rejected outright
+    at admission, since "save ... $560" is itself a curated consumer-
+    format pattern (_CONSUMER_FORMAT_PATTERNS) — a named component
+    vendor (NVIDIA) being genuinely in the title no longer rescues a
+    deal-framed story on its own; the rescue below still requires real,
+    non-weak anchor evidence (see test_named_material_aws_contract_...
+    below for that positive control), which this pure retail write-up
+    has none of."""
     title = "Save 25% ($560) on This Gaming PC Packed With AMD and Nvidia Hardware"
     description = (
         "This gaming PC deal pairs an AMD Ryzen 7 processor with an Nvidia GeForce RTX 4070 graphics "
         "card, marking one of the biggest price cut deals we've seen on this configuration this year."
     )
     decision = _assess(title, description)
-    assert decision.admitted is True
-    assert decision.reason == "company_subject:NVIDIA"
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
 
 
 # ============================================================
@@ -1052,3 +1054,85 @@ def test_robot_report_item_naming_yaskawa_admitted_as_company_subject():
     )
     assert decision.admitted is True
     assert decision.reason == "company_subject:YASKAWA Electric Corporation"
+
+
+# ============================================================
+# Signals precision follow-up (design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_
+# BOILERPLATE_GUIDANCE_2026_09_16.md) — retail/deal/scarcity rule. Every
+# fixture below is the exact live item confirmed in design/POST_MERGE_
+# DAILY_NEWS_SIGNAL_PERFORMANCE_AUDIT_2026_09_16.md, run end-to-end via
+# _assess() (real matching + materiality + admission).
+# ============================================================
+
+
+def test_retail_deal_bundle_with_ram_ssd_capacity_spec_is_rejected():
+    """The exact confirmed live false positive: "Save $1,289..." reached
+    HIGH_SIGNAL purely because the article's own RAM/SSD spec language
+    ("capacity") survived the deal-price anchor strip — capacity is
+    never one of the three pricing-only keywords that strip removes.
+    Now rejected at admission via the "save ... $" consumer-format
+    pattern; no company is identified here at all (theme-only), so the
+    rescue's own identified_companies requirement was never even the
+    deciding factor for this specific fixture."""
+    decision = _assess(
+        "Save $1,289 when you build an extreme PC with these top-tier components — combo deal features "
+        "AMD's Ryzen 9 9950X3D2 processor along with an 8TB 9100 Pro SSD, MSI X870E motherboard, and "
+        "32GB of DDR5-6000 memory",
+        "When money is no object, but you still want to be slightly frugal, combo bundles like today's "
+        "Newegg offering might pique your interest. This is the most extreme size for a superfast SSD in "
+        "both capacity and price. Right now, you can save $1,289 with this combo deal.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
+
+
+def test_retail_deal_bundle_grab_a_saving_with_capacity_spec_is_rejected():
+    """Second confirmed live retail-deal false positive, same root
+    cause: "Grab a $560 saving..." also survived via a bare "storage
+    capacity" spec mention."""
+    decision = _assess(
+        "Grab a $560 saving on this 1440p-ready gaming PC with a 9800X3D and RTX 5060 Ti 16GB, now $1,859",
+        "A pre-built gaming PC with one of AMD's top X3D chips inside is always going to be a formidable "
+        "option. That all-white CyberPowerPC machine, down to $1,859.99 thanks to a $560 discount, has a "
+        "2TB Gen 4 SSD that gives you good storage capacity for several big game installations.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
+
+
+def test_scalper_retail_scarcity_third_party_sellers_is_rejected():
+    """The exact confirmed live scalper/scarcity false positive: NVIDIA
+    is genuinely title-placed (identified_companies is non-empty), and
+    the article's own "orders never being fulfilled" customer-complaint
+    sentence satisfied Gate B's quantified_change:orders — a spurious,
+    non-corporate anchor that must no longer be able to rescue a
+    resale-markup story into admission."""
+    decision = _assess(
+        "Nvidia's RTX 5090 vanishes from online retail in the US — third-party sellers now demand as "
+        "much as $9,500 for Nvidia's fastest GPU",
+        "Nvidia's fastest gaming graphics card, the RTX 5090, has been on a tear of price increases over "
+        "the past several weeks. Now, you can only find the RTX 5090 from third-party sellers at online "
+        "retailers like Newegg and Amazon, commanding anywhere from $6,500 to $9,500 for Team Green's "
+        "best GPU. The most recent reviews are a string of one-star reviews about orders never being "
+        "fulfilled.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("consumer_editorial_format:")
+
+
+def test_genuine_issuer_price_cut_with_deal_adjacent_phrasing_remains_eligible():
+    """Positive control: a genuine, attributable, material issuer pricing
+    action — AWS is grammatically the actor ("AWS cuts...") and a real,
+    non-weak anchor ("investment") independently qualifies via Gate B —
+    must remain admitted even though its own phrasing happens to trip
+    the same "save ... $" consumer-format pattern the rejected fixtures
+    above use. Proves the rescue still works for real issuer-level
+    pricing/inventory/channel disclosures, just not for weak (capacity/
+    orders) anchors."""
+    decision = _assess(
+        "AWS Cuts S3 Storage Pricing, Customers Can Now Save $40 Million a Year",
+        "AWS today cut its S3 storage pricing as part of a broader capex-funded infrastructure investment, "
+        "and customers can now save $40 million annually across their storage footprint.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:Amazon.com, Inc."

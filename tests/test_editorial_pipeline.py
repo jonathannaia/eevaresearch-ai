@@ -1989,3 +1989,110 @@ def test_regression_ksat_intuitive_machines_mission_selection_is_eligible(tmp_pa
     for reason in story.materiality_reasons:
         assert "launched" not in reason.lower()
         assert "completed" not in reason.lower()
+
+
+# ============================================================
+# Signals precision follow-up (design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_
+# BOILERPLATE_GUIDANCE_2026_09_16.md) — retail/deal/scarcity,
+# boilerplate/content-boundary, and guidance-disambiguation fixes, run
+# end-to-end through the real, unmodified run_editorial_discovery(),
+# proving each fix is correctly wired through editorial_pipeline.py's
+# own qualifying loop (via _classification_text()), not merely correct
+# in isolation.
+# ============================================================
+
+
+def test_regression_retail_deal_bundle_with_capacity_spec_is_rejected(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Grab a $560 saving on this 1440p-ready gaming PC with a 9800X3D and RTX 5060 Ti 16GB, now $1,859",
+        "A pre-built gaming PC with one of AMD's top X3D chips inside is always going to be a formidable "
+        "option. That all-white CyberPowerPC machine, down to $1,859.99 thanks to a $560 discount, has a "
+        "2TB Gen 4 SSD that gives you good storage capacity for several big game installations.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_scalper_third_party_sellers_scarcity_is_rejected(tmp_path, monkeypatch):
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Nvidia's RTX 5090 vanishes from online retail in the US — third-party sellers now demand as "
+        "much as $9,500 for Nvidia's fastest GPU",
+        "Nvidia's fastest gaming graphics card, the RTX 5090, has been on a tear of price increases. Now, "
+        "you can only find the RTX 5090 from third-party sellers at online retailers, commanding anywhere "
+        "from $6,500 to $9,500. The most recent reviews are a string of one-star reviews about orders "
+        "never being fulfilled.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_genuine_issuer_price_cut_with_deal_adjacent_phrasing_is_eligible(tmp_path, monkeypatch):
+    """Positive control, wired end-to-end: a real, attributable, material
+    issuer pricing action remains eligible even though its own phrasing
+    trips the same "save ... $" consumer-format pattern the rejected
+    fixtures above use."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "AWS Cuts S3 Storage Pricing, Customers Can Now Save $40 Million a Year",
+        "AWS today cut its S3 storage pricing as part of a broader capex-funded infrastructure investment, "
+        "and customers can now save $40 million annually across their storage footprint.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ("Amazon.com, Inc.",)
+
+
+def test_regression_related_articles_boilerplate_link_text_is_ignored(tmp_path, monkeypatch):
+    """Content-boundary fix, wired end-to-end: the exact confirmed live
+    HTML shape — a genuine lead paragraph followed by a "Go deeper
+    with..." related-articles block whose own linked-post title happens
+    to contain a theme phrase ("DRAM crisis") this article never
+    actually discusses. Without the content-boundary fix, this HTML
+    (raw, un-stripped entry.summary) would tag the item with the
+    "memory" theme purely from the unrelated linked headline; with the
+    fix, that trailing block is trimmed before matching ever runs, so
+    this item — a plain corporate hiring note with no real evidence —
+    correctly fails the ordinary company/theme precondition."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Company Announces New Executive Hire",
+        "<article><p>A company today announced a new hire to its leadership team, effective next quarter."
+        "</p><p>Go deeper with TH Premium: Chip scarcity assaults auto industry amid the worsening "
+        "Nexperia and DRAM crisis</p></article>",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_genuine_dram_disclosure_in_real_body_text_remains_eligible(tmp_path, monkeypatch):
+    """Positive control for the content-boundary fix: a genuine, real
+    DRAM/memory disclosure — appearing in the article's own actual lead
+    paragraph, never inside a trailing related-content block — remains
+    fully eligible; the fix trims a trailing boilerplate block only, it
+    never trims or otherwise touches an article's own real reporting."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Samsung Electronics to Expand DDR5 Module Output Only Through Outsourcing",
+        "Samsung Electronics today announced it will expand DDR5 memory chip module output capacity, "
+        "shifting a portion of production to outsourced foundry partners to meet surging demand.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_regression_terminal_guidance_national_security_item_is_rejected(tmp_path, monkeypatch):
+    """Guidance-disambiguation fix, wired end-to-end, isolated from the
+    boilerplate fix (no related-content marker present here at all) —
+    "terminal guidance" alone, with no other qualifying company/theme
+    evidence, correctly fails the ordinary precondition."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Autonomous drone swarm developed with AI assistance, threat report finds",
+        "Researchers built swarm coordination, computer vision, and terminal guidance software for a "
+        "drone program, according to a new threat intelligence report examining dual-use AI risks.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
