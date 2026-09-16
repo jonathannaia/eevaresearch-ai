@@ -431,6 +431,53 @@ def test_contract_term_still_covers_the_major_contract_or_order_category():
     assert result.matched_rules == ("foreign_issuer_current_report:6-K:contract",)
 
 
+# ============================================================
+# Tier 1 Cohort 2 batch (2026-09-16) — TSMC monthly-revenue 6-K term
+# (design/TIER1_COHORT2_IMPLEMENTATION_READINESS_2026_09_16.md). All
+# three filenames below are real, live Taiwan Semiconductor
+# Manufacturing Co Ltd filenames (CIK 0001046179), fetched 2026-09-16.
+# ============================================================
+
+
+def test_tsmc_monthly_revenue_6k_filename_is_admitted():
+    """Real, live TSMC filename (accession 0001046179-26-000658, filed
+    2026-09-10) — the recurring monthly revenue disclosure this batch's
+    companion tracked_companies.py addition was validated against."""
+    result = evaluate_six_k("tsm-revenue20260910.htm")
+    assert result.confidence == "Moderate"
+    assert result.matched_rules == ("foreign_issuer_current_report:6-K:revenue",)
+
+
+def test_tsmc_agm_filename_is_rejected():
+    """Real, live TSMC filename (accession 0001046179-26-000302, filed
+    2026-06-04) — a routine Annual General Meeting notice. Proves TSMC's
+    own AGM filings, not just ASML's, remain correctly denied after the
+    new "revenue" term is added — the deny-list still wins."""
+    result = evaluate_six_k("tsm-agmx20260604x6k.htm")
+    assert result.confidence is None
+    assert result.matched_rules == ()
+
+
+def test_unrelated_tsmc_6k_filename_is_rejected():
+    """Real, live TSMC filename (accession 0001046179-26-000539, filed
+    2026-08-11) — content unknown from the filename alone, but a clean
+    negative fixture: proves the new "revenue" term does not broadly
+    admit an unrelated foreign-issuer 6-K attachment."""
+    result = evaluate_six_k("sonysemiconductorsolutions.htm")
+    assert result.confidence is None
+    assert result.matched_rules == ()
+
+
+def test_existing_non_tsmc_6k_fixtures_are_unaffected_by_the_revenue_term():
+    """None of ASML's or Arm's own real, already-tested filenames
+    contain "revenue" — this end-to-end re-check proves the new term
+    changes no pre-existing filer's outcome."""
+    assert evaluate_six_k("form6-kquarterlyfilings.htm").confidence == "Moderate"
+    assert evaluate_six_k("form6-kannualreportbasedon.htm").confidence == "Moderate"
+    assert evaluate_six_k("form6-kagmdisclosureofagmr.htm").confidence is None
+    assert evaluate_six_k("arm-20260910.htm").confidence is None
+
+
 def test_filename_extension_is_stripped_before_matching():
     """Normalization proof: a recognized file extension never
     participates in matching (defensive — no current term is short
