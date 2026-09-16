@@ -869,20 +869,51 @@ def test_hpe_ir_rss_licensing_classification_matches_the_pilot_constant():
     assert EXPANSION_BATCH_5_SOURCE_REGISTRY[0].licensing_classification == pilot_entry_licensing
 
 
-def test_hpe_ir_rss_resolves_via_the_new_discovery_stub_not_tracked_companies():
-    # Proves the issuer-linkage requirement (validate_source_entry's own
-    # OFFICIAL_IR tracked_company_for() check) resolves through the new
-    # issuer_registry.DISCOVERY_STUBS entry added this batch, exactly
-    # like Quanta Services/nVent Electric/Arista Networks/Cisco Systems
-    # above — never through tracked_companies.py (Radar's own file,
-    # untouched by this batch).
+def test_hpe_ir_rss_resolves_with_no_duplicate_or_conflicting_source():
+    # Historically (through Daily News source-expansion batch 5,
+    # 2026-09-13), HPE existed only as an issuer_registry.DISCOVERY_STUBS
+    # entry, and tracked_company_for() resolved this source through that
+    # stub, never through tracked_companies.py — exactly like Quanta
+    # Services/nVent Electric/Arista Networks/Cisco Systems before their
+    # own later graduations. The Tier 1 Cohort 2 batch (2026-09-16)
+    # graduated HPE to a real, verified TrackedCompany entry too (same
+    # precedent as those four), while deliberately leaving this source
+    # entry's own now-redundant DISCOVERY_STUBS entry untouched — so both
+    # now exist simultaneously for the same issuer_name. This test proves
+    # that dual existence is harmless: tracked_company_for() resolves
+    # deterministically to exactly one record (the real TrackedCompany,
+    # checked first — see that function's own docstring), the stub
+    # remains present and valid without becoming reachable by any scan
+    # pipeline, and the source-registry entry itself still validates
+    # cleanly — no duplicate, conflicting, or broken IR RSS resolution
+    # results from the overlap.
     from src.config.issuer_registry import DISCOVERY_STUBS
     from src.config.tracked_companies import get_tracked_companies
 
     entry = EXPANSION_BATCH_5_SOURCE_REGISTRY[0]
-    assert entry.issuer_name not in {c.name for c in get_tracked_companies(active_only=False)}
+
+    # HPE now resolves through its real tracked-company record...
+    tracked_names = {c.name for c in get_tracked_companies(active_only=False)}
+    assert entry.issuer_name in tracked_names
+    # ...while its original discovery-stub entry is untouched and still present...
     assert entry.issuer_name in {issuer.legal_name for issuer in DISCOVERY_STUBS}
-    assert feed_registry.tracked_company_for(entry.issuer_name) is not None
+    # ...and resolution itself is unambiguous: exactly one TrackedCompany
+    # in the live registry carries this name (no duplicate to resolve
+    # between), and tracked_company_for() returns that real, active,
+    # SEC-EDGAR-sourced record — not the synthesized, inactive stub shape
+    # feed_registry.py's own docstring describes for a stub-only match.
+    matches = [c for c in get_tracked_companies(active_only=False) if c.name == entry.issuer_name]
+    assert len(matches) == 1
+    resolved = feed_registry.tracked_company_for(entry.issuer_name)
+    assert resolved is not None
+    assert resolved.active is True
+    assert resolved.source == "SEC EDGAR"
+    assert resolved.krx_code == "HPE"
+    # The source entry itself still validates without error either way —
+    # the issuer-linkage check accepts a tracked-company match exactly as
+    # readily as a stub-only match (validate_source_entry's own contract),
+    # so this graduation introduces no new validation violation.
+    assert validate_source_entry(entry) == ()
 
 
 def test_expansion_batch_5_has_zero_validation_violations():

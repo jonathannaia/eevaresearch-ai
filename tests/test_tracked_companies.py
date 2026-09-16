@@ -266,7 +266,7 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_115():
+def test_active_tracked_company_count_is_exactly_123():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
     # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
@@ -276,8 +276,9 @@ def test_active_tracked_company_count_is_exactly_115():
     # Filings Radar issuer-expansion batch (2026-09-04) added 5 more
     # EDINET issuers (100 + 5 = 105). The Tier 1 Cohort 1 batch
     # (2026-09-15) then added 10 more (5 EDGAR + 2 DART + 3 EDINET;
-    # 105 + 10 = 115).
-    assert len(get_tracked_companies(active_only=True)) == 115
+    # 105 + 10 = 115), and the Tier 1 Cohort 2 batch (2026-09-16) added
+    # 8 more SEC EDGAR issuers still (115 + 8 = 123).
+    assert len(get_tracked_companies(active_only=True)) == 123
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
@@ -755,32 +756,54 @@ def test_tier1_cohort1_no_krx_or_corp_code_collision_with_existing_registry():
     assert len(all_corp_codes) == len(set(all_corp_codes))
 
 
-def test_tier1_cohort1_does_not_include_ase_or_iridium_or_excluded_adapter_blocked_names():
-    # Explicit guard: ASE Technology Holding and Iridium Communications
-    # (both HOLD in the companion readiness document) and TSMC/ASML/
-    # Nanya/Winbond/Innolight/Siemens Energy (adapter-blocked, out of
-    # scope entirely) must never appear anywhere in the registry.
+def test_registry_still_excludes_ase_iridium_and_genuinely_adapter_blocked_names():
+    # Explicit guard, updated for the Tier 1 Cohort 2 batch (2026-09-16):
+    # ASE Technology Holding and Iridium Communications (both HOLD in the
+    # companion validation report — ASE for opaque 6-K filenames, Iridium
+    # for a pending acquisition by already-tracked Rocket Lab) and Nanya/
+    # Winbond/Innolight/Siemens Energy (genuinely adapter-blocked — no
+    # SEC-reportable presence exists for any of them) still must never
+    # appear anywhere in the registry. Taiwan Semiconductor Manufacturing
+    # and ASML Holding are DELIBERATELY NO LONGER excluded here — the
+    # Tier 1 Cohort 2 batch added both as real, validated, EDGAR-
+    # addressable TrackedCompany entries; their continued presence is
+    # proven positively by test_cohort2-equivalent identity checks
+    # elsewhere in this file (test_pre_existing_and_cohort1_companies_
+    # retain_expected_behavior_after_cohort2 and the Cohort 2 entries'
+    # own presence in get_tracked_companies()), not re-asserted here.
     companies = get_tracked_companies(active_only=False)
     names_lower = {c.name.lower() for c in companies}
     excluded_fragments = (
-        "ase technology", "iridium", "taiwan semiconductor", "asml",
+        "ase technology", "iridium",
         "nanya", "winbond", "innolight", "siemens energy",
     )
     for fragment in excluded_fragments:
         assert not any(fragment in name for name in names_lower), f"{fragment} must not appear in the registry"
     assert "ASX" not in {c.krx_code for c in companies}
     assert "IRDM" not in {c.krx_code for c in companies}
+    # Positive counterpart proving the removed exclusions were deliberate,
+    # not an oversight: TSMC and ASML are, in fact, now present.
+    assert "TSM" in {c.krx_code for c in companies}
+    assert "ASML" in {c.krx_code for c in companies}
 
 
-def test_pre_existing_105_companies_retain_prior_behavior_after_tier1_cohort1_batch():
-    # Regression proof: every pre-existing company's own identity/theme
-    # fields are byte-identical to their values before this batch —
-    # spot-checked across a representative sample spanning all three
-    # sources (mirrors the exact assertions test_samsung_identifiers_
-    # and_theme_mapping / test_sk_hynix_identifiers_and_theme_mapping /
+def test_pre_existing_and_cohort1_companies_retain_expected_behavior_after_cohort2():
+    # Regression proof: every pre-existing (pre-105) company's own
+    # identity/theme fields are byte-identical to their values before
+    # the Tier 1 Cohort 1 and Tier 1 Cohort 2 batches — spot-checked
+    # across a representative sample spanning all three sources (mirrors
+    # the exact assertions test_samsung_identifiers_and_theme_mapping/
+    # test_sk_hynix_identifiers_and_theme_mapping/
     # test_edgar_cohort_identifiers_and_theme_mapping already make, run
-    # again here to prove this batch did not perturb them).
+    # again here to prove neither later batch perturbed them), PLUS a
+    # representative sample of the Tier 1 Cohort 1 batch itself, proving
+    # Cohort 1 is still present and intact after Cohort 2 landed.
+    # Deliberately does NOT assert a frozen total company count here —
+    # that is test_active_tracked_company_count_is_exactly_123's own,
+    # single-sourced responsibility; duplicating it here would only
+    # create a second place to update on every future batch.
     companies = {c.name: c for c in get_tracked_companies(active_only=True)}
+    # Pre-existing (pre-105) companies:
     assert companies["Samsung Electronics"].krx_code == "005930"
     assert companies["Samsung Electronics"].themes == ("memory", "ai-buildout")
     assert companies["SK Hynix"].krx_code == "000660"
@@ -790,6 +813,10 @@ def test_pre_existing_105_companies_retain_prior_behavior_after_tier1_cohort1_ba
     assert companies["Rocket Lab"].themes[0] == "space"
     assert companies["FANUC CORPORATION"].corp_code == "E01946"
     assert companies["FANUC CORPORATION"].krx_code == "69540"
-    # 105 pre-existing + 10 new = 115 total active, confirmed once more
-    # here alongside the identity spot-checks above.
-    assert len(companies) == 115
+    # Tier 1 Cohort 1 batch (2026-09-15) — still present and intact:
+    assert companies["GE Vernova Inc."].krx_code == "GEV"
+    assert companies["GE Vernova Inc."].themes[0] == "ai-buildout"
+    assert companies["Nabtesco Corporation"].corp_code == "E01726"
+    assert companies["Nabtesco Corporation"].themes == ("humanoids",)
+    assert companies["L3Harris Technologies, Inc."].krx_code == "LHX"
+    assert companies["L3Harris Technologies, Inc."].themes == ("space",)
