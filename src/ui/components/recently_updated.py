@@ -102,7 +102,7 @@ from src.logic import filing_display
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
-from src.models.daily_news_models import NewsStoryStatus
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStoryStatus
 from src.models.models import CandidateStatus, FilingEvent
 from src.ui.components.editorial_coverage import get_visible_editorial_stories
 from src.ui.ui import get_page
@@ -341,6 +341,18 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
     return rows
 
 
+def _effective_editorial_tier(story: EditorialStory) -> NewsMaterialityTier:
+    """Mirrors src.ui.pages.daily_news._effective_tier() exactly — None
+    (persisted before materiality_tier existed, never reclassified)
+    defaults to Watchlist, the same "shown, not silently hidden like
+    Background, never overclaimed like High Signal" convention that
+    page already uses. A small, local re-implementation rather than an
+    import from a UI page module into a component (this file is a
+    shared component several pages use; a page must never become one of
+    its own component's dependencies)."""
+    return story.materiality_tier or NewsMaterialityTier.WATCHLIST
+
+
 def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
     """Real Daily News editorial stories that already passed the
     existing high-signal eligibility rules (beta-blocker fix, design/
@@ -354,13 +366,28 @@ def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
     could never win "Latest" no matter how new it was. A materially
     future published_at is excluded here too, as a local, independent
     safety net — this component's own guarantee never depends on any
-    other page's own freshness gate alone."""
+    other page's own freshness gate alone.
+
+    Dashboard tier-aware preview (Signals precision follow-up, live-card
+    audit, design/POST_MERGE_SIGNALS_LIVE_CARD_AUDIT_2026_09_16.md) — a
+    Background-tier editorial story is excluded from this default
+    preview entirely (never merely relabeled or reordered): this
+    component's own row shape carries no tier badge at all (see this
+    module's own top-of-file docstring — "no claim-type, confidence,
+    strength, importance, priority, score... this is a factual,
+    source-attributed feed only"), so a Background item shown here would
+    be visually indistinguishable from genuine Signal content. High
+    Signal and Watchlist stories are unaffected. The Signals page's own
+    "Show Background (N)" expander (src/ui/pages/daily_news.py) is a
+    completely separate code path and is untouched by this filter."""
     rows: list[_Row] = []
     try:
         stories = get_visible_editorial_stories(settings)
     except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
         return rows
     for story in stories:
+        if _effective_editorial_tier(story) == NewsMaterialityTier.BACKGROUND:
+            continue
         sort_key = _parse_iso(story.published_at)
         if sort_key is None or _is_materially_future(sort_key, now):
             continue

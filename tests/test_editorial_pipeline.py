@@ -2096,3 +2096,42 @@ def test_regression_terminal_guidance_national_security_item_is_rejected(tmp_pat
     )
     assert report.stories_published == 0
     assert stories == {}
+
+
+# ============================================================
+# Hobbyist/developer/modding-content exclusion (live-card audit, design/
+# POST_MERGE_SIGNALS_LIVE_CARD_AUDIT_2026_09_16.md), wired end-to-end
+# through the real, unmodified run_editorial_discovery().
+# ============================================================
+
+
+def test_regression_rtx_laptop_power_limit_unofficial_tool_is_rejected(tmp_path, monkeypatch):
+    """The exact confirmed live false positive, run end-to-end — must
+    never reach persistence, i.e. never reach Watchlist/High Signal."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Developer vibe codes a tool to let Nvidia RTX 50-series laptop owners crank up their power "
+        "limits — can juice RTX 5090 mobile GPU to 225W",
+        "Folks with Nvidia-based gaming laptops can now use a new tool called NvpwrControl to unlock "
+        "additional performance from their assuredly power-limited mobile GPU. The tool, spotted by "
+        "VideoCardz, is available for download on GitHub, and it is labeled as 'experimental'. The "
+        "developer is called 'LevinAI', and there are the hallmarks of generative AI all over the GitHub "
+        "repository.",
+    )
+    assert report.stories_published == 0
+    assert stories == {}
+
+
+def test_regression_official_driver_security_patch_remains_eligible(tmp_path, monkeypatch):
+    """Positive control, wired end-to-end: an official driver/security
+    disclosure remains fully eligible."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "NVIDIA Releases Emergency Driver Update to Patch Critical GPU Security Vulnerability",
+        "NVIDIA today released an official emergency driver update addressing a critical security "
+        "vulnerability affecting its RTX GPU lineup, urging all enterprise and consumer customers to "
+        "update immediately.",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.matched_companies == ("NVIDIA",)

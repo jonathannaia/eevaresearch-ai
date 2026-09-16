@@ -222,6 +222,42 @@ _STOCK_ROUNDUP_PHRASES: tuple[str, ...] = (
     "biggest movers", "lead gains", "market rally", "stocks to watch",
 )
 
+# --- Hobbyist/developer/modding-content exclusion (Signals precision
+# follow-up, live-card audit, design/POST_MERGE_SIGNALS_LIVE_CARD_
+# AUDIT_2026_09_16.md) — the confirmed live false positive: a community-
+# built, AI-generated GitHub tool that unlocks a laptop GPU's own power-
+# delivery limit, with a real tracked company (NVIDIA) genuinely title-
+# placed but doing nothing — no disclosure, no official release, no
+# corporate action of any kind. Curated, narrow phrases and templated
+# patterns naming the real, distinctive vocabulary of unofficial
+# consumer/enthusiast modification content — never a bare "power,"
+# "GitHub," "developer," "gaming," or "tool" ban, each of which would
+# also catch a genuine official driver/firmware release, a security
+# patch, or a commercial gaming-hardware launch. Same exception shape as
+# every other exclusion above: a genuine official disclosure (recall,
+# security vulnerability/patch, official driver/firmware release,
+# regulatory action, official technical specification, enterprise/
+# commercial deployment, manufacturing/capacity/productivity change, or
+# a material commercial product launch) is never suppressed merely
+# because hobbyist-adjacent vocabulary also appears in it. ---
+_HOBBYIST_MODDING_PHRASES: tuple[str, ...] = (
+    "overclock", "overclocking", "overclocked",
+    "unofficial mod", "unofficial mods", "community-built tool", "community tool",
+    "diy hack", "diy mod", "diy hardware hack", "diy software hack",
+    "hobbyist tool", "enthusiast tool", "enthusiast mod",
+    "benchmark tweak", "benchmark tweaks", "performance tweak", "performance tweaks",
+    "power limit unlock", "power limit mod", "vibe coded", "vibe codes", "vibe coding",
+    "modder", "aftermarket modification", "aftermarket mod", "resale modification",
+)
+_HOBBYIST_MODDING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(crank|cranks|cranking|unlock|unlocks|unlocking|raise|raises|raising|boost|boosts|boosting)\b"
+               r".{0,40}\bpower limits?\b", re.IGNORECASE),
+    re.compile(r"\bpower limits?\b.{0,40}\b(crank|cranks|cranking|unlock|unlocks|unlocking|mod|mods|modded)\b", re.IGNORECASE),
+    re.compile(r"\bcustom\b.{0,20}\b(voltage|power)\b.{0,20}\btweaks?\b", re.IGNORECASE),
+    re.compile(r"\bgaming[- ]focused\b.{0,40}\bperformance\b", re.IGNORECASE),
+    re.compile(r"\bjuice\b.{0,30}\b(gpu|cpu|laptop|graphics card)\b", re.IGNORECASE),
+)
+
 # The materiality_reasons prefixes that represent a genuine corporate-
 # event anchor (Gates A/A2/A4/B/B2 — regulatory filing, actual earnings,
 # an explicit dividend action, a quantified change, a quantified capital
@@ -471,6 +507,16 @@ def _matched_personnel_announcement(text: str) -> str | None:
     return None
 
 
+def _matched_hobbyist_modding(text: str) -> str | None:
+    hit = _contains_any(text, _HOBBYIST_MODDING_PHRASES)
+    if hit:
+        return hit[0]
+    for pattern in _HOBBYIST_MODDING_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
+    return None
+
+
 def _has_anchor_evidence(materiality_reasons: tuple[str, ...]) -> bool:
     return any(
         reason == prefix or reason.startswith(prefix)
@@ -591,6 +637,21 @@ def assess_admission(
         if identified_companies and _has_non_weak_anchor_evidence(materiality_reasons):
             return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
         return AdmissionDecision(False, f"consumer_editorial_format:{consumer_format_hit}")
+
+    # Hobbyist/developer/modding-content exclusion (Signals precision
+    # follow-up, live-card audit, design/POST_MERGE_SIGNALS_LIVE_CARD_
+    # AUDIT_2026_09_16.md) — same exception shape as consumer-format
+    # above, using the same weak-anchor-excluded rescue: a genuine
+    # official disclosure (recall, security patch, official driver/
+    # firmware release, regulatory action, official spec, enterprise
+    # deployment, capacity/manufacturing change, or a material product
+    # launch) about an already-identified subject is never suppressed
+    # merely because hobbyist/mod vocabulary also appears in the piece.
+    hobbyist_modding_hit = _matched_hobbyist_modding(text)
+    if hobbyist_modding_hit:
+        if identified_companies and _has_non_weak_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
+        return AdmissionDecision(False, f"hobbyist_modding_format:{hobbyist_modding_hit}")
 
     # Plaintiff-law-firm solicitation exclusion (Signals admission
     # precision fix, P0) — same exception shape as consumer-format
