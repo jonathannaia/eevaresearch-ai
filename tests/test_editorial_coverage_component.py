@@ -13,7 +13,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
 from src.data_access.daily_news import daily_news_store
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 from src.ui.components import editorial_coverage
 from src.ui.pages import daily_news
 
@@ -37,6 +37,16 @@ def _story(
     matched_themes: tuple[str, ...] = ("ai-buildout",),
     source_feed_id: str = "cnbc-technology-rss",
     publisher: str = "CNBC",
+    # High Signals / Watchlist tier navigation (design/DAILY_NEWS_HIGH_
+    # SIGNALS_WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md) — High Signals
+    # is now the default page view a bare AppTest run lands on (no tier
+    # query param set, matching this file's own _run_daily_news_page()),
+    # so this shared fixture defaults to High-Signal tier too, mirroring
+    # the exact same default-fixture approach already used in
+    # tests/test_daily_news_page.py's own _story()/_editorial_story().
+    # Callers that need Watchlist, materiality_tier=None, or Background
+    # behavior pass their own explicit override, which always wins.
+    materiality_tier: NewsMaterialityTier | None = NewsMaterialityTier.HIGH_SIGNAL,
 ) -> EditorialStory:
     import datetime
 
@@ -46,7 +56,7 @@ def _story(
         source_url="https://www.cnbc.com/2026/09/11/oracle-ai-cloud.html",
         published_at=now, retrieved_at=now, excerpt=excerpt,
         matched_companies=matched_companies, matched_themes=matched_themes,
-        source_feed_id=source_feed_id,
+        source_feed_id=source_feed_id, materiality_tier=materiality_tier,
     )
 
 
