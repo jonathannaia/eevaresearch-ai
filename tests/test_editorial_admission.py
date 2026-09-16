@@ -1136,3 +1136,74 @@ def test_genuine_issuer_price_cut_with_deal_adjacent_phrasing_remains_eligible()
     )
     assert decision.admitted is True
     assert decision.reason == "company_subject:Amazon.com, Inc."
+
+
+# ============================================================
+# Hobbyist/developer/modding-content exclusion (live-card audit, design/
+# POST_MERGE_SIGNALS_LIVE_CARD_AUDIT_2026_09_16.md). The first fixture
+# below is the exact confirmed live false positive; the rest cover the
+# required regression matrix.
+# ============================================================
+
+
+def test_rtx_laptop_power_limit_unofficial_tool_is_rejected():
+    """The exact confirmed live false positive: a community-built,
+    AI-generated GitHub tool ("vibe coded") that unlocks a laptop GPU's
+    own power-delivery limit. NVIDIA is genuinely title-placed but does
+    nothing — no disclosure, no official release, no corporate action.
+    Must reject at admission and never reach Watchlist/High Signal."""
+    decision = _assess(
+        "Developer vibe codes a tool to let Nvidia RTX 50-series laptop owners crank up their power "
+        "limits — can juice RTX 5090 mobile GPU to 225W",
+        "Folks with Nvidia-based gaming laptops can now use a new tool called NvpwrControl to unlock "
+        "additional performance from their assuredly power-limited mobile GPU. The tool, spotted by "
+        "VideoCardz, is available for download on GitHub, and it is labeled as 'experimental'. The "
+        "developer is called 'LevinAI', and there are the hallmarks of generative AI all over the GitHub "
+        "repository.",
+    )
+    assert decision.admitted is False
+    assert decision.reason.startswith("hobbyist_modding_format:")
+
+
+def test_general_non_company_overclock_mod_diy_item_is_rejected():
+    """General, non-company-specific overclock/mod/DIY consumer item —
+    no tracked company at all, correctly rejected regardless (both via
+    the ordinary fail-closed precondition and the new exclusion, proving
+    the exclusion itself, not merely the precondition, correctly fires
+    for this shape)."""
+    decision = _assess(
+        "Modder overclocks budget graphics card with DIY power tweak, gains major frame rate boost",
+        "A hobbyist modder shared a community-built overclocking tool on GitHub that lets budget graphics "
+        "card owners unlock higher power limits via a DIY voltage tweak, claiming a major frame rate "
+        "boost in benchmarks.",
+    )
+    assert decision.admitted is False
+
+
+def test_official_nvidia_driver_security_patch_remains_eligible():
+    """Positive control: an official driver/security disclosure, with no
+    hobbyist/mod vocabulary at all, remains fully eligible — proves the
+    new exclusion is scoped to the confirmed unofficial-modification
+    shape, not to any mention of drivers, GPUs, or power."""
+    decision = _assess(
+        "NVIDIA Releases Emergency Driver Update to Patch Critical GPU Security Vulnerability",
+        "NVIDIA today released an official emergency driver update addressing a critical security "
+        "vulnerability affecting its RTX GPU lineup, urging all enterprise and consumer customers to "
+        "update immediately.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "company_subject:NVIDIA"
+
+
+def test_hobbyist_modding_phrases_never_contain_a_bare_power_gpu_or_developer_term_standalone():
+    """Structural guard, matching this codebase's own established
+    pattern (see test_new_retail_lexicon_phrases_never_include_a_
+    company_gpu_or_price_term_standalone and test_law_firm_solicitation_
+    phrases_never_contain_a_bare_lawsuit_or_company_term above): the
+    hobbyist/modding phrase list must never itself be a bare "power,"
+    "gpu," "developer," "gaming," or "tool" ban — every entry names the
+    distinctive UNOFFICIAL-MODIFICATION shape specifically, never the
+    mere topic."""
+    forbidden_bare_terms = ("power", "gpu", "developer", "gaming", "tool", "github", "driver")
+    for phrase in editorial_admission._HOBBYIST_MODDING_PHRASES:
+        assert phrase.lower() not in forbidden_bare_terms

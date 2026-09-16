@@ -29,7 +29,9 @@ from streamlit.testing.v1 import AppTest
 from src.config.settings import Settings
 from src.data_access.daily_news import daily_news_store, editorial_story_store
 from src.data_access.dart import candidate_store
-from src.models.daily_news_models import EditorialStory, NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+from src.models.daily_news_models import (
+    EditorialStory, NewsMaterialityTier, NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass,
+)
 from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
 from src.ui.components import recently_updated
 
@@ -77,11 +79,15 @@ def _news_story(story_id: str, company_name: str, headline: str, published_at: s
     )
 
 
-def _editorial_story(story_id: str, headline: str, published_at: str, matched_companies: tuple[str, ...] = ("Oracle Corporation",)) -> EditorialStory:
+def _editorial_story(
+    story_id: str, headline: str, published_at: str, matched_companies: tuple[str, ...] = ("Oracle Corporation",),
+    materiality_tier: NewsMaterialityTier | None = None,
+) -> EditorialStory:
     return EditorialStory(
         id=story_id, headline=headline, publisher="CNBC", source_url=f"https://example.invalid/{story_id}",
         published_at=published_at, retrieved_at=published_at, excerpt=None,
         matched_companies=matched_companies, matched_themes=(), source_feed_id="cnbc-technology-rss",
+        materiality_tier=materiality_tier,
     )
 
 
@@ -301,3 +307,88 @@ def test_recently_updated_footer_links_use_the_current_signals_label():
     ).read_text(encoding="utf-8")
     assert 'st.page_link(daily_news_page, label="View all Signals →")' in source
     assert "View all Daily News" not in source
+
+
+# ============================================================
+# Dashboard tier-aware preview (Signals precision follow-up, live-card
+# audit, design/POST_MERGE_SIGNALS_LIVE_CARD_AUDIT_2026_09_16.md) —
+# Background-tier editorial items must never appear in the default
+# "Recently Updated" preview; Watchlist and High Signal are unaffected.
+# ============================================================
+
+
+def test_background_tier_editorial_story_is_excluded_from_the_default_preview(tmp_path):
+    """The exact confirmed live shape (smartARM/Meta, Samsung One UI 9,
+    L3Harris strategic-commentary — all Background) — must not appear."""
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            "editorial-background", "Meta-smartARM style Background item", datetime.now(timezone.utc).isoformat(),
+            materiality_tier=NewsMaterialityTier.BACKGROUND,
+        ),
+    ])
+
+    rows = recently_updated._select_recently_updated_rows(_settings(tmp_path))
+
+    assert rows == []
+
+
+def test_watchlist_tier_editorial_story_still_shown(tmp_path):
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            "editorial-watchlist", "Watchlist-tier editorial item", datetime.now(timezone.utc).isoformat(),
+            materiality_tier=NewsMaterialityTier.WATCHLIST,
+        ),
+    ])
+
+    rows = recently_updated._select_recently_updated_rows(_settings(tmp_path))
+
+    assert len(rows) == 1
+    assert rows[0].title == "Watchlist-tier editorial item"
+
+
+def test_high_signal_tier_editorial_story_still_shown(tmp_path):
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            "editorial-high-signal", "High Signal-tier editorial item", datetime.now(timezone.utc).isoformat(),
+            materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+        ),
+    ])
+
+    rows = recently_updated._select_recently_updated_rows(_settings(tmp_path))
+
+    assert len(rows) == 1
+    assert rows[0].title == "High Signal-tier editorial item"
+
+
+def test_background_and_watchlist_items_together_only_watchlist_survives(tmp_path):
+    """A mixed batch — proves the filter discriminates per-row, not
+    per-run, and that a Background row never displaces a genuine
+    Watchlist/High Signal row's own visibility."""
+    now = datetime.now(timezone.utc)
+    editorial_story_store.upsert_new_stories(tmp_path, [
+        _editorial_story(
+            "editorial-bg", "Background item", (now - timedelta(minutes=1)).isoformat(),
+            materiality_tier=NewsMaterialityTier.BACKGROUND,
+        ),
+        _editorial_story(
+            "editorial-wl", "Watchlist item", (now - timedelta(minutes=2)).isoformat(),
+            materiality_tier=NewsMaterialityTier.WATCHLIST,
+        ),
+    ])
+
+    rows = recently_updated._select_recently_updated_rows(_settings(tmp_path), now)
+
+    titles = [r.title for r in rows]
+    assert "Background item" not in titles
+    assert "Watchlist item" in titles
+
+
+def test_radar_candidate_row_is_unaffected_by_the_editorial_tier_filter(tmp_path):
+    """Radar/filing rows carry no materiality_tier concept at all — the
+    new filter lives only inside _load_editorial_rows() and must never
+    touch _load_filing_rows()'s own, completely separate behavior."""
+    _seed_candidate(tmp_path, _candidate("acc-unaffected", "Oracle Corporation", "Radar candidate row"))
+
+    rows = recently_updated._select_recently_updated_rows(_settings(tmp_path))
+
+    assert any(r.title == "Radar candidate row" for r in rows)
