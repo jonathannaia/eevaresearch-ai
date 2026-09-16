@@ -1753,6 +1753,220 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "convention."
         ),
     ),
+    # ============================================================
+    # Tier 1 Cohort 2 batch (2026-09-16) — 8 more SEC EDGAR issuers,
+    # closing the most material foundry/lithography/advanced-packaging/
+    # server-manufacturing/optical-networking/humanoids-sensing/space-
+    # communications gaps identified in design/COMPANY_UNIVERSE_AND_
+    # SUPPLY_CHAIN_AUDIT_PLAN_2026_09_16.md and validated (identifiers
+    # live-confirmed against SEC's own data.sec.gov/www.sec.gov endpoints,
+    # 2026-09-16) in design/TIER1_COMPANY_COHORT2_VALIDATION_AND_
+    # IMPLEMENTATION_PLAN_2026_09_16.md and design/TIER1_COHORT2_
+    # IMPLEMENTATION_READINESS_2026_09_16.md. corp_code left unset for
+    # every entry, same never-hardcode-a-CIK convention as every other
+    # EDGAR entry above — each CIK below is recorded in `notes` only, for
+    # audit-trail purposes, never read by any pipeline from `notes`.
+    # No new subtheme string is introduced by this batch (per the
+    # readiness report's own "minimum necessary metadata, no ontology
+    # redesign" constraint) — every entry below leaves `subthemes=()`,
+    # following the same established convention already used for
+    # Applied Materials/Lam Research/KLA/Entegris/Nebius/Penguin
+    # Solutions/Marvell/MaxLinear/Broadcom, with an informal intended
+    # subtheme recorded in prose only.
+    # ============================================================
+    TrackedCompany(
+        name="Taiwan Semiconductor Manufacturing Co Ltd",
+        exchange="NYSE",
+        krx_code="TSM",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — AI Buildout / leading-edge "
+            "logic foundry. The single largest concentration-risk bottleneck "
+            "previously absent from this registry — most already-tracked "
+            "fabless names (NVIDIA, AMD, Broadcom, Marvell, Qualcomm, Astera "
+            "Labs, Credo, Arm-designed silicon) ultimately depend on it. CIK "
+            "0001046179 confirmed live this session against SEC's own "
+            "data.sec.gov submissions endpoint (most recent filing: 6-K, "
+            "2026-09-10) — a 20-F/6-K foreign private issuer (Taiwan "
+            "incorporation/primary TWSE listing; this NYSE ADR is the "
+            "EDGAR-relevant listing). Its recurring monthly-revenue 6-K "
+            "(real filename observed live this session: "
+            "tsm-revenue20260910.htm) is admitted by this same batch's "
+            "companion change to src/data_access/edgar/edgar_rules.py's "
+            "6-K allow-list; its AGM 6-K (tsm-agmx20260604x6k.htm) and its "
+            "annual 20-F both continue to behave exactly as designed, "
+            "unaffected by that change. Intended informal subtheme "
+            "(no accurate existing match, left unset per convention): "
+            "foundry-fabrication. corp_code left unresolved per "
+            "convention."
+        ),
+    ),
+    TrackedCompany(
+        name="ASML Holding N.V.",
+        exchange="NASDAQ",
+        krx_code="ASML",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — AI Buildout / EUV "
+            "lithography. Effective monopoly on EUV lithography systems — "
+            "the second most concentrated bottleneck this batch closes. "
+            "CIK 0000937966 confirmed live this session against SEC's own "
+            "data.sec.gov submissions endpoint (most recent filing: 6-K, "
+            "2026-07-15) — a 20-F/6-K foreign private issuer (Netherlands "
+            "incorporation/primary Euronext Amsterdam listing; this NASDAQ "
+            "ADR is the EDGAR-relevant listing). This filer's own real "
+            "filenames (form6-kquarterlyfilings.htm, "
+            "pressreleasefinancialresults.htm, both observed live in its "
+            "most recent quarterly 6-K) are the direct evidentiary basis "
+            "src/data_access/edgar/edgar_rules.py's existing 6-K allow-list "
+            "terms were already built from — the highest-confidence "
+            "candidate validated in this batch. Intended informal subtheme "
+            "(no accurate existing match, left unset per convention): "
+            "semiconductor-equipment (EUV lithography). corp_code left "
+            "unresolved per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Fabrinet",
+        exchange="NYSE",
+        krx_code="FN",
+        source="SEC EDGAR",
+        themes=("photonics",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — Photonics / optical-"
+            "component packaging and assembly, closing a gap distinct "
+            "from every already-tracked photonics name (all component/"
+            "systems vendors, not the assembly layer). CIK 0001408710 "
+            "confirmed live this session against SEC's own data.sec.gov "
+            "submissions endpoint (most recent filing: Form 4, 2026-09-03; "
+            "most recent 10-K: 2026-08-18) — Cayman Islands-incorporated "
+            "but a standard domestic-style filer (10-K/8-K/Form 4), not a "
+            "20-F/6-K foreign private issuer. Intended informal subtheme "
+            "(no accurate existing match, left unset per convention): "
+            "optical-packaging-assembly. corp_code left unresolved per "
+            "convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Ciena Corp",
+        exchange="NYSE",
+        krx_code="CIEN",
+        source="SEC EDGAR",
+        themes=("photonics",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — Photonics / optical-"
+            "networking systems, closing the dedicated networking-systems-"
+            "vendor gap (existing photonics names are components/"
+            "transceivers/materials, not a systems vendor). CIK 0000936395 "
+            "confirmed live this session against SEC EDGAR's own company "
+            "search (Maryland incorporation; standard domestic-style "
+            "filer, most recent filing: Form 144, 2026-09-16). Intended "
+            "informal subtheme (no accurate existing match, left unset "
+            "per convention): optical-networking-systems. corp_code left "
+            "unresolved per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Kulicke & Soffa Industries, Inc.",
+        exchange="NASDAQ",
+        krx_code="KLIC",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — AI Buildout / advanced-"
+            "packaging wire-bonding equipment, a direct HBM/AI-chip "
+            "packaging bottleneck category. CIK 0000056978 confirmed live "
+            "this session against SEC's own data.sec.gov submissions "
+            "endpoint (most recent filing: Form 4, 2026-09-02; standard "
+            "domestic-style filer). Intended informal subtheme (no "
+            "accurate existing match, left unset per convention): "
+            "advanced-packaging (wire-bonding). corp_code left unresolved "
+            "per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Hewlett Packard Enterprise Company",
+        exchange="NYSE",
+        krx_code="HPE",
+        source="SEC EDGAR",
+        themes=("ai-buildout",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — AI Buildout / AI server "
+            "systems, the direct third name in the already-established "
+            "server-manufacturing subcategory alongside already-tracked "
+            "Dell Technologies and Super Micro Computer — not a generic "
+            "AI-adjacent add. CIK 0001645590 confirmed live this session "
+            "against SEC's own data.sec.gov submissions endpoint (most "
+            "recent filing: Form 4, 2026-09-16; standard domestic-style "
+            "filer; SEC's own data.sec.gov conformed name is 'Hewlett "
+            "Packard Enterprise Co' — this entry instead uses 'Hewlett "
+            "Packard Enterprise Company', matching this company's own "
+            "pre-existing DISCOVERY_STUBS legal_name verbatim, so the "
+            "graduation below is a true name match, not a near-duplicate). "
+            "Graduates this company's own pre-existing Daily-News-only "
+            "DISCOVERY_STUBS entry ('stub:HPE', Daily News source-"
+            "expansion batch 5, 2026-09-13) to a real, verified "
+            "TrackedCompany — that stub entry is left untouched, now "
+            "redundant, same precedent already established for Quanta "
+            "Services/nVent Electric/Arista Networks/Cisco Systems above. "
+            "No subtheme fits (same as Dell Technologies' and Super Micro "
+            "Computer's own existing entries); left unset. corp_code left "
+            "unresolved per convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Cognex Corp",
+        exchange="NASDAQ",
+        krx_code="CGNX",
+        source="SEC EDGAR",
+        themes=("humanoids",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — Humanoids / machine-"
+            "vision sensing, closing a layer the prior coverage audit "
+            "found had zero tracked-company coverage despite being a "
+            "named subtheme in the existing demo catalog "
+            "(data/seed/themes.json's own 'sensors-vision'). CIK "
+            "0000851205 confirmed live this session against SEC's own "
+            "data.sec.gov submissions endpoint (most recent filing: Form "
+            "4, 2026-08-12; standard domestic-style filer). Intended "
+            "informal subtheme (no accurate existing match in "
+            "TrackedCompany's own subtheme vocabulary, left unset per "
+            "convention): sensors-vision. corp_code left unresolved per "
+            "convention."
+        ),
+    ),
+    TrackedCompany(
+        name="Viasat, Inc.",
+        exchange="NASDAQ",
+        krx_code="VSAT",
+        source="SEC EDGAR",
+        themes=("space",),
+        subthemes=(),
+        notes=(
+            "Tier 1 Cohort 2 batch (2026-09-16) — Space / satellite "
+            "communications, closing a layer the prior coverage audit "
+            "found had zero tracked-company coverage. CIK 0000797721 "
+            "confirmed live this session against SEC's own data.sec.gov "
+            "submissions endpoint (most recent filing: 8-K, 2026-09-15; "
+            "standard domestic-style filer). Distinct from Iridium "
+            "Communications (deferred — under a pending acquisition by "
+            "already-tracked Rocket Lab, per the validation report's own "
+            "HOLD disposition). Intended informal subtheme (no accurate "
+            "existing match — the space theme's only existing subtheme, "
+            "'launch', does not fit; left unset per convention): "
+            "satellite-communications. corp_code left unresolved per "
+            "convention."
+        ),
+    ),
 )
 
 
