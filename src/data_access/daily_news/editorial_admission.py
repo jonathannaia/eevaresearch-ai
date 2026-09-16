@@ -196,6 +196,26 @@ _CONSUMER_FORMAT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bbest\b.{0,60}\bunder\s*\$\d", re.IGNORECASE),
     re.compile(r"\d+%\s*off\b", re.IGNORECASE),
     re.compile(r"\bvs\.?\b.{0,40}\b(buy|choose|pick|better|which is right)\b", re.IGNORECASE),
+    # Retail/deal/scarcity rule (Signals precision follow-up, design/
+    # SIGNALS_PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md)
+    # — the first two patterns mirror materiality_classification.py's own
+    # already-tested _CONSUMER_DEAL_PRICE_PATTERNS exactly (deliberately
+    # duplicated, not imported — this module never imports from
+    # materiality_classification.py, same "separate re-implementation"
+    # discipline already established elsewhere in this codebase), moved
+    # here too so a deal-framed item is rejected at admission rather than
+    # merely losing its pricing anchor at materiality — an unrelated
+    # anchor word (e.g. "capacity," describing an SSD/RAM spec in the
+    # same retail write-up) never rescues it, since the rescue below
+    # requires hard, non-consumer-format anchor evidence regardless of
+    # which anchor word triggered it. The third pattern generalizes the
+    # existing "scalper"/"reseller listing"/"retail scarcity" phrases
+    # above to the real, live resale/markup phrasing those phrases don't
+    # literally match ("third-party sellers ... demand $9,500") — never a
+    # product/company name, so it applies to any resale-markup story.
+    re.compile(r"\bsave\b.{0,20}\$\d", re.IGNORECASE),
+    re.compile(r"\$\d[\d,.]*\s*(off|discount)\b", re.IGNORECASE),
+    re.compile(r"\bthird-party sellers?\b.{0,80}\b(demand|charging|asking|selling for)\b", re.IGNORECASE),
 )
 _STOCK_ROUNDUP_PHRASES: tuple[str, ...] = (
     "stocks rally", "stock market today", "dow jones today", "biggest gainers",
@@ -459,6 +479,37 @@ def _has_anchor_evidence(materiality_reasons: tuple[str, ...]) -> bool:
     )
 
 
+# Retail/deal/scarcity rule (Signals precision follow-up, design/SIGNALS_
+# PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md) — a small,
+# curated set of quantified_change: anchor words demonstrated live to
+# fire from an ordinary technical-spec mention ("capacity" describing an
+# SSD/RAM spec in a retail write-up) or a generic, ambiguous sense
+# ("orders"/"order" meaning a customer's own unfulfilled purchase, not a
+# corporate order backlog) rather than genuine corporate materiality.
+# Excluded ONLY from the consumer-format exclusion's own rescue check
+# below — every other exclusion's rescue (law-firm, personnel), and
+# Gate B/C/D themselves, are completely unaffected; a genuine capacity-
+# expansion story that never matches a consumer-format phrase in the
+# first place (e.g. test_quantified_capacity_infrastructure_event_is_
+# unaffected_by_the_consumer_deal_fix) never reaches this function at
+# all, since _matched_consumer_format() returns None for it.
+_CONSUMER_FORMAT_RESCUE_WEAK_ANCHORS = frozenset({"capacity", "orders", "order"})
+
+
+def _has_non_weak_anchor_evidence(materiality_reasons: tuple[str, ...]) -> bool:
+    for reason in materiality_reasons:
+        if reason == "primary_disclosure":
+            return True
+        if any(reason.startswith(prefix) for prefix in
+               ("formal_earnings_materials:", "material_dividend_action:", "quantified_capital_return:")):
+            return True
+        if reason.startswith("quantified_change:"):
+            anchor = reason[len("quantified_change:"):]
+            if anchor not in _CONSUMER_FORMAT_RESCUE_WEAK_ANCHORS:
+                return True
+    return False
+
+
 @dataclass(frozen=True)
 class AdmissionDecision:
     admitted: bool
@@ -537,7 +588,7 @@ def assess_admission(
 
     consumer_format_hit = _matched_consumer_format(text)
     if consumer_format_hit:
-        if identified_companies and _has_anchor_evidence(materiality_reasons):
+        if identified_companies and _has_non_weak_anchor_evidence(materiality_reasons):
             return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
         return AdmissionDecision(False, f"consumer_editorial_format:{consumer_format_hit}")
 

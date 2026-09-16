@@ -222,8 +222,15 @@ TAXONOMY_KEYWORDS: dict[str, tuple[str, ...]] = {
 _MATERIALITY_ANCHOR_KEYWORDS: tuple[str, ...] = (
     "capacity", "backlog", "shipment", "shipments", "capex", "financing",
     "contract", "deploy", "deploys", "deployed", "deploying", "deployment",
-    "deployments", "order", "orders", "revenue", "guidance",
+    "deployments", "order", "orders", "revenue",
     "pricing", "price increase", "price cut", "expansion", "investment",
+    # "guidance" is deliberately NOT a plain member of this list —
+    # financial-guidance disambiguation (Signals precision follow-up,
+    # design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_
+    # 2026_09_16.md): the word is a genuine homonym (financial-forecast
+    # sense vs. terminal/navigation/travel/instructional senses), so it
+    # is added back conditionally by _matched_anchor_keywords() below,
+    # never via this plain contains-any list.
 )
 
 # Consumer-deal calibration fix (design/DECISIONS.md, "Signals editorial
@@ -268,6 +275,62 @@ def _strip_consumer_pricing_anchors_if_deal_framed(text: str, anchor_hits: tuple
     if not _is_consumer_deal_price_framing(text):
         return anchor_hits
     return tuple(hit for hit in anchor_hits if hit not in _CONSUMER_PRICING_ANCHOR_KEYWORDS)
+
+
+# --- Financial-guidance disambiguation (Signals admission/materiality
+# precision follow-up, design/SIGNALS_PRECISION_FOLLOWUP_RETAIL_
+# BOILERPLATE_GUIDANCE_2026_09_16.md) — "guidance" is a genuine homonym:
+# its financial-forecast sense ("the company narrowed its full-year
+# guidance") is completely unrelated to its operational/instructional
+# senses ("terminal guidance" on a weapons system, "navigation
+# guidance," "travel guidance," "user guidance"). Never a broad ban on
+# the word — it remains a valid anchor by default everywhere; only a
+# small, curated set of disqualifying LOCAL modifiers (checked within a
+# short lookback, the same proximity-window discipline already
+# established for the P0 negation-aware confirmation fix) excludes one
+# specific occurrence. Per-occurrence, not whole-text: a document with
+# one disqualified mention ("terminal guidance") and a separate,
+# genuine "reaffirmed its full-year guidance" elsewhere is correctly
+# NOT suppressed by the first — mirrors _has_rumor_or_negated_
+# confirmation_language()'s own per-occurrence convention above. ---
+_GUIDANCE_DISQUALIFYING_MODIFIERS: tuple[str, ...] = (
+    "terminal", "navigation", "travel", "safety", "operational",
+    "installation", "setup", "user", "parental", "style",
+)
+_GUIDANCE_WORD_PATTERN = re.compile(r"\bguidance\b", re.IGNORECASE)
+_GUIDANCE_DISQUALIFYING_MODIFIER_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(m) for m in _GUIDANCE_DISQUALIFYING_MODIFIERS) + r")\b", re.IGNORECASE,
+)
+_GUIDANCE_MODIFIER_LOOKBACK_CHARS = 25
+
+
+def _has_qualifying_guidance_mention(text: str) -> bool:
+    """True when at least one "guidance" occurrence in text is not
+    immediately preceded (within _GUIDANCE_MODIFIER_LOOKBACK_CHARS) by
+    one of _GUIDANCE_DISQUALIFYING_MODIFIERS."""
+    matches = list(_GUIDANCE_WORD_PATTERN.finditer(text))
+    if not matches:
+        return False
+    for match in matches:
+        window_start = max(0, match.start() - _GUIDANCE_MODIFIER_LOOKBACK_CHARS)
+        preceding = text[window_start:match.start()]
+        if not _GUIDANCE_DISQUALIFYING_MODIFIER_PATTERN.search(preceding):
+            return True
+    return False
+
+
+def _matched_anchor_keywords(text: str, keyword_pool: tuple[str, ...]) -> tuple[str, ...]:
+    """keyword_pool's own contains-any check, plus "guidance" specifically
+    — added back only when _has_qualifying_guidance_mention(text) is
+    True (see that function's own docstring), since "guidance" is
+    deliberately excluded from both _MATERIALITY_ANCHOR_KEYWORDS and its
+    deploy-family-excluded sibling _TAXONOMY_PAIRING_ANCHOR_KEYWORDS.
+    Every caller that previously called _contains_any(text_or_window,
+    one of those two pools) directly now calls this function instead."""
+    hits = _contains_any(text, keyword_pool)
+    if _has_qualifying_guidance_mention(text):
+        hits = hits + ("guidance",)
+    return hits
 
 # The deploy/deploys/deployed/deploying/deployment/deployments family,
 # on its own, is excluded from Gate C's taxonomy-pairing (see
@@ -545,7 +608,7 @@ def _taxonomy_anchor_local_hits(text: str) -> tuple[tuple[str, ...], tuple[str, 
     for window in windows:
         window_taxonomy_hits = _matched_taxonomy_buckets(window)
         window_anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(
-            window, _contains_any(window, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS),
+            window, _matched_anchor_keywords(window, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS),
         )
         if window_taxonomy_hits and window_anchor_hits:
             return window_taxonomy_hits, window_anchor_hits
@@ -633,7 +696,7 @@ def _classify_core(
     if dividend_action_hit:
         reasons.append(f"material_dividend_action:{dividend_action_hit[0]}")
 
-    anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(text, _contains_any(text, _MATERIALITY_ANCHOR_KEYWORDS))
+    anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(text, _matched_anchor_keywords(text, _MATERIALITY_ANCHOR_KEYWORDS))
     numeric_hit = _has_numeric_magnitude(text)
     if anchor_hits and numeric_hit and not survey_content:
         reasons.append(f"quantified_change:{anchor_hits[0]}")
@@ -678,7 +741,17 @@ def _classify_core(
 
     if reasons:
         return NewsMaterialityTier.HIGH_SIGNAL, tuple(reasons)
-    if taxonomy_hits:
+    # Denial/rumor fallback fix (Signals precision follow-up, design/
+    # SIGNALS_PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md)
+    # — uncertain_reporting (computed above, already gating Gates C/D)
+    # now also gates this bare taxonomy-only Watchlist fallback: a
+    # denial/rumor-shaped item with no hard-gate evidence at all drops
+    # to BACKGROUND instead of surfacing at Watchlist. Never touches a
+    # denial that independently clears a hard gate (A/A2/A4/B/B2, all
+    # entirely unaffected by uncertain_reporting) — a substantive
+    # issuer/regulator/court denial with concrete consequence still
+    # reaches HIGH_SIGNAL above, before this fallback is ever reached.
+    if taxonomy_hits and not uncertain_reporting:
         return NewsMaterialityTier.WATCHLIST, (f"on_taxonomy_no_anchor:{taxonomy_hits[0]}",)
     capital_return_mention_hit = _contains_any(text, _CAPITAL_RETURN_MENTION_KEYWORDS)
     if capital_return_mention_hit:

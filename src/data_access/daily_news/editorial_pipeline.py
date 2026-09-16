@@ -121,6 +121,24 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
+# Content-boundary fix (Signals precision follow-up, design/SIGNALS_
+# PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md) — a
+# small, curated, general (never publisher-specific) set of navigational
+# markers publishers commonly append after their own real reporting
+# ("related articles"/premium-upsell/read-next blocks). HTML-tag
+# stripping alone does not remove these — the marker and everything
+# after it is genuine, human-readable text once tags are gone (a
+# different article's own linked headline, e.g. "...the worsening
+# Nexperia and DRAM crisis"), not markup. Matched case-insensitively so
+# this is never accidentally scoped to one source's own exact casing.
+_RELATED_CONTENT_MARKERS: tuple[str, ...] = (
+    "go deeper with", "related:", "read more:", "continue reading:",
+    "read next:", "more from", "you might also like",
+)
+_RELATED_CONTENT_MARKER_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(marker) for marker in _RELATED_CONTENT_MARKERS) + r")", re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class EditorialScanReport:
@@ -168,6 +186,32 @@ def _strip_html(text: str) -> str:
     unescaped = html.unescape(text)
     no_tags = _HTML_TAG_RE.sub(" ", unescaped)
     return _WHITESPACE_RE.sub(" ", no_tags).strip()
+
+
+def _classification_text(raw_description: str | None) -> str | None:
+    """The text eligible for entity/theme matching and materiality
+    classification (Signals precision follow-up, design/SIGNALS_
+    PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md,
+    content-boundary fix) — title is always used as-is (an RSS title
+    carries no markup); this covers the description/summary field
+    only. Reuses this module's own _strip_html() (the same cleaning
+    already applied to the display excerpt below) and additionally
+    trims a trailing related-content/navigation block via
+    _RELATED_CONTENT_MARKER_RE, so classification never sees raw HTML
+    markup or a different, incidentally-linked article's own headline.
+    Deliberately NOT length-truncated (unlike _extractive_excerpt,
+    a display-only concern) — a genuine fact appearing later in a long
+    article must remain fully eligible. Returns None (never a
+    fabricated value) when the description is empty or strips to
+    nothing, matching _extractive_excerpt's own discipline."""
+    if not raw_description:
+        return None
+    cleaned = _strip_html(raw_description)
+    if not cleaned:
+        return None
+    marker = _RELATED_CONTENT_MARKER_RE.search(cleaned)
+    trimmed = cleaned[:marker.start()].strip() if marker else cleaned
+    return trimmed or None
 
 
 def _extractive_excerpt(raw_description: str | None) -> str | None:
@@ -306,7 +350,15 @@ def run_editorial_discovery(
                 items_duplicate += 1
                 continue
 
-            matched_companies, matched_themes = matched_companies_and_themes(entry.title, entry.summary)
+            # Content-boundary fix (Signals precision follow-up, design/
+            # SIGNALS_PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_
+            # 2026_09_16.md) — computed once, here, and reused for every
+            # text-analysis call below (matching, materiality, the NIST
+            # allow-list check, and assess_admission()); _extractive_
+            # excerpt() below is a separate, display-only concern and
+            # still receives the raw entry.summary unchanged.
+            classification_summary = _classification_text(entry.summary)
+            matched_companies, matched_themes = matched_companies_and_themes(entry.title, classification_summary)
             # Materiality classified here, once, right after matching —
             # needed by the admission gate below (a genuine material-
             # development signal can independently justify admission,
@@ -314,7 +366,7 @@ def run_editorial_discovery(
             # headline — see editorial_admission.py). Carried through to
             # construction below unchanged, never recomputed.
             materiality_tier, materiality_reasons = classify_editorial_story(
-                entry.title, entry.summary, source.category,
+                entry.title, classification_summary, source.category,
             )
             # Government / Public Sector Daily News lane (design/DECISIONS.md):
             # a named, hardcoded source_id exception to the general
@@ -330,7 +382,7 @@ def run_editorial_discovery(
             # separate, unrelated allow-list mechanism (_matches_nist_
             # allow_list) untouched by this change.
             if source.source_id == _NIST_SOURCE_ID:
-                if not _matches_nist_allow_list(entry.title, entry.summary):
+                if not _matches_nist_allow_list(entry.title, classification_summary):
                     items_no_match += 1
                     continue
             else:
@@ -373,7 +425,7 @@ def run_editorial_discovery(
                         rejected_examples.append((entry.title, "no_qualifying_company_or_theme_match"))
                     continue
                 admission = assess_admission(
-                    entry.title, entry.summary, matched_companies, matched_themes, materiality_reasons,
+                    entry.title, classification_summary, matched_companies, matched_themes, materiality_reasons,
                 )
                 if not admission.admitted:
                     items_not_subject_relevant += 1

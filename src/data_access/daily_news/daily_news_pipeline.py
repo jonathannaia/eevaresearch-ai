@@ -15,6 +15,8 @@ feed_registry.tracked_company_for().
 from __future__ import annotations
 
 import hashlib
+import html
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -126,6 +128,45 @@ def _story_id(company_name: str, canonical_link: str) -> str:
 # deliberate, separate re-implementation, not a shared import.
 _FRESHNESS_WINDOW_SECONDS = 7 * 24 * 3600
 _PER_SOURCE_CAP = 5
+
+# Content-boundary fix (Signals precision follow-up, design/SIGNALS_
+# PRECISION_FOLLOWUP_RETAIL_BOILERPLATE_GUIDANCE_2026_09_16.md) — a
+# small, self-contained re-implementation (this module never imports
+# from editorial_pipeline.py, same discipline as _FRESHNESS_WINDOW_
+# SECONDS above), never summary_grounding.py's own generate_summary()
+# (which carries a fallback-sentence/translation contract this
+# classification-only text-cleaning concern does not need). Strips
+# HTML markup and trims a trailing related-content/navigation block
+# publishers commonly append after their own real reporting, so
+# classify_issuer_story() never sees raw markup or a different,
+# incidentally-linked article's own headline. Matched case-
+# insensitively so this is never scoped to one publisher's own casing.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+_RELATED_CONTENT_MARKERS: tuple[str, ...] = (
+    "go deeper with", "related:", "read more:", "continue reading:",
+    "read next:", "more from", "you might also like",
+)
+_RELATED_CONTENT_MARKER_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(marker) for marker in _RELATED_CONTENT_MARKERS) + r")", re.IGNORECASE,
+)
+
+
+def _classification_text(raw_description: str | None) -> str | None:
+    """The text eligible for entity/theme matching and materiality
+    classification — title is always used as-is; this covers the
+    description/summary field only. Returns None (never a fabricated
+    value) when the description is empty or strips to nothing."""
+    if not raw_description:
+        return None
+    unescaped = html.unescape(raw_description)
+    no_tags = _HTML_TAG_RE.sub(" ", unescaped)
+    cleaned = _WHITESPACE_RE.sub(" ", no_tags).strip()
+    if not cleaned:
+        return None
+    marker = _RELATED_CONTENT_MARKER_RE.search(cleaned)
+    trimmed = cleaned[:marker.start()].strip() if marker else cleaned
+    return trimmed or None
 
 
 def _parse_utc_datetime(published_at: str) -> datetime | None:
@@ -648,9 +689,13 @@ def run_discovery(
             # NewsMaterialityTier's own docstring). Classification never
             # affects admission/inclusion above — every item that already
             # passed every existing gate is still published exactly as
-            # before; this only adds a display-time tier label.
+            # before; this only adds a display-time tier label. Uses
+            # _classification_text() (Signals precision follow-up,
+            # content-boundary fix), never the raw entry.summary above
+            # (which stays untouched for excerpt_original/summary_result,
+            # both display-only concerns).
             materiality_tier, materiality_reasons = classify_issuer_story(
-                entry.title, entry.summary, SourceClass.OFFICIAL_COMPANY,
+                entry.title, _classification_text(entry.summary), SourceClass.OFFICIAL_COMPANY,
             )
 
             story = NewsStory(
