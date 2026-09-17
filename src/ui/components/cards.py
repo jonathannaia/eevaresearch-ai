@@ -168,7 +168,7 @@ def signal_card(
     never inline. A thin left rail carries a restrained direction-color
     accent (UX-refinement pass)."""
     key = f"card-signal-{signal.id}"
-    rail_var = {"er-rail-pos": "var(--pos)", "er-rail-neg": "var(--neg)", "er-rail-mix": "var(--mix)"}[direction_rail_class(signal.direction)]
+    rail_var = {"er-rail-pos": "var(--positive)", "er-rail-neg": "var(--negative)", "er-rail-mix": "var(--warning)"}[direction_rail_class(signal.direction)]
     st.markdown(
         f'<style>.st-key-{key} {{ border-left: 2px solid {rail_var} !important; }}</style>',
         unsafe_allow_html=True,
@@ -292,7 +292,7 @@ def signal_card(
             st.markdown(
                 f'<div class="er-muted" style="font-size:0.78rem;">'
                 f'<a href="{safe_signal_source_url}" target="_blank" rel="noopener noreferrer" '
-                f'style="color:var(--text-2); text-decoration:underline;">View source document ↗</a></div>',
+                f'style="color:var(--text-secondary); text-decoration:underline;">View source document ↗</a></div>',
                 unsafe_allow_html=True,
             )
 
@@ -362,7 +362,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
     provenance (company, jurisdiction, source, date, original-source
     link) directly, not just behind an extra click."""
     key = f"card-priority-signal-{signal.id}"
-    rail_var = {"er-rail-pos": "var(--pos)", "er-rail-neg": "var(--neg)", "er-rail-mix": "var(--mix)"}[direction_rail_class(signal.direction)]
+    rail_var = {"er-rail-pos": "var(--positive)", "er-rail-neg": "var(--negative)", "er-rail-mix": "var(--warning)"}[direction_rail_class(signal.direction)]
     st.markdown(f'<style>.st-key-{key} {{ border-left: 2px solid {rail_var} !important; }}</style>', unsafe_allow_html=True)
     with st.container(border=True, key=key):
         row = st.columns([0.4, 4.6, 1, 1, 1.6])
@@ -408,7 +408,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
             if safe_url:
                 st.markdown(
                     f'<div style="margin-top:0.1rem;"><a href="{html.escape(safe_url, quote=True)}" '
-                    f'target="_blank" rel="noopener noreferrer" style="color:var(--text-2); font-size:0.74rem; '
+                    f'target="_blank" rel="noopener noreferrer" style="color:var(--text-secondary); font-size:0.74rem; '
                     f'text-decoration:underline;">Original source ↗</a></div>',
                     unsafe_allow_html=True,
                 )

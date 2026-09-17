@@ -292,13 +292,30 @@ def render_sidebar(current_key: str) -> None:
             page = pages.get(key)
             if page is None:
                 continue
-            active_cls = "er-rail-navactive" if key == current_key else ""
-            with st.container(key=f"navitem-{key}"):
-                if active_cls:
-                    st.markdown(f'<div class="{active_cls}">', unsafe_allow_html=True)
+            # Midnight Teal pass — active-state fix: two separate
+            # st.markdown() calls used as pseudo "open tag"/"close tag"
+            # around st.page_link() never actually nested in the real
+            # browser DOM (each st.markdown() renders as its own isolated
+            # element; raw HTML can't span across a Streamlit element
+            # boundary) — confirmed live: the "opening" <div class=
+            # "er-rail-navactive"> rendered self-closed and empty, as a
+            # sibling of st.page_link's own <a>, never an ancestor, so the
+            # CSS descendant selector that used to key off it never
+            # matched anything in production (AppTest's own element tree
+            # doesn't model real DOM nesting the same way, which is why
+            # this stayed invisible to every existing test). Fixed by
+            # putting the active marker on the one wrapper Streamlit
+            # already renders correctly nested — this container's own
+            # key — instead: a real "st-key-navitem-{key}-active" class
+            # exists only when this item is active, and assets/
+            # styles.css's nav-item rules now key off that directly. See
+            # this file's own docstring-level "why" note is intentionally
+            # kept local to this one call site — the mechanism is small
+            # enough not to need a separate module-level explanation.
+            is_active = key == current_key
+            container_key = f"navitem-{key}-active" if is_active else f"navitem-{key}"
+            with st.container(key=container_key):
                 st.page_link(page, label=label)
-                if active_cls:
-                    st.markdown("</div>", unsafe_allow_html=True)
 
         # Themes — data-driven WORKSPACE entry (design/DECISIONS.md): not
         # in PRIMARY_NAV/HIDDEN_FROM_NAV's static split at all, since its
@@ -309,13 +326,10 @@ def render_sidebar(current_key: str) -> None:
         # "hidden" in app.py's own st.Page — only this manual link is new).
         themes_page = pages.get("themes")
         if themes_page is not None and _has_published_themes():
-            themes_active_cls = "er-rail-navactive" if current_key == "themes" else ""
-            with st.container(key="navitem-themes"):
-                if themes_active_cls:
-                    st.markdown(f'<div class="{themes_active_cls}">', unsafe_allow_html=True)
+            themes_is_active = current_key == "themes"
+            themes_container_key = "navitem-themes-active" if themes_is_active else "navitem-themes"
+            with st.container(key=themes_container_key):
                 st.page_link(themes_page, label="Research Theses")
-                if themes_active_cls:
-                    st.markdown("</div>", unsafe_allow_html=True)
 
         # SYSTEM — lower-priority destinations (navigation-cleanup pass).
         # A Settings entry belongs here once a real Settings route exists.

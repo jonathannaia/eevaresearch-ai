@@ -80,7 +80,7 @@ def _render_filing_item(filing: FilingEvent) -> None:
     safe_url = public_source_url(filing.source_url)
     link_html = (
         f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
-        f'style="color:var(--text-2); font-size:0.76rem; text-decoration:underline; white-space:nowrap;">'
+        f'style="color:var(--text-secondary); font-size:0.76rem; text-decoration:underline; white-space:nowrap;">'
         "View source document ↗</a>"
     ) if safe_url else ""
 

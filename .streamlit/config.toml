@@ -1,38 +1,35 @@
 [theme]
-# Application-shell dark/dim pass (Perplexity-inspired sidebar layout,
-# narrowly scoped) — a full replacement of the prior light-editorial
-# palette (indigo/editorial-white, feat/ui-redesign-live), not an
-# additive layer. Same theme keys as before, values re-mapped to a near-
-# black/slate palette with one consistent indigo accent (kept from the
-# prior pass, re-tuned lighter — indigo-400 #818CF8 rather than indigo-600
-# #4F46E5 — since the darker shade reads as muddy/low-contrast against a
-# near-black surface; the darker shade is kept only for solid-fill CTA
-# buttons, where it sits under white label text, not as text/icon color
-# itself). secondaryBackgroundColor drives most native widget chrome
-# (text inputs, selectboxes, dataframe headers) — mapped to the "input/
-# table surface" tone, distinct from card surfaces (which assets/
-# styles.css handles via its own --surface token on custom-classed
-# containers). borderColor/dataframeBorderColor use assets/styles.css's
-# --hairline-2 value: #6B7280, chosen (see that token's own comment) as
-# the lightest neutral slate that still clears the 3:1 AA non-text-
-# contrast minimum against every one of this palette's four backgrounds,
-# including the lightest (--surface-2, 3.38:1 — the binding constraint).
+# Midnight Teal institutional-research pass (visual-hierarchy-and-token
+# pass only — no navigation/data/feature/architecture change) — a full
+# replacement of the prior application-shell dark/indigo palette, not an
+# additive layer. Same theme keys as before, values re-mapped to a
+# midnight-teal-slate palette with one consistent teal accent.
+# secondaryBackgroundColor drives most native widget chrome (text
+# inputs, selectboxes, dataframe headers) — mapped to assets/styles.css's
+# --surface-hover token (the "input/table surface" tone one step up from
+# page background), distinct from card surfaces (--surface, handled by
+# assets/styles.css via custom-classed containers). borderColor/
+# dataframeBorderColor use assets/styles.css's --border value (#263137)
+# — deliberately quiet, not held to the old 3:1 non-text-contrast floor
+# (see that token's own :root comment): "reduce excessive card-border
+# visibility" is the explicit direction for this pass, applied
+# consistently to native-widget borders too, not just custom cards.
 base = "dark"
 
-primaryColor = "#818CF8"
-backgroundColor = "#0B0D10"
-secondaryBackgroundColor = "#1D2026"
-textColor = "#F5F6F7"
+primaryColor = "#21B7A8"
+backgroundColor = "#101417"
+secondaryBackgroundColor = "#1D2529"
+textColor = "#F1F4F2"
 
-linkColor = "#818CF8"
+linkColor = "#21B7A8"
 linkUnderline = false
 
-borderColor = "#6B7280"
-dataframeBorderColor = "#6B7280"
-dataframeHeaderBackgroundColor = "#16181D"
+borderColor = "#263137"
+dataframeBorderColor = "#263137"
+dataframeHeaderBackgroundColor = "#171D20"
 
-codeTextColor = "#F5F6F7"
-codeBackgroundColor = "#16181D"
+codeTextColor = "#F1F4F2"
+codeBackgroundColor = "#171D20"
 
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
 headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"

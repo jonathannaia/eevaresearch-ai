@@ -11,7 +11,7 @@
    copy, and the pill/glow button *mechanics* are unchanged; only the color
    values feeding them moved. Verified against WCAG contrast math at
    redesign time: primary text ≥16:1, secondary text ≥9.4:1, muted text
-   ≥4.5:1 (once panel-appropriate — see the --text-3/--text-4 note below),
+   ≥4.5:1 (once panel-appropriate — see the --text-muted/--text-muted note below),
    and the three status accents (green/amber/rose) ≥4.4:1 against every
    surface tone below — all clear of the 4.5:1 (normal text) / 3:1 (UI
    controls, focus indicators) AA minimums this pass targets. Two values
@@ -50,117 +50,152 @@
 
    Application-shell dark/dim pass (design/DECISIONS.md, Perplexity-
    inspired sidebar layout — narrowly scoped to the app shell, not a full
-   redesign) — a third full token replacement, same discipline again:
-   near-black/slate surfaces, muted-but-readable secondary text, one
-   consistent indigo accent (re-tuned lighter — indigo-400 #818CF8 rather
-   than the previous indigo-600 #4F46E5 — since the darker shade is too
-   low-luminance to read clearly as text/icon color against a near-black
-   surface; #4F46E5 is kept only as a solid-fill CTA background, still
-   under white label text, where its own darkness is irrelevant). Every
-   value below was verified against the same WCAG contrast math the prior
-   pass used (see tests/test_visual_theme_redesign.py, revised in place
-   again for this palette): primary text ≥15:1, secondary text ≥8.5:1,
-   muted text ≥5:1, the accent ≥5.4:1, and the three status colors ≥4.7:1
-   — all against every one of this palette's four real surfaces
-   (--bg/--rail/--surface/--surface-2), comfortably clear of the 4.5:1 AA
-   normal-text floor with the near-black backgrounds' extra contrast
-   headroom. --hairline-2 (the one functional-border token, same role as
-   the prior pass's own nudged value) is the lightest neutral slate that
-   still clears 3:1 in the worst case (against --surface-2, the lightest
-   of the four backgrounds — 3.38:1). Layout, components, copy, and
-   button/chip mechanics are unchanged; only the color values feeding
-   them moved, plus the sidebar-shell-specific structural rules added
-   further down this file for the brand+search header row and the
-   bottom-anchored account control. */
+   redesign) — a third full token replacement: near-black/slate surfaces,
+   muted-but-readable secondary text, one consistent indigo-400 accent.
+   Retired by the pass below — kept here only as
+   prior-generation history, same convention this header comment has
+   followed for every earlier pass.
+
+   Midnight Teal institutional-research pass (design/DECISIONS.md,
+   visual-hierarchy-and-token pass only — no navigation/data/feature/
+   architecture change) — a fourth full token replacement, and the first
+   in this file's history to also rename several tokens (not just
+   revalue them): --hairline/--hairline-2 become --border-soft/--border,
+   --text-2 becomes --text-secondary, --text-3/--text-4 (always-equal
+   duplicates) collapse into the single --text-muted, --surface-2/
+   --surface-3 become --surface-hover/--surface-active, and --pos/--neg/
+   --mix become --positive/--negative/--warning — clearer names for the
+   same roles, applied as one mechanical rename across every usage in
+   this file (never a second, parallel token vocabulary). One genuinely
+   new role is added: --info/--info-dim, for the one existing neutral
+   "info" status-tag variant that previously had no color of its own.
+
+   Every base/text/accent/semantic value below was specified directly;
+   every value derived here (--invert-bg/--invert-bg-hover, the nudged
+   --text-muted, --glow, and every *-dim tint) was chosen or adjusted
+   using the exact same WCAG relative-luminance/contrast-ratio math this
+   file's test suite already uses (tests/test_visual_theme_redesign.py,
+   revised in place again for this palette — same "full replacement,
+   same test names/shape, new expected values" discipline as every prior
+   pass). Two adjustments from the literally-specified values, both
+   disclosed here and in the test file:
+     - --text-muted (#788583 as given) measures only 4.06:1-4.45:1
+       against --surface/--surface-hover — under the 4.5:1 AA normal-text
+       floor. Nudged lighter to #889593 (4.65:1 in the worst case) —
+       same "nudge the minimum amount needed, disclose it" precedent
+       every earlier pass in this file has used at least once.
+     - --border/--border-soft (#263137/#1E282C as given) are used
+       exactly as specified, NOT nudged for 3:1 — both measure well under
+       3:1 against every surface (a deliberate, requested outcome: "reduce
+       excessive card-border visibility" needs a genuinely quiet border,
+       not one held to the old functional-boundary contrast floor).
+       Card/panel dividers were never the surface WCAG's 1.4.11 non-text-
+       contrast rule protects (that's for a control whose boundary is the
+       *only* way to perceive it, e.g. a plain input) — this file already
+       carried that exact exemption for --hairline before this pass (see
+       its own now-superseded comment, kept in git history); it now
+       applies to both border tokens. The one place a boundary must still
+       be reliably perceivable regardless — interactive-control focus —
+       is carried entirely by --focus (an --accent copy, ≥6.2:1 against
+       every surface, ≥3:1 UI-control floor cleared many times over), not
+       by --border's own contrast.
+   No gradients were introduced anywhere in this pass — the existing
+   primary-CTA "glow" (a box-shadow blur, not a background-image
+   gradient) is retinted, not restructured. Layout, copy, and button/
+   chip *mechanics* are otherwise unchanged; only the color values
+   feeding them moved, plus the handful of structural rules this pass
+   touches directly for surface-hierarchy/density (nav active-state left
+   accent bar, card-border/pill-radius reduction, dashboard row density) —
+   each documented at its own rule below, never scattered inline. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-    /* Backgrounds — page / sidebar / card / elevated-hover / native-widget.
-       Near-black, not pure black (brief: "near-black/slate", not #000) —
-       a true black against off-white text measures well past any AA floor
-       but reads harsher/flatter than a dim slate; #0B0D10 keeps the same
-       "restrained, low-contrast surfaces" character the brief asks for. */
-    --bg: #0B0D10;
-    --rail: #0E1013;
-    --surface: #16181D;
-    --surface-2: #1D2026;
-    /* Third elevation tier for track/badge/disabled fills (breadth-bar
-       track, unread-count badge, disabled-button background) — not one of
-       the seven given tokens (the palette only names 5 surface roles), but
-       every one of those roles is already spoken for by --bg/--rail/
-       --surface/--surface-2/--surface-input, so this fills the one
-       remaining internal role the previous palette's --surface-3 also
-       filled. */
-    --surface-3: #262A31;
-    --surface-input: #16181D;
-    /* Borders: --hairline is decorative (dividers, footer rules, chart
-       gridlines) with no contrast floor of its own — kept subtle/low-
-       contrast on purpose, restrained per the brief. --hairline-2 is the
-       functional UI-component boundary (secondary-button/input/chip
-       outlines) — kept ≥3:1 against every surface above; see this file's
-       own header comment for the exact math and why #6B7280 (not a
-       lighter/darker neighbor) is the chosen value. Input surfaces sit on
-       --surface-input == --surface here (both #16181D), so this border is
-       the *only* way an input's boundary is perceivable — not a
-       decorative nicety. */
-    --hairline: #23262D;
-    --hairline-2: #6B7280;
-    --card-border-hover: #838B99;
-    --text: #F5F6F7;
-    --text-2: #B7BCC4;
-    /* Only three text tiers in this palette (Primary/Secondary/Muted) —
-       matches the prior pass's own three-tier convention; the two
-       dimmest steps (text-3/text-4) both collapse onto the one Muted
-       value. */
-    --text-3: #8B909A;
-    --text-4: #8B909A;
-    /* Primary CTA fill/label — indigo-600 fill, white label (kept
-       unchanged from the prior pass; ~6.3:1 label contrast, still well
-       past 4.5:1 — a solid-fill button's own darkness never depends on
-       the page's ambient background). */
-    --invert-bg: #4F46E5;
+    /* Backgrounds — page / sidebar / card / hover-surface / active-surface.
+       Midnight teal-slate, not pure black or pure gray — a deliberately
+       graduated four-step ladder (bg < rail < surface < surface-hover <
+       surface-active, strictly increasing luminance) so canvas, sidebar,
+       card, and hover/selected states are each individually
+       distinguishable at a glance, not just "dark vs. less dark." */
+    --bg: #101417;
+    --rail: #0B0F11;
+    --surface: #171D20;
+    --surface-hover: #1D2529;
+    /* Third elevation tier — selected/pressed states, plus the same
+       "track/badge/disabled fill" internal role the prior pass's
+       --surface-3 filled (breadth-bar track, unread-count badge,
+       disabled-button background); still the lightest of the four real
+       surfaces. */
+    --surface-active: #202A2E;
+    --surface-input: #171D20;
+    /* Borders — see the header comment above for the full contrast
+       rationale (both deliberately quiet, neither held to 3:1).
+       --border-soft is the lowest-emphasis divider (footer rules, chart
+       gridlines, the quietest card/row separators); --border is the
+       slightly more present functional boundary (default card border,
+       secondary-button/input outline at rest) — still restrained by
+       design, per "reduce excessive card-border visibility." */
+    --border-soft: #1E282C;
+    --border: #263137;
+    /* A supplementary, slightly-more-visible hover/focus affordance for
+       card borders specifically — never the sole way a boundary is
+       perceived (see the header comment's --focus note), just a small
+       "this became interactive" cue. */
+    --card-border-hover: #34424A;
+    --text: #F1F4F2;
+    --text-secondary: #B1BCBB;
+    /* Single muted tier (collapses the prior pass's always-equal
+       --text-3/--text-4 pair) — nudged from the literally-specified
+       #788583, see header comment. */
+    --text-muted: #889593;
+    /* Primary CTA fill/label — a deliberately darker, more saturated
+       teal than --accent itself (never --accent or --accent-hover
+       directly: white on --accent measures only 2.5:1 and white on
+       --accent-hover only 2.03:1 — both fail 4.5:1 as a button fill).
+       --invert-bg/--invert-bg-hover are new, derived tokens (this file's
+       own established pattern — the prior two passes both kept an
+       --invert-bg distinct from --accent for the exact same reason);
+       white label text measures 5.58:1 on --invert-bg and 4.93:1 on
+       --invert-bg-hover, both comfortably clear of 4.5:1. */
+    --invert-bg: #0F7568;
+    --invert-bg-hover: #157E72;
     --invert-fg: #FFFFFF;
-    --glow: rgba(129, 140, 248, .35);
-    --accent: #818CF8;
-    /* --accent-hover is a solid button-fill hover background (three real
-       call sites — the primary CTA's own hover state, plus two more —
-       always under white label text), never a text/link color, so unlike
-       --accent it does NOT get re-tuned lighter for this pass: a fill's
-       own darkness is irrelevant to the page's ambient background, only
-       to the white text sitting on it (7.9:1 here, comfortably past
-       4.5:1) — kept at the prior pass's own #4338CA unchanged. See the
-       a:hover rule (below the Streamlit-chrome section) for the one
-       place this token used to double as a plain-text hover color; that
-       rule now reads var(--accent) instead, since a dark indigo fill
-       color would be low-contrast as text against this pass's near-black
-       page background. */
-    --accent-hover: #4338CA;
-    --accent-soft: #23223F;
-    --focus: #818CF8;
-    --link: #818CF8;
+    --glow: rgba(33, 183, 168, .35);
+    --accent: #21B7A8;
+    /* --accent-hover is deliberately LIGHTER than --accent (unlike the
+       prior pass's own accent-hover, which was a darker button-fill
+       color under a different name) — its role here is a text/icon/link
+       hover-brighten, not a button fill (see --invert-bg-hover above for
+       that role instead). 7.68:1 as text against every real surface,
+       comfortably past 4.5:1. */
+    --accent-hover: #29CBBB;
+    --accent-soft: rgba(33, 183, 168, 0.14);
+    --focus: #21B7A8;
+    --link: #21B7A8;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
     --font-ui: "Inter", sans-serif;
     --font-mono: "JetBrains Mono", monospace;
     --font-serif: "Source Serif 4", "Noto Serif JP", "Noto Serif KR", "Noto Serif SC", serif;
-    /* Restrained semantic direction accents only — see note above.
-       Green = positive/confirmed, amber = watch/uncertain, rose =
-       risk/negative. Never used as a large fill (dots/rails/tinted-pill
-       backgrounds only). The *-dim tints mix the status color into
-       --surface (#16181D, the real ambient background every status tag/
-       chip/alert actually renders on) at .16 alpha — verified to still
-       clear 4.5:1 for text-on-its-own-tint at that alpha (see
-       tests/test_visual_theme_redesign.py); a near-black ground has more
-       contrast headroom than the prior white-ground palette did, so a
-       slightly higher alpha than that pass's .06 still reads as a
-       restrained tint, not a loud fill. */
-    --pos: #2ED99C;
-    --pos-dim: rgba(46, 217, 156, .16);
-    --neg: #F87171;
-    --neg-dim: rgba(248, 113, 113, .16);
-    --mix: #FBBF24;
-    --mix-dim: rgba(251, 191, 36, .16);
+    /* Restrained semantic accents only — see the direction-color note
+       elsewhere in this file's history (unchanged policy: small dots,
+       thin rails, small arrows, compact status tags/badges — never a
+       large fill, never decorative). --info is genuinely new (the prior
+       three palettes had no fourth/neutral-blue semantic role) — wired
+       to the one existing status-tag variant that previously used plain
+       neutral gray with no color of its own (.er-tag-info). Every
+       *-dim tint mixes the status color into --surface (#171D20, the
+       real ambient background every status tag/chip/alert renders on)
+       at .16 alpha — verified ≥4.73:1 for text-on-its-own-tint at that
+       alpha for all four colors (tests/test_visual_theme_redesign.py). */
+    --positive: #3BCB8A;
+    --positive-dim: rgba(59, 203, 138, .16);
+    --negative: #F07178;
+    --negative-dim: rgba(240, 113, 120, .16);
+    --warning: #E4B65A;
+    --warning-dim: rgba(228, 182, 90, .16);
+    --info: #62A8E5;
+    --info-dim: rgba(98, 168, 229, .16);
     /* Spacing rhythm (final polish pass) — a shared scale so every
        component reaches for one of these instead of a one-off margin.
        4: tight label/value pair. 8: related inline metadata. 12: small
@@ -220,10 +255,16 @@
 [data-testid="stExpandSidebarButton"] {
     visibility: visible !important;
 }
+/* Midnight Teal pass: lighter at rest (transparent border, only the
+   surface fill separates it from the sidebar) with a consistent teal
+   hover/focus cue — was a visible bordered pill at rest with a neutral
+   (non-accent) hover darken; "restyle search and icon controls to be
+   visually lighter at rest, with a consistent hover/focus state"
+   applies here too, alongside the compact search trigger below. */
 [data-testid="stSidebarCollapseButton"] button,
 [data-testid="stExpandSidebarButton"] {
-    background: var(--surface-2) !important;
-    border: 1px solid var(--hairline-2) !important;
+    background: var(--surface-hover) !important;
+    border: 1px solid transparent !important;
     border-radius: var(--r-sm) !important;
 }
 [data-testid="stSidebarCollapseButton"] button span,
@@ -233,8 +274,8 @@
 }
 [data-testid="stSidebarCollapseButton"] button:hover,
 [data-testid="stExpandSidebarButton"]:hover {
-    background: var(--surface-3) !important;
-    border-color: var(--text-3) !important;
+    background: var(--surface-active) !important;
+    border-color: var(--accent) !important;
 }
 
 html, body, [class*="css"] { font-family: var(--font-ui); }
@@ -246,17 +287,18 @@ p, li, span, div { letter-spacing: -0.006em; }
    wins the cascade regardless, so this only reaches genuinely plain,
    unclassed anchors (e.g. native markdown-syntax links). */
 a { color: var(--link); }
-/* --accent-hover is a solid button-fill color (white-text-safe, kept
-   dark regardless of theme — see its own :root comment) — using it here
-   too would be low-contrast as plain hover text against this pass's
-   near-black page background, so plain-link hover reuses --accent
-   itself (no separate darker/lighter hover shade for inline text). */
-a:hover { color: var(--accent); }
+/* Midnight Teal pass: --accent-hover is now a genuine text-hover-
+   brighten shade (lighter than --accent, 7.68:1 against every surface —
+   see its own :root comment) — restored to its natural role here, one
+   pass after the prior palette's own --accent-hover (a dark button-fill
+   color under a different meaning) had to redirect this rule to plain
+   --accent instead. */
+a:hover { color: var(--accent-hover); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
     font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--text-3); margin-bottom: 0.5rem;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;
 }
 .er-hero-title {
     /* 40px only on the Home hero (brief §5 type scale) — the only page
@@ -265,7 +307,7 @@ a:hover { color: var(--accent); }
     line-height: 1.15; letter-spacing: -0.01em; color: var(--text); margin: 0 0 0.75rem 0;
 }
 .er-hero-sub {
-    font-size: 0.95rem; line-height: 1.6; color: var(--text-2);
+    font-size: 0.95rem; line-height: 1.6; color: var(--text-secondary);
     max-width: 640px; margin-bottom: 0.5rem;
 }
 .er-page-title {
@@ -275,27 +317,27 @@ a:hover { color: var(--accent); }
    pass) — distinct from .er-hero-sub (Home only, wider/larger) and from
    section_header()'s own optional subtitle (which sits under a *section*
    label, not the page title). */
-.er-page-subtitle { font-size: 0.9rem; color: var(--text-2); margin: 0 0 var(--space-6) 0; line-height: 1.5; }
+.er-page-subtitle { font-size: 0.9rem; color: var(--text-secondary); margin: 0 0 var(--space-6) 0; line-height: 1.5; }
 .er-card-title { font-weight: 600; font-size: 0.95rem; color: var(--text); }
-.er-section-label { font-size: 13px; color: var(--text-3); margin: var(--space-6) 0 var(--space-2) 0; font-weight: 500; }
+.er-section-label { font-size: 13px; color: var(--text-muted); margin: var(--space-6) 0 var(--space-2) 0; font-weight: 500; }
 .er-section-label:first-child { margin-top: 0; }
-.er-muted { color: var(--text-2); font-size: 0.85rem; }
+.er-muted { color: var(--text-secondary); font-size: 0.85rem; }
 .er-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
 .er-metric-value { font-family: var(--font-mono); font-weight: 500; font-size: 1.05rem; color: var(--text); }
 .er-metric-label {
     font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--text-3);
+    text-transform: uppercase; color: var(--text-muted);
     margin-bottom: var(--space-1); display: block;
 }
 .er-excerpt {
     font-family: var(--font-serif);
-    font-size: 0.92rem; line-height: 1.65; color: var(--text-2);
+    font-size: 0.92rem; line-height: 1.65; color: var(--text-secondary);
 }
 
 /* ---------- footer ---------- */
 .er-footer {
-    margin-top: var(--space-8); padding-top: var(--space-5); border-top: 1px solid var(--hairline);
-    color: var(--text-3); font-size: 0.78rem; line-height: 1.6;
+    margin-top: var(--space-8); padding-top: var(--space-5); border-top: 1px solid var(--border-soft);
+    color: var(--text-muted); font-size: 0.78rem; line-height: 1.6;
 }
 .er-footer .er-footer-version { font-family: var(--font-mono); margin-top: var(--space-2); }
 /* Compact one-line variant for normal workspace pages — full text stays
@@ -305,7 +347,7 @@ a:hover { color: var(--accent); }
 .er-footer-compact { margin-top: var(--space-6); padding-top: var(--space-4); }
 
 /* ---------- rows (catalyst timeline etc.) ---------- */
-.er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; }
+.er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; }
 .er-row:last-child { border-bottom: none; }
 /* Recently Updated detached-translation-control fix (design/DECISIONS.md):
    each row's markdown content and its own (optional) translate action/
@@ -316,7 +358,7 @@ a:hover { color: var(--accent); }
    suppressed only inside this wrapper (its base rule above is untouched,
    still used as-is by regional_brief.py/cards.py elsewhere). */
 [class*="st-key-card-recently-updated-row-"] .er-row { border-bottom: none; }
-[class*="st-key-card-recently-updated-row-"] { border-bottom: 1px solid var(--hairline); }
+[class*="st-key-card-recently-updated-row-"] { border-bottom: 1px solid var(--border-soft); }
 [class*="st-key-card-recently-updated-row-"]:last-child { border-bottom: none; }
 /* Narrowly targeted override, same pattern as .st-key-cta-tertiary-clear-
    watchlist-filter above: this row's own translate action/toggle sits
@@ -337,11 +379,18 @@ a:hover { color: var(--accent); }
    completely unchanged. No new color/token: every value here reuses the
    existing --space-* scale or a fraction of it. */
 
-/* Recently Updated: ~25% less vertical padding per row (8px -> 6px)
-   than the shared .er-row rule above, so five compact rows read as a
-   tighter list without touching .er-row itself (still used unchanged by
-   Filings' radar_card.py and by Regional Brief below). */
-[class*="st-key-card-recently-updated-"] .er-row { padding: 6px 0; }
+/* Recently Updated: less vertical padding per row than the shared
+   .er-row rule above, so more rows read as a tighter, denser list
+   without touching .er-row itself (still used unchanged by Filings'
+   radar_card.py and by Regional Brief below). Midnight Teal pass
+   tightens this further still (6px -> 4px) as part of the explicit
+   "denser dashboard rows" direction, and gives the row's own card
+   wrapper a smaller corner radius (--r-sm, not the shared --r-md every
+   other card uses) — scoped to this one prefix only, same "no new
+   token, no change outside Dashboard" discipline the rest of this
+   section already follows. */
+[class*="st-key-card-recently-updated-"] .er-row { padding: 4px 0; }
+[class*="st-key-card-recently-updated-"] { border-radius: var(--r-sm) !important; }
 
 /* Recent Theme Activity: reduce the shared card padding for this one
    prefix only, so a 4-row list is visibly shorter without a scroll. */
@@ -352,13 +401,13 @@ a:hover { color: var(--accent); }
    type — see recent_theme_activity.py's own docstring for why this
    matters for test stability), de-emphasized the same way every other
    tertiary action on this page already is: transparent, borderless,
-   --text-3, matching .st-key-cta-tertiary-*'s existing treatment for
+   --text-muted, matching .st-key-cta-tertiary-*'s existing treatment for
    st.button/st.page_link above. Streamlit's real widget class for
    st.link_button (confirmed against the installed build) is
    stBaseLinkButton-secondary, not stBaseButton-secondary, so it needs
    its own selector rather than falling under the existing tertiary rule. */
 [class*="st-key-cta-tertiary-rta-view-"] [data-testid="stBaseLinkButton-secondary"] {
-    background: transparent !important; border: none !important; color: var(--text-3) !important;
+    background: transparent !important; border: none !important; color: var(--text-muted) !important;
     padding: 0.15rem 0 !important; font-size: 0.78rem !important; min-height: 0 !important;
     box-shadow: none !important;
 }
@@ -380,7 +429,7 @@ a:hover { color: var(--accent); }
    x-position across rows, regardless of "Sep 5" vs "Dec 25" width. */
 .er-date-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 92px; background: var(--surface-2); border: 1px solid var(--hairline);
+    min-width: 92px; background: var(--surface-hover); border: 1px solid var(--border-soft);
     border-radius: 4px; padding: 0.15rem var(--space-2); font-size: 0.75rem; white-space: nowrap;
 }
 
@@ -388,42 +437,46 @@ a:hover { color: var(--accent); }
    on the glyph only (UX-refinement pass — see :root note). The label text
    itself stays neutral; only the small glyph carries the semantic hue. ---------- */
 .er-dir { font-weight: 600; color: var(--text); }
-.er-dir.er-dir-weakening, .er-dir.er-dir-mixed { font-weight: 400; color: var(--text-3); }
+.er-dir.er-dir-weakening, .er-dir.er-dir-mixed { font-weight: 400; color: var(--text-muted); }
 .er-dir-glyph { margin-right: 0.3rem; font-weight: 700; }
-.er-dir-glyph.er-glyph-pos { color: var(--pos); }
-.er-dir-glyph.er-glyph-neg { color: var(--neg); }
-.er-dir-glyph.er-glyph-mix { color: var(--mix); }
+.er-dir-glyph.er-glyph-pos { color: var(--positive); }
+.er-dir-glyph.er-glyph-neg { color: var(--negative); }
+.er-dir-glyph.er-glyph-mix { color: var(--warning); }
 
 /* Thin left rail on a card — a restrained accent, not a filled background. */
-.er-rail-pos { border-left: 2px solid var(--pos); }
-.er-rail-neg { border-left: 2px solid var(--neg); }
-.er-rail-mix { border-left: 2px solid var(--mix); }
+.er-rail-pos { border-left: 2px solid var(--positive); }
+.er-rail-neg { border-left: 2px solid var(--negative); }
+.er-rail-mix { border-left: 2px solid var(--warning); }
 
-/* Compact status tag — small pill, tinted background, for tight spaces
-   (Theme Health cards, chart-state markers). */
+/* Compact status tag — small label, tinted background, for tight spaces
+   (Theme Health cards, chart-state markers). Midnight Teal pass: radius
+   reduced from a full pill (999px) to --r-sm, matching the "reduce
+   pill-like metadata styling" direction — reads as a label/chip, not a
+   bubble; .er-fresh below gets the same change for the same reason. */
 .er-status-tag {
     display: inline-flex; align-items: center; gap: 0.3rem;
-    font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 999px;
+    font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: var(--r-sm);
 }
-.er-status-tag.er-tag-pos { background: var(--pos-dim); color: var(--pos); }
-.er-status-tag.er-tag-neg { background: var(--neg-dim); color: var(--neg); }
-.er-status-tag.er-tag-mix { background: var(--mix-dim); color: var(--mix); }
-/* Two additional, deliberately colorless buckets for Radar Inbox's
-   status vocabulary (New filing / Processing deferred / Dismissed, and
-   Candidate signal) — built only from existing neutral tokens, no new
-   hues, staying inside the zero-accent-color rule. */
-.er-status-tag.er-tag-neutral { background: var(--surface-2); color: var(--text-4); }
-.er-status-tag.er-tag-info { background: transparent; color: var(--text-2); border: 1px solid var(--hairline-2); }
+.er-status-tag.er-tag-pos { background: var(--positive-dim); color: var(--positive); }
+.er-status-tag.er-tag-neg { background: var(--negative-dim); color: var(--negative); }
+.er-status-tag.er-tag-mix { background: var(--warning-dim); color: var(--warning); }
+/* Neutral bucket for Radar Inbox's status vocabulary (New filing /
+   Processing deferred / Dismissed, and Candidate signal) — built from
+   existing neutral tokens, no accent hue. The "info" bucket (Midnight
+   Teal pass) now uses the new --info semantic token, its first real
+   call site — previously plain neutral gray with no color of its own. */
+.er-status-tag.er-tag-neutral { background: var(--surface-hover); color: var(--text-muted); }
+.er-status-tag.er-tag-info { background: var(--info-dim); color: var(--info); border: 1px solid transparent; }
 
 /* Small mono order marker ("01", "02"...) — Priority Signals only, a
    restrained way to read the row as ranked rather than an arbitrary list. */
 .er-order-marker {
-    font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-4);
+    font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);
     display: inline-block; min-width: 1.5em;
 }
 
 /* "Moving against thesis" warning treatment (final polish pass) — a muted
-   rose left rail + tinted background (the same --neg-dim tint already used
+   rose left rail + tinted background (the same --negative-dim tint already used
    for status-tag pills elsewhere, so this isn't a new color, just a new
    application of it) plus a small rose dot on the label. Deliberately NOT
    tiny low-contrast rose text alone: the label is rose, but the quoted
@@ -431,16 +484,16 @@ a:hover { color: var(--accent); }
    readable at any width, and the tint stays restrained rather than a large
    bright warning block. */
 .er-alert-neg {
-    border-left: 3px solid var(--neg); background: var(--neg-dim);
+    border-left: 3px solid var(--negative); background: var(--negative-dim);
     border-radius: var(--r-sm); padding: var(--space-3) var(--space-4);
 }
 .er-alert-neg-label {
     display: inline-flex; align-items: center; gap: var(--space-1);
-    color: var(--neg); font-weight: 600; font-size: 0.8rem;
+    color: var(--negative); font-weight: 600; font-size: 0.8rem;
 }
 .er-alert-neg-label::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--neg); display: inline-block; flex-shrink: 0;
+    background: var(--negative); display: inline-block; flex-shrink: 0;
 }
 .er-alert-neg-note { color: var(--text); font-size: 0.85rem; margin-top: var(--space-1); line-height: 1.5; }
 
@@ -454,7 +507,7 @@ a:hover { color: var(--accent); }
    collapse/expand (a visibility toggle, not a width one) is unaffected. */
 [data-testid="stSidebar"] {
     background: var(--rail) !important;
-    border-right: 1px solid var(--hairline);
+    border-right: 1px solid var(--border-soft);
     width: 240px !important; min-width: 240px !important; max-width: 240px !important;
 }
 /* Application-shell dark/dim pass (Perplexity-inspired layout): this is
@@ -482,7 +535,7 @@ a:hover { color: var(--accent); }
    own docstring/comments in src/ui/ui.py). */
 .er-rail-brand {
     display: flex; align-items: center; gap: 0.4rem;
-    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--hairline);
+    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--border-soft);
     margin-bottom: 1rem;
 }
 .er-rail-brand > div[data-testid="stHorizontalBlock"] { width: 100%; align-items: center; }
@@ -503,26 +556,62 @@ a:hover { color: var(--accent); }
     padding: 0 !important; border-radius: var(--r-sm) !important;
     display: flex !important; align-items: center; justify-content: center;
 }
+/* Midnight Teal pass: lighter at rest (no visible border, only the icon
+   itself) with a consistent teal hover/focus cue — the same treatment
+   given to the sidebar collapse/expand icon buttons above, for the same
+   "restyle search and icon controls to be visually lighter at rest,
+   with a consistent hover/focus state" reason. The shared secondary-
+   button focus-visible ring (--focus, further below in this file) is
+   unaffected — this only touches the resting/hover border and fill. */
+.er-rail-brand [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"] {
+    border-color: transparent !important; color: var(--text-secondary) !important;
+}
+.er-rail-brand [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"]:hover {
+    border-color: var(--accent) !important; background: var(--surface-hover) !important;
+    color: var(--accent) !important;
+}
 .er-rail-group-label {
     font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-    /* sidebar contrast fix: --text-4/muted is 4.34:1 on --rail, just under
-       AA's 4.5:1 for normal text — --text-2/secondary (9.4:1) instead,
+    /* sidebar contrast fix: --text-muted/muted is 4.34:1 on --rail, just under
+       AA's 4.5:1 for normal text — --text-secondary/secondary (9.4:1) instead,
        here and at the other sidebar-only call sites noted in the :root
        comment above. */
-    color: var(--text-2); margin: var(--space-5) 0 var(--space-2) 0.25rem;
+    color: var(--text-secondary); margin: var(--space-5) 0 var(--space-2) 0.25rem;
 }
+/* Midnight Teal pass: inactive nav items are deliberately quiet — plain
+   secondary text, no border-left, no accent color anywhere at rest.
+   Teal only ever appears on hover or on the active item (see the two
+   rules below) — never at rest. A 2px transparent left border on the
+   resting/hover state (matching the active state's own real accent
+   border below) keeps every item's text at the same x-position whether
+   or not it's active, so becoming active never shifts the row. */
 [data-testid="stSidebar"] [data-testid="stPageLink"] a {
-    color: var(--text-2) !important; border-radius: var(--r-sm);
-    padding: 0.35rem 0.5rem !important; transition: background-color .12s ease, color .12s ease;
+    color: var(--text-secondary) !important; border-radius: var(--r-sm);
+    padding: 0.35rem 0.5rem 0.35rem calc(0.5rem - 2px) !important;
+    border-left: 2px solid transparent;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
 }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a p { font-size: 0.83rem; }
+/* Hover: a light touch of teal (text only) over a neutral surface lift —
+   quieter than the active state's own tinted background + left bar
+   below, so hover and active stay visually distinct from each other. */
 [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
-    background: var(--surface); color: var(--text) !important;
+    background: var(--surface-hover); color: var(--accent-hover) !important;
 }
-/* Active nav item: soft indigo fill + indigo text (modern editorial
-   redesign, user-approved preview) — was a neutral gray fill/dark text. */
-.er-rail-navactive [data-testid="stPageLink"] a {
+/* Active nav item: subtle teal-tinted background + a narrow left accent
+   indicator (2px, same left-rail convention .er-rail-pos/-negative/
+   -warning already use elsewhere in this file for a restrained "this is
+   the one that matters" cue). Midnight Teal pass fix: previously keyed
+   off a nested wrapper div that two separate st.markdown() calls tried
+   to "open" and "close" around st.page_link() — that never actually
+   nested in the real browser DOM (confirmed live), so this rule never
+   matched anything in production. Now keyed directly off the item's own
+   container key, which now conditionally includes an "-active" suffix
+   (src/ui/ui.py::render_sidebar()) — a real ancestor of the page_link in
+   every case. */
+[class*="st-key-navitem-"][class*="-active"] [data-testid="stPageLink"] a {
     background: var(--accent-soft); color: var(--accent) !important; font-weight: 600;
+    border-left: 2px solid var(--accent);
 }
 
 /* Sidebar nav icons (modern editorial redesign, user-approved preview) —
@@ -533,8 +622,9 @@ a:hover { color: var(--accent); }
    st.container(key=f"navitem-{key}") wrapper class already used for the
    active-state styling above — nothing about that container's own
    purpose or the page_link mechanism changes). Muted gray by default,
-   switching to indigo only inside the .er-rail-navactive wrapper the
-   active item already gets. */
+   switching to teal only when that same container's key carries the
+   "-active" suffix (see the active-state rule and its own comment,
+   just above). */
 [class*="st-key-navitem-"] [data-testid="stPageLink"] a {
     display: flex !important; align-items: center; gap: 10px;
 }
@@ -543,37 +633,37 @@ a:hover { color: var(--accent); }
     background-repeat: no-repeat; background-position: center; background-size: contain;
 }
 .st-key-navitem-dashboard [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-dashboard .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+.st-key-navitem-dashboard-active [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-radar_inbox .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+.st-key-navitem-radar_inbox-active [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-daily_news .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+.st-key-navitem-daily_news-active [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-themes .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+.st-key-navitem-themes-active [data-testid="stPageLink"] a::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
     /* sidebar contrast fix — see :root comment. */
-    font-size: 0.68rem; color: var(--text-2); margin-top: 0.25rem;
+    font-size: 0.68rem; color: var(--text-secondary); margin-top: 0.25rem;
 }
 .er-rail-footlinks { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.4rem; }
 /* sidebar contrast fix — see :root comment. */
-.er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
+.er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-secondary); }
 
 /* ---------- sidebar account control (application-shell dark/dim pass) ----------
    Anchored to the visual bottom of the sidebar — see src/ui/ui.py::
@@ -585,7 +675,7 @@ a:hover { color: var(--accent); }
    carries forward from it here. */
 .er-rail-account {
     margin-top: auto; padding-top: var(--space-3);
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--border-soft);
 }
 /* Avatar popover trigger — a plain st.popover button restyled into a
    circular avatar. Scoped to the sidebar-account-* container key prefix
@@ -597,10 +687,10 @@ a:hover { color: var(--accent); }
     font-weight: 600 !important; padding: 0 !important; border: none !important;
     display: flex !important; align-items: center; justify-content: center;
 }
-.er-rail-account-email { font-size: 0.8rem; color: var(--text-2); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--hairline); margin-bottom: 0.5rem; word-break: break-all; }
+.er-rail-account-email { font-size: 0.8rem; color: var(--text-secondary); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--border-soft); margin-bottom: 0.5rem; word-break: break-all; }
 
 /* live-status dot (the one non-breadth-bar permitted motion instance) */
-.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-3); }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-muted); }
 .dot.live { background: var(--text); position: relative; }
 @media (prefers-reduced-motion: no-preference) {
     .dot.live::after {
@@ -653,51 +743,55 @@ a:hover { color: var(--accent); }
        .er-chip/.er-status-tag/.er-fresh, untouched by this redesign);
        only actual buttons changed shape. */
     border: none !important; border-radius: var(--r-sm) !important; font-weight: 600 !important;
-    /* Soft indigo aura (not neon): a thin indigo-tinted ring, the --glow
-       blur (rgba(79,70,229,.18) — the indigo primary-CTA-glow value,
-       reused for the live-status dot and breadth-bar leader, the app's
-       other two glow spots), and an indigo-tinted drop shadow for depth. */
-    box-shadow: 0 0 0 1px rgba(79,70,229,.25), 0 0 22px var(--glow), 0 2px 10px rgba(79,70,229,.18) !important;
+    /* Soft teal aura (not neon, and not a gradient — a box-shadow blur,
+       never a background-image): a thin teal-tinted ring, the --glow
+       blur (rgba(33,183,168,.35) — the accent hue, reused for the
+       live-status dot and breadth-bar leader, the app's other two glow
+       spots), and a teal-tinted drop shadow for depth. Ring/shadow rgb
+       triple (15,117,104) is --invert-bg's own value — kept as a literal
+       triple here (not var()) only because rgba() can't consume a hex
+       custom property directly; same value either way. */
+    box-shadow: 0 0 0 1px rgba(15,117,104,.25), 0 0 22px var(--glow), 0 2px 10px rgba(15,117,104,.18) !important;
     transition: box-shadow .22s ease, background .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(67,56,202,.45), 0 0 26px rgba(67,56,202,.32), 0 4px 16px rgba(67,56,202,.24) !important;
-    background: var(--accent-hover) !important;
+    box-shadow: 0 0 0 1px rgba(21,126,114,.45), 0 0 26px rgba(21,126,114,.32), 0 4px 16px rgba(21,126,114,.24) !important;
+    background: var(--invert-bg-hover) !important;
 }
 /* Restrained pressed state (beta UI polish pass) — a flatter, tighter
    shadow than hover's glow (no added blur/elevation on press), same
-   --accent-hover fill and same rgba(67,56,202,...) hue already used
+   --invert-bg-hover fill and same rgba(21,126,114,...) hue already used
    above, just a smaller ring and no glow — reads as "pressed down,"
    not "still hovering." No new color, no animation. */
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:active {
-    box-shadow: 0 0 0 1px rgba(67,56,202,.55) !important;
-    background: var(--accent-hover) !important;
+    box-shadow: 0 0 0 1px rgba(21,126,114,.55) !important;
+    background: var(--invert-bg-hover) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--invert-fg) !important; }
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:disabled {
-    background: var(--surface-3) !important; color: var(--text-4) !important; box-shadow: none !important; cursor: not-allowed;
+    background: var(--surface-active) !important; color: var(--text-muted) !important; box-shadow: none !important; cursor: not-allowed;
 }
 
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"] {
-    background: transparent !important; border: 1px solid var(--hairline-2) !important;
+    background: transparent !important; border: 1px solid var(--border) !important;
     border-radius: var(--r-sm) !important; color: var(--text) !important;
     transition: border-color .15s ease, background-color .15s ease;
 }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:hover {
-    border-color: var(--text-2) !important; background: var(--surface) !important;
+    border-color: var(--text-secondary) !important; background: var(--surface) !important;
 }
 /* Restrained pressed state (beta UI polish pass) — one step darker than
-   hover's --surface fill (the existing --surface-2 token, already used
+   hover's --surface fill (the existing --surface-hover token, already used
    elsewhere as the next elevation step, e.g. the shared card hover
-   rule above), same --text-2 border as hover. No new color. */
+   rule above), same --text-secondary border as hover. No new color. */
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:active {
-    border-color: var(--text-2) !important; background: var(--surface-2) !important;
+    border-color: var(--text-secondary) !important; background: var(--surface-hover) !important;
 }
 /* Priority Signals' Review Evidence sits in a tight compact row inside a
    narrow column — shrink its footprint so it doesn't overpower the row
@@ -732,7 +826,7 @@ a:hover { color: var(--accent); }
 
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"] {
-    background: transparent !important; border: none !important; color: var(--text-3) !important;
+    background: transparent !important; border: none !important; color: var(--text-muted) !important;
     padding-left: 0 !important; transition: color .15s ease;
     /* No pill/border like primary+secondary (stays a plain ghost link),
        but matched to the same row height so it aligns with a secondary
@@ -744,7 +838,7 @@ a:hover { color: var(--accent); }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-/* Focus ring uses the dedicated --focus token (#4F46E5) rather than a
+/* Focus ring uses the dedicated --focus token (#21B7A8) rather than a
    plain dark or muted-text color — well past the 3:1 AA minimum for a
    focus indicator, and reads as an intentional accent ring rather than a
    generic outline. */
@@ -788,33 +882,33 @@ a:hover { color: var(--accent); }
 [data-testid="stChatInput"] textarea,
 [data-testid="stNumberInput"] input {
     background: var(--surface-input) !important;
-    border: 1px solid var(--hairline-2) !important;
+    border: 1px solid var(--border) !important;
     color: var(--text) !important;
 }
 [data-baseweb="select"] > div {
     background: var(--surface-input) !important;
-    border-color: var(--hairline-2) !important;
+    border-color: var(--border) !important;
     color: var(--text) !important;
 }
 /* Multiselect/select popover menu + selected-value tag chips. */
 [data-baseweb="popover"] [data-baseweb="menu"] {
-    background: var(--surface-2) !important;
+    background: var(--surface-hover) !important;
 }
 [data-baseweb="tag"] {
-    background: var(--surface-3) !important;
+    background: var(--surface-active) !important;
     color: var(--text) !important;
 }
 [data-testid="stExpander"] {
     background: var(--surface) !important;
-    border: 1px solid var(--hairline-2) !important;
+    border: 1px solid var(--border) !important;
     border-radius: var(--r-md) !important;
 }
 [data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
-[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--hairline) !important; }
-[data-testid="stTabs"] [data-baseweb="tab"] { color: var(--text-2) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--border-soft) !important; }
+[data-testid="stTabs"] [data-baseweb="tab"] { color: var(--text-secondary) !important; }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { color: var(--text) !important; }
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] { background-color: var(--accent) !important; }
-[data-testid="stDataFrame"] { border: 1px solid var(--hairline-2) !important; border-radius: var(--r-sm) !important; }
+[data-testid="stDataFrame"] { border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; }
 /* The one native-primary-type button in the app (Radar Inbox's "Scan ...
    now" — see module note above): explicit white-on-navy pairing matching
    the custom primary-CTA pill, rather than relying on Streamlit's own
@@ -823,9 +917,9 @@ a:hover { color: var(--accent); }
     background: var(--invert-bg) !important; color: var(--invert-fg) !important;
     border: none !important;
 }
-[data-testid="stBaseButton-primary"]:hover { background: var(--accent-hover) !important; }
+[data-testid="stBaseButton-primary"]:hover { background: var(--invert-bg-hover) !important; }
 [data-testid="stBaseButton-primary"]:disabled {
-    background: var(--surface-3) !important; color: var(--text-4) !important;
+    background: var(--surface-active) !important; color: var(--text-muted) !important;
 }
 
 /* ---------- cards ----------
@@ -833,15 +927,23 @@ a:hover { color: var(--accent); }
    Streamlit's st.container(border=True) renders a real 1px border by
    default — the previous pass explicitly removed it ("Panels have no
    outer border; separation is by surface value") and separated cards by
-   background-on-hover instead. The approved redesign reverses that
-   specific decision on purpose: every card now carries a real, always-
-   visible 1px border (--hairline), and hover darkens the border
-   (--card-border-hover) rather than changing the fill — the card stays
-   the same surface tone in both states (dark-pass update: --surface, not
-   white, per the application-shell dark/dim pass). Radius/padding/
-   spacing scale are unchanged from before. */
+   background-on-hover instead. A later redesign reversed that specific
+   decision, giving every card a real, always-visible 1px border.
+
+   Midnight Teal pass: the border mechanic (a real 1px border, present
+   on every card) is unchanged, but --border-soft's own value is now
+   deliberately quiet (see this file's :root header comment on why it's
+   not held to the old 3:1 functional-boundary floor) — cards are once
+   again separated mostly by surface tone (--surface against --bg/
+   --rail), with the border reading as a faint structural hint rather
+   than a hard outline, directly per "reduce excessive card-border
+   visibility." Hover still darkens the border (--card-border-hover)
+   rather than changing the fill. Radius/padding/spacing scale are
+   otherwise unchanged here — see the dashboard-recently-updated-only
+   density/radius override further below for the one place this pass
+   does tighten them. */
 [class*="st-key-card-"] {
-    border: 1px solid var(--hairline) !important; border-radius: var(--r-md) !important;
+    border: 1px solid var(--border-soft) !important; border-radius: var(--r-md) !important;
     background: var(--surface) !important; transition: border-color .15s ease, box-shadow .15s ease;
     /* Slightly less vertical padding than Streamlit's own default (was a
        uniform 14px) so cards don't consume unnecessary height, matching
@@ -856,7 +958,7 @@ a:hover { color: var(--accent); }
    the hover border-darken so they don't visually imply they're
    clickable (updated from "suppress hover brighten" for the new
    border-based hover cue above; same intent, same scoped selector). */
-[class*="st-key-card-subtheme-"]:hover { border-color: var(--hairline) !important; box-shadow: none !important; }
+[class*="st-key-card-subtheme-"]:hover { border-color: var(--border-soft) !important; box-shadow: none !important; }
 /* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
    page's one "primary" content well: same shared white card as every
    other card above, plus a restrained indigo left-edge accent rule
@@ -868,7 +970,7 @@ a:hover { color: var(--accent); }
    the issuer feed card (src/ui/pages/daily_news.py) and the editorial
    feed card (src/ui/components/editorial_coverage.py) previously needed
    their own explicit border override, back when the global card rule had
-   none. The global rule above now gives every card the same --hairline
+   none. The global rule above now gives every card the same --border-soft
    border by default, so these two card types read identically to every
    other card in the app (Dashboard, Filings, Research Theses) without
    needing a special-case rule any more — removed rather than left
@@ -876,7 +978,7 @@ a:hover { color: var(--accent); }
    existing status-tag label), never an outer-card treatment difference. */
 
 /* ---------- theme icon motifs ---------- */
-.er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-2); }
+.er-theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: 0.5rem; color: var(--text-secondary); }
 .er-theme-icon svg { width: 100%; height: 100%; }
 
 /* ---------- evidence chips (the signature element) ---------- */
@@ -887,25 +989,27 @@ a:hover { color: var(--accent); }
 }
 .er-chip-fact { background: var(--invert-bg); color: var(--invert-fg); cursor: pointer; }
 .er-chip-fact:hover { box-shadow: 0 0 0 1px var(--invert-bg); }
-/* A translucent white overlay (the previous value) is invisible against a
-   white/near-white card — a translucent navy wash instead, using the same
-   CTA-navy RGB at low alpha (8%; 15.3:1 text contrast at that alpha),
-   still restrained/light rather than a solid tinted fill. */
-.er-chip-interpretation { background: rgba(16, 42, 67, .08); color: var(--text); }
-.er-chip-inference { background: transparent; color: var(--text-2); border: 1px solid var(--hairline-2); }
-.er-chip-uncertainty { background: transparent; color: var(--text-2); border: 1px dashed var(--hairline-2); }
+/* Midnight Teal pass: retinted from a stray hardcoded navy rgba
+   literal (left over from an earlier light-card palette and never
+   actually a token reference) to --accent-soft — the same
+   translucent-tinted-wash role this rule always wanted, now sourced from
+   the one shared token every other soft-accent fill in the app already
+   reads from. */
+.er-chip-interpretation { background: var(--accent-soft); color: var(--text); }
+.er-chip-inference { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.er-chip-uncertainty { background: transparent; color: var(--text-secondary); border: 1px dashed var(--border); }
 
 /* ---------- evidence spine ---------- */
 .er-spine {
     display: grid; grid-template-columns: 2px 96px 1fr; column-gap: 0.9rem;
 }
-.er-spine-bar { background: var(--hairline-2); }
+.er-spine-bar { background: var(--border); }
 .er-spine-bar.first { border-top-left-radius: 2px; border-top-right-radius: 2px; }
 .er-spine-bar.last { border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
 .er-spine-chip { display: flex; justify-content: flex-end; padding-top: 0.15rem; }
 .er-spine-body { padding: 0.5rem 0 0.9rem 0; color: var(--text); font-size: 0.9rem; line-height: 1.6; }
 .er-spine-body .er-excerpt { margin-top: 0.4rem; }
-.er-spine-source { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-4); margin-top: 0.35rem; }
+.er-spine-source { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; }
 @media (max-width: 860px) {
     .er-spine { grid-template-columns: 2px 1fr; }
     .er-spine-chip { justify-content: flex-start; padding-top: 0.2rem; grid-column: 2; }
@@ -916,13 +1020,16 @@ a:hover { color: var(--accent); }
    Stale is the deliberately "louder" state (solid ring + surface-3 chip),
    not a softer/quieter one — it's the dangerous case (connected but
    behind), so it must not read as calmer than Live. ---------- */
+/* Midnight Teal pass: radius reduced from a full pill to --r-sm, same
+   "reduce pill-like metadata styling" reasoning as .er-status-tag above —
+   the dot + solid-ring/louder-chip mechanic for Stale is unchanged. */
 .er-fresh {
     display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
-    font-size: 0.68rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+    font-size: 0.68rem; padding: 0.15rem 0.55rem; border-radius: var(--r-sm);
 }
 .er-fresh-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; position: relative; }
 
-.er-fresh-live { background: var(--surface-2); color: var(--text); }
+.er-fresh-live { background: var(--surface-hover); color: var(--text); }
 .er-fresh-live .er-fresh-dot { background: var(--text); }
 @media (prefers-reduced-motion: no-preference) {
     .er-fresh-live .er-fresh-dot::after {
@@ -931,21 +1038,21 @@ a:hover { color: var(--accent); }
     }
 }
 
-.er-fresh-stale { background: var(--surface-3); color: var(--text); }
-.er-fresh-stale .er-fresh-dot { background: var(--text-2); box-shadow: 0 0 0 2px var(--hairline-2); }
+.er-fresh-stale { background: var(--surface-active); color: var(--text); }
+.er-fresh-stale .er-fresh-dot { background: var(--text-secondary); box-shadow: 0 0 0 2px var(--border); }
 .er-fresh-retry {
     background: none; border: none; color: var(--text); text-decoration: underline;
     font-family: var(--font-mono); font-size: 0.68rem; cursor: pointer; padding: 0;
 }
 
-.er-fresh-demo { background: transparent; border: 1px dashed var(--hairline-2); color: var(--text-4); }
-.er-fresh-demo .er-fresh-dot { background: var(--text-4); }
+.er-fresh-demo { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); }
+.er-fresh-demo .er-fresh-dot { background: var(--text-muted); }
 
 /* ---------- breadth bars (the one data-driven motion instance) ----------
    Leading theme's bar is --text with glow (one of the app's exactly three
-   glow spots); the rest are --text-4 (brief §9/§16). */
-.bar { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--text-4); width: var(--w, 0%); border-radius: 2px; }
+   glow spots); the rest are --text-muted (brief §9/§16). */
+.bar { height: 4px; background: var(--surface-active); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--text-muted); width: var(--w, 0%); border-radius: 2px; }
 .bar i.leader { background: var(--text); box-shadow: 0 0 8px var(--glow); }
 @media (prefers-reduced-motion: no-preference) {
     .bar i { animation: fill .9s cubic-bezier(.22, .9, .3, 1) both; }
@@ -959,24 +1066,24 @@ a:hover { color: var(--accent); }
 /* ---------- diverging bars (rotation leaders/laggards) — static, no
    motion; the breadth strip above is the one animated data bar. ---------- */
 .er-divbar-row { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; }
-.er-divbar-label { width: 130px; font-size: 0.78rem; color: var(--text-2); flex-shrink: 0; }
-.er-divbar-track { flex: 1; height: 6px; background: var(--surface-3); border-radius: 3px; position: relative; }
+.er-divbar-label { width: 130px; font-size: 0.78rem; color: var(--text-secondary); flex-shrink: 0; }
+.er-divbar-track { flex: 1; height: 6px; background: var(--surface-active); border-radius: 3px; position: relative; }
 /* A clear neutral midpoint marker — deliberately stronger than the
    surrounding hairlines elsewhere in the app (usability follow-up: at
-   --hairline-2 it read as barely-there against the track). Still neutral
+   --border it read as barely-there against the track). Still neutral
    grey, not a semantic color, since it marks "zero," not a direction. */
-.er-divbar-zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--text-4); }
-.er-divbar-fill { position: absolute; top: 0; bottom: 0; background: var(--text-2); border-radius: 3px; }
+.er-divbar-zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--text-muted); }
+.er-divbar-fill { position: absolute; top: 0; bottom: 0; background: var(--text-secondary); border-radius: 3px; }
 .er-divbar-value { width: 60px; text-align: right; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text); flex-shrink: 0; }
 
 /* ---------- unread / last-seen divider ---------- */
 .er-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text); display: inline-block; margin-right: 0.4rem; }
-.er-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.9rem 0; color: var(--text-4); font-size: 0.72rem; }
-.er-divider::before, .er-divider::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+.er-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.9rem 0; color: var(--text-muted); font-size: 0.72rem; }
+.er-divider::before, .er-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
 
 /* ---------- skeleton loading rows ---------- */
 .er-skel { background: var(--surface); border-radius: var(--r-sm); }
-.er-skel-line { height: 0.8rem; border-radius: 4px; background: var(--surface-2); margin-bottom: 0.5rem; }
+.er-skel-line { height: 0.8rem; border-radius: 4px; background: var(--surface-hover); margin-bottom: 0.5rem; }
 @media (prefers-reduced-motion: no-preference) {
     /* 1.4s per brief §14 ("subtle shimmer, 1.4s") — the one motion
        instance outside §16's "exactly two" count, since it's explicitly
@@ -1007,9 +1114,9 @@ a:hover { color: var(--accent); }
    dot; this decorative SVG is a fixed backdrop, not animated) ---------- */
 .er-hero-wrap { position: relative; padding: 2rem 0 1.5rem 0; overflow: hidden; }
 .er-hero-signal-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
-.er-signal-path { fill: none; stroke: var(--hairline-2); stroke-width: 1; stroke-dasharray: 6 10; }
-.er-signal-path-2 { stroke: var(--hairline); }
-.er-signal-node { fill: var(--text-4); }
+.er-signal-path { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 6 10; }
+.er-signal-path-2 { stroke: var(--border-soft); }
+.er-signal-node { fill: var(--text-muted); }
 .er-hero-watermark {
     position: absolute; top: 50%; right: -4%; transform: translateY(-50%);
     width: 300px; height: 300px; color: var(--text); opacity: 0.035; z-index: 0; pointer-events: none;
