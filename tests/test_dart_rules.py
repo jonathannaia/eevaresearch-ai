@@ -34,10 +34,43 @@ def test_earnings_keyword_matches():
     assert any("earnings" in r for r in result.matched_rules)
 
 
-def test_financing_keyword_matches_treasury_stock_disposal():
+def test_treasury_stock_disposal_matches_its_own_category_not_financing():
+    # DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    # SUPPRESSION_DESIGN_2026_09_17.md): a bare treasury-share disposal is
+    # no longer conflated with genuine capital-raise/dividend keywords —
+    # it gets its own `treasury_stock_activity` category so a materiality
+    # gate can be applied to it independently (see
+    # equity_transaction_materiality.py / radar_pipeline.py).
     result = evaluate_report_name("주요사항보고서(자기주식처분결정)")
     assert result.confidence == "Moderate"
-    assert any("financing" in r for r in result.matched_rules)
+    assert any("treasury_stock_activity" in r for r in result.matched_rules)
+    assert not any(r.startswith("financing:") for r in result.matched_rules)
+
+
+def test_treasury_stock_acquisition_matches_the_same_category():
+    result = evaluate_report_name("주요사항보고서(자기주식취득결정)")
+    assert result.confidence == "Moderate"
+    assert any("treasury_stock_activity" in r for r in result.matched_rules)
+    assert not any(r.startswith("financing:") for r in result.matched_rules)
+
+
+def test_financing_keyword_still_matches_genuine_capital_raise():
+    # Regression: genuine capital-raise/dividend keywords must be
+    # completely unaffected by moving the treasury-stock keywords out.
+    result = evaluate_report_name("주요사항보고서(유상증자결정)")
+    assert result.confidence == "Moderate"
+    assert any(r.startswith("financing:") for r in result.matched_rules)
+
+
+def test_treasury_stock_disposal_combined_with_another_category_reaches_high_confidence():
+    # A filing that names BOTH the routine treasury keyword and a real
+    # material-content keyword (here, facility investment) must still
+    # count as two independent categories — never silently collapsed into
+    # the low-value bucket.
+    result = evaluate_report_name("자기주식처분결정 및 신규시설투자등")
+    assert result.confidence == "High"
+    categories = {r.split(":", 1)[0] for r in result.matched_rules}
+    assert categories == {"treasury_stock_activity", "capex_or_facility_investment"}
 
 
 def test_risk_disclosure_keyword_matches_serious_accident():

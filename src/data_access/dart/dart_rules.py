@@ -67,7 +67,27 @@ KOREAN_KEYWORD_LEXICON: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "financing": (
         "capital_raise_or_treasury_stock",
-        ("유상증자", "무상증자", "자기주식처분", "자기주식취득", "증권신고서", "배당결정"),  # all observed live except 무상증자 (standard sibling of 유상증자, not observed)
+        # all observed live except 무상증자 (standard sibling of 유상증자,
+        # not observed). 자기주식처분/자기주식취득 (treasury-share
+        # disposal/acquisition) were moved out of this category into their
+        # own `treasury_stock_activity` entry below (DART low-value filing
+        # suppression design, design/DART_LOW_VALUE_FILING_SUPPRESSION_
+        # DESIGN_2026_09_17.md) — a bare treasury-share transaction is
+        # routine, employee-directed equity mechanics far more often than
+        # it is a genuine capital raise, and conflating the two meant no
+        # materiality distinction could ever be applied to it. Genuine
+        # capital-raise/dividend keywords are unaffected and still land
+        # here exactly as before.
+        ("유상증자", "무상증자", "증권신고서", "배당결정"),
+    ),
+    "treasury_stock_activity": (
+        "treasury_stock_disposal_or_acquisition",
+        # both observed live. Routed through its own excerpt-based
+        # materiality gate in radar_pipeline.py (see
+        # src.data_access.dart.equity_transaction_materiality) rather than
+        # assumed equivalent to a capital raise — see this category's own
+        # note under `financing` above.
+        ("자기주식처분", "자기주식취득"),
     ),
     "listing_or_market_event": (
         "listing_decision",
