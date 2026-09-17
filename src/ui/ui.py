@@ -257,8 +257,21 @@ def render_sidebar(current_key: str) -> None:
     home_page = pages.get("home")
 
     with st.sidebar:
+        # Application-shell dark/dim pass (Perplexity-inspired sidebar
+        # layout, narrowly scoped) — brand mark/wordmark at top-left, a
+        # compact search icon directly beside it (render_palette_trigger()
+        # itself is unchanged, same ⌘K dialog/keyboard-shortcut mechanism
+        # as before; only `compact=True` changes its own rendering, and it
+        # is still called exactly once per page render, never duplicated).
+        # Previously this search trigger and the account control both lived
+        # in a separate sticky top bar above the main content — both moved
+        # back into the sidebar here (top and bottom respectively, see
+        # _render_sidebar_account() below), which is now the one persistent
+        # place either control renders; the top bar itself is retired.
+        from src.ui.components.command_palette import render_palette_trigger
+
         st.markdown('<div class="er-rail-brand">', unsafe_allow_html=True)
-        brand_cols = st.columns([1, 5], vertical_alignment="center")
+        brand_cols = st.columns([1, 4, 1], vertical_alignment="center")
         with brand_cols[0]:
             st.markdown(f'<span class="er-rail-logo">{brand_mark_html()}</span>', unsafe_allow_html=True)
         with brand_cols[1]:
@@ -266,14 +279,9 @@ def render_sidebar(current_key: str) -> None:
                 st.page_link(home_page, label="EevaResearch")
             else:
                 st.markdown('<span class="er-rail-word">EevaResearch</span>', unsafe_allow_html=True)
+        with brand_cols[2]:
+            render_palette_trigger(compact=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
-        # Search (⌘K) moved to the top bar (modern editorial redesign,
-        # user-approved preview) — see _render_topbar() below. Was
-        # rendered here; render_palette_trigger() itself is unchanged,
-        # only the call site moved, and it is called exactly once per
-        # page render either way (never duplicated), so no new risk of
-        # the duplicate-element-key issue a second call site would raise.
 
         # WORKSPACE — the four core visible destinations (navigation-cleanup
         # pass, design/DECISIONS.md). Coverage/Themes/Signals/Research and
@@ -329,12 +337,19 @@ def render_sidebar(current_key: str) -> None:
                 st.markdown('<div class="er-rail-group-label">Admin</div>', unsafe_allow_html=True)
                 st.page_link(admin_users_page, label="Users")
 
-        # Account (email + sign out) moved to the top bar's avatar
-        # dropdown (modern editorial redesign, user-approved preview) —
-        # see _render_topbar() below. Same st.user.is_logged_in/
-        # st.user.get("email")/st.logout calls as before, same "only the
-        # email claim is shown, never a token/cookie/session id" rule —
-        # only the location changed, not the mechanism or the content.
+        # Account control — anchored to the visual bottom of the sidebar
+        # (application-shell dark/dim pass, Perplexity-inspired layout).
+        # Rendered last, after every nav group above, so it is always the
+        # final element in source order; .er-rail-account's own
+        # margin-top: auto (assets/styles.css) is what actually pushes it
+        # to the bottom of the sidebar's flex column rather than its
+        # position in the markup alone. Same st.user.is_logged_in/
+        # st.user.get("email")/st.logout calls as the prior top-bar avatar
+        # popover used, same "only the email claim is shown, never a
+        # token/cookie/session id" rule — only the location and widget
+        # keys changed (topbar-avatar-*/topbar-sign-out-* -> sidebar-
+        # account-*/sidebar-sign-out-*), not the mechanism or the content.
+        _render_sidebar_account(current_key)
 
         # Reader-facing data-integrity pass (design/DECISIONS.md): the
         # previous blanket "Demo environment · sample data" status was
@@ -390,35 +405,32 @@ def get_page(name: str):
     return st.session_state.get("_pages", {}).get(name)
 
 
-def _render_topbar(nav_key: str) -> None:
-    """Sticky top bar (modern editorial redesign, user-approved preview):
-    search (⌘K, the same render_palette_trigger() the sidebar used to
-    host) on the left, an avatar popover (email + sign out — the same
-    st.user/st.logout calls the sidebar's own former "Account" section
-    used, moved here rather than duplicated) on the right. Real Streamlit
-    widgets laid out via st.columns inside a sticky-styled wrapper div,
-    not a hand-rolled overlay — see assets/styles.css's own
-    .er-topbar-anchor rule for why."""
-    from src.ui.components.command_palette import render_palette_trigger
-
+def _render_sidebar_account(nav_key: str) -> None:
+    """Account control anchored to the visual bottom of the sidebar
+    (application-shell dark/dim pass, Perplexity-inspired layout) — an
+    avatar popover (initial letter) showing the signed-in email + sign
+    out, or "Not signed in". Same st.user/st.logout calls the prior top
+    bar's avatar popover used before it was retired; only the location,
+    widget keys (topbar-avatar-*/topbar-sign-out-* -> sidebar-account-*/
+    sidebar-sign-out-*), and CSS class (.er-topbar-avatar-email ->
+    .er-rail-account-email) changed. Must be called from inside
+    render_sidebar()'s own `with st.sidebar:` block, as the last thing
+    rendered, so assets/styles.css's .er-rail-account `margin-top: auto`
+    rule can push it to the bottom of the sidebar's flex column."""
     email = st.user.get("email") if getattr(st.user, "is_logged_in", False) else None
     initial = (email or "?")[0].upper()
 
-    st.markdown('<div class="er-topbar-anchor">', unsafe_allow_html=True)
-    cols = st.columns([5, 3, 1], vertical_alignment="center")
-    with cols[0]:
-        render_palette_trigger()
-    with cols[2]:
-        with st.container(key=f"topbar-avatar-{nav_key}"):
-            with st.popover(initial, use_container_width=False):
-                if email:
-                    st.markdown(f'<div class="er-topbar-avatar-email">{email}</div>', unsafe_allow_html=True)
-                    st.button(
-                        "Sign out", on_click=st.logout, key=f"topbar-sign-out-{nav_key}", use_container_width=True,
-                    )
-                    st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
-                else:
-                    st.caption("Not signed in")
+    st.markdown('<div class="er-rail-account">', unsafe_allow_html=True)
+    with st.container(key=f"sidebar-account-{nav_key}"):
+        with st.popover(initial, use_container_width=False, help="Account"):
+            if email:
+                st.markdown(f'<div class="er-rail-account-email">{email}</div>', unsafe_allow_html=True)
+                st.button(
+                    "Sign out", on_click=st.logout, key=f"sidebar-sign-out-{nav_key}", use_container_width=True,
+                )
+                st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
+            else:
+                st.caption("Not signed in")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -427,7 +439,6 @@ def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = 
         load_css()
         if show_sidebar:
             render_sidebar(nav_key)
-            _render_topbar(nav_key)
 
         with st.container(key="page-content"):
             page_fn()

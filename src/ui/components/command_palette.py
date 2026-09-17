@@ -39,11 +39,24 @@ from src.ui.ui import get_page
 PALETTE_TRIGGER_KEY = "cmdk-trigger"
 
 
-def render_palette_trigger() -> None:
-    """Sidebar search button showing the ⌘K hint, plus the JS that makes
-    the real keyboard shortcut open it from anywhere in the workspace."""
+def render_palette_trigger(compact: bool = False) -> None:
+    """Search trigger — the same button/⌘K-dialog/keyboard-shortcut
+    mechanism either way; `compact` only changes its own rendering, never
+    what it does. Default (compact=False): a full-width "Search… ⌘K"
+    button, used wherever the trigger has room to spell itself out.
+    compact=True (sidebar top-right, beside the brand mark — application-
+    shell dark/dim pass): a small icon-only button using Streamlit's
+    built-in Material Symbols shorthand (`:material/search:`, no custom
+    SVG/asset needed), with `help` supplying the accessible tooltip/label
+    an icon-only control needs (the plus 'Search (⌘K)' hint an icon alone
+    can't convey) — assets/styles.css's own `.er-rail-brand [class*=...]`
+    rule then constrains it to a small square via the same
+    `st-key-cta-secondary-{PALETTE_TRIGGER_KEY}` container class either
+    rendering already carries."""
+    label = ":material/search:" if compact else "Search…    ⌘K"
+    help_text = "Search (⌘K)" if compact else None
     with st.container(key=f"cta-secondary-{PALETTE_TRIGGER_KEY}"):
-        if st.button("Search…    ⌘K", key=PALETTE_TRIGGER_KEY, width="stretch"):
+        if st.button(label, key=PALETTE_TRIGGER_KEY, width="stretch", help=help_text):
             _open_palette()
 
     st.iframe(

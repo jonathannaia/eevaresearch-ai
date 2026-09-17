@@ -166,13 +166,13 @@ def _patch_repo_construction(cache_dir) -> MagicMock:
 
 def _main_button(at: AppTest):
     """The page's own submit button only — the shared chrome's own
-    top-bar search trigger ("cmdk-trigger") and avatar-popover "Sign
-    out" button (moved there from the sidebar, modern editorial
-    redesign/user-approved preview — both now render inside the main
-    content area's own top bar, not `at.sidebar`, so a plain `at.main`
-    button count would otherwise pick them up too) are excluded by key,
-    neither of which this page's own tests are about."""
-    buttons = [b for b in at.main.get("button") if b.key != "cmdk-trigger" and not (b.key or "").startswith("topbar-sign-out-")]
+    sidebar search trigger ("cmdk-trigger") and account-popover "Sign
+    out" button (application-shell dark/dim pass: both render inside the
+    sidebar, at its top and bottom respectively — `at.main` shouldn't
+    include them at all, but this filter is kept as a belt-and-suspenders
+    guard rather than assumed) are excluded by key, neither of which this
+    page's own tests are about."""
+    buttons = [b for b in at.main.get("button") if b.key != "cmdk-trigger" and not (b.key or "").startswith("sidebar-sign-out-")]
     assert len(buttons) == 1, [b.label for b in buttons]
     return buttons[0]
 
