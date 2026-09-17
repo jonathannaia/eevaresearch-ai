@@ -57,11 +57,22 @@ from src.ui.pages import (
 )
 from src.ui.ui import HIDDEN_FROM_NAV, LAST_SEEN_KEY, PRIMARY_NAV, READ_IDS_KEY, SYSTEM_NAV, with_chrome
 
-_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "eeva-logo.png"
+# Streamlit favicon fix: a dedicated, square (128x128, transparent-
+# background) favicon asset — assets/eeva-logo.png is a real EevaResearch
+# mark but is a non-square 116x128 canvas, kept as-is here since it's
+# also used at a larger, non-favicon size by src/ui/ui.py's sidebar brand
+# mark. page_icon falls back to None (Streamlit's own default) rather
+# than raising if this asset is ever missing from a deployment — never a
+# hard crash over a cosmetic asset.
+_FAVICON_PATH = Path(__file__).resolve().parent / "assets" / "favicon.png"
 
+# "EevaResearch | Global Filing Intelligence" matches the title/og:title
+# already live on the public landing page (landing/index.html) — this app
+# page_title previously read "EevaResearch AI", a real, verified
+# inconsistency between the two public-facing surfaces.
 st.set_page_config(
-    page_title="EevaResearch AI",
-    page_icon=str(_LOGO_PATH) if _LOGO_PATH.exists() else None,
+    page_title="EevaResearch | Global Filing Intelligence",
+    page_icon=str(_FAVICON_PATH) if _FAVICON_PATH.exists() else None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
