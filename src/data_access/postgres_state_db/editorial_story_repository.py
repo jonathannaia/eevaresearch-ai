@@ -36,6 +36,11 @@ def _row_to_story(row) -> EditorialStory:
         # docstring).
         materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
         materiality_reasons=tuple(json.loads(row["materiality_reasons"])) if row["materiality_reasons"] else (),
+        # Raw company recognition (design/DAILY_NEWS_IDENTIFIED_VS_
+        # MATCHED_COMPANIES_DISCOVERY_2026_09_16.md) — column is
+        # NOT NULL DEFAULT '[]' (schema.py V21), so an unconditional
+        # read is safe, same convention as matched_companies_json above.
+        identified_companies=tuple(json.loads(row["identified_companies_json"])),
     )
 
 
@@ -50,8 +55,8 @@ def _insert_story(conn: psycopg.Connection, story: EditorialStory) -> None:
         INSERT INTO editorial_stories (
             id, headline, publisher, source_url, published_at, retrieved_at, excerpt,
             matched_companies_json, matched_themes_json, source_feed_id,
-            materiality_tier, materiality_reasons
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            materiality_tier, materiality_reasons, identified_companies_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             story.id, story.headline, story.publisher, story.source_url, story.published_at,
@@ -59,6 +64,7 @@ def _insert_story(conn: psycopg.Connection, story: EditorialStory) -> None:
             json.dumps(list(story.matched_themes)), story.source_feed_id,
             story.materiality_tier.value if story.materiality_tier else None,
             json.dumps(list(story.materiality_reasons)) if story.materiality_reasons else None,
+            json.dumps(list(story.identified_companies)),
         ),
     )
 

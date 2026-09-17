@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 20
+CURRENT_SCHEMA_VERSION = 21
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -674,6 +674,18 @@ _V20_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE editorial_stories ADD COLUMN materiality_reasons TEXT",
 )
 
+# Raw company recognition (design/DAILY_NEWS_IDENTIFIED_VS_MATCHED_
+# COMPANIES_DISCOVERY_2026_09_16.md, design/DAILY_NEWS_COMPANY_
+# ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md) — one wholly
+# additive column on editorial_stories, same JSON-TEXT-with-empty-array-
+# default convention as matched_companies_json/matched_themes_json
+# above (V16), not the nullable-no-default convention V20 used for
+# materiality — identified_companies is always a valid (possibly empty)
+# list, never "not yet classified."
+_V21_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE editorial_stories ADD COLUMN identified_companies_json TEXT NOT NULL DEFAULT '[]'",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -699,6 +711,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (18, _V18_STATEMENTS),
     (19, _V19_STATEMENTS),
     (20, _V20_STATEMENTS),
+    (21, _V21_STATEMENTS),
 )
 
 

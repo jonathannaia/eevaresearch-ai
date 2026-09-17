@@ -40,6 +40,12 @@ def _story_from_dict(data: dict) -> EditorialStory:
         # _story_from_dict.
         materiality_tier=NewsMaterialityTier(materiality_tier_raw) if materiality_tier_raw else None,
         materiality_reasons=tuple(data.get("materiality_reasons", ())),
+        # Raw company recognition (design/DAILY_NEWS_IDENTIFIED_VS_
+        # MATCHED_COMPANIES_DISCOVERY_2026_09_16.md) — additive,
+        # safe-default: a record persisted before this field existed has
+        # no "identified_companies" key, so .get(..., ()) returns an
+        # empty tuple, exactly like every other optional field above.
+        identified_companies=tuple(data.get("identified_companies", ())),
     )
 
 

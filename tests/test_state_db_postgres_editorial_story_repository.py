@@ -74,6 +74,36 @@ def test_empty_matched_companies_and_themes_round_trip_as_empty_tuples(pg_conn):
     assert loaded.matched_themes == ("memory",)
 
 
+# ============================================================
+# identified_companies (design/DAILY_NEWS_IDENTIFIED_VS_MATCHED_
+# COMPANIES_DISCOVERY_2026_09_16.md, design/DAILY_NEWS_COMPANY_
+# ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md) — additive
+# raw-recognition column round-trip.
+# ============================================================
+
+
+def test_identified_companies_round_trips_independently_of_matched_companies(pg_conn):
+    # A genuine superset/subset pair — proves the two JSON-TEXT columns
+    # are stored and reloaded independently, never conflated.
+    story = _story(
+        matched_companies=("Oracle Corporation",),
+        identified_companies=("Oracle Corporation", "Amazon.com, Inc."),
+    )
+    editorial_story_repository.upsert_new_stories(pg_conn, [story])
+    loaded = editorial_story_repository.load_stories(pg_conn)[story.id]
+    assert loaded.identified_companies == ("Oracle Corporation", "Amazon.com, Inc.")
+    assert loaded.matched_companies == ("Oracle Corporation",)
+
+
+def test_empty_identified_companies_round_trips_as_empty_tuple(pg_conn):
+    # The default case (no override given) — the NOT NULL DEFAULT '[]'
+    # column behaves like every other empty-tuple field above.
+    story = _story()
+    editorial_story_repository.upsert_new_stories(pg_conn, [story])
+    loaded = editorial_story_repository.load_stories(pg_conn)[story.id]
+    assert loaded.identified_companies == ()
+
+
 def test_upsert_new_stories_is_idempotent_on_repeated_id(pg_conn):
     story = _story()
     editorial_story_repository.upsert_new_stories(pg_conn, [story])
