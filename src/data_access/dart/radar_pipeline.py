@@ -23,7 +23,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.tracked_companies import TrackedCompany
-from src.data_access.dart import candidate_store, document_service, ownership_materiality, retry_policy, scan_service
+from src.data_access.dart import (
+    candidate_store,
+    document_service,
+    equity_transaction_materiality,
+    low_value_filing_rules,
+    ownership_materiality,
+    retry_policy,
+    scan_service,
+)
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.dart.client import DartClient
 from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
@@ -233,6 +241,22 @@ def process_candidate(
             # unchanged by this gate, only source_detail is enriched.
             candidate.flag_reason = build_flag_reason(candidate.matched_rules, candidate.confidence, source_detail=gate_result.detail)
             final_status = CandidateStatus.NOT_MATERIAL if gate_result.outcome == "not_material" else CandidateStatus.NEEDS_REVIEW
+        elif _is_treasury_or_equity_candidate(candidate):
+            # DART low-value filing suppression (design/DART_LOW_VALUE_
+            # FILING_SUPPRESSION_DESIGN_2026_09_17.md) — same shape as the
+            # ownership_change branch above, scoped to candidates whose
+            # matched_rules are exclusively the `treasury_stock_activity`
+            # category (see low_value_filing_rules.matched_rules_are_low_
+            # value_only): a bare employee-directed treasury-share
+            # disposal/acquisition with no other recognized category
+            # present.
+            gate_result = equity_transaction_materiality.assess_equity_transaction_materiality(
+                candidate.filing.report_nm, candidate.excerpt_original,
+            )
+            candidate.materiality_assessment = gate_result.detail
+            transition_detail = gate_result.detail
+            candidate.flag_reason = build_flag_reason(candidate.matched_rules, candidate.confidence, source_detail=gate_result.detail)
+            final_status = CandidateStatus.NOT_MATERIAL if gate_result.outcome == "not_material" else CandidateStatus.NEEDS_REVIEW
         else:
             final_status = CandidateStatus.NEEDS_REVIEW
     elif candidate.extraction_state == ExtractionState.RETRIEVAL_FAILED:
@@ -246,6 +270,15 @@ def process_candidate(
 
 def _is_ownership_change_candidate(candidate: CandidateSignal) -> bool:
     return any(rule.startswith("ownership_change:") for rule in candidate.matched_rules)
+
+
+def _is_treasury_or_equity_candidate(candidate: CandidateSignal) -> bool:
+    """DART low-value filing suppression — delegates to the one shared
+    scoping predicate (low_value_filing_rules.py) so this check and Radar
+    Inbox's own default-query suppression can never drift onto two
+    different definitions of "treasury/equity-only." See that module's
+    own docstring."""
+    return low_value_filing_rules.matched_rules_are_low_value_only(candidate.matched_rules)
 
 
 def run_pipeline(

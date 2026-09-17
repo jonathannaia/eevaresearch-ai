@@ -758,3 +758,107 @@ def test_automatic_translation_retry_continues_backoff_on_a_second_failure(tmp_p
     assert updated.translation_state == TranslationState.UNAVAILABLE
     assert updated.translation_retry_count == 1  # one retry attempt was made
     assert updated.translation_next_retry_at is not None  # a further retry remains scheduled
+
+
+# --- DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+# SUPPRESSION_DESIGN_2026_09_17.md): treasury/equity materiality gate
+# integration. Regression fixture: Wonik IPS's real September 2026
+# disclosure (employee-directed disposal of 51,456 treasury shares for
+# KRW 6,143,846,400, no operational/customer/capex/technology/earnings/
+# supply-chain content) — the title is the real, standardized DART shape
+# already used by tests/test_dart_rules.py's own fixture; the excerpt is
+# CONSTRUCTED to match the given facts (no real cached Wonik IPS filing
+# exists locally — see the design report's own §0). ---
+
+_WONIK_IPS_TREASURY_DISPOSAL_TITLE = "주요사항보고서(자기주식처분결정)"
+_WONIK_IPS_EXCERPT_CONSTRUCTED = (
+    "자기주식처분결정 1. 처분예정주식(주) 보통주식 51,456 2. 처분예정금액(원) 6,143,846,400 "
+    "3. 처분목적 임직원 성과급 지급을 위한 자기주식 처분 4. 처분방법 시간외대량매매"
+)
+
+
+def test_wonik_ips_style_treasury_disposal_candidate_resolves_to_not_material(tmp_path):
+    client = _make_client(
+        {"00126380": {1: ([_record("20260916000001", _WONIK_IPS_TREASURY_DISPOSAL_TITLE)], 1)}},
+        document_by_rcept={"20260916000001": _valid_document_zip(_WONIK_IPS_EXCERPT_CONSTRUCTED)},
+    )
+    provider = _FakeTranslationProvider()
+
+    report = radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    assert report.candidates_detected == 1
+    assert report.candidates_processed == 1
+    candidate = next(iter(candidate_store.load_candidates(tmp_path).values()))
+    # Raw source document/candidate retention: the filing/candidate is
+    # never deleted, only its terminal status changes.
+    assert candidate.filing.report_nm == _WONIK_IPS_TREASURY_DISPOSAL_TITLE
+    assert candidate.status == CandidateStatus.NOT_MATERIAL
+    assert candidate.materiality_assessment == "Not material · routine internal equity transaction"
+    # Auditable status: the full transition history still records how it
+    # got there — nothing is silently dropped.
+    assert any(t.status == CandidateStatus.NOT_MATERIAL for t in candidate.state_history)
+
+
+def test_treasury_disposal_with_control_change_marker_reaches_needs_review(tmp_path):
+    excerpt = _WONIK_IPS_EXCERPT_CONSTRUCTED + " 최대주주변경을 수반하는 처분"
+    client = _make_client(
+        {"00126380": {1: ([_record("20260916000002", _WONIK_IPS_TREASURY_DISPOSAL_TITLE)], 1)}},
+        document_by_rcept={"20260916000002": _valid_document_zip(excerpt)},
+    )
+    provider = _FakeTranslationProvider()
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    candidate = next(iter(candidate_store.load_candidates(tmp_path).values()))
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert "material marker" in candidate.materiality_assessment
+
+
+def test_treasury_disposal_with_founder_marker_reaches_needs_review(tmp_path):
+    excerpt = _WONIK_IPS_EXCERPT_CONSTRUCTED + " 최대주주 홍길동으로부터 처분"
+    client = _make_client(
+        {"00126380": {1: ([_record("20260916000003", _WONIK_IPS_TREASURY_DISPOSAL_TITLE)], 1)}},
+        document_by_rcept={"20260916000003": _valid_document_zip(excerpt)},
+    )
+    provider = _FakeTranslationProvider()
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    candidate = next(iter(candidate_store.load_candidates(tmp_path).values()))
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert "founder_or_controlling_holder_involvement" in candidate.materiality_assessment
+
+
+def test_treasury_disposal_combined_with_a_material_category_reaches_needs_review_unaffected(tmp_path):
+    # A filing that also names a real, independently-recognized category
+    # (here, facility investment) must never be routed through the
+    # treasury/equity gate at all — the second category is itself the
+    # material content.
+    client = _make_client(
+        {"00126380": {1: ([_record("20260916000004", "자기주식처분결정 및 신규시설투자등")], 1)}},
+    )
+    provider = _FakeTranslationProvider()
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    candidate = next(iter(candidate_store.load_candidates(tmp_path).values()))
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert candidate.materiality_assessment == "Not assessed"
+
+
+def test_free_float_threshold_crossing_treasury_disposal_reaches_needs_review(tmp_path):
+    excerpt = (
+        "자기주식처분결정 보유주식등의 수 및 보유비율 보유주식등의 수 보유비율 "
+        "직전 보고서 1,000,000,000 10.00 이번 보고서 1,010,000,000 10.20"
+    )
+    client = _make_client(
+        {"00126380": {1: ([_record("20260916000005", _WONIK_IPS_TREASURY_DISPOSAL_TITLE)], 1)}},
+        document_by_rcept={"20260916000005": _valid_document_zip(excerpt)},
+    )
+    provider = _FakeTranslationProvider()
+
+    radar_pipeline.run_pipeline(client, provider, [_SAMSUNG], tmp_path)
+
+    candidate = next(iter(candidate_store.load_candidates(tmp_path).values()))
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert "≥ 0.05" in candidate.materiality_assessment
