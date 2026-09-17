@@ -93,6 +93,28 @@ def test_market_rumor_response_is_excluded():
     assert map_dart_filing_to_candidate(_filing(report_nm="조회공시요구")) is None
 
 
+def test_treasury_stock_activity_is_excluded():
+    # DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    # SUPPRESSION_DESIGN_2026_09_17.md) — a bare treasury-share disposal/
+    # acquisition never reaches this adapter's approved category set,
+    # exactly like ownership_change/listing_or_market_event/market_rumor_
+    # response above. Regression fixture: Wonik IPS's real September 2026
+    # disclosure — the real, standardized DART title shape already used
+    # by tests/test_dart_rules.py's own fixture.
+    assert map_dart_filing_to_candidate(_filing(report_nm="주요사항보고서(자기주식처분결정)")) is None
+    assert map_dart_filing_to_candidate(_filing(report_nm="주요사항보고서(자기주식취득결정)")) is None
+
+
+def test_treasury_stock_activity_combined_with_an_included_category_is_still_included():
+    # A filing naming BOTH the routine treasury keyword and a real,
+    # already-approved category (here, financing's own genuine capital-
+    # raise keyword) must still be included as that other category —
+    # never silently dropped just because a treasury phrase is present.
+    candidate = map_dart_filing_to_candidate(_filing(report_nm="자기주식처분결정 및 유상증자결정"))
+    assert candidate is not None
+    assert candidate.event_category == "financing"
+
+
 # ============================================================
 # Amendment marker — excluded regardless of underlying category
 # ============================================================

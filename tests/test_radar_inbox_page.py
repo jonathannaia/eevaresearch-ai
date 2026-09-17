@@ -281,6 +281,49 @@ def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_
     assert "investment confidence" not in all_text.lower()
 
 
+def test_radar_inbox_excludes_a_not_material_treasury_disposal_from_the_default_result_set(tmp_path):
+    # DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    # SUPPRESSION_DESIGN_2026_09_17.md). Regression fixture: Wonik IPS's
+    # real September 2026 disclosure — an employee-directed disposal of
+    # 51,456 treasury shares for KRW 6,143,846,400, with no operational
+    # content. Unlike the routine-ownership NOT_MATERIAL case above (which
+    # this page still shows, unaffected), a treasury/equity-only
+    # NOT_MATERIAL candidate must not appear in the default feed at all —
+    # only this newer, narrower suppression class is in scope here.
+    _seed_corp_codes(tmp_path)
+    treasury_filing = _filing("20260916000001", "주요사항보고서(자기주식처분결정)")
+    other_filing = _filing("20260812000001", "신규시설투자등")
+    _seed_filing_events(tmp_path, [treasury_filing, other_filing])
+
+    suppressed_candidate = CandidateSignal(
+        id="cand-treasury", filing=treasury_filing,
+        matched_rules=["treasury_stock_activity:treasury_stock_disposal_or_acquisition:자기주식처분"],
+        confidence="Moderate", status=CandidateStatus.NOT_MATERIAL, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="자기주식처분결정 1. 처분예정주식(주) 보통주식 51,456 2. 처분예정금액(원) 6,143,846,400",
+        materiality_assessment="Not material · routine internal equity transaction",
+        state_history=[StateTransition(status=CandidateStatus.NOT_MATERIAL, at=_now_iso())],
+    )
+    visible_candidate = CandidateSignal(
+        id="cand-visible", filing=other_filing,
+        matched_rules=["capex_or_facility_investment:facility_investment:신규시설투자"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {
+        suppressed_candidate.id: suppressed_candidate, visible_candidate.id: visible_candidate,
+    })
+
+    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+    assert not at.exception
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "자기주식처분결정" not in all_text
+    assert "신규시설투자등" in all_text
+
+
 def _seed_edgar_ciks(cache_dir) -> None:
     # Seeds every currently-tracked EDGAR company (src/config/
     # tracked_companies.py) with a synthetic CIK, not just a fixed

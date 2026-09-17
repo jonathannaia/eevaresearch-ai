@@ -616,6 +616,38 @@ def test_proof22_module_imports_only_stdlib_and_the_one_models_module():
 
 
 # ============================================================
+# DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+# SUPPRESSION_DESIGN_2026_09_17.md) — regression
+# ============================================================
+
+
+def test_dart_not_material_treasury_disposal_is_never_selected_even_with_dart_recognized():
+    # Regression fixture: Wonik IPS's real September 2026 disclosure — an
+    # employee-directed disposal of 51,456 treasury shares for KRW
+    # 6,143,846,400. A candidate that already resolved to CandidateStatus.
+    # NOT_MATERIAL must never qualify as a research lead, regardless of
+    # whether its source is recognized (OpenDART / DART already is, by
+    # this module's own default recognized_source_names) — the
+    # status_needs_review gate alone keeps it out, so a future config
+    # change widening recognized sources can never reactivate it.
+    filing = _filing(
+        rcept_no="20260916000001", corp_code="01135941", corp_name="원익IPS", stock_code="240810",
+        report_nm="주요사항보고서(자기주식처분결정)", rcept_dt="2026-09-16", flr_nm="원익IPS",
+        source_name="OpenDART / DART",
+    )
+    candidate = _candidate(
+        id="dart-cand-wonik-1", filing=filing,
+        matched_rules=["treasury_stock_activity:treasury_stock_disposal_or_acquisition:자기주식처분"],
+        confidence="Moderate", status=CandidateStatus.NOT_MATERIAL,
+        excerpt_original="자기주식처분결정 1. 처분예정주식(주) 보통주식 51,456 2. 처분예정금액(원) 6,143,846,400",
+    )
+    result = select_research_lead(candidate, set(), _config())
+    assert result.priority == LeadPriority.NOT_QUALIFIED
+    assert "status_not_needs_review" in result.reasons
+    assert result.case_id is None
+
+
+# ============================================================
 # Proof 23 — scope guard: only the approved files changed
 # ============================================================
 

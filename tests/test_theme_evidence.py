@@ -3,6 +3,8 @@ function tests for src.logic.theme_evidence. No I/O, no Streamlit, no
 network — every fixture is directly constructed."""
 from __future__ import annotations
 
+import dataclasses
+
 from src.config.tracked_companies import TrackedCompany
 from src.logic import theme_evidence
 from src.models.daily_news_models import EditorialStory, NewsSourceReference, NewsStory, NewsStoryStatus, SourceClass
@@ -100,6 +102,64 @@ def test_recent_filing_evidence_sorts_newest_first_and_respects_the_limit():
 def test_recent_filing_evidence_empty_when_no_company_matches():
     filings = (_filing("Unrelated Corp", "20260901"),)
     assert theme_evidence.recent_filing_evidence(filings, frozenset({"Samsung Electronics"}), limit=5) == ()
+
+
+# ============================================================
+# recent_filing_evidence — DART low-value filing suppression
+# (design/DART_LOW_VALUE_FILING_SUPPRESSION_DESIGN_2026_09_17.md)
+#
+# Regression fixture: Wonik IPS's real September 2026 disclosure — an
+# employee-directed disposal of 51,456 treasury shares for KRW
+# 6,143,846,400, with no operational/customer/capex/demand/technology/
+# earnings/supply-chain content. The title shape below
+# ("주요사항보고서(자기주식처분결정)") is the real, standardized DART
+# title already used by tests/test_dart_rules.py's own fixture — no real
+# cached Wonik IPS filing exists locally (see the design report's own
+# §0), so only the title is treated as verified; the company identity
+# below is illustrative only.
+# ============================================================
+
+_WONIK_IPS_TREASURY_DISPOSAL_TITLE = "주요사항보고서(자기주식처분결정)"
+
+
+def test_recent_filing_evidence_suppresses_a_bare_treasury_disposal_filing():
+    filing = _filing("Wonik IPS Co., Ltd.", "20260916", rcept_no="wonik-1")
+    filing = dataclasses.replace(filing, report_nm=_WONIK_IPS_TREASURY_DISPOSAL_TITLE)
+    result = theme_evidence.recent_filing_evidence((filing,), frozenset({"Wonik IPS Co., Ltd."}), limit=5)
+    assert result == ()
+
+
+def test_recent_filing_evidence_does_not_suppress_other_companies_material_filings_in_the_same_call():
+    suppressed = dataclasses.replace(
+        _filing("Wonik IPS Co., Ltd.", "20260916", rcept_no="wonik-1"), report_nm=_WONIK_IPS_TREASURY_DISPOSAL_TITLE,
+    )
+    material = _filing("Samsung Electronics", "20260901", rcept_no="samsung-1")
+    result = theme_evidence.recent_filing_evidence(
+        (suppressed, material), frozenset({"Wonik IPS Co., Ltd.", "Samsung Electronics"}), limit=5,
+    )
+    assert len(result) == 1
+    assert result[0].company == "Samsung Electronics"
+
+
+def test_recent_filing_evidence_does_not_suppress_a_treasury_disposal_carrying_a_control_change_marker():
+    # Escape hatch: a title also naming a control/ownership-change marker
+    # (ownership_materiality.MATERIAL_OWNERSHIP_MARKERS) must never be
+    # suppressed, even though it also matches the bare treasury-disposal
+    # keyword.
+    filing = dataclasses.replace(
+        _filing("Wonik IPS Co., Ltd.", "20260916", rcept_no="wonik-2"),
+        report_nm=_WONIK_IPS_TREASURY_DISPOSAL_TITLE + "(최대주주변경)",
+    )
+    result = theme_evidence.recent_filing_evidence((filing,), frozenset({"Wonik IPS Co., Ltd."}), limit=5)
+    assert len(result) == 1
+
+
+def test_recent_filing_evidence_does_not_suppress_a_genuine_capital_raise():
+    # Regression: financing's own remaining keywords (유상증자 etc.) must
+    # never be suppressed — only the treasury-only category is in scope.
+    filing = dataclasses.replace(_filing("Samsung Electronics", "20260901", rcept_no="samsung-2"), report_nm="주요사항보고서(유상증자결정)")
+    result = theme_evidence.recent_filing_evidence((filing,), frozenset({"Samsung Electronics"}), limit=5)
+    assert len(result) == 1
 
 
 # ============================================================

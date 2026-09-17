@@ -548,6 +548,36 @@ def test_proof17_no_runtime_entry_point_references_orchestration_module():
     assert not offenders, offenders
 
 
+def test_dart_not_material_treasury_disposal_is_skipped_even_with_dart_allowed():
+    # DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    # SUPPRESSION_DESIGN_2026_09_17.md) — regression fixture: Wonik IPS's
+    # real September 2026 disclosure. A candidate that already resolved to
+    # CandidateStatus.NOT_MATERIAL must never produce a bundle, even when
+    # this orchestration's own allowed_source_names is explicitly widened
+    # to include DART — proving a future configuration change alone can
+    # never reactivate a suppressed record, since the status gate here is
+    # independent of source recognition.
+    filing = _filing(
+        rcept_no="20260916000001", corp_code="01135941", corp_name="원익IPS", stock_code="240810",
+        report_nm="주요사항보고서(자기주식처분결정)", rcept_dt="2026-09-16", flr_nm="원익IPS",
+        source_name="OpenDART / DART", original_language="Korean",
+    )
+    candidate = _candidate(
+        id="dart-cand-wonik-1", filing=filing,
+        matched_rules=["treasury_stock_activity:treasury_stock_disposal_or_acquisition:자기주식처분"],
+        confidence="Moderate", status=CandidateStatus.NOT_MATERIAL,
+        excerpt_original="자기주식처분결정 1. 처분예정주식(주) 보통주식 51,456 2. 처분예정금액(원) 6,143,846,400",
+    )
+    config = _config(allowed_source_names=("SEC EDGAR", "OpenDART / DART"))
+
+    result = prepare_research_case_bundles([candidate], _no_existing, config)
+
+    assert result.bundles == ()
+    assert result.skipped_count == 1
+    assert result.evaluated_count == 0
+    assert result.not_qualified_count == 0
+
+
 def test_proof18_scope_guard_only_approved_files_changed():
     result = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
     if result.returncode != 0:

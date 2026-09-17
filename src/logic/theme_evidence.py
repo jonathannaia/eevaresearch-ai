@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.config.tracked_companies import TrackedCompany
+from src.data_access.dart.low_value_filing_rules import is_low_value_filing_title
 from src.models.daily_news_models import EditorialStory, NewsStory, NewsStoryStatus
 from src.models.models import FilingEvent
 
@@ -60,8 +61,20 @@ def recent_filing_evidence(
     """Exact match against FilingEvent.corp_name — the same identity
     convention scan_service.py already establishes for every tracked
     company's own filings, never a new resolution step. Sorted newest
-    first by the filing's own stored rcept_dt, bounded to `limit`."""
-    matched = [f for f in filings if f.corp_name in company_names]
+    first by the filing's own stored rcept_dt, bounded to `limit`.
+
+    DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    SUPPRESSION_DESIGN_2026_09_17.md): this is the one place a bare
+    FilingEvent becomes visible evidence with no excerpt/category/status
+    check of any kind, so the metadata/title-only gate is applied here —
+    a routine, employee-directed treasury-share disposal/acquisition with
+    no escape-hatch marker in its own title is never shown as theme
+    evidence. Every other filing (including one dart_rules.py doesn't
+    recognize at all) is unaffected."""
+    matched = [
+        f for f in filings
+        if f.corp_name in company_names and not is_low_value_filing_title(f.report_nm)
+    ]
     matched.sort(key=lambda f: f.rcept_dt, reverse=True)
     return tuple(
         EvidenceLink(title=f.report_nm, url=f.source_url, date=f.rcept_dt, company=f.corp_name, kind="Radar filing")

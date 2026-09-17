@@ -95,7 +95,14 @@ _DART_CATEGORY_TITLES: dict[str, str] = {
     "capex_or_facility_investment": "Facility Investment",
     "supply_or_sales_contract": "Supply or Sales Contract",
     "equity_or_jv_investment": "Equity Stake or Investment Decision",
-    "financing": "Capital Raise or Treasury Stock Action",
+    # "... or Treasury Stock Action" was dropped from this label (DART
+    # low-value filing suppression design, design/DART_LOW_VALUE_FILING_
+    # SUPPRESSION_DESIGN_2026_09_17.md): treasury-share keywords moved to
+    # their own `treasury_stock_activity` category below, so this
+    # category's real remaining keywords are capital-raise/dividend terms
+    # only.
+    "financing": "Capital Raise or Dividend Decision",
+    "treasury_stock_activity": "Treasury Stock Disposal or Acquisition",
     "listing_or_market_event": "Listing Decision",
     "ownership_change": "Major Shareholder Change",
     "risk_disclosure": "Risk or Incident Disclosure",

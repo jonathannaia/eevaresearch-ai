@@ -35,7 +35,7 @@ import streamlit as st
 
 from src.config.settings import Settings, get_settings
 from src.data_access import backend_factory
-from src.data_access.dart import candidate_store, radar_service
+from src.data_access.dart import candidate_store, low_value_filing_rules, radar_service
 from src.data_access.dart import scan_service as dart_scan_service
 from src.data_access.edgar import edgar_pipeline, edgar_service
 from src.data_access.edgar import scan_service as edgar_scan_service
@@ -43,6 +43,7 @@ from src.data_access.edinet import edinet_pipeline, edinet_service
 from src.data_access.edinet import scan_service as edinet_scan_service
 from src.logic.formatting import today_local
 from src.logic.radar_freshness import compute_radar_freshness
+from src.models.models import CandidateStatus
 from src.ui.components.empty_state import empty_state
 from src.ui.components.radar_card import candidate_row
 from src.ui.components.radar_status import RadarItem
@@ -236,6 +237,26 @@ def _radar_sort_key(item: RadarItem):
     return (1, 0.0, item.filing.source_name, item.filing.rcept_no)
 
 
+def _is_low_value_suppressed(item: RadarItem) -> bool:
+    """DART low-value filing suppression (design/DART_LOW_VALUE_FILING_
+    SUPPRESSION_DESIGN_2026_09_17.md) — excluded from this page's default/
+    public result set entirely, not merely relabeled. Scoped narrowly:
+    only a candidate whose matched_rules are exclusively the
+    `treasury_stock_activity` category (see low_value_filing_rules.py,
+    the same predicate radar_pipeline.py's own excerpt-based gate uses)
+    AND whose status has already resolved to CandidateStatus.NOT_MATERIAL.
+    Deliberately does NOT touch any other NOT_MATERIAL candidate (e.g. a
+    routine ownership-change update) — that pre-existing default-display
+    behavior is unrelated to this suppression class and is left unchanged.
+    The underlying FilingEvent/CandidateSignal is never deleted or
+    altered by this check — only this page's own default rendering skips
+    it; the raw record remains on disk for auditability."""
+    candidate = item.candidate
+    if candidate is None or candidate.status != CandidateStatus.NOT_MATERIAL:
+        return False
+    return low_value_filing_rules.matched_rules_are_low_value_only(candidate.matched_rules)
+
+
 def _load_source_items(source: str, cache_dir, settings: Settings | None, json_filings, json_candidates):
     """Durable-State Phase 2B (sqlite) / 4M-1 (postgres) — the one place
     `_build_items` decides, per source, whether to read through a
@@ -302,6 +323,8 @@ def _build_items(cache_dir, settings: Settings | None = None) -> list[RadarItem]
     )
     edinet_by_doc_id = {c.filing.rcept_no: c for c in edinet_candidates.values()}
     items += [RadarItem(filing=f, candidate=edinet_by_doc_id.get(f.rcept_no)) for f in edinet_filings]
+
+    items = [i for i in items if not _is_low_value_suppressed(i)]
 
     return sorted(items, key=_radar_sort_key)
 
