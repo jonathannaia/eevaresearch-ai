@@ -60,6 +60,7 @@ def test_qualifying_item_is_published(tmp_path, monkeypatch):
     story = next(iter(stories.values()))
     assert story.headline == "Oracle Corporation reports strong AI cloud demand"
     assert story.matched_companies == ("Oracle Corporation",)
+    assert story.identified_companies == ("Oracle Corporation",)
     assert story.matched_themes == ("ai-buildout",)
     assert story.publisher == "CNBC"
     assert story.source_url == "https://www.cnbc.com/2026/09/11/oracle-ai-cloud.html"
@@ -2135,3 +2136,99 @@ def test_regression_official_driver_security_patch_remains_eligible(tmp_path, mo
     assert report.stories_published == 1
     story = next(iter(stories.values()))
     assert story.matched_companies == ("NVIDIA",)
+
+
+# ============================================================
+# identified_companies vs. matched_companies (design/DAILY_NEWS_
+# IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md, design/
+# DAILY_NEWS_COMPANY_ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md)
+# — end-to-end regression matrix, all six fixtures. Fixtures 1 (Oracle
+# baseline, extended above in test_qualifying_item_is_published) and 5
+# (RTX hobbyist/modding, test_regression_rtx_laptop_power_limit_
+# unofficial_tool_is_rejected above) already cover their own rows;
+# fixtures 2-4 below are new. Alias text is deliberately exact — bare
+# "Amazon"/"Meta"/"Generac" are NOT valid aliases in the real matcher
+# (company_aliases.py deliberately excludes ambiguous single-word brand
+# names); "Amazon Web Services", "Meta Platforms", and "Generac
+# Holdings" are the real, tested aliases used instead.
+# ============================================================
+
+
+def test_end_to_end_named_two_issuer_supply_agreement_both_companies_survive_attribution(tmp_path, monkeypatch):
+    """Fixture 2 (Generac/AWS-style named supply agreement) — synthetic,
+    authored text using real, tested company aliases. Both companies are
+    title-placed and genuinely named actors in a commercial relationship
+    — neither should be dropped; identified_companies and
+    matched_companies should be equal, both companies, in order."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Generac Holdings signs multi-year supply agreement with Amazon Web Services to provide backup "
+        "power systems for data centers",
+        "Generac Holdings announced a new multi-year supply agreement under which Generac Holdings will "
+        "provide backup power generation systems for Amazon Web Services data center facilities. Amazon "
+        "Web Services confirmed the agreement as part of its data center power resiliency buildout.",
+        source_id="test-generac-aws-supply",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.identified_companies == ("Amazon.com, Inc.", "Generac Holdings Inc.")
+    assert story.matched_companies == ("Amazon.com, Inc.", "Generac Holdings Inc.")
+
+
+def test_end_to_end_named_multi_company_infrastructure_deployment_both_companies_survive_attribution(
+    tmp_path, monkeypatch,
+):
+    """Fixture 3 (CoreWeave/NVIDIA-style named infrastructure
+    deployment) — synthetic, authored text using real, tested company
+    aliases. Both companies are title-placed and genuine actors in an
+    official technical deployment — neither should be dropped."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "CoreWeave deploys new NVIDIA GB200 cluster to expand AI cloud capacity",
+        "CoreWeave announced it has deployed a new cluster of NVIDIA GB200 GPUs, expanding its AI cloud "
+        "infrastructure capacity. CoreWeave said the NVIDIA-powered cluster will support enterprise AI "
+        "training workloads.",
+        source_id="test-coreweave-nvidia-deployment",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.identified_companies == ("CoreWeave, Inc.", "NVIDIA")
+    assert story.matched_companies == ("CoreWeave, Inc.", "NVIDIA")
+
+
+def test_end_to_end_private_startup_incidental_tracked_company_mention_excluded_from_matched_companies(
+    tmp_path, monkeypatch,
+):
+    """Fixture 4 (private third-party/startup story merely mentioning a
+    tracked company) — synthetic, authored text, engineered so the story
+    admits via a genuine theme match ("humanoids") rather than any
+    company subject, isolating the incidental-mention case: Meta
+    Platforms is raw-matched (a passive "including headsets from ..."
+    listing, no title placement, no action language) but never the
+    story's subject. identified_companies must still record the raw
+    mention (diagnostic-only); matched_companies must exclude it — the
+    one fixture in this matrix demonstrating a real behavior difference
+    from the pre-fix pipeline."""
+    report, stories = _run_single_item(
+        tmp_path, monkeypatch,
+        "Startup smartARM unveils new humanoid robot arm for home assistance tasks",
+        "smartARM, a private robotics startup, unveiled a new humanoid robot arm this week aimed at home "
+        "assistance tasks. The arm can be paired over Bluetooth with a variety of third-party VR headsets "
+        "for remote teleoperation, including headsets from Meta Platforms and other manufacturers.",
+        source_id="test-smartarm-meta-incidental",
+    )
+    assert report.stories_published == 1
+    story = next(iter(stories.values()))
+    assert story.identified_companies == ("Meta Platforms, Inc.",)
+    assert story.matched_companies == ()
+
+    # A raw-only mention must not flow into anything a visible consumer
+    # reads: the existing, unmodified company filter (the same function
+    # daily_news.py's own company selectbox calls) filters on
+    # matched_companies membership, never identified_companies — proving
+    # this story is correctly invisible under a "Meta Platforms, Inc."
+    # filter even though the company was genuinely recognized in text.
+    visible_under_meta_filter = editorial_pipeline.select_visible_editorial_stories_for_company(
+        stories, "Meta Platforms, Inc.",
+    )
+    assert visible_under_meta_filter == ()

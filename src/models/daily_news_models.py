@@ -155,7 +155,20 @@ class EditorialStory:
     one of matched_companies/matched_themes is always non-empty; there is
     no "unmatched" or "suppressed" EditorialStory, mirroring this
     project's established "don't construct what can't be shown" pattern
-    (see e.g. the Federal Register Policy Monitor Pilot)."""
+    (see e.g. the Federal Register Policy Monitor Pilot).
+
+    identified_companies vs. matched_companies (design/DAILY_NEWS_
+    IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md, design/
+    DAILY_NEWS_COMPANY_ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md)
+    — two deliberately different lists, never interchangeable:
+    identified_companies is raw, pre-attribution text recognition (every
+    tracked company whose alias appears in the source title/description),
+    for internal diagnostics/audit/future relationship-intelligence
+    input only — it must never itself drive a visible card tag or company
+    filter. matched_companies is the narrower, admission-vetted subset —
+    only companies independently confirmed as the story's genuine subject
+    — and remains the sole source for visible tags, Dashboard display,
+    and company filtering, exactly as before this pair of fields existed."""
 
     id: str  # deterministic, from (canonical source_url) or (normalized headline, publisher) — see editorial_pipeline.py
     headline: str  # the source's own title, verbatim — never rewritten
@@ -164,7 +177,7 @@ class EditorialStory:
     published_at: str  # ISO 8601, source-claimed
     retrieved_at: str  # ISO 8601, when EevaResearch fetched it
     excerpt: str | None  # bounded extractive excerpt from the feed's own description field only; None means omit entirely — never a fallback sentence, never invented
-    matched_companies: tuple[str, ...]  # zero-to-many real TrackedCompany.name values
+    matched_companies: tuple[str, ...]  # zero-to-many admission-vetted TrackedCompany.name subjects — the sole source for visible tags/filtering, see class docstring
     matched_themes: tuple[str, ...]  # one-to-many theme slugs
     source_feed_id: str  # the DailyNewsSourceEntry.source_id this item came from — for per-source cap/failure-isolation bookkeeping
     # Materiality classification (design/DECISIONS.md) — same additive,
@@ -173,3 +186,13 @@ class EditorialStory:
     # contract.
     materiality_tier: NewsMaterialityTier | None = None
     materiality_reasons: tuple[str, ...] = ()
+    # Raw company recognition (design/DAILY_NEWS_IDENTIFIED_VS_MATCHED_
+    # COMPANIES_DISCOVERY_2026_09_16.md) — every tracked company whose
+    # alias appears in the source title/description, BEFORE any
+    # attribution/admission check. Diagnostic/audit/future-relationship-
+    # intelligence input only — never itself a visible tag or filter
+    # match; see matched_companies for the attributed subset that
+    # actually drives display. Additive, safe-default: () for every
+    # record persisted before this field existed, never backfilled
+    # automatically — same contract as materiality_tier above.
+    identified_companies: tuple[str, ...] = ()

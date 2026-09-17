@@ -1163,6 +1163,12 @@ def test_rtx_laptop_power_limit_unofficial_tool_is_rejected():
     )
     assert decision.admitted is False
     assert decision.reason.startswith("hobbyist_modding_format:")
+    # Rejected — no persisted story will ever exist for this item, but
+    # the decision itself must still report zero attributed companies,
+    # never NVIDIA, even though NVIDIA was genuinely title-placed and
+    # transiently recognized during matching (design/DAILY_NEWS_
+    # IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md).
+    assert decision.identified_companies == ()
 
 
 def test_general_non_company_overclock_mod_diy_item_is_rejected():
@@ -1193,6 +1199,7 @@ def test_official_nvidia_driver_security_patch_remains_eligible():
     )
     assert decision.admitted is True
     assert decision.reason == "company_subject:NVIDIA"
+    assert decision.identified_companies == ("NVIDIA",)
 
 
 def test_hobbyist_modding_phrases_never_contain_a_bare_power_gpu_or_developer_term_standalone():
@@ -1207,3 +1214,65 @@ def test_hobbyist_modding_phrases_never_contain_a_bare_power_gpu_or_developer_te
     forbidden_bare_terms = ("power", "gpu", "developer", "gaming", "tool", "github", "driver")
     for phrase in editorial_admission._HOBBYIST_MODDING_PHRASES:
         assert phrase.lower() not in forbidden_bare_terms
+
+
+# ============================================================
+# AdmissionDecision.identified_companies (design/DAILY_NEWS_IDENTIFIED_
+# VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md, design/DAILY_NEWS_
+# COMPANY_ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md) — the real,
+# vetted per-company subject list (formerly discarded after admission),
+# now threaded all the way out of assess_admission(). Alias text is
+# deliberately exact — bare "Amazon"/"Meta"/"Generac" are NOT valid
+# aliases in the real matcher (company_aliases.py deliberately excludes
+# ambiguous single-word brand names); "Amazon Web Services", "Meta
+# Platforms", and "Generac Holdings" are the real, tested aliases used
+# instead.
+# ============================================================
+
+
+def test_named_two_issuer_supply_agreement_both_companies_are_attributed():
+    """Fixture 2 (Generac/AWS-style named supply agreement) — synthetic,
+    authored text. Both companies are title-placed genuine actors; the
+    admission-vetted list must include both, in match order, never
+    collapsed to one issuer."""
+    decision = _assess(
+        "Generac Holdings signs multi-year supply agreement with Amazon Web Services to provide backup "
+        "power systems for data centers",
+        "Generac Holdings announced a new multi-year supply agreement under which Generac Holdings will "
+        "provide backup power generation systems for Amazon Web Services data center facilities. Amazon "
+        "Web Services confirmed the agreement as part of its data center power resiliency buildout.",
+    )
+    assert decision.admitted is True
+    assert decision.identified_companies == ("Amazon.com, Inc.", "Generac Holdings Inc.")
+
+
+def test_named_multi_company_infrastructure_deployment_both_companies_are_attributed():
+    """Fixture 3 (CoreWeave/NVIDIA-style named infrastructure
+    deployment) — synthetic, authored text. Both companies are
+    title-placed genuine actors in an official technical deployment."""
+    decision = _assess(
+        "CoreWeave deploys new NVIDIA GB200 cluster to expand AI cloud capacity",
+        "CoreWeave announced it has deployed a new cluster of NVIDIA GB200 GPUs, expanding its AI cloud "
+        "infrastructure capacity. CoreWeave said the NVIDIA-powered cluster will support enterprise AI "
+        "training workloads.",
+    )
+    assert decision.admitted is True
+    assert decision.identified_companies == ("CoreWeave, Inc.", "NVIDIA")
+
+
+def test_private_startup_incidental_tracked_company_mention_is_not_attributed():
+    """Fixture 4 (private third-party/startup story merely mentioning a
+    tracked company) — synthetic, authored text, engineered so the story
+    admits via a genuine theme match ("humanoids") rather than any
+    company subject. Meta Platforms is raw-matched (a passive "including
+    headsets from ..." listing — no title placement, no action language)
+    but must never be attributed as the subject."""
+    decision = _assess(
+        "Startup smartARM unveils new humanoid robot arm for home assistance tasks",
+        "smartARM, a private robotics startup, unveiled a new humanoid robot arm this week aimed at home "
+        "assistance tasks. The arm can be paired over Bluetooth with a variety of third-party VR headsets "
+        "for remote teleoperation, including headsets from Meta Platforms and other manufacturers.",
+    )
+    assert decision.admitted is True
+    assert decision.reason == "theme_subject:humanoids"
+    assert decision.identified_companies == ()

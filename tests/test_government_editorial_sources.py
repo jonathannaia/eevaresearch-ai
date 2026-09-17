@@ -77,21 +77,33 @@ def test_on_topic_real_sample_style_item_matches():
 # ============================================================
 
 
-def test_editorial_story_has_no_new_persisted_field():
-    # Government / Public Sector Daily News lane (design/DECISIONS.md)
-    # deliberately added zero fields to this dataclass — the badge label
-    # is derived at render time from the already-existing
-    # source_feed_id (see src/ui/components/editorial_coverage.py). This
-    # test's own name/scope is specifically about THAT batch, so it's
-    # still the right regression guard to keep — but a later, separately-
-    # approved batch (Signals materiality classification, design/
-    # DECISIONS.md) did add two new, additive, safe-default fields
-    # (materiality_tier/materiality_reasons — see NewsMaterialityTier's
-    # own docstring), so the exact-field-set assertion below now includes
-    # them explicitly rather than silently going stale.
+def test_editorial_story_persisted_field_set_is_exactly_as_expected():
+    # Renamed from test_editorial_story_has_no_new_persisted_field — that
+    # name became inaccurate once any field was ever added, and stayed
+    # inaccurate through this exact-field-set guard's own history of
+    # updates (see below); the invariant this test protects was always
+    # "every persisted field is explicitly enumerated here, so an
+    # unexpected future field fails loudly," never "no field is ever
+    # added." Government / Public Sector Daily News lane (design/
+    # DECISIONS.md) deliberately added zero fields to this dataclass —
+    # the badge label is derived at render time from the already-
+    # existing source_feed_id (see src/ui/components/
+    # editorial_coverage.py). A later, separately-approved batch
+    # (Signals materiality classification, design/DECISIONS.md) added
+    # two new, additive, safe-default fields (materiality_tier/
+    # materiality_reasons — see NewsMaterialityTier's own docstring).
+    # Most recently, the identified_companies vs. matched_companies
+    # correction (design/DAILY_NEWS_IDENTIFIED_VS_MATCHED_COMPANIES_
+    # DISCOVERY_2026_09_16.md, design/DAILY_NEWS_COMPANY_ATTRIBUTION_
+    # IMPLEMENTATION_READINESS_2026_09_16.md) added one more additive,
+    # safe-default field (identified_companies — raw, pre-attribution
+    # company recognition; see EditorialStory's own docstring). The
+    # exact-field-set assertion below is updated each time, explicitly,
+    # rather than silently going stale or being weakened to a subset
+    # check.
     field_names = {f.name for f in dataclasses.fields(EditorialStory)}
     assert field_names == {
         "id", "headline", "publisher", "source_url", "published_at", "retrieved_at",
         "excerpt", "matched_companies", "matched_themes", "source_feed_id",
-        "materiality_tier", "materiality_reasons",
+        "materiality_tier", "materiality_reasons", "identified_companies",
     }
