@@ -46,71 +46,98 @@
    picks up the new look automatically; only the handful of rules noted
    inline (card border/hover behavior, button radius, sidebar width) are
    direct rule edits rather than pure token swaps, since those describe
-   different *shapes*, not just different colors. */
+   different *shapes*, not just different colors.
+
+   Application-shell dark/dim pass (design/DECISIONS.md, Perplexity-
+   inspired sidebar layout — narrowly scoped to the app shell, not a full
+   redesign) — a third full token replacement, same discipline again:
+   near-black/slate surfaces, muted-but-readable secondary text, one
+   consistent indigo accent (re-tuned lighter — indigo-400 #818CF8 rather
+   than the previous indigo-600 #4F46E5 — since the darker shade is too
+   low-luminance to read clearly as text/icon color against a near-black
+   surface; #4F46E5 is kept only as a solid-fill CTA background, still
+   under white label text, where its own darkness is irrelevant). Every
+   value below was verified against the same WCAG contrast math the prior
+   pass used (see tests/test_visual_theme_redesign.py, revised in place
+   again for this palette): primary text ≥15:1, secondary text ≥8.5:1,
+   muted text ≥5:1, the accent ≥5.4:1, and the three status colors ≥4.7:1
+   — all against every one of this palette's four real surfaces
+   (--bg/--rail/--surface/--surface-2), comfortably clear of the 4.5:1 AA
+   normal-text floor with the near-black backgrounds' extra contrast
+   headroom. --hairline-2 (the one functional-border token, same role as
+   the prior pass's own nudged value) is the lightest neutral slate that
+   still clears 3:1 in the worst case (against --surface-2, the lightest
+   of the four backgrounds — 3.38:1). Layout, components, copy, and
+   button/chip mechanics are unchanged; only the color values feeding
+   them moved, plus the sidebar-shell-specific structural rules added
+   further down this file for the brand+search header row and the
+   bottom-anchored account control. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-    /* Backgrounds — page / sidebar / card / elevated-hover / native-widget. */
-    --bg: #FAFAFA;
-    --rail: #FFFFFF;
-    --surface: #FFFFFF;
-    --surface-2: #F3F4F6;
+    /* Backgrounds — page / sidebar / card / elevated-hover / native-widget.
+       Near-black, not pure black (brief: "near-black/slate", not #000) —
+       a true black against off-white text measures well past any AA floor
+       but reads harsher/flatter than a dim slate; #0B0D10 keeps the same
+       "restrained, low-contrast surfaces" character the brief asks for. */
+    --bg: #0B0D10;
+    --rail: #0E1013;
+    --surface: #16181D;
+    --surface-2: #1D2026;
     /* Third elevation tier for track/badge/disabled fills (breadth-bar
        track, unread-count badge, disabled-button background) — not one of
        the seven given tokens (the palette only names 5 surface roles), but
        every one of those roles is already spoken for by --bg/--rail/
        --surface/--surface-2/--surface-input, so this fills the one
        remaining internal role the previous palette's --surface-3 also
-       filled, kept deliberately subtle (contrast ~1.2:1 against white —
-       barely differentiated, by design, for a "track" rather than a card). */
-    --surface-3: #E5E7EB;
-    --surface-input: #FFFFFF;
+       filled. */
+    --surface-3: #262A31;
+    --surface-input: #16181D;
     /* Borders: --hairline is decorative (dividers, footer rules, chart
-       gridlines) with no contrast floor of its own. --hairline-2 is the
+       gridlines) with no contrast floor of its own — kept subtle/low-
+       contrast on purpose, restrained per the brief. --hairline-2 is the
        functional UI-component boundary (secondary-button/input/chip
-       outlines) — kept ≥3:1 against every surface above, which the
-       literally-specified #8FA6BF does not quite clear on its own
-       (2.29:1-2.51:1 measured against these four backgrounds); #7A8DA2 is
-       that same color ~15% darker, chosen as the lightest step that still
-       clears 3:1 in the worst case (sidebar, 3.11:1). Input surfaces are
-       white-on-white with their container card, so this border is the
-       *only* way an input's boundary is perceivable here — not a
+       outlines) — kept ≥3:1 against every surface above; see this file's
+       own header comment for the exact math and why #6B7280 (not a
+       lighter/darker neighbor) is the chosen value. Input surfaces sit on
+       --surface-input == --surface here (both #16181D), so this border is
+       the *only* way an input's boundary is perceivable — not a
        decorative nicety. */
-    --hairline: #E5E7EB;
-    /* --hairline-2 stays at its original, contrast-verified value (see
-       the comment above) — it is the FUNCTIONAL border for inputs,
-       secondary buttons, and other controls whose only visible boundary
-       this is; #D1D5DB (the approved card-hover border color) measures
-       ~1.5:1 against white, well under the 3:1 floor those controls
-       actually need, so it is deliberately NOT reused there. The new
-       --card-border-hover token below is the one place #D1D5DB is used —
-       a card's hover state is supplementary (the card's shape/shadow are
-       still visible either way), not the sole way to perceive it. */
-    --hairline-2: #7A8DA2;
-    --card-border-hover: #D1D5DB;
-    --text: #111827;
-    --text-2: #374151;
+    --hairline: #23262D;
+    --hairline-2: #6B7280;
+    --card-border-hover: #838B99;
+    --text: #F5F6F7;
+    --text-2: #B7BCC4;
     /* Only three text tiers in this palette (Primary/Secondary/Muted) —
-       the previous four-tier ramp's two dimmest steps (text-3/text-4)
-       both collapse onto the one Muted value, per spec (#6B7280). --rail
-       is now the same white as --surface (sidebar redesign, above), so
-       the previous --rail-specific contrast shortfall this comment used
-       to document no longer applies — the --text-2 sidebar-label
-       call-site overrides noted below are harmless leftovers (still
-       correct, just no longer strictly required) rather than something
-       that needed reverting. */
-    --text-3: #6B7280;
-    --text-4: #6B7280;
-    /* Primary CTA fill/label — indigo-600 fill, white label (user-approved
-       preview design; ~8.6:1 label contrast). */
+       matches the prior pass's own three-tier convention; the two
+       dimmest steps (text-3/text-4) both collapse onto the one Muted
+       value. */
+    --text-3: #8B909A;
+    --text-4: #8B909A;
+    /* Primary CTA fill/label — indigo-600 fill, white label (kept
+       unchanged from the prior pass; ~6.3:1 label contrast, still well
+       past 4.5:1 — a solid-fill button's own darkness never depends on
+       the page's ambient background). */
     --invert-bg: #4F46E5;
     --invert-fg: #FFFFFF;
-    --glow: rgba(79, 70, 229, .18);
-    --accent: #4F46E5;
+    --glow: rgba(129, 140, 248, .35);
+    --accent: #818CF8;
+    /* --accent-hover is a solid button-fill hover background (three real
+       call sites — the primary CTA's own hover state, plus two more —
+       always under white label text), never a text/link color, so unlike
+       --accent it does NOT get re-tuned lighter for this pass: a fill's
+       own darkness is irrelevant to the page's ambient background, only
+       to the white text sitting on it (7.9:1 here, comfortably past
+       4.5:1) — kept at the prior pass's own #4338CA unchanged. See the
+       a:hover rule (below the Streamlit-chrome section) for the one
+       place this token used to double as a plain-text hover color; that
+       rule now reads var(--accent) instead, since a dark indigo fill
+       color would be low-contrast as text against this pass's near-black
+       page background. */
     --accent-hover: #4338CA;
-    --accent-soft: #EEF2FF;
-    --focus: #4F46E5;
-    --link: #4F46E5;
+    --accent-soft: #23223F;
+    --focus: #818CF8;
+    --link: #818CF8;
     --r-sm: 8px;
     --r-md: 12px;
     --r-lg: 16px;
@@ -120,18 +147,20 @@
     /* Restrained semantic direction accents only — see note above.
        Green = positive/confirmed, amber = watch/uncertain, rose =
        risk/negative. Never used as a large fill (dots/rails/tinted-pill
-       backgrounds only). The *-dim tints are deliberately much lower
-       alpha (.06) than the color's own saturation would suggest — on a
-       white ground, mixing more of a dark status color into the tint
-       darkens the pill background and erodes the text-on-tint contrast;
-       .06 is the lightest alpha that still clears 4.5:1 for every one of
-       the three colors used as text on its own tint. */
-    --pos: #087F5B;
-    --pos-dim: rgba(8, 127, 91, .06);
-    --neg: #B4233C;
-    --neg-dim: rgba(180, 35, 60, .06);
-    --mix: #9A6700;
-    --mix-dim: rgba(154, 103, 0, .06);
+       backgrounds only). The *-dim tints mix the status color into
+       --surface (#16181D, the real ambient background every status tag/
+       chip/alert actually renders on) at .16 alpha — verified to still
+       clear 4.5:1 for text-on-its-own-tint at that alpha (see
+       tests/test_visual_theme_redesign.py); a near-black ground has more
+       contrast headroom than the prior white-ground palette did, so a
+       slightly higher alpha than that pass's .06 still reads as a
+       restrained tint, not a loud fill. */
+    --pos: #2ED99C;
+    --pos-dim: rgba(46, 217, 156, .16);
+    --neg: #F87171;
+    --neg-dim: rgba(248, 113, 113, .16);
+    --mix: #FBBF24;
+    --mix-dim: rgba(251, 191, 36, .16);
     /* Spacing rhythm (final polish pass) — a shared scale so every
        component reaches for one of these instead of a one-off margin.
        4: tight label/value pair. 8: related inline metadata. 12: small
@@ -217,7 +246,12 @@ p, li, span, div { letter-spacing: -0.006em; }
    wins the cascade regardless, so this only reaches genuinely plain,
    unclassed anchors (e.g. native markdown-syntax links). */
 a { color: var(--link); }
-a:hover { color: var(--accent-hover); }
+/* --accent-hover is a solid button-fill color (white-text-safe, kept
+   dark regardless of theme — see its own :root comment) — using it here
+   too would be low-contrast as plain hover text against this pass's
+   near-black page background, so plain-link hover reuses --accent
+   itself (no separate darker/lighter hover shade for inline text). */
+a:hover { color: var(--accent); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
@@ -423,17 +457,52 @@ a:hover { color: var(--accent-hover); }
     border-right: 1px solid var(--hairline);
     width: 240px !important; min-width: 240px !important; max-width: 240px !important;
 }
-[data-testid="stSidebar"] > div:first-child { padding-top: 1rem; }
+/* Application-shell dark/dim pass (Perplexity-inspired layout): this is
+   the same scroll-content wrapper the pre-existing padding-top rule
+   below already targets (verified in this exact Streamlit version,
+   1.61.1, pinned in requirements.txt as streamlit>=1.38,<2.0 — a future
+   major-version upgrade should re-verify this testid before relying on
+   it further). Turning it into a full-height flex column is what lets
+   .er-rail-account's own `margin-top: auto` (further down) anchor the
+   account control to the sidebar's visual bottom via a native layout
+   mechanism, never absolute/fixed positioning (which would fight
+   Streamlit's own scroll/resize behavior) — degrades gracefully on a
+   short viewport too: once nav content is taller than the sidebar, the
+   auto margin simply resolves to 0 and the account control sits directly
+   after the nav, reachable by scrolling, rather than being clipped. */
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1rem;
+    display: flex; flex-direction: column; min-height: 100vh;
+}
+/* Brand mark/wordmark at top-left, a compact search trigger directly
+   beside it (application-shell dark/dim pass) — three real st.columns
+   (logo | wordmark link | search button), laid out via flexbox at the
+   CSS level only for the decorative wrapper div itself; the widgets
+   inside are Streamlit's own, not reimplemented (see render_sidebar()'s
+   own docstring/comments in src/ui/ui.py). */
 .er-rail-brand {
-    display: flex; align-items: center; gap: 0.55rem;
+    display: flex; align-items: center; gap: 0.4rem;
     padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--hairline);
     margin-bottom: 1rem;
 }
+.er-rail-brand > div[data-testid="stHorizontalBlock"] { width: 100%; align-items: center; }
 /* 22px logo beside a 14.5px semibold wordmark, per brief §17. */
 .er-rail-logo { width: 22px; height: 22px; display: inline-flex; }
 .er-rail-logo img, .er-rail-logo svg { width: 100%; height: 100%; object-fit: contain; }
 .er-rail-word { font-weight: 600; font-size: 14.5px; color: var(--text); letter-spacing: 0.01em; }
 .er-rail-brand [data-testid="stPageLink"] a p { font-weight: 600 !important; font-size: 14.5px !important; }
+/* Compact search icon button (render_palette_trigger(compact=True)) —
+   the same cta-secondary button every other rendering of this trigger
+   uses, constrained to a small square here rather than the full-width
+   treatment its default rendering gets elsewhere. Scoped to the brand
+   row only, via the existing st-key-cta-secondary-{PALETTE_TRIGGER_KEY}
+   container class (src/ui/components/command_palette.py) — never a
+   generic/global button-size override. */
+.er-rail-brand [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"] {
+    width: 34px !important; height: 34px !important; min-height: 34px !important;
+    padding: 0 !important; border-radius: var(--r-sm) !important;
+    display: flex !important; align-items: center; justify-content: center;
+}
 .er-rail-group-label {
     font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
     /* sidebar contrast fix: --text-4/muted is 4.34:1 on --rail, just under
@@ -477,25 +546,25 @@ a:hover { color: var(--accent-hover); }
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-dashboard .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes [data-testid="stPageLink"] a::before {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes .er-rail-navactive [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%234F46E5%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23818CF8%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
@@ -506,38 +575,29 @@ a:hover { color: var(--accent-hover); }
 /* sidebar contrast fix — see :root comment. */
 .er-rail-footlinks [data-testid="stPageLink"] a p { font-size: 0.74rem; color: var(--text-2); }
 
-/* ---------- top bar (modern editorial redesign, user-approved preview) ----------
-   Sticky search (⌘K) + avatar dropdown, above every page's own content —
-   see src/ui/ui.py::_render_topbar(). The real search button and avatar
-   popover are laid out by st.columns immediately inside this wrapper;
-   the wrapper itself only supplies the sticky/border/padding chrome, so
-   no real Streamlit widget needs to be nested inside a raw
-   unsafe_allow_html block (not supported). */
-.er-topbar-anchor {
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--hairline);
-    padding: var(--space-3) 0; margin: -1.25rem 0 var(--space-5) 0;
-}
-/* The search trigger is render_palette_trigger()'s own existing
-   cta-secondary button (unchanged mechanism) — already picks up the new
-   token colors/8px radius from the shared button rules above; only its
-   width is loosened here so it reads as a search field, not a small
-   pill button, inside the top bar's wide left column. */
-.er-topbar-anchor [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"] {
-    width: 100%; justify-content: flex-start !important;
+/* ---------- sidebar account control (application-shell dark/dim pass) ----------
+   Anchored to the visual bottom of the sidebar — see src/ui/ui.py::
+   _render_sidebar_account() and the [data-testid="stSidebar"] > div:
+   first-child flex-column rule above this file's own "sidebar rail"
+   section. Previously a sticky top bar hosted this (and the search
+   trigger) above the main content; both moved into the sidebar and the
+   top bar itself was retired, so no equivalent sticky-wrapper rule
+   carries forward from it here. */
+.er-rail-account {
+    margin-top: auto; padding-top: var(--space-3);
+    border-top: 1px solid var(--hairline);
 }
 /* Avatar popover trigger — a plain st.popover button restyled into a
-   circular avatar. Scoped to the topbar-avatar-* container key prefix
+   circular avatar. Scoped to the sidebar-account-* container key prefix
    so it can never affect any other popover a page might add. */
-[class*="st-key-topbar-avatar-"] [data-testid="stPopoverButton"],
-[class*="st-key-topbar-avatar-"] [data-testid="stBaseButton-secondary"] {
+[class*="st-key-sidebar-account-"] [data-testid="stPopoverButton"],
+[class*="st-key-sidebar-account-"] [data-testid="stBaseButton-secondary"] {
     width: 32px !important; height: 32px !important; border-radius: 50% !important;
     background: var(--accent) !important; color: var(--invert-fg) !important;
     font-weight: 600 !important; padding: 0 !important; border: none !important;
-    margin-left: auto; display: flex !important; align-items: center; justify-content: center;
+    display: flex !important; align-items: center; justify-content: center;
 }
-.er-topbar-avatar-email { font-size: 0.8rem; color: var(--text-2); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--hairline); margin-bottom: 0.5rem; word-break: break-all; }
+.er-rail-account-email { font-size: 0.8rem; color: var(--text-2); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--hairline); margin-bottom: 0.5rem; word-break: break-all; }
 
 /* live-status dot (the one non-breadth-bar permitted motion instance) */
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-3); }
@@ -701,8 +761,8 @@ a:hover { color: var(--accent-hover); }
 [data-testid="stChatInput"] textarea:focus-visible {
     outline: 2px solid var(--focus) !important; outline-offset: 2px;
 }
-/* stPopoverButton (the top bar's circular avatar trigger,
-   [class*="st-key-topbar-avatar-"] rule above) carries only its own
+/* stPopoverButton (the sidebar's circular account-avatar trigger,
+   [class*="st-key-sidebar-account-"] rule above) carries only its own
    testid, never stBaseButton-secondary — found during the redesign's
    keyboard/focus audit, since every other button in the app happens to
    carry stBaseButton-secondary and was already covered. Its focus ring
@@ -775,10 +835,11 @@ a:hover { color: var(--accent-hover); }
    outer border; separation is by surface value") and separated cards by
    background-on-hover instead. The approved redesign reverses that
    specific decision on purpose: every card now carries a real, always-
-   visible 1px border (--hairline, #E5E7EB), and hover darkens the border
-   (--card-border-hover, #D1D5DB) rather than changing the fill — the
-   card stays white in both states. Radius/padding/spacing scale are
-   unchanged from before. */
+   visible 1px border (--hairline), and hover darkens the border
+   (--card-border-hover) rather than changing the fill — the card stays
+   the same surface tone in both states (dark-pass update: --surface, not
+   white, per the application-shell dark/dim pass). Radius/padding/
+   spacing scale are unchanged from before. */
 [class*="st-key-card-"] {
     border: 1px solid var(--hairline) !important; border-radius: var(--r-md) !important;
     background: var(--surface) !important; transition: border-color .15s ease, box-shadow .15s ease;
