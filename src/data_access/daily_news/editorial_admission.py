@@ -560,9 +560,19 @@ def _has_non_weak_anchor_evidence(materiality_reasons: tuple[str, ...]) -> bool:
 class AdmissionDecision:
     admitted: bool
     reason: str  # safe, human-readable diagnostic — never raw feed content beyond the matched phrase itself
+    # Admission-vetted per-company subjects (design/DAILY_NEWS_
+    # IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md, design/
+    # DAILY_NEWS_COMPANY_ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.
+    # md) — the real return value of _admission_attributed_companies()
+    # below, threaded all the way out so the caller can persist it as
+    # EditorialStory.matched_companies instead of the raw, pre-admission
+    # match. () for every rejection and every theme-only admission
+    # (no company was ever confirmed as the subject); never () merely
+    # because it wasn't computed — every branch below sets it explicitly.
+    identified_companies: tuple[str, ...] = ()
 
 
-def _identified_subject_companies(
+def _admission_attributed_companies(
     text: str, title: str, matched_companies: tuple[str, ...],
 ) -> list[str]:
     """Entity identity, decided WITHOUT consulting materiality: for each
@@ -571,7 +581,15 @@ def _identified_subject_companies(
     alias needs BOTH title placement and company-action language. A
     non-ambiguous company needs title placement OR company-action
     language — a bare description-only mention with neither is not
-    identity, just an incidental reference."""
+    identity, just an incidental reference.
+
+    Named _admission_attributed_companies (not _identified_subject_
+    companies, its pre-2026-09-16 name) specifically to avoid colliding
+    with EditorialStory.identified_companies — a deliberately different,
+    broader concept (every raw-matched company, pre-attribution) added
+    alongside this rename. This function computes the narrower,
+    attributed subset; nothing here means "identified" in that other
+    field's sense."""
     if not matched_companies:
         return []
     title_companies = set(match_companies(title))
@@ -581,7 +599,7 @@ def _identified_subject_companies(
     # never the in_title route, so a company genuinely named in the
     # headline is always unaffected.
     historical_background = _has_historical_background_framing(text)
-    identified: list[str] = []
+    attributed: list[str] = []
     for company in matched_companies:
         if _contains_any(text, _RIVAL_ENTITY_EXCLUSION_PHRASES.get(company, ())):
             continue
@@ -591,10 +609,10 @@ def _identified_subject_companies(
         )
         if company in _AMBIGUOUS_ALIAS_COMPANIES:
             if in_title and has_action_language:
-                identified.append(company)
+                attributed.append(company)
         elif in_title or has_action_language:
-            identified.append(company)
-    return identified
+            attributed.append(company)
+    return attributed
 
 
 def assess_admission(
@@ -612,11 +630,11 @@ def assess_admission(
     relevance (for a theme-only match) — never merely that its name or a
     taxonomy keyword appears somewhere in the text.
 
-    Identity precedes materiality: _identified_subject_companies() below
-    decides identity using ONLY placement/action-language/rival-entity
-    signals, never materiality_reasons. anchor_evidence (a genuine
-    corporate-event signal — see _HARD_MATERIAL_REASON_PREFIXES) is
-    consulted exactly once, afterward, and only to excuse an already-
+    Identity precedes materiality: _admission_attributed_companies()
+    below decides identity using ONLY placement/action-language/rival-
+    entity signals, never materiality_reasons. anchor_evidence (a
+    genuine corporate-event signal — see _HARD_MATERIAL_REASON_PREFIXES)
+    is consulted exactly once, afterward, and only to excuse an already-
     identified subject's story from an otherwise-disqualifying
     consumer-format phrase (requirement: a consumer-format exception
     needs BOTH unambiguous subject identity AND a genuine anchor — never
@@ -630,13 +648,13 @@ def assess_admission(
     regardless of anchor_evidence.
     """
     text = _combined_text(title, description)
-    identified_companies = _identified_subject_companies(text, title, matched_companies)
+    attributed_companies = _admission_attributed_companies(text, title, matched_companies)
 
     consumer_format_hit = _matched_consumer_format(text)
     if consumer_format_hit:
-        if identified_companies and _has_non_weak_anchor_evidence(materiality_reasons):
-            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
-        return AdmissionDecision(False, f"consumer_editorial_format:{consumer_format_hit}")
+        if attributed_companies and _has_non_weak_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{attributed_companies[0]}", tuple(attributed_companies))
+        return AdmissionDecision(False, f"consumer_editorial_format:{consumer_format_hit}", ())
 
     # Hobbyist/developer/modding-content exclusion (Signals precision
     # follow-up, live-card audit, design/POST_MERGE_SIGNALS_LIVE_CARD_
@@ -649,9 +667,9 @@ def assess_admission(
     # merely because hobbyist/mod vocabulary also appears in the piece.
     hobbyist_modding_hit = _matched_hobbyist_modding(text)
     if hobbyist_modding_hit:
-        if identified_companies and _has_non_weak_anchor_evidence(materiality_reasons):
-            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
-        return AdmissionDecision(False, f"hobbyist_modding_format:{hobbyist_modding_hit}")
+        if attributed_companies and _has_non_weak_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{attributed_companies[0]}", tuple(attributed_companies))
+        return AdmissionDecision(False, f"hobbyist_modding_format:{hobbyist_modding_hit}", ())
 
     # Plaintiff-law-firm solicitation exclusion (Signals admission
     # precision fix, P0) — same exception shape as consumer-format
@@ -660,9 +678,9 @@ def assess_admission(
     # a law-firm-solicitation phrase also appears in it.
     law_firm_hit = _matched_law_firm_solicitation(text)
     if law_firm_hit:
-        if identified_companies and _has_anchor_evidence(materiality_reasons):
-            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
-        return AdmissionDecision(False, f"law_firm_solicitation:{law_firm_hit}")
+        if attributed_companies and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{attributed_companies[0]}", tuple(attributed_companies))
+        return AdmissionDecision(False, f"law_firm_solicitation:{law_firm_hit}", ())
 
     # Personnel/leadership/governance-announcement exclusion (Signals
     # admission precision fix, P0) — a leadership change directly
@@ -680,17 +698,17 @@ def assess_admission(
     # company path — never theme membership alone.
     personnel_hit = _matched_personnel_announcement(text)
     if personnel_hit:
-        if identified_companies and _has_anchor_evidence(materiality_reasons):
-            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
-        if not identified_companies and matched_themes and _has_anchor_evidence(materiality_reasons):
-            return AdmissionDecision(True, f"theme_subject:{matched_themes[0]}")
-        return AdmissionDecision(False, f"personnel_announcement:{personnel_hit}")
+        if attributed_companies and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"company_subject:{attributed_companies[0]}", tuple(attributed_companies))
+        if not attributed_companies and matched_themes and _has_anchor_evidence(materiality_reasons):
+            return AdmissionDecision(True, f"theme_subject:{matched_themes[0]}", ())
+        return AdmissionDecision(False, f"personnel_announcement:{personnel_hit}", ())
 
     if matched_companies:
-        if identified_companies:
-            return AdmissionDecision(True, f"company_subject:{identified_companies[0]}")
+        if attributed_companies:
+            return AdmissionDecision(True, f"company_subject:{attributed_companies[0]}", tuple(attributed_companies))
         if not matched_themes:
-            return AdmissionDecision(False, "company_mention_not_subject_worthy")
+            return AdmissionDecision(False, "company_mention_not_subject_worthy", ())
 
     if matched_themes:
         # Substantive theme relevance: a theme-keyword match with no
@@ -699,6 +717,6 @@ def assess_admission(
         # itself shaped like a consumer format (already checked above)
         # or already excluded when paired with company mentions that
         # failed their own subject bar.
-        return AdmissionDecision(True, f"theme_subject:{matched_themes[0]}")
+        return AdmissionDecision(True, f"theme_subject:{matched_themes[0]}", ())
 
-    return AdmissionDecision(False, "no_qualifying_subject_evidence")
+    return AdmissionDecision(False, "no_qualifying_subject_evidence", ())

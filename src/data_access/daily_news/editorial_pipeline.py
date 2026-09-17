@@ -385,6 +385,16 @@ def run_editorial_discovery(
                 if not _matches_nist_allow_list(entry.title, classification_summary):
                     items_no_match += 1
                     continue
+                # NIST's own allow-list mechanism is a separate, unrelated
+                # gate (never assess_admission()) — it was never company-
+                # subject-attribution-based, so there is no admission-
+                # vetted subset to narrow to here. Preserving the raw
+                # match verbatim keeps this source's existing, unmodified
+                # behavior exactly as-is (design/DAILY_NEWS_COMPANY_
+                # ATTRIBUTION_IMPLEMENTATION_READINESS_2026_09_16.md's own
+                # explicit non-goal: no admission-policy or source-
+                # eligibility change).
+                attributed_companies = matched_companies
             else:
                 # Signals admission precision fix (P0.3, design/SIGNALS_
                 # ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md / design/
@@ -432,6 +442,12 @@ def run_editorial_discovery(
                     if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
                         rejected_examples.append((entry.title, admission.reason))
                     continue
+                # The admission-vetted subset (design/DAILY_NEWS_
+                # IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_2026_09_16.md)
+                # — never the raw matched_companies above — is what
+                # becomes EditorialStory.matched_companies below; the raw
+                # tuple is preserved separately as identified_companies.
+                attributed_companies = admission.identified_companies
 
             # Provisionally registered so a second duplicate of THIS SAME
             # entry later in this same source's own feed is still caught
@@ -441,13 +457,19 @@ def run_editorial_discovery(
             # simple, single-pass dedup registration.
             existing_urls.add(normalized_url)
             existing_title_publisher.add((normalized_title, source.attribution_label))
-            qualifying.append((entry, story_id, matched_companies, matched_themes, materiality_tier, materiality_reasons))
+            qualifying.append((
+                entry, story_id, matched_companies, attributed_companies,
+                matched_themes, materiality_tier, materiality_reasons,
+            ))
 
         qualifying.sort(key=lambda item: item[0].published_at, reverse=True)
         capped = qualifying[:_PER_SOURCE_CAP]
         items_capped += len(qualifying) - len(capped)
 
-        for entry, story_id, matched_companies, matched_themes, materiality_tier, materiality_reasons in capped:
+        for (
+            entry, story_id, matched_companies, attributed_companies,
+            matched_themes, materiality_tier, materiality_reasons,
+        ) in capped:
             retrieved_at = datetime.now(timezone.utc).isoformat()
             # Signals materiality classification (design/DECISIONS.md) —
             # computed once, above, in the qualifying loop (also used by
@@ -459,7 +481,15 @@ def run_editorial_discovery(
                 id=story_id, headline=entry.title, publisher=source.attribution_label, source_url=entry.link,
                 published_at=entry.published_at, retrieved_at=retrieved_at,
                 excerpt=_extractive_excerpt(entry.summary),
-                matched_companies=matched_companies, matched_themes=matched_themes,
+                # identified_companies vs. matched_companies (design/
+                # DAILY_NEWS_IDENTIFIED_VS_MATCHED_COMPANIES_DISCOVERY_
+                # 2026_09_16.md, design/DAILY_NEWS_COMPANY_ATTRIBUTION_
+                # IMPLEMENTATION_READINESS_2026_09_16.md) — identified_
+                # companies preserves the raw, pre-admission match
+                # verbatim; matched_companies is now the admission-vetted
+                # subset (attributed_companies), never the raw tuple.
+                identified_companies=matched_companies, matched_companies=attributed_companies,
+                matched_themes=matched_themes,
                 source_feed_id=source.source_id,
                 materiality_tier=materiality_tier, materiality_reasons=materiality_reasons,
             )
