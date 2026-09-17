@@ -25,7 +25,7 @@ Reuses, unmodified, exactly the same functions the real pipeline calls
     historical-background-framing fixes).
 
 Why this module also imports editorial_admission's PRIVATE
-_identified_subject_companies() and _combined_text() directly (both
+_admission_attributed_companies() and _combined_text() directly (both
 carry a leading underscore, i.e. "internal to that module" by this
 codebase's own convention):
   1. The public AdmissionDecision assess_admission() returns carries
@@ -64,7 +64,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-# _combined_text/_identified_subject_companies: intentional private
+# _combined_text/_admission_attributed_companies: intentional private
 # imports — see this module's own docstring ("Why this module also
 # imports editorial_admission's PRIVATE...") for the full rationale.
 # Short version: assess_admission()'s public AdmissionDecision only
@@ -74,7 +74,7 @@ from pathlib import Path
 # updating this harness and tests/test_daily_news_historical_signals_audit.py too.
 from src.data_access.daily_news.editorial_admission import (
     _combined_text,
-    _identified_subject_companies,
+    _admission_attributed_companies,
     assess_admission,
 )
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
@@ -233,7 +233,7 @@ def _disposition_for(
 def audit_record(record: InputRecord) -> AuditResult:
     """Pure recomputation over one already-loaded record — no I/O. See
     this module's own docstring for exactly which real, unmodified
-    functions are reused and why _identified_subject_companies is
+    functions are reused and why _admission_attributed_companies is
     imported directly."""
     notes: list[str] = []
 
@@ -254,7 +254,7 @@ def audit_record(record: InputRecord) -> AuditResult:
     admission = assess_admission(record.headline, record.excerpt, recomputed_companies, recomputed_themes, recomputed_reasons)
 
     text = _combined_text(record.headline, record.excerpt)
-    identified_companies = tuple(_identified_subject_companies(text, record.headline, recomputed_companies))
+    identified_companies = tuple(_admission_attributed_companies(text, record.headline, recomputed_companies))
 
     invalid_tags = tuple(c for c in record.matched_companies if c not in identified_companies)
     newly_unmatched = tuple(c for c in record.matched_companies if c not in recomputed_companies)
