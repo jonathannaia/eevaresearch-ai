@@ -7,6 +7,7 @@ from a custom top header to `st.sidebar` + real `st.page_link`s.
 from __future__ import annotations
 
 import base64
+import html
 from pathlib import Path
 from typing import Callable
 
@@ -14,6 +15,7 @@ import streamlit as st
 
 from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
 from src.data_access import backend_factory
+from src.logic.formatting import fmt_time_local, today_local
 
 METHODOLOGY_STATEMENT = (
     "EevaResearch separates source-backed facts, market interpretation, model "
@@ -231,6 +233,18 @@ _THEMES_NAV_CACHE_TTL_SECONDS = 60
 
 
 @st.cache_data(show_spinner=False, ttl=_THEMES_NAV_CACHE_TTL_SECONDS)
+def _published_theme_count() -> int:
+    """Real count of PUBLISHED Research Theses through the same public,
+    published-only protocol _has_published_themes() reads — the sidebar's
+    "Research theses N" badge (redesign v2). Fails closed to 0."""
+    settings = get_settings()
+    try:
+        return len(backend_factory.get_theme_repository(settings).list_published_themes())
+    except Exception:  # noqa: BLE001 — fail closed, sidebar chrome never raises
+        return 0
+
+
+@st.cache_data(show_spinner=False, ttl=_THEMES_NAV_CACHE_TTL_SECONDS)
 def _has_published_themes() -> bool:
     """True only if at least one Theme is visible through the public,
     published-only protocol (backend_factory.get_theme_repository) —
@@ -250,8 +264,107 @@ def _has_published_themes() -> bool:
         return False
 
 
+def _nav_badge_counts() -> dict[str, int]:
+    """Count badges shown beside a nav item only when backed by a real,
+    currently-eligible count (redesign v2): Signals = the High Signals
+    the Signals page itself lists ("All companies" view, cached 60s in
+    src/ui/pages/daily_news.py), Research theses = published theses."""
+    from src.ui.pages.daily_news import high_signal_count
+
+    counts = {"daily_news": high_signal_count(get_settings()), "themes": _published_theme_count()}
+    return {key: n for key, n in counts.items() if n > 0}
+
+
+def _nav_item(page, key: str, label: str, current_key: str, badge: int | None = None) -> None:
+    """One sidebar destination: a real st.page_link inside the keyed
+    container the active-state/icon CSS reads (st-key-navitem-{key}[-active]),
+    plus an optional real count badge rendered as a sibling the CSS
+    overlays on the row's right edge."""
+    container_key = f"navitem-{key}-active" if key == current_key else f"navitem-{key}"
+    with st.container(key=container_key):
+        st.page_link(page, label=label)
+        if badge:
+            st.markdown(f'<span class="er-rail-count">{badge}</span>', unsafe_allow_html=True)
+
+
+def _latest_filings_refresh_label() -> str | None:
+    """"Filings refreshed HH:MM EDT" from the durable per-provider scan
+    status the standalone Radar worker writes (ProviderScanStatus.
+    last_successful_at, via radar_inbox's own cached snapshot) — never a
+    page-render time. None whenever that status is not available (the
+    JSON backend has no worker status; an unreachable store; no completed
+    scan yet), so the sidebar block is omitted rather than guessed."""
+    settings = get_settings()
+    if (settings.db_backend or "json").strip().lower() not in ("sqlite", "postgres"):
+        return None
+    try:
+        from src.ui.pages.radar_inbox import _dashboard_config_fingerprint, _load_dashboard_snapshot
+
+        snapshot = _load_dashboard_snapshot(settings.cache_dir, _dashboard_config_fingerprint(settings), settings)
+        if snapshot.worker_status_state != "ok" or not snapshot.worker_status_statuses:
+            return None
+        stamps = [st_.last_successful_at for st_ in snapshot.worker_status_statuses.values() if st_ and st_.last_successful_at]
+        if not stamps:
+            return None
+        clock, zone = fmt_time_local(max(stamps))
+        return f"Filings refreshed {clock} {zone}" if clock else None
+    except Exception:  # noqa: BLE001 — fail closed, sidebar chrome never raises
+        return None
+
+
+def _render_sidebar_refresh() -> None:
+    label = _latest_filings_refresh_label()
+    if not label:
+        return
+    st.markdown(
+        '<div class="er-rail-status-block"><div class="er-rail-status-title"><span class="dot live"></span>Live data</div>'
+        f'<div class="er-rail-status">{label}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# Breadcrumb group + label per route key (redesign v2 top bar). Nav tables
+# are the source of truth; the hidden admin/system routes below are the
+# same fixed labels app.py registers them with.
+_BREADCRUMB_GROUPS: dict[str, str] = {
+    **{key: "Workspace" for key, _ in PRIMARY_NAV},
+    **{key: "System" for key, _ in SYSTEM_NAV},
+    **{key: "Workspace" for key, _ in HIDDEN_FROM_NAV},
+    "home": "Workspace", "feedback": "Workspace", "verified_updates": "Workspace", "research_cases": "Workspace",
+    "disclaimer": "System",
+    "admin_users": "Admin", "daily_news_admin": "Admin", "company_discovery_admin": "Admin", "theme_workspace": "Admin",
+}
+_BREADCRUMB_LABELS: dict[str, str] = {
+    **dict(PRIMARY_NAV), **dict(SYSTEM_NAV), **dict(HIDDEN_FROM_NAV),
+    "home": "Home", "feedback": "Feedback", "verified_updates": "Verified Updates", "research_cases": "Research Cases",
+    "disclaimer": "Disclaimer", "admin_users": "Users", "daily_news_admin": "Signals Admin",
+    "company_discovery_admin": "Company Discovery — Admin", "theme_workspace": "Theme Workspace",
+}
+
+
+def _render_topbar(nav_key: str) -> None:
+    """Breadcrumb from the actual current route + today's date in the
+    app's one display timezone (today_local, Eastern) — no search here:
+    the command-palette trigger stays in the sidebar brand row (its one
+    keyed widget instance)."""
+    page = get_page(nav_key)
+    label = _BREADCRUMB_LABELS.get(nav_key) or (getattr(page, "title", None) or nav_key.replace("_", " ").title())
+    group = _BREADCRUMB_GROUPS.get(nav_key, "Workspace")
+    today = today_local()
+    date_label = f"{today:%a} · {today:%b} {today.day}, {today.year}"
+    st.markdown(
+        '<div class="er-topbar">'
+        f'<div class="er-breadcrumb"><span>{group}</span><span class="er-crumb-sep">/</span>'
+        f'<span class="er-crumb-current">{label}</span></div>'
+        f'<div class="er-topbar-date">{date_label}</div>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_sidebar(current_key: str) -> None:
     _correct_sidebar_state_for_width()
+    badges = _nav_badge_counts()
 
     pages = st.session_state.get("_pages", {})
     home_page = pages.get("home")
@@ -312,10 +425,7 @@ def render_sidebar(current_key: str) -> None:
             # this file's own docstring-level "why" note is intentionally
             # kept local to this one call site — the mechanism is small
             # enough not to need a separate module-level explanation.
-            is_active = key == current_key
-            container_key = f"navitem-{key}-active" if is_active else f"navitem-{key}"
-            with st.container(key=container_key):
-                st.page_link(page, label=label)
+            _nav_item(page, key, label, current_key, badges.get(key))
 
         # Themes — data-driven WORKSPACE entry (design/DECISIONS.md): not
         # in PRIMARY_NAV/HIDDEN_FROM_NAV's static split at all, since its
@@ -326,20 +436,15 @@ def render_sidebar(current_key: str) -> None:
         # "hidden" in app.py's own st.Page — only this manual link is new).
         themes_page = pages.get("themes")
         if themes_page is not None and _has_published_themes():
-            themes_is_active = current_key == "themes"
-            themes_container_key = "navitem-themes-active" if themes_is_active else "navitem-themes"
-            with st.container(key=themes_container_key):
-                st.page_link(themes_page, label="Research Theses")
+            _nav_item(themes_page, "themes", "Research Theses", current_key, badges.get("themes"))
 
         # SYSTEM — lower-priority destinations (navigation-cleanup pass).
         # A Settings entry belongs here once a real Settings route exists.
         st.markdown('<div class="er-rail-group-label">System</div>', unsafe_allow_html=True)
-        st.markdown('<div class="er-rail-footlinks">', unsafe_allow_html=True)
         for key, label in SYSTEM_NAV:
             page = pages.get(key)
             if page is not None:
-                st.page_link(page, label=label)
-        st.markdown("</div>", unsafe_allow_html=True)
+                _nav_item(page, key, label, current_key)
 
         # Admin Users v1 (design/DECISIONS.md) — cosmetic only: hiding
         # this link from a non-admin is not authorization (the page's own
@@ -349,7 +454,11 @@ def render_sidebar(current_key: str) -> None:
             admin_users_page = pages.get("admin_users")
             if admin_users_page is not None:
                 st.markdown('<div class="er-rail-group-label">Admin</div>', unsafe_allow_html=True)
-                st.page_link(admin_users_page, label="Users")
+                _nav_item(admin_users_page, "admin_users", "Users", current_key)
+
+        # Redesign v2: real refresh data only — omitted entirely when no
+        # durable scan status is available (see _latest_filings_refresh_label).
+        _render_sidebar_refresh()
 
         # Account control — anchored to the visual bottom of the sidebar
         # (application-shell dark/dim pass, Perplexity-inspired layout).
@@ -419,6 +528,10 @@ def get_page(name: str):
     return st.session_state.get("_pages", {}).get(name)
 
 
+def _esc(value: object) -> str:
+    return "" if value is None else html.escape(str(value))
+
+
 def _render_sidebar_account(nav_key: str) -> None:
     """Account control anchored to the visual bottom of the sidebar
     (application-shell dark/dim pass, Perplexity-inspired layout) — an
@@ -431,20 +544,36 @@ def _render_sidebar_account(nav_key: str) -> None:
     render_sidebar()'s own `with st.sidebar:` block, as the last thing
     rendered, so assets/styles.css's .er-rail-account `margin-top: auto`
     rule can push it to the bottom of the sidebar's flex column."""
-    email = st.user.get("email") if getattr(st.user, "is_logged_in", False) else None
-    initial = (email or "?")[0].upper()
+    logged_in = getattr(st.user, "is_logged_in", False)
+    email = st.user.get("email") if logged_in else None
+    # Redesign v2: the real display name claim beside the avatar (the same
+    # st.user.get("name") app.py/feedback.py already read), falling back to
+    # the email; the secondary line is "Admin" only when is_admin() is
+    # actually true — never an invented role.
+    display_name = (st.user.get("name") if logged_in else None) or email
+    initial = (display_name or "?")[0].upper()
+    secondary = "Admin" if (email and is_admin()) else (email if display_name != email else None)
 
     st.markdown('<div class="er-rail-account">', unsafe_allow_html=True)
     with st.container(key=f"sidebar-account-{nav_key}"):
-        with st.popover(initial, use_container_width=False, help="Account"):
-            if email:
-                st.markdown(f'<div class="er-rail-account-email">{email}</div>', unsafe_allow_html=True)
-                st.button(
-                    "Sign out", on_click=st.logout, key=f"sidebar-sign-out-{nav_key}", use_container_width=True,
+        avatar_col, identity_col = st.columns([1, 4], vertical_alignment="center")
+        with avatar_col:
+            with st.popover(initial, use_container_width=False, help="Account"):
+                if email:
+                    st.markdown(f'<div class="er-rail-account-email">{email}</div>', unsafe_allow_html=True)
+                    st.button(
+                        "Sign out", on_click=st.logout, key=f"sidebar-sign-out-{nav_key}", use_container_width=True,
+                    )
+                    st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
+                else:
+                    st.caption("Not signed in")
+        with identity_col:
+            if display_name:
+                secondary_html = f'<div class="er-rail-identity-sub">{_esc(secondary)}</div>' if secondary else ""
+                st.markdown(
+                    f'<div class="er-rail-identity"><div class="er-rail-identity-name">{_esc(display_name)}</div>{secondary_html}</div>',
+                    unsafe_allow_html=True,
                 )
-                st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
-            else:
-                st.caption("Not signed in")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -453,6 +582,7 @@ def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = 
         load_css()
         if show_sidebar:
             render_sidebar(nav_key)
+            _render_topbar(nav_key)
 
         with st.container(key="page-content"):
             page_fn()

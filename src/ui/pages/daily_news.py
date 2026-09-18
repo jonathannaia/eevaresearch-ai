@@ -103,6 +103,7 @@ story.
 from __future__ import annotations
 
 import html
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -221,6 +222,98 @@ def _render_tier_switch(active_tier_query_value: str) -> None:
         key=widget_key, on_change=_handle_tier_switch_change, args=(widget_key,),
         label_visibility="collapsed",
     )
+
+
+@dataclass(frozen=True)
+class SignalsFeed:
+    """The already-decided, already-ordered Signals feed for one company
+    selection, partitioned by tier — exactly what render() below used to
+    compute inline. Built by build_signals_feed(); shared with the
+    sidebar count badge and the Dashboard's Latest signals module so
+    every surface shows the same eligible items."""
+    high_signal: tuple[tuple[str, NewsStory | EditorialStory], ...]
+    watchlist: tuple[tuple[str, NewsStory | EditorialStory], ...]
+    background: tuple[tuple[str, NewsStory | EditorialStory], ...]
+    fallback_notice: str | None
+    issuer_items_are_historical: bool
+
+
+def build_signals_feed(settings: Settings, selected_company: str) -> SignalsFeed:
+    """Redesign v2 — the selection composition render() has always
+    performed, moved into one function without changing a single rule:
+    each lane still applies its own existing, unmodified inclusion logic
+    first (issuer: 7-day window + per-company stale-feed fallback;
+    editorial: 72-hour window + per-source/total caps via
+    get_visible_editorial_stories()/get_editorial_stories_for_company()),
+    the two already-decided lists are merged via _merge_feed_items(), and
+    the merged list is partitioned by _effective_tier() — never re-
+    deriving or waiving either lane's own decision."""
+    all_stories = _published_stories(settings)
+    visible_editorial = get_visible_editorial_stories(settings)
+
+    fallback_notice: str | None = None
+    issuer_items_are_historical = False
+
+    if selected_company == _ALL_COMPANIES_OPTION:
+        issuer_items = _recent_stories(all_stories)
+        editorial_items: list[EditorialStory] | tuple[EditorialStory, ...] = visible_editorial
+    else:
+        company_stories = _stories_for_company(all_stories, selected_company)
+        recent = _recent_stories(company_stories)
+        editorial_items = get_editorial_stories_for_company(settings, selected_company)
+        if recent:
+            issuer_items = recent
+        elif company_stories:
+            issuer_items = company_stories
+            issuer_items_are_historical = True
+            if not editorial_items:
+                fallback_notice = (
+                    f'<div class="er-muted">No {selected_company} official updates were published in the last 7 days. '
+                    "Showing the latest available official updates.</div>"
+                )
+        else:
+            issuer_items = []
+
+    merged = _merge_feed_items(issuer_items, editorial_items)
+
+    high_signal_items: list[tuple[str, NewsStory | EditorialStory]] = []
+    watchlist_items: list[tuple[str, NewsStory | EditorialStory]] = []
+    background_items: list[tuple[str, NewsStory | EditorialStory]] = []
+    for kind, item in merged:
+        tier = _effective_tier(item)
+        if tier == NewsMaterialityTier.HIGH_SIGNAL:
+            high_signal_items.append((kind, item))
+        elif tier == NewsMaterialityTier.BACKGROUND:
+            background_items.append((kind, item))
+        else:
+            watchlist_items.append((kind, item))
+    return SignalsFeed(
+        high_signal=tuple(high_signal_items), watchlist=tuple(watchlist_items), background=tuple(background_items),
+        fallback_notice=fallback_notice, issuer_items_are_historical=issuer_items_are_historical,
+    )
+
+
+_HIGH_SIGNAL_COUNT_CACHE_TTL_SECONDS = 60
+
+
+@st.cache_data(ttl=_HIGH_SIGNAL_COUNT_CACHE_TTL_SECONDS, show_spinner=False)
+def _high_signal_count_cached(cache_dir: str, backend: str, _settings: Settings) -> int:
+    # `_settings` is underscore-prefixed (never hashed — it can carry a DSN);
+    # cache_dir/backend are the only cache-identity inputs, mirroring
+    # radar_inbox._load_dashboard_snapshot's own convention.
+    return len(build_signals_feed(_settings, _ALL_COMPANIES_OPTION).high_signal)
+
+
+def high_signal_count(settings: Settings) -> int:
+    """Real count of currently eligible High Signals ("All companies"
+    view) — the same items the Signals page itself lists — for the
+    sidebar badge and Dashboard tile. Cached 60s (this runs on every page
+    load site-wide); fails closed to 0 so global chrome never raises on a
+    Signals-backend problem."""
+    try:
+        return _high_signal_count_cached(str(settings.cache_dir), (settings.db_backend or "json"), settings)
+    except Exception:  # noqa: BLE001 — fail closed, see docstring
+        return 0
 
 
 def _effective_tier(item: NewsStory | EditorialStory) -> NewsMaterialityTier:
@@ -470,8 +563,6 @@ def render() -> None:
     lists are merged, via _merge_feed_items(), never the underlying
     filtering logic itself."""
     settings = get_settings()
-    all_stories = _published_stories(settings)
-    visible_editorial = get_visible_editorial_stories(settings)
 
     active_tier_view = _resolve_active_tier_view()
 
@@ -487,103 +578,28 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
-    fallback_notice: str | None = None
-    issuer_items_are_historical = False
+    # Redesign v2: the selection composition lives in build_signals_feed()
+    # (same rules, same order, same tier partition — see its docstring);
+    # render() only consumes the already-decided feed.
+    feed = build_signals_feed(settings, selected_company)
+    issuer_items_are_historical = feed.issuer_items_are_historical
 
-    if selected_company == _ALL_COMPANIES_OPTION:
-        # Strictly 7-day-recent, always — never falls back to an older
-        # issuer story, regardless of any single company's own fallback
-        # below. Every visible editorial story (including a valid
-        # theme-only story with no matched company) is included here.
-        # Unchanged by the system-wide company-matched-news fix.
-        issuer_items = _recent_stories(all_stories)
-        editorial_items: list[EditorialStory] | tuple[EditorialStory, ...] = visible_editorial
-    else:
-        company_stories = _stories_for_company(all_stories, selected_company)
-        recent = _recent_stories(company_stories)
-        # System-wide company-matched-news fix (design/DECISIONS.md):
-        # queries the FULL persisted editorial store for this company's
-        # own matched_companies membership — never visible_editorial,
-        # the "All companies" view's own cross-company top-20-capped
-        # list above. A story correctly matched to this company but
-        # ranked outside that shared top-20 by other companies'/themes'
-        # newer coverage still appears here. Same 72-hour freshness and
-        # per-source cap as visible_editorial; no cross-company total
-        # cap, since that cap exists only to bound the shared
-        # "All companies" list length — see
-        # editorial_pipeline.select_visible_editorial_stories_for_company's
-        # own docstring. Generic: identical call for any company in the
-        # Daily News universe, tracked or Daily-News-only-stub.
-        editorial_items = get_editorial_stories_for_company(settings, selected_company)
-
-        if recent:
-            issuer_items = recent
-        elif company_stories:
-            # This company has persisted PUBLISHED issuer stories, just
-            # none within the 7-day window (e.g. right after a
-            # previously-broken feed's first successful ingestion) —
-            # show its latest available official stories instead of an
-            # indistinguishable empty state. company_stories is already
-            # newest-first (inherited from _published_stories()'s own
-            # sort). This fallback is issuer-only: editorial_items above
-            # already applied its own independent 72-hour window and is
-            # never widened here. Each such card is rendered with an
-            # explicit "Historical" label below (requirement 6) — never
-            # left indistinguishable from a genuinely current card.
-            issuer_items = company_stories
-            issuer_items_are_historical = True
-            # The page-level "no official updates" notice is shown only
-            # when there is also no fresh qualified editorial coverage
-            # to display instead (requirement 5) — when editorial_items
-            # is non-empty, those cards already show real, current
-            # coverage, and a notice implying quiet would be misleading;
-            # the per-card Historical label above still makes each
-            # older official card's own age unmistakable regardless.
-            if not editorial_items:
-                fallback_notice = (
-                    f'<div class="er-muted">No {selected_company} official updates were published in the last 7 days. '
-                    "Showing the latest available official updates.</div>"
-                )
-        else:
-            # No persisted PUBLISHED issuer story at all for this
-            # company — issuer_items stays empty; any matching editorial
-            # stories still render below via the merged list.
-            issuer_items = []
-
-    merged = _merge_feed_items(issuer_items, editorial_items)
-
-    if not merged:
+    if not feed.high_signal and not feed.watchlist and not feed.background:
         # No persisted PUBLISHED story and no qualified editorial
         # coverage at all for this company — a true, honest empty
-        # state, never implying older coverage exists. Reachable for any
-        # company in the universe now (requirement 6), not only ones
-        # that already have a persisted issuer story.
+        # state, never implying older coverage exists.
         if selected_company == _ALL_COMPANIES_OPTION:
             empty_state("No recent company updates in the last 7 days.")
         else:
             empty_state(f"No recent official or qualified market coverage for {selected_company} right now.")
         return
 
-    if fallback_notice:
-        st.markdown(fallback_notice, unsafe_allow_html=True)
+    if feed.fallback_notice:
+        st.markdown(feed.fallback_notice, unsafe_allow_html=True)
 
-    # Signals materiality classification (design/DECISIONS.md) — tier-
-    # based presentation. Partitions the already-decided, already-
-    # ordered `merged` list into three buckets, preserving each bucket's
-    # own relative chronological order — never re-derives or waives
-    # either lane's own inclusion decision above; this only changes how
-    # an already-admitted item is grouped for display.
-    high_signal_items: list[tuple[str, NewsStory | EditorialStory]] = []
-    watchlist_items: list[tuple[str, NewsStory | EditorialStory]] = []
-    background_items: list[tuple[str, NewsStory | EditorialStory]] = []
-    for kind, item in merged:
-        tier = _effective_tier(item)
-        if tier == NewsMaterialityTier.HIGH_SIGNAL:
-            high_signal_items.append((kind, item))
-        elif tier == NewsMaterialityTier.BACKGROUND:
-            background_items.append((kind, item))
-        else:
-            watchlist_items.append((kind, item))
+    high_signal_items = list(feed.high_signal)
+    watchlist_items = list(feed.watchlist)
+    background_items = list(feed.background)
 
     def _render_item(kind: str, item: NewsStory | EditorialStory, tier: NewsMaterialityTier) -> None:
         if kind == "issuer":
