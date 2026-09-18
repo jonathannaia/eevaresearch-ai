@@ -226,6 +226,13 @@ def record_decision(cache_dir: Path, packet_id: str, decision: str, reasons: tup
     return decided
 
 
+def decisions_for_candidate(cache_dir: Path, candidate_id: str) -> tuple[str | None, ...]:
+    """Every packet ever saved for a candidate, as its recorded decision
+    (None while undecided). The orchestrator's idempotency/retry input:
+    a candidate with any non-FAILED_RETRIEVAL decision is never re-run."""
+    return tuple(d.get("decision") for d in _load(cache_dir).values() if d.get("candidate_id") == candidate_id)
+
+
 def previously_published(cache_dir: Path, exclude_packet_id: str | None = None) -> tuple[frozenset[str], frozenset[frozenset[str]]]:
     hashes: set[str] = set()
     evidence_sets: set[frozenset[str]] = set()
