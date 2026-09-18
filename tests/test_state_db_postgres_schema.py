@@ -456,10 +456,43 @@ def test_v22_is_registered_immediately_after_v21_and_is_current():
 
 def test_v22_statements_are_additive_only_one_provenance_column_on_candidates():
     assert postgres_schema._V22_STATEMENTS == (
-        "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+        "ALTER TABLE candidates ADD COLUMN published_by TEXT",
     )
     for statement in postgres_schema._V22_STATEMENTS:
         assert statement.strip().upper().startswith("ALTER TABLE CANDIDATES ADD COLUMN")
+
+
+def test_v22_published_by_is_nullable_with_no_default(pg_isolated_connection):
+    postgres_schema.migrate(pg_isolated_connection)
+    rows = pg_isolated_connection.execute(
+        "SELECT is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'candidates' "
+        "AND column_name = 'published_by'"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["is_nullable"] == "YES"
+    assert rows[0]["column_default"] is None
+
+
+def test_v22_upgrade_leaves_pre_existing_published_candidate_null(pg_isolated_connection):
+    """A PUBLISHED candidate that predates V22 must read back NULL after
+    the upgrade — never backfilled as human-reviewed."""
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 21)
+    conn.execute(
+        "INSERT INTO filing_events (corp_code, rcept_no, corp_name, stock_code, report_nm, rcept_dt, flr_nm) "
+        "VALUES ('00126380', 'r-pre-v22', 'Samsung', '005930', 'R', '20260101', 'Samsung')"
+    )
+    conn.execute(
+        "INSERT INTO candidates (id, source, filing_corp_code, filing_rcept_no, confidence, status, "
+        "extraction_state, translation_state, excerpt_quality, created_at, updated_at) "
+        "VALUES ('cand-pre-v22', 'OpenDART / DART', '00126380', 'r-pre-v22', 'High', 'Published', "
+        "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
+    )
+    conn.commit()
+    assert postgres_schema.migrate(conn) == 22
+    row = conn.execute("SELECT published_by FROM candidates WHERE id = 'cand-pre-v22'").fetchone()
+    assert row["published_by"] is None
 
 
 def test_v20_statements_are_additive_only_four_nullable_columns():

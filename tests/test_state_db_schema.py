@@ -598,7 +598,7 @@ def test_v20_is_registered_immediately_after_v19_and_is_current():
 
 def test_v20_statements_are_additive_only_one_provenance_column_on_candidates():
     assert schema._V20_STATEMENTS == (
-        "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+        "ALTER TABLE candidates ADD COLUMN published_by TEXT",
     )
     for statement in schema._V20_STATEMENTS:
         assert statement.strip().upper().startswith("ALTER TABLE CANDIDATES ADD COLUMN")
@@ -613,17 +613,36 @@ def test_v20_migration_is_idempotent_when_applied_twice_to_the_same_connection()
     assert columns.count("published_by") == 1
 
 
-def test_v20_published_by_is_not_null_with_the_dataclass_default_so_old_rows_read_back_human_reviewer():
-    """Pre-existing rows must read back exactly what CandidateSignal.
-    published_by would have defaulted to in code — the column carries the
-    default at the schema level (NOT NULL DEFAULT 'human_reviewer'), so
-    no backfill and no application-side coalescing is ever needed."""
+def test_v20_published_by_is_nullable_with_no_default():
+    """No publication provenance is ever inferred: the column carries no
+    default, so nothing is written for any row the agent didn't publish."""
     conn = connection.connect_in_memory()
     schema.migrate(conn)
     info = {row["name"]: row for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
     published_by = info["published_by"]
-    assert published_by["notnull"] == 1
-    assert published_by["dflt_value"] == "'human_reviewer'"
+    assert published_by["notnull"] == 0
+    assert published_by["dflt_value"] is None
+
+
+def test_v20_upgrade_leaves_pre_existing_published_candidate_null():
+    """A PUBLISHED candidate that predates V20 must read back NULL after
+    the upgrade — never backfilled as human-reviewed."""
+    conn = connection.connect_in_memory()
+    _migrate_up_to(conn, 19)
+    conn.execute(
+        "INSERT INTO filing_events (corp_code, rcept_no, corp_name, stock_code, report_nm, rcept_dt, flr_nm) "
+        "VALUES ('00126380', 'r-pre-v20', 'Samsung', '005930', 'R', '20260101', 'Samsung')"
+    )
+    conn.execute(
+        "INSERT INTO candidates (id, source, filing_corp_code, filing_rcept_no, confidence, status, "
+        "extraction_state, translation_state, excerpt_quality, created_at, updated_at) "
+        "VALUES ('cand-pre-v20', 'OpenDART / DART', '00126380', 'r-pre-v20', 'High', 'Published', "
+        "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
+    )
+    conn.commit()
+    assert schema.migrate(conn) == 20
+    row = conn.execute("SELECT published_by FROM candidates WHERE id = 'cand-pre-v20'").fetchone()
+    assert row["published_by"] is None
 
 
 def test_v19_columns_are_nullable_and_untouched_existing_rows_read_back_as_null():

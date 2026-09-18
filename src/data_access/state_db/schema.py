@@ -851,11 +851,13 @@ _V19_STATEMENTS: tuple[str, ...] = (
 
 # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_
 # AGENT_DESIGN_2026_09_17.md, §5.1) — one additive, provenance-only
-# column. NOT NULL DEFAULT 'human_reviewer' matches CandidateSignal.
-# published_by's own dataclass default exactly, so every pre-existing
-# row reads back identically to how it would have constructed in code.
+# column: nullable, no default. Every pre-existing row reads back NULL
+# ("provenance not recorded"), matching CandidateSignal.published_by's
+# own None default — no historical publication is ever inferred to be
+# human-reviewed. Amended before first application anywhere (see
+# design/AUTONOMOUS_RESEARCH_AGENT_PRODUCTION_READINESS_2026_09_17.md §1.4).
 _V20_STATEMENTS: tuple[str, ...] = (
-    "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+    "ALTER TABLE candidates ADD COLUMN published_by TEXT",
 )
 
 # Forward-only migration steps, keyed by the version they move TO.

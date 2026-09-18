@@ -528,3 +528,23 @@ def test_load_candidates_empty_source_returns_empty_dict_without_extra_queries(p
 # The LookupError branch in both _row_to_candidate and
 # _row_to_candidate_from_lookups remains as defensive code for a
 # same-invariant violation this database cannot actually produce.
+
+
+# --- published_by provenance (Autonomous Research Agent, V22) ---
+
+
+def test_published_by_is_null_on_insert_and_round_trips_explicit_autonomous_agent(pg_conn):
+    """Unpublished/unrecorded candidates persist NULL — never inferred as
+    human-reviewed — and an explicit autonomous_agent write survives an
+    update and reload."""
+    candidate_repository.upsert_new_candidates(pg_conn, "SEC EDGAR", [_candidate("cand-1", _filing())])
+    stored = candidate_repository.get_candidate(pg_conn, "cand-1")
+    assert stored.published_by is None
+    assert pg_conn.execute("SELECT published_by FROM candidates WHERE id = 'cand-1'").fetchone()["published_by"] is None
+
+    stored.status = CandidateStatus.PUBLISHED
+    stored.published_by = "autonomous_agent"
+    version = candidate_repository.get_candidate_version(pg_conn, "cand-1")
+    outcome = candidate_repository.update_candidate(pg_conn, stored, expected_version=version)
+    assert outcome.status == "updated"
+    assert candidate_repository.get_candidate(pg_conn, "cand-1").published_by == "autonomous_agent"

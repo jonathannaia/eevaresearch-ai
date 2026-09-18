@@ -18,7 +18,6 @@ from src.logic.signal_promotion import is_eligible_for_signal
 from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
 from src.models.verified_update import (
     PUBLISHED_BY_AUTONOMOUS_AGENT,
-    PUBLISHED_BY_HUMAN_REVIEWER,
     VERIFIED_COMPANY_ANNOUNCEMENT,
     VERIFIED_FILING_FACT,
     VerifiedUpdate,
@@ -74,26 +73,31 @@ def test_new_states_round_trip_through_their_string_values():
 
 # --- CandidateSignal.published_by ------------------------------------------
 
-def test_published_by_defaults_to_human_reviewer_for_existing_construction_sites():
-    assert _candidate().published_by == PUBLISHED_BY_HUMAN_REVIEWER
+def test_published_by_defaults_to_none_for_existing_construction_sites():
+    """None = provenance not recorded. Never inferred as human-reviewed —
+    not even for a PUBLISHED candidate."""
+    assert _candidate().published_by is None
+    assert _candidate(status=CandidateStatus.PUBLISHED).published_by is None
 
 
 def test_published_by_round_trips_through_json_candidate_store(tmp_path):
     agent_published = _candidate("agent-1", status=CandidateStatus.PUBLISHED, published_by=PUBLISHED_BY_AUTONOMOUS_AGENT)
-    human_published = _candidate("human-1", status=CandidateStatus.PUBLISHED)
-    candidate_store.save_candidates(tmp_path, {c.id: c for c in (agent_published, human_published)})
+    unrecorded = _candidate("unrecorded-1", status=CandidateStatus.PUBLISHED)
+    candidate_store.save_candidates(tmp_path, {c.id: c for c in (agent_published, unrecorded)})
+    payload = json.loads((tmp_path / "dart_candidates.json").read_text(encoding="utf-8"))
+    assert payload["unrecorded-1"]["published_by"] is None
     loaded = candidate_store.load_candidates(tmp_path)
     assert loaded["agent-1"].published_by == PUBLISHED_BY_AUTONOMOUS_AGENT
-    assert loaded["human-1"].published_by == PUBLISHED_BY_HUMAN_REVIEWER
+    assert loaded["unrecorded-1"].published_by is None
 
 
-def test_legacy_json_record_without_published_by_loads_as_human_reviewer(tmp_path):
-    candidate_store.save_candidates(tmp_path, {"legacy": _candidate("legacy")})
+def test_legacy_json_record_without_published_by_loads_as_none(tmp_path):
+    candidate_store.save_candidates(tmp_path, {"legacy": _candidate("legacy", status=CandidateStatus.PUBLISHED)})
     path = tmp_path / "dart_candidates.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     del payload["legacy"]["published_by"]
     path.write_text(json.dumps(payload), encoding="utf-8")
-    assert candidate_store.load_candidates(tmp_path)["legacy"].published_by == PUBLISHED_BY_HUMAN_REVIEWER
+    assert candidate_store.load_candidates(tmp_path)["legacy"].published_by is None
 
 
 def test_published_by_round_trips_through_sqlite_insert_and_update():
@@ -103,7 +107,8 @@ def test_published_by_round_trips_through_sqlite_insert_and_update():
     candidate = _candidate("sq-1")
     candidate_repository.upsert_new_candidates(conn, "SEC EDGAR", [candidate])
     stored = candidate_repository.get_candidate(conn, "sq-1")
-    assert stored.published_by == PUBLISHED_BY_HUMAN_REVIEWER
+    assert stored.published_by is None
+    assert conn.execute("SELECT published_by FROM candidates WHERE id = 'sq-1'").fetchone()["published_by"] is None
 
     stored.status = CandidateStatus.PUBLISHED
     stored.published_by = PUBLISHED_BY_AUTONOMOUS_AGENT

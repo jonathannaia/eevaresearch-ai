@@ -140,7 +140,7 @@ def _candidate_from_dict(data: dict) -> CandidateSignal:
         translation_failure_at=data.get("translation_failure_at"),
         translation_retry_count=data.get("translation_retry_count", 0),
         translation_next_retry_at=data.get("translation_next_retry_at"),
-        published_by=data.get("published_by", "human_reviewer"),
+        published_by=data.get("published_by"),
     )
 
 

@@ -709,10 +709,10 @@ class CandidateSignal:
     translation_next_retry_at: str | None = None
     # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_
     # RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1) — provenance only, never
-    # a publication gate. signal_promotion.is_eligible_for_signal()'s
-    # existing check (status == PUBLISHED) already means "live and
-    # public" regardless of this field's value; this exists purely so
-    # PUBLISHED candidates set by the autonomous agent are distinguishable
-    # from human-reviewed ones for audit, rollback, and rendering.
-    # Default preserves every existing construction site unchanged.
-    published_by: str = "human_reviewer"
+    # a publication gate: signal_promotion.is_eligible_for_signal() reads
+    # status alone. None means "provenance not recorded" — the truthful
+    # value for every historical and every unpublished candidate, and for
+    # any publication path that does not record who published (e.g. the
+    # EDGAR shadow-policy path). Only a writer that knows sets it; today
+    # that is the autonomous agent ("autonomous_agent"). Never inferred.
+    published_by: str | None = None
