@@ -24,7 +24,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # requirements-agent.txt = requirements.txt + the agent-only runtime
+        # pins, needed only so the agent test suites can import them.
+        run: pip install -r requirements-agent.txt
 
       - name: Run test suite
         run: python -m pytest -q

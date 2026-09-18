@@ -1,0 +1,24 @@
+# Autonomous Research Agent runtime — agent-only install set
+# (design/AUTONOMOUS_RESEARCH_AGENT_PRODUCTION_READINESS_2026_09_17.md,
+# §7.2 item 3). Install with `pip install -r requirements-agent.txt`
+# wherever the agent test suites or the future research-agent worker run
+# (CI, local development). The dashboard / Render web service and the
+# Radar worker install requirements.txt only: they never import either
+# package (enforced by tests/test_research_agent_worker_scope_guard.py),
+# and the agent stays disabled until a separately approved enablement.
+#
+# claude-agent-sdk: the agent runtime / tool-execution loop, imported ONLY
+# by src/mcp_agent/agent_session.py (reached from
+# scripts/research_agent_worker.py). Its wheels are platform-specific and
+# bundle a native Claude Code CLI binary (~215 MB unpacked); PyPI lists a
+# manylinux_2_17_x86_64 wheel for this version, but installing and running
+# it on the Render target runtime has not been verified — do that before
+# adding this file to any Render service's build.
+# mcp: the official Python MCP SDK (2.x, MCPServer API), imported ONLY by
+# src/mcp_agent/server.py (the separate stdio tool server). Pure Python.
+#
+# Exact pins, as approved at implementation time (same convention as
+# feedparser in requirements.txt). Never loosen them here.
+-r requirements.txt
+claude-agent-sdk==0.2.155
+mcp==2.2.0

@@ -22,6 +22,10 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+To run the full test suite, including the (disabled-by-default)
+autonomous research agent's tests, install the agent-only runtime too:
+`pip install -r requirements-agent.txt` (a superset of `requirements.txt`).
+
 Nothing needs to be configured to run — there are no required environment
 variables in this phase (`.env.example` documents what's reserved for
 later). Open the URL Streamlit prints (typically `http://localhost:8501`).
@@ -93,6 +97,7 @@ currently has no linter-driven conventions beyond standard PEP 8.
 ```
 app.py                       Entry point — st.navigation setup, page registration
 requirements.txt
+requirements-agent.txt       Agent-only runtime (requirements.txt + claude-agent-sdk, mcp)
 .env.example                 No required vars in this phase; documents Phase 2/3 vars
 MIGRATION_NOTES.md            What the prior product was, what's retired, what's preserved
 IMPLEMENTATION_NOTES.md       Done / mocked / Phase 2 & 3 plans
