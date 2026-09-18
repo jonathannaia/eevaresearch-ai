@@ -1,13 +1,30 @@
-"""Regional Brief (Phase E1, design/DASHBOARD_MARKET_MAP_PHASE_E.md) — a
-compact, per-region tabbed view of real, dated tracked-issuer filing
-events. Not market news or a market summary (the app has neither — see
-the Phase E report, section B): United States/South Korea/Japan each show
-up to 3 real, recent FilingEvents from that region's existing filing
-source via `backend_factory.get_filing_event_repository` (the same
-read-only, backend-aware accessor `radar_inbox.py` already uses) — no new
-provider, network call, or cache format. China shows a flat, honest
-"not connected" state — there is no CNINFO/HKEX adapter and no tracked
-China issuer anywhere in the registry, so nothing here is invented for it.
+"""Regional Brief (Phase E1, design/DASHBOARD_MARKET_MAP_PHASE_E.md; redesign
+v2 table treatment) — a compact, per-region tabbed table of real, dated
+tracked-issuer filing events. Not market news or a market summary (the
+app has neither — see the Phase E report, section B): United States/South
+Korea/Japan each show up to 3 real, recent FilingEvents from that region's
+existing filing source via `backend_factory.get_filing_event_repository`
+(the same read-only, backend-aware accessor `radar_inbox.py` already uses)
+— no new provider, network call, or cache format. China shows a flat,
+honest "not connected" state — there is no CNINFO/HKEX adapter and no
+tracked China issuer anywhere in the registry, so nothing here is invented
+for it.
+
+Materiality (redesign v2, non-negotiable policy): a filing whose Radar
+candidate already resolved to CandidateStatus.NOT_MATERIAL — e.g. a
+treasury-only DART disposal the existing equity-transaction gate marked
+routine — is excluded from every region here, via
+src.logic.filing_visibility (the persisted status only; no materiality is
+computed on this page). Previously this component rendered bare
+FilingEvents with no such gate, so a suppressed filing could surface on
+the Dashboard while Filings hid it.
+
+Columns are only ever real FilingEvent fields: form type (EDGAR/EDINET's
+own stored form code; DART stores none, so that cell is left blank —
+never a placeholder), issuer, venue, filed date, and the public source
+link. A non-EDINET row shows no securities code (an existing, tested
+decision); an EDINET row shows the 4-digit public code and the curated
+type label exactly as before.
 """
 from __future__ import annotations
 
@@ -18,10 +35,12 @@ import streamlit as st
 from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.logic import filing_display
+from src.logic.filing_visibility import not_material_rcept_nos
 from src.logic.formatting import fmt_date
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
+from src.ui.components.primitives import esc, lang_attr, venue_badge_html
 from src.ui.ui import get_page
 
 MAX_ITEMS_PER_REGION = 3
@@ -42,36 +61,20 @@ def _parse_rcept_date(raw: str) -> date | None:
 def _load_recent_filings(source: str, settings: Settings) -> list[FilingEvent]:
     """Read-only, fail-closed exactly like radar_inbox.py's own repository
     reads — a misconfigured/unreachable backend degrades to an empty list
-    for this region only, never a raw exception surfaced to the page."""
+    for this region only, never a raw exception surfaced to the page.
+    NOT_MATERIAL candidates' filings are subtracted before the top-N cut."""
     try:
         filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
     except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
         return []
-    dated = [(f, _parse_rcept_date(f.rcept_dt)) for f in filings]
+    suppressed = not_material_rcept_nos(settings, source)
+    dated = [(f, _parse_rcept_date(f.rcept_dt)) for f in filings if f.rcept_no not in suppressed]
     dated = [(f, d) for f, d in dated if d is not None]
     dated.sort(key=lambda pair: pair[1], reverse=True)
     return [f for f, _ in dated[:MAX_ITEMS_PER_REGION]]
 
 
-def _render_filing_item(filing: FilingEvent) -> None:
-    """Compact single-row-plus-metadata layout (Dashboard layout-
-    tightening pass, design/DECISIONS.md): title on its own line,
-    company/date/source and "View source document ->" together on one
-    tight second line, the link floated to the right rather than
-    occupying a separate third line as before — same content, same real
-    URL, no new markup element added beyond a flex wrapper.
-
-    EDINET filing-source usability fix (design/
-    EDINET_FILING_SOURCE_USABILITY_DESIGN.md): stays compact and reads
-    no CandidateSignal (this component only ever loads a bare
-    FilingEvent — see _load_recent_filings) — for an EDINET filing only,
-    the title line gains the curated English category phrase when this
-    filing's own ordinance/form/docType triplet is one of the few
-    live-verified entries (filing_display.edinet_type_label, called with
-    no candidate), and the metadata line gains the 4-digit public
-    securities code (filing_display.edinet_display_securities_code).
-    EDGAR/DART are untouched: edinet_type_label/edinet_display_
-    securities_code are only ever called for source_name == "EDINET"."""
+def _row_html(filing: FilingEvent) -> str:
     parsed = _parse_rcept_date(filing.rcept_dt)
     date_label = fmt_date(parsed.isoformat()) if parsed else filing.rcept_dt
     # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites
@@ -79,36 +82,33 @@ def _render_filing_item(filing: FilingEvent) -> None:
     # root; every other source's URL passes through unchanged.
     safe_url = public_source_url(filing.source_url)
     link_html = (
-        f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
-        f'style="color:var(--text-secondary); font-size:0.76rem; text-decoration:underline; white-space:nowrap;">'
-        "View source document ↗</a>"
-    ) if safe_url else ""
+        f'<a class="er-feed-link" href="{esc(safe_url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>'
+        if safe_url else ""
+    )
 
     is_edinet = filing.source_name == filing_display.EDINET_SOURCE_NAME
     title_text = filing_display.edinet_type_label(filing) if is_edinet else filing.report_nm
-    code_html = ""
+    form_code = (filing.pblntf_ty or "").strip() if not filing.source_name.startswith("OpenDART") else ""
+    form_html = f'<span class="er-status-tag er-tag-mono er-tag-theme">{esc(form_code)}</span>' if form_code else ""
+    issuer_html = esc(filing.corp_name)
     if is_edinet:
         code = filing_display.edinet_display_securities_code(filing.stock_code)
         if code:
-            code_html = f" · {code}"
-
-    st.markdown(
-        f'<div class="er-row" style="border-bottom:none; padding:0 0 var(--space-2) 0;">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{title_text}</div>'
-        f'<div style="display:flex; align-items:baseline; justify-content:space-between; gap:var(--space-2); '
-        f'flex-wrap:wrap; margin-top:0.1rem;">'
-        f'<div class="er-muted" style="font-size:0.78rem;">{filing.corp_name}{code_html} · {date_label} · {filing.source_name}</div>'
-        f"{link_html}"
-        f"</div></div>",
-        unsafe_allow_html=True,
+            issuer_html += f' <span class="er-mono er-mono-muted">{esc(code)}</span>'
+    title_attr = lang_attr(filing.original_language) if is_edinet is False else ""
+    return (
+        "<tr>"
+        f'<td class="er-brief-form">{form_html}</td>'
+        f'<td><div class="er-brief-issuer">{issuer_html}</div>'
+        f'<div class="er-brief-title"{title_attr}>{esc(title_text)}</div></td>'
+        f"<td>{venue_badge_html(filing.source_name)}</td>"
+        f'<td class="er-mono er-brief-date">{esc(date_label)}</td>'
+        f'<td class="er-brief-link">{link_html}</td>'
+        "</tr>"
     )
 
 
 def _render_region_tab(region: str, settings: Settings) -> None:
-    st.markdown(
-        '<div class="er-muted" style="font-size:0.82rem;">Recent issuer disclosures from tracked coverage</div>',
-        unsafe_allow_html=True,
-    )
     source = REGION_SOURCE[region]
     filings = _load_recent_filings(source, settings)
     if not filings:
@@ -117,8 +117,13 @@ def _render_region_tab(region: str, settings: Settings) -> None:
             unsafe_allow_html=True,
         )
     else:
-        for f in filings:
-            _render_filing_item(f)
+        rows = "".join(_row_html(f) for f in filings)
+        st.markdown(
+            '<table class="er-table er-brief"><thead><tr>'
+            "<th>Form</th><th>Issuer</th><th>Venue</th><th>Filed</th><th>Source</th>"
+            f"</tr></thead><tbody>{rows}</tbody></table>",
+            unsafe_allow_html=True,
+        )
     radar_page = get_page("radar_inbox")
     if radar_page is not None:
         with st.container(key=f"cta-tertiary-brief-radar-{region.replace(' ', '-').lower()}"):
@@ -135,19 +140,18 @@ def _render_china_tab() -> None:
 
 
 def render_regional_brief(settings: Settings) -> None:
-    # Standardized to the shared .er-section-label top margin (Dashboard
-    # layout-tightening pass, design/DECISIONS.md) — this section
-    # previously carried its own smaller inline override, the one real
-    # inconsistency in Dashboard's inter-section spacing; every other
-    # section header (Recently Updated, Recent Theme Activity, Theme
-    # Health) already uses the bare class.
-    st.markdown('<div class="er-section-label">Regional Brief</div>', unsafe_allow_html=True)
-    tabs = st.tabs(["United States", "South Korea", "Japan", "China"])
-    with tabs[0]:
-        _render_region_tab("United States", settings)
-    with tabs[1]:
-        _render_region_tab("South Korea", settings)
-    with tabs[2]:
-        _render_region_tab("Japan", settings)
-    with tabs[3]:
-        _render_china_tab()
+    with st.container(key="card-regional-brief"):
+        st.markdown(
+            '<div class="er-section-label" style="margin-top:0;">Regional Brief</div>'
+            '<div class="er-muted" style="margin-top:-0.4rem; margin-bottom:0.4rem;">Recent issuer disclosures from tracked coverage</div>',
+            unsafe_allow_html=True,
+        )
+        tabs = st.tabs(["United States", "South Korea", "Japan", "China"])
+        with tabs[0]:
+            _render_region_tab("United States", settings)
+        with tabs[1]:
+            _render_region_tab("South Korea", settings)
+        with tabs[2]:
+            _render_region_tab("Japan", settings)
+        with tabs[3]:
+            _render_china_tab()

@@ -208,6 +208,22 @@ def display_title(filing: FilingEvent, candidate: CandidateSignal | None, prefer
     return mapped or native_or_translated
 
 
+def display_category_label(filing: FilingEvent, candidate: CandidateSignal | None) -> str | None:
+    """The filing's category as a standalone chip label (redesign v2):
+    for DART/EDINET the same curated category phrase display_title()
+    prefixes onto the title (so a treasury-only candidate reads
+    "Treasury Stock Disposal or Acquisition", never the financing
+    label); for EDGAR the official form type (e.g. "8-K"). None when
+    no category is established or no form type is stored — never
+    guessed from the title text."""
+    if is_english_native(filing):
+        raw_form = (filing.pblntf_ty or "").strip()
+        # "Form 8-K", never the bare code alone (the card's tested rule).
+        return f"Form {normalize_form_type(raw_form)}" if raw_form else None
+    category_titles = _EDINET_CATEGORY_TITLES if filing.source_name == EDINET_SOURCE_NAME else _DART_CATEGORY_TITLES
+    return _mapped_category_title(candidate, category_titles)
+
+
 # ============================================================
 # Extraction quality gate (C) — reject raw XML/XBRL/tag-heavy content
 # ============================================================

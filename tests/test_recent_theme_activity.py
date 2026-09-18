@@ -219,9 +219,9 @@ def test_dashboard_recent_theme_activity_row_shows_all_required_fields(tmp_path)
     assert not at.exception
     all_text = _text(at)
 
-    assert "Recent Theme Activity" in all_text
+    assert "Theme activity" in all_text
     assert "Where tracked coverage has moved recently" in all_text
-    rta_start = all_text.index("Recent Theme Activity")
+    rta_start = all_text.index("Theme activity")
     chunk = all_text[rta_start:rta_start + 600]
     assert "AI Buildout" in chunk
     assert "1 item in the last 14 days" in chunk
@@ -292,7 +292,7 @@ def test_dashboard_view_link_absent_without_a_source_url(tmp_path):
     at = _run_dashboard(settings)
     assert not at.exception
     all_text = _text(at)
-    assert "Recent Theme Activity" in all_text
+    assert "Theme activity" in all_text
     assert "Memory" in all_text
     assert not any(b.label == "View →" for b in at.get("link_button"))
 
@@ -302,7 +302,7 @@ def test_dashboard_empty_state_renders_no_heading_or_shell(tmp_path):
     at = _run_dashboard(settings)
     assert not at.exception
     all_text = _text(at)
-    assert "Recent Theme Activity" not in all_text
+    assert "Theme activity" not in all_text
     assert "Where tracked coverage has moved recently" not in all_text
 
 
@@ -415,7 +415,7 @@ def test_dashboard_recent_theme_activity_edinet_row_shows_curated_label_and_4_di
     assert not at.exception
     all_text = _text(at)
 
-    rta_start = all_text.index("Recent Theme Activity")
+    rta_start = all_text.index("Theme activity")
     chunk = all_text[rta_start:rta_start + 600]
     assert "Shin-Etsu Chemical Co., Ltd. (4063)" in chunk  # 4-digit, never the padded "40630"
     assert "Status Report of Purchase of Own Shares" in chunk  # curated triplet mapping
@@ -436,6 +436,6 @@ def test_dashboard_recent_theme_activity_edgar_row_shows_no_edinet_enrichment(tm
     assert not at.exception
     all_text = _text(at)
 
-    rta_start = all_text.index("Recent Theme Activity")
+    rta_start = all_text.index("Theme activity")
     chunk = all_text[rta_start:rta_start + 600]
     assert "NVIDIA (" not in chunk  # no appended securities code for a non-EDINET row

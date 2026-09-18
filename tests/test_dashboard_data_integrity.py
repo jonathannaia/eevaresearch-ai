@@ -103,7 +103,7 @@ def test_theme_health_absent_with_zero_published_themes(tmp_path, monkeypatch):
     at.run()
     assert not at.exception
     all_text = _main_text(at)
-    assert "Theme Health" not in all_text
+    assert "Research theses" not in all_text
 
 
 def test_theme_health_absent_when_theme_repository_construction_fails(tmp_path, monkeypatch):
@@ -117,7 +117,7 @@ def test_theme_health_absent_when_theme_repository_construction_fails(tmp_path, 
     at = AppTest.from_file(str(DASHBOARD_HARNESS), default_timeout=15)
     at.run()
     assert not at.exception
-    assert "Theme Health" not in _main_text(at)
+    assert "Research theses" not in _main_text(at)
     assert "boom" not in _main_text(at)
 
 
@@ -130,7 +130,7 @@ def test_theme_health_shows_real_published_theme_with_evidence_and_company_count
     at.run()
     assert not at.exception
     all_text = _main_text(at)
-    assert "Theme Health" in all_text
+    assert "Research theses" in all_text
     assert theme.title in all_text
     assert "2" in all_text  # 2 evidence items
     assert "companies" in all_text  # 2 distinct companies -> plural
@@ -179,7 +179,7 @@ def test_theme_health_link_targets_the_specific_published_theme(tmp_path, monkey
     at.run()
     at.run()  # second run: dashboard becomes the default page
     assert not at.exception
-    explore_links = [pl for pl in at.main.get("page_link") if pl.label == "Explore →"]
+    explore_links = [pl for pl in at.main.get("page_link") if pl.label == "Open thesis →"]
     assert len(explore_links) == 1
 
 
@@ -220,7 +220,7 @@ def test_theme_health_never_reads_internal_or_unpublished_themes(tmp_path, monke
     at.run()
     all_text = _main_text(at)
     assert "Internal candidate theme" not in all_text
-    assert "Theme Health" not in all_text
+    assert "Research theses" not in all_text
 
 
 # ============================================================

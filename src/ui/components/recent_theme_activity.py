@@ -59,11 +59,13 @@ from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import daily_news_backend
 from src.logic import filing_display
+from src.logic.filing_visibility import not_material_rcept_nos
 from src.logic.formatting import fmt_date, fmt_datetime_local
 from src.logic.market_map import REGION_SOURCE
 from src.logic.recent_theme_activity import ThemeActivityItem, ThemeActivityRow, build_recent_theme_activity
 from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
+from src.ui.components.primitives import theme_dot_html
 from src.ui.ui import get_page
 
 WINDOW_DAYS = 14
@@ -133,8 +135,11 @@ def _load_filing_items(settings: Settings) -> list[ThemeActivityItem]:
             filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
         except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the rollup
             continue
+        # Redesign v2 materiality policy: a NOT_MATERIAL candidate's filing
+        # never counts toward, or becomes the latest item of, a theme here.
+        suppressed = not_material_rcept_nos(settings, source)
         for filing in filings:
-            if not filing.theme_slug:
+            if not filing.theme_slug or filing.rcept_no in suppressed:
                 continue
             timestamp = _filing_timestamp(filing)
             if timestamp is None:
@@ -196,7 +201,7 @@ def _render_row(row: ThemeActivityRow) -> None:
     real item it names. No theme-specific Themes-page link here — see
     render_recent_theme_activity's own single, generic "Browse all
     themes ->" link, rendered once for the whole component instead."""
-    with st.container(border=True, key=f"card-recent-theme-activity-{row.theme_slug}"):
+    with st.container(key=f"card-recent-theme-activity-{row.theme_slug}"):
         item_word = "item" if row.count == 1 else "items"
         left, right = st.columns([3.4, 1.3], vertical_alignment="center")
         with left:
@@ -211,20 +216,19 @@ def _render_row(row: ThemeActivityRow) -> None:
             if row.most_recent.edinet_stock_code:
                 company_html += f" ({_esc(row.most_recent.edinet_stock_code)})"
             title_html = (
-                f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.1rem;">{_esc(row.most_recent.edinet_title)}</div>'
+                f'<div class="er-muted er-rta-title">{_esc(row.most_recent.edinet_title)}</div>'
                 if row.most_recent.edinet_title else ""
             )
             st.markdown(
-                f'<div class="er-card-title" style="font-size:0.92rem;">{_esc(row.theme_name)}</div>'
-                f'<div class="er-muted" style="font-size:0.8rem; margin-top:0.15rem;">'
-                f"{company_html} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>"
+                f'<div class="er-card-title er-rta-name">{theme_dot_html(row.theme_slug)}{_esc(row.theme_name)}</div>'
+                f'<div class="er-muted er-rta-latest">'
+                f"Latest · {company_html} · {_esc(row.most_recent.item_type)} · {_esc(row.most_recent.display_date)}</div>"
                 f"{title_html}",
                 unsafe_allow_html=True,
             )
         with right:
             st.markdown(
-                f'<div class="er-muted" style="font-size:0.74rem; text-align:right;">'
-                f"{row.count} {item_word} in the last 14 days</div>",
+                f'<div class="er-rta-count er-mono-muted">{row.count} {item_word} in the last 14 days</div>',
                 unsafe_allow_html=True,
             )
             if row.most_recent.source_url:
@@ -232,17 +236,31 @@ def _render_row(row: ThemeActivityRow) -> None:
                     st.link_button("View →", row.most_recent.source_url)
 
 
-def render_recent_theme_activity(ctx, settings: Settings) -> None:
+def load_theme_activity_rows(ctx, settings: Settings, max_rows: int = MAX_ROWS) -> list[ThemeActivityRow]:
+    """The real 14-day rollup — exposed (redesign v2) so the Dashboard's
+    "Theme items · 14d" tile can total every theme's count while the list
+    below still shows only the top MAX_ROWS. Same inputs, same pure
+    builder, no new data source."""
     theme_names_by_slug = {t.slug: t.name for t in ctx.theme_repository.get_all_themes()}
     items = _load_filing_items(settings) + _load_daily_news_items(settings)
-    rows = build_recent_theme_activity(items, theme_names_by_slug, window_days=WINDOW_DAYS, max_rows=MAX_ROWS)
+    return build_recent_theme_activity(items, theme_names_by_slug, window_days=WINDOW_DAYS, max_rows=max_rows)
+
+
+def render_recent_theme_activity(ctx, settings: Settings, rows: list[ThemeActivityRow] | None = None) -> None:
+    if rows is None:
+        rows = load_theme_activity_rows(ctx, settings)
     if not rows:
         return
 
-    st.markdown('<div class="er-section-label">Recent Theme Activity</div>', unsafe_allow_html=True)
-    st.markdown('<div class="er-muted">Where tracked coverage has moved recently</div>', unsafe_allow_html=True)
+    total = sum(r.count for r in rows)
+    st.markdown(
+        '<div class="er-split-head"><div class="er-section-label er-tight">Theme activity</div>'
+        f'<div class="er-split-meta">14d · {total} items</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="er-muted er-section-sub">Where tracked coverage has moved recently</div>', unsafe_allow_html=True)
 
-    for row in rows:
+    for row in rows[:MAX_ROWS]:
         _render_row(row)
 
     themes_page = get_page("themes")

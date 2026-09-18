@@ -127,7 +127,13 @@ from src.logic import filing_display
 from src.logic.source_link import public_source_url
 from src.models.models import CandidateSignal, FilingEvent
 from src.ui.components import radar_status
+from src.ui.components.primitives import chip_html, lang_attr, venue_badge_html
 from src.ui.components.radar_status import RadarItem
+
+# Redesign v2: every translated title/excerpt this card shows is a stored
+# machine translation (Translation.provider, e.g. DeepL) — say so wherever
+# translated text is rendered, never only in a drawer.
+MACHINE_TRANSLATION_NOTE = "Translation is machine-generated. Verify figures against the original filing before citing."
 
 
 def _parse_source_filed_date(raw: str):
@@ -280,7 +286,8 @@ _NO_SAFE_EXCERPT_BOUNDARY_FALLBACK = "A complete excerpt could not be safely det
 
 
 def _render_expandable_text(
-    *, toggle_key: str, show_label: str, hide_label: str, section_label: str, text: str, may_be_incomplete: bool = False
+    *, toggle_key: str, show_label: str, hide_label: str, section_label: str, text: str, may_be_incomplete: bool = False,
+    original_language: str | None = None, is_machine_translation: bool = False,
 ) -> None:
     """One compact, display-only show/hide toggle revealing `text` under
     `section_label` when expanded. `st.session_state` here is purely
@@ -326,7 +333,9 @@ def _render_expandable_text(
         display_text = text
         if may_be_incomplete:
             display_text = filing_display.trim_excerpt_for_display(text) or _NO_SAFE_EXCERPT_BOUNDARY_FALLBACK
-        st.markdown(f'<div>{html.escape(display_text)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="er-excerpt"{lang_attr(original_language)}>{html.escape(display_text)}</div>', unsafe_allow_html=True)
+        if is_machine_translation:
+            st.markdown(f'<div class="er-mt-note">{html.escape(MACHINE_TRANSLATION_NOTE)}</div>', unsafe_allow_html=True)
         if may_be_incomplete:
             st.markdown(
                 f'<div class="er-muted" style="margin-top:0.3rem;">{html.escape(_EXCERPT_MAY_BE_INCOMPLETE_NOTICE)}</div>',
@@ -347,18 +356,16 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
     filing = item.filing
     candidate = item.candidate
 
-    with st.container(border=True, key=f"radar-item-{filing.rcept_no}"):
+    with st.container(key=f"radar-item-{filing.rcept_no}"):
         filed_label = _filed_label(filing)
-        if filed_label:
-            st.markdown(
-                '<div style="display:flex; justify-content:space-between; align-items:baseline;">'
-                f'<div class="er-muted">{_identity_line(filing)}</div>'
-                f'<div class="er-muted">Filed {html.escape(filed_label)}</div>'
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(f'<div class="er-muted">{_identity_line(filing)}</div>', unsafe_allow_html=True)
+        ticker_html = f'<span class="er-mono er-mono-muted">{html.escape(filing.stock_code)}</span>' if filing.stock_code else ""
+        filed_html = f'<div class="er-filing-filed">Filed {html.escape(filed_label)}</div>' if filed_label else ""
+        st.markdown(
+            '<div class="er-filing-head">'
+            f'<div class="er-filing-head-left">{venue_badge_html(filing.source_name)}{ticker_html}</div>{filed_html}</div>'
+            f'<div class="er-muted">{_identity_line(filing)}</div>',
+            unsafe_allow_html=True,
+        )
 
         # Dashboard/Filings usability pass (design/DECISIONS.md): DART/
         # EDINET's Original/English title+Filing-summary toggle state.
@@ -388,7 +395,14 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             show_translated = True  # irrelevant: display_title() ignores this for an English-native filing
 
         title = filing_display.display_title(filing, candidate, prefer_translated=show_translated)
-        st.markdown(f'<div class="er-card-title" style="margin-top:0.3rem;">{html.escape(title)}</div>', unsafe_allow_html=True)
+        title_is_translated = (not is_english) and show_translated and has_title_translation
+        title_attr = "" if (is_english or title_is_translated) else lang_attr(filing.original_language)
+        st.markdown(f'<div class="er-card-title"{title_attr}>{html.escape(title)}</div>', unsafe_allow_html=True)
+        category_label = filing_display.display_category_label(filing, candidate)
+        if category_label:
+            st.markdown(f'<div style="margin-top:0.4rem;">{chip_html(category_label, "theme", mono=is_english)}</div>', unsafe_allow_html=True)
+        if title_is_translated:
+            st.markdown(f'<div class="er-mt-note">{html.escape(MACHINE_TRANSLATION_NOTE)}</div>', unsafe_allow_html=True)
 
         # "Review needed" badge (design/DECISIONS.md) — advisory only,
         # never blocks or delays publication; see filing_display.
@@ -484,7 +498,8 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             summary_label_html += f'<span class="er-status-tag er-tag-neutral">{html.escape(item_label)}</span>'
         summary_label_html += "</div>"
         st.markdown(summary_label_html, unsafe_allow_html=True)
-        st.markdown(f'<div>{html.escape(summary)}</div>', unsafe_allow_html=True)
+        summary_attr = lang_attr(filing.original_language) if (not is_english and has_any_translation and not show_translated) else ""
+        st.markdown(f'<div class="er-filing-summary"{summary_attr}>{html.escape(summary)}</div>', unsafe_allow_html=True)
 
         if not is_english and has_any_translation:
             toggle_label = "Original" if show_translated else "English"
@@ -508,7 +523,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     toggle_key=f"radar-translation-expanded-{filing.rcept_no}",
                     show_label="View translated filing excerpt", hide_label="Hide translated filing excerpt",
                     section_label="Translated filing excerpt", text=translation_text,
-                    may_be_incomplete=may_be_incomplete,
+                    may_be_incomplete=may_be_incomplete, is_machine_translation=True,
                 )
 
             if native_text and native_is_readable:
@@ -516,7 +531,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     toggle_key=f"radar-originaltext-{filing.rcept_no}",
                     show_label="View original filing excerpt", hide_label="Hide original filing excerpt",
                     section_label="Original filing excerpt", text=native_text,
-                    may_be_incomplete=may_be_incomplete,
+                    may_be_incomplete=may_be_incomplete, original_language=filing.original_language,
                 )
 
         _render_quiet_links(filing, filed_label, candidate)
@@ -529,9 +544,12 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         # this fix changed, but whose call site inside
         # _render_quiet_links stays untouched — see that function's own
         # docstring). Rendering it again here would duplicate it.
+        # Redesign v2: the same provider-accurate official fields
+        # official_filing_reference() assembles, laid out as labelled
+        # cells; empty fields are omitted, never shown as a placeholder.
         reference = filing_display.official_filing_reference(filing, filed_label)
         st.markdown(
-            '<div class="er-muted" style="margin-top:0.5rem;"><strong>Official filing reference</strong></div>'
-            f'<div class="er-muted">{html.escape(reference)}</div>',
+            '<div class="er-muted" style="margin-top:0.6rem;"><strong>Official filing reference</strong></div>'
+            f'<div class="er-muted er-reference-line">{html.escape(reference)}</div>',
             unsafe_allow_html=True,
         )

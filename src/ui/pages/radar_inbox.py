@@ -41,10 +41,12 @@ from src.data_access.edgar import edgar_pipeline, edgar_service
 from src.data_access.edgar import scan_service as edgar_scan_service
 from src.data_access.edinet import edinet_pipeline, edinet_service
 from src.data_access.edinet import scan_service as edinet_scan_service
+from src.logic.filing_visibility import is_not_material
 from src.logic.formatting import today_local
 from src.logic.radar_freshness import compute_radar_freshness
 from src.models.models import CandidateStatus
 from src.ui.components.empty_state import empty_state
+from src.ui.components.primitives import page_header
 from src.ui.components.radar_card import candidate_row
 from src.ui.components.radar_status import RadarItem
 
@@ -68,7 +70,12 @@ _FILTER_KEYS = (
     "radar-filter-source",
     "radar-filter-theme",
     "radar-filter-dates",
+    # Redesign v2 materiality policy: NOT_MATERIAL candidates are hidden
+    # by default and shown only behind this explicit control.
+    "radar-filter-include-admin",
 )
+_INCLUDE_ADMIN_KEY = "radar-filter-include-admin"
+_PAGE_SUBTITLE = "Material filings from tracked companies across SEC EDGAR, DART and EDINET."
 
 # Radar layout correction (design/DECISIONS.md): the Source multiselect
 # must always offer every canonical source as an option, even when no
@@ -552,12 +559,7 @@ def render() -> None:
     # (below, after the readiness gate) is the only default-view
     # statement about source status, and it already derives strictly
     # from durable provider_scan_status — untouched by this phase.
-    st.markdown('<div class="er-page-title">Latest Filings</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="er-muted">Radar watches tracked companies for material filings, theme developments, '
-        'and high-confidence signals.</div>',
-        unsafe_allow_html=True,
-    )
+    page_header("Filings", _PAGE_SUBTITLE)
 
     if not dart_readiness.ready and not edgar_readiness.ready and not edinet_readiness.ready:
         _render_missing_configuration(dart_readiness, edgar_readiness, edinet_readiness)
@@ -618,13 +620,20 @@ def render() -> None:
     # are the complete filter set now. "Clear all filters" is preserved
     # (it still clears every remaining filter via _FILTER_KEYS) in the
     # same trailing-column position it already occupied.
-    clear_col = st.columns([6, 2])[1]
+    admin_col, clear_col = st.columns([6, 2], vertical_alignment="center")
+    with admin_col:
+        # Redesign v2 materiality policy: the audited raw candidate record
+        # stays on disk; this control only re-includes it in THIS view.
+        # The treasury-only class (_is_low_value_suppressed) is excluded
+        # earlier, at snapshot time, and is not affected by this toggle.
+        include_admin = st.checkbox("Include administrative filings", key=_INCLUDE_ADMIN_KEY, value=False)
     with clear_col:
-        st.markdown('<div style="margin-top:1.6rem;"></div>', unsafe_allow_html=True)
         with st.container(key="cta-tertiary-clear-radar-filters"):
             st.button("Clear all filters", key="radar-clear-filters-btn", on_click=_clear_filters)
 
     filtered = items
+    if not include_admin:
+        filtered = [i for i in filtered if not is_not_material(i.candidate)]
     if search_query and search_query.strip():
         query = search_query.strip().lower()
         filtered = [i for i in filtered if query in i.filing.report_nm.lower() or query in i.filing.corp_name.lower()]
@@ -647,7 +656,7 @@ def render() -> None:
     # containers/expanders/buttons in one script run. Reset to page 1
     # whenever any filter value changes.
     filter_signature = (
-        search_query, tuple(sorted(source_filter)), tuple(sorted(theme_filter)), date_range,
+        search_query, tuple(sorted(source_filter)), tuple(sorted(theme_filter)), date_range, include_admin,
     )
     if st.session_state.get("radar-filter-signature") != filter_signature:
         st.session_state["radar-page"] = 1
@@ -684,6 +693,11 @@ def render() -> None:
         except Exception:  # noqa: BLE001 — fail closed; never block card rendering on a comparison-repository problem
             latest_comparisons_by_candidate_id = {}
 
+    st.markdown(
+        '<div class="er-list-head"><div class="er-section-label er-tight">Latest filings</div>'
+        '<div class="er-split-meta">Newest first</div></div>',
+        unsafe_allow_html=True,
+    )
     for item in page_items:
         candidate_row(
             item,

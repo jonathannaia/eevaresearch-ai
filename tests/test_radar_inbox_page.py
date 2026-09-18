@@ -270,10 +270,19 @@ def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
+        assert not at.exception
+        all_text = " ".join(m.value for m in at.markdown)
+        # Redesign v2 materiality policy: a NOT_MATERIAL candidate is hidden
+        # from the default material list and reappears only behind the
+        # explicit "Include administrative filings" control — still with no
+        # materiality label on the card either way. The rerun stays inside
+        # the settings patch so it reads the same tmp_path store.
+        assert "주식등의대량보유상황보고서" not in all_text
+        at.checkbox(key="radar-filter-include-admin").check().run()
 
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "주식등의대량보유상황보고서" in all_text  # the card itself still renders
+    assert "주식등의대량보유상황보고서" in all_text  # the card itself still renders once included
     assert "Not material" not in all_text
     assert "routine ownership update" not in all_text
     # Nothing here claims a broader market-conviction/investment reading.
