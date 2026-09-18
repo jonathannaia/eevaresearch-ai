@@ -109,7 +109,7 @@ from datetime import datetime, timezone
 import streamlit as st
 
 from src.config.settings import Settings, get_settings
-from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, editorial_pipeline
 from src.data_access.daily_news.company_aliases import daily_news_company_names
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
@@ -318,13 +318,13 @@ def high_signal_count(settings: Settings) -> int:
 
 
 def _effective_tier(item: NewsStory | EditorialStory) -> NewsMaterialityTier:
-    """None (materiality_tier's own default — see NewsMaterialityTier's
-    docstring) means "persisted before this field existed, never
-    reclassified" — a display-only, never-persisted safe default of
-    Watchlist: shown, not silently hidden like Background, but never
-    overclaimed as confidently material like High Signal either. The
-    stored record itself is never written back to or modified here."""
-    return item.materiality_tier or NewsMaterialityTier.WATCHLIST
+    """A stored tier always wins. None (persisted before materiality_tier
+    existed) is classified at read time with the current rules (Signals
+    quality pass, legacy-tier option (a)) — display-only; the stored
+    record is never written back to or modified here."""
+    if isinstance(item, EditorialStory):
+        return editorial_pipeline.effective_editorial_tier(item)
+    return daily_news_pipeline.effective_issuer_tier(item)
 
 
 def _tier_badge_html(tier: NewsMaterialityTier) -> str:

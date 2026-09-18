@@ -973,3 +973,204 @@ def test_material_denial_with_concrete_settlement_and_anchor_reaches_high_signal
     )
     assert tier == NewsMaterialityTier.HIGH_SIGNAL
     assert any(r.startswith("quantified_change:revenue") for r in reasons)
+
+
+# --- Signals quality pass (2026-09-18): low-signal formats and issuer
+# naming. Every negative below is a real item from the local 154-record
+# issuer-lane cache that previously surfaced at Watchlist; each group is
+# paired with real positive controls that must not move. ---
+
+from src.data_access.daily_news.materiality_classification import (  # noqa: E402
+    _low_signal_format_hit,
+    issuer_name_forms,
+)
+
+_NVIDIA = issuer_name_forms("NVIDIA", "NVDA")
+_INTEL = issuer_name_forms("Intel Corp.", "INTC")
+
+
+def _issuer(headline, excerpt, names):
+    return classify_issuer_story(headline, excerpt, SourceClass.OFFICIAL_COMPANY, issuer_names=names)
+
+
+def test_event_appearance_headlines_drop_from_watchlist_to_background():
+    """Generic attendance/presentation at a named event, with no concrete
+    development in the headline."""
+    for headline in (
+        "Intel at AI Infra Summit 2026",
+        "Intel Outlines Architectures for Agentic AI at Hot Chips 2026",
+    ):
+        tier, reasons = _issuer(headline, "", _INTEL)
+        assert tier == NewsMaterialityTier.BACKGROUND, headline
+        assert reasons[0].startswith("low_signal_format:event_appearance:"), (headline, reasons)
+
+
+def test_careers_program_and_survey_report_drop_to_background():
+    tier, reasons = _issuer("Creating Pathways to Semiconductor Careers: Intel Launches SEPP", "", _INTEL)
+    assert (tier, reasons[0].split(":")[1]) == (NewsMaterialityTier.BACKGROUND, "careers_or_community")
+    tier, reasons = _issuer(
+        "AI Data Center Growth Hinges on Solving Both Power Constraints and Community Concerns, Bloom Energy Report Finds",
+        "", issuer_name_forms("Bloom Energy Corp", "BE"),
+    )
+    assert (tier, reasons[0].split(":")[1]) == (NewsMaterialityTier.BACKGROUND, "survey_or_report")
+
+
+def test_concrete_development_announced_at_a_conference_keeps_its_normal_tier():
+    """Exception (precision refinement 2): the conference is incidental —
+    a process-milestone announcement at VLSI Symposium stays Watchlist."""
+    headline = "Intel Foundry Details Process Milestones and Future Innovation at VLSI Symposium"
+    assert _low_signal_format_hit(headline, issuer_lane=True) is None
+    assert _issuer(headline, "", _INTEL) == (
+        NewsMaterialityTier.WATCHLIST, ("on_taxonomy_no_anchor:semiconductors_and_equipment",),
+    )
+    # A real launch/delivery headline under an event prefix is not demoted either.
+    assert _low_signal_format_hit("AAI 2026: AMD Delivers Full-Stack Compute for the Agentic AI Era", issuer_lane=True) is None
+
+
+def test_showcase_and_keynote_without_a_concrete_development_are_event_appearances():
+    for headline in (
+        "MaxLinear Showcases Panther for AI Storage Efficiency and AI Inference Performance at FMS 2026",
+        "Marvell Keynote at COMPUTEX 2026: The Future of AI Scaling Depends on Connectivity",
+        "Sparks Fly: NVIDIA Accelerates Local AI at IFA 2026",
+    ):
+        hit = _low_signal_format_hit(headline, issuer_lane=True)
+        assert hit is not None and hit.startswith("event_appearance:"), (headline, hit)
+
+
+def test_blog_hosted_technical_item_is_never_demoted_for_its_hosting():
+    """Exception (precision refinement 1): this real item is published on
+    blogs.nvidia.com; hosting is not a signal, so it goes through the
+    normal classifier and stays Watchlist (on-taxonomy, no anchor)."""
+    headline = "NVIDIA NVLink Fusion Expands With NVHBM Custom High-Bandwidth Memory"
+    assert _low_signal_format_hit(headline, issuer_lane=True) is None
+    tier, reasons = _issuer(
+        headline,
+        "The next wave of AI is placing new demands on infrastructure. As AI agents and trillion-parameter "
+        "workloads become mainstream, the performance of AI infrastructure depends not only on compute, but on "
+        "how compute, memory, storage, networking and software are designed together as a unified system.",
+        _NVIDIA,
+    )
+    assert tier == NewsMaterialityTier.WATCHLIST
+    assert reasons[0].startswith("on_taxonomy_no_anchor:")
+
+
+def test_generic_issuer_essay_headlines_are_low_signal_only_without_concrete_content():
+    for headline in (
+        "How XPUs Meet a World-Class AI Factory",
+        "Why Scaling AI Compute Performance Requires a New Power Architecture",
+        "[AI Ecosystem] The real bottleneck: Data, not compute",
+    ):
+        hit = _low_signal_format_hit(headline, issuer_lane=True)
+        assert hit is not None and hit.startswith("issuer_essay:"), (headline, hit)
+    # Same essay shapes carrying a concrete development are exempt.
+    for headline in (
+        "How NVIDIA and AWS Will Deliver 2 Million Additional GPUs",
+        "[AI Ecosystem] SK hynix Begins Mass Production of HBM4E",
+    ):
+        assert _low_signal_format_hit(headline, issuer_lane=True) is None, headline
+
+
+def test_sponsorship_award_and_gaming_headlines_are_low_signal_formats():
+    for headline, kind in (
+        ("Intel Named Official Compute Partner of McLaren Racing", "sponsorship"),
+        ("Cisco and USGA Extend Partnership with Renewed Focus on Powering the Game of Golf in the AI Era", "sponsorship"),
+        ("Arista Networks Positioned as a Leader in the 2026 Gartner® Magic Quadrant™ for Enterprise Wired and Wireless LAN Infrastructure", "award_or_recognition"),
+        ("NVIDIA CEO Tops Glassdoor’s 2026 List of Best CEOs", "award_or_recognition"),
+        ("MaxLinear Panther Storage Accelerator Wins FMS 2026 Best of Show Award in Servers & Networking Category", "award_or_recognition"),
+        ("‘NBA 2K27’ With NVIDIA DLSS 5 Leads 26 New Games Coming to GeForce NOW", "consumer_gaming"),
+        ("Rockwell Automation to Present at Morgan Stanley 14th Annual Laguna Conference", "event_appearance"),
+    ):
+        hit = _low_signal_format_hit(headline, issuer_lane=True)
+        assert hit is not None and hit.startswith(f"{kind}:"), (headline, hit)
+
+
+def test_issuer_not_named_items_are_background():
+    for company, ticker, headline, excerpt in (
+        ("nVent Electric plc", "NVT", "Siemens and partners develop reference  architecture purpose-built for NVIDIA AI data centers", ""),
+        ("SK Hynix", "000660", "[AI Infrastructure Insight] Why faster GPUs alone can’t deliver AI performance", ""),
+        ("NVIDIA", "NVDA", "How XPUs Meet a World-Class AI Factory",
+         "To generate intelligence at scale, AI factories run continuously, and their economics are defined by delivered output."),
+    ):
+        assert _issuer(headline, excerpt, issuer_name_forms(company, ticker)) == (
+            NewsMaterialityTier.BACKGROUND, ("issuer_not_named",),
+        ), headline
+
+
+def test_issuer_naming_accepts_first_word_and_case_sensitive_ticker():
+    cisco = issuer_name_forms("Cisco Systems, Inc.", "CSCO")
+    assert "Cisco" in cisco.names and "Cisco Systems" in cisco.names
+    assert _issuer("Cisco Reports Fourth Quarter Earnings", "", cisco)[0] == NewsMaterialityTier.HIGH_SIGNAL
+    assert _issuer("nVent Expands Data Center Liquid Cooling Capacity", "", issuer_name_forms("nVent Electric plc", "NVT"))[0] == NewsMaterialityTier.HIGH_SIGNAL
+    amd = issuer_name_forms("Advanced Micro Devices", "AMD")
+    assert "Advanced" not in amd.names  # generic first word never used on its own
+    assert _issuer(
+        "AMD, Cisco and HUMAIN Expand Saudi Arabia’s AI Infrastructure as AMD Instinct Systems Go Live", "", amd,
+    )[0] == NewsMaterialityTier.WATCHLIST
+    assert _issuer("amd lowercase prose mention of data center gpus", "", amd) == (
+        NewsMaterialityTier.BACKGROUND, ("issuer_not_named",),
+    )
+
+
+def test_hard_gates_survive_a_low_signal_format():
+    """Positive control: NVIDIA's blog-hosted $500B financing-platform
+    announcement reaches High Signal via Gate B, and a low-signal format
+    (here an event framing) never blocks a hard gate."""
+    tier, reasons = _issuer(
+        "NVIDIA AI Factory Compute Is Becoming an Investable Asset Class",
+        "We announced partnerships with Apollo, BlackRock, Blackstone, Brookfield, Goldman Sachs and KKR to "
+        "establish independent financing platforms designed to mobilize over $500 billion of third-party capital "
+        "to support the buildout of AI infrastructure over time.",
+        _NVIDIA,
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons[0].startswith("quantified_change:")
+    tier, reasons = _issuer(
+        "Rockwell Automation to Present at Morgan Stanley Conference; Approves $1 Billion Stock Repurchase",
+        "", issuer_name_forms("Rockwell Automation", "ROK"),
+    )
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons[0].startswith("quantified_capital_return:")
+
+
+def test_real_high_signal_and_ambiguous_watchlist_controls_do_not_move():
+    for company, ticker, headline, expected in (
+        ("Advanced Micro Devices", "AMD", "AMD and Anthropic Announce Strategic Partnership to Deploy Up to 2 Gigawatts of AMD Instinct MI450 Series GPUs", NewsMaterialityTier.HIGH_SIGNAL),
+        ("Rockwell Automation", "ROK", "Rockwell Automation Approves $1 Billion for Common Stock Repurchase and Declares Common Stock Dividend", NewsMaterialityTier.HIGH_SIGNAL),
+        ("Quanta Services, Inc.", "PWR", "QUANTA SERVICES REPORTS SECOND QUARTER 2026 RESULTS", NewsMaterialityTier.HIGH_SIGNAL),
+        ("Marvell Technology, Inc.", "MRVL", "Marvell Announces Availability of Industry’s First 102.4 Tbps Switch Purpose-Built for AI and Cloud Data Centers", NewsMaterialityTier.WATCHLIST),
+        ("Arista Networks, Inc.", "ANET", "Arista Networks to Announce Q2 2026 Financial Results on Tuesday, August 4, 2026", NewsMaterialityTier.WATCHLIST),
+        ("MaxLinear, Inc.", "MXL", "MaxLinear, Inc. Announces Conference Call to Review Second Quarter 2026 Financial Results", NewsMaterialityTier.WATCHLIST),
+        ("Quanta Services, Inc.", "PWR", "Quanta Services Announces Quarterly Cash Dividend", NewsMaterialityTier.WATCHLIST),
+    ):
+        assert _issuer(headline, "", issuer_name_forms(company, ticker))[0] == expected, headline
+    # Real excerpt (the headline alone is off-taxonomy): stays Watchlist.
+    assert _issuer(
+        "Cisco Expands Secure AI Factory with NVIDIA for the Rack-Scale Era",
+        "The next era of AI infrastructure can't just deliver raw compute; it must harness that compute "
+        "through validated, full-stack architectures",
+        issuer_name_forms("Cisco Systems, Inc.", "CSCO"),
+    )[0] == NewsMaterialityTier.WATCHLIST
+
+
+def test_material_headlines_with_overlapping_words_are_not_low_signal_formats():
+    for headline in (
+        "Micron awarded $6.1 billion CHIPS Act grant to expand memory fab capacity",
+        "Big Tech racing to build AI data centers as power demand surges",
+        "Nvidia gaming revenue rises 20% on RTX demand",
+        "Intel Announces Leadership Appointment at Intel Foundry to Accelerate Development and Manufacturing",
+    ):
+        assert _low_signal_format_hit(headline, issuer_lane=True) is None, headline
+
+
+def test_essay_rules_never_apply_to_the_editorial_lane():
+    assert _low_signal_format_hit("Why Nvidia's data center story is changing", issuer_lane=False) is None
+    assert _low_signal_format_hit("[Analysis] Samsung HBM supply", issuer_lane=False) is None
+
+
+def test_omitting_issuer_names_keeps_previous_behavior_for_other_callers():
+    tier, reasons = classify_issuer_story(
+        "Siemens and partners develop reference  architecture purpose-built for NVIDIA AI data centers",
+        "", SourceClass.OFFICIAL_COMPANY,
+    )
+    assert tier == NewsMaterialityTier.WATCHLIST
+    assert reasons[0].startswith("on_taxonomy_no_anchor:")

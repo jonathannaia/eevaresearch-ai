@@ -141,10 +141,41 @@ otherwise bypass the quantification requirement entirely):
     authorization) -> Watchlist, never Background and never High
     Signal — routine capital-return news is real and worth surfacing,
     just not material enough for the default feed.
+
+--- Low-signal formats (Signals quality pass, 2026-09-18) ---
+A HEADLINE that clearly announces a low-signal format — an IR/
+conference attendance notice, an award/ranking/recognition, a sports
+or venue sponsorship, a careers/CSR/community program, consumer
+gaming, or a "report finds"/survey statistic — blocks the WEAK paths
+only: Gate C,
+Gate D, and the on-taxonomy Watchlist fallback. The hard gates (A, A2,
+A4, B, B2 — results, dividend actions, quantified change/deals,
+quantified buybacks) are never affected, so e.g. NVIDIA's blog-hosted
+$500B financing-platform announcement still reaches High Signal via
+Gate B. Two further shapes block the weak paths ONLY when the headline
+carries no concrete development (a launch, result, contract, milestone,
+process advance, partnership, or a number): presentation/showcase/venue
+framing ("keynote", "showcases", "at Hot Chips 2026") and, on the
+issuer lane only, generic essay headlines ("[AI Ecosystem] ...",
+"Why ...", "How ..."). So "Intel Foundry Details Process Milestones ...
+at VLSI Symposium" keeps its normal tier, and a blog-hosted technical
+post is never demoted for where it is hosted. Matched against the
+headline only, never the excerpt: real
+release bodies routinely mention a conference call, a trade-show demo,
+or a careers page in boilerplate, and that must never demote them. An
+ambiguous item that matches no format stays exactly where it was.
+
+--- Issuer naming (issuer lane only, Signals quality pass) ---
+classify_issuer_story() accepts the assigned issuer's name forms; when
+supplied and neither the headline nor the excerpt names the issuer, the
+item is BACKGROUND ("issuer_not_named") regardless of any gate — an
+official feed occasionally carries a partner's or a third party's
+release that is not about the issuer at all.
 """
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 
 from src.data_access.daily_news.source_registry import SourceCategory
@@ -456,6 +487,165 @@ _SURVEY_RESEARCH_KEYWORDS: tuple[str, ...] = (
 )
 _SURVEY_PERCENTAGE_PATTERN = re.compile(r"\d+%\s*(believe|predict|expect|say|plan to|report that)", re.IGNORECASE)
 
+# --- Low-signal formats (see "Low-signal formats" in the module
+# docstring). Headline-only, weak-path-only. Each pattern was taken from
+# a real item in the 154-record issuer-lane sample; broad single words
+# that also carry a material sense ("award" as in "awarded a contract",
+# "racing" as in "racing to build") are deliberately absent. ---
+_LOW_SIGNAL_HEADLINE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    # Pure attendance/IR-calendar notices — there is never a concrete
+    # development inside "to present at ..." or "... with the financial
+    # community", so these demote unconditionally.
+    "event_appearance": (
+        re.compile(r"\bto (?:present|participate|speak) at\b", re.IGNORECASE),
+        re.compile(r"\bparticipate in\b[^.]{0,60}\b(?:conferences?|events?|summit)\b", re.IGNORECASE),
+        re.compile(r"\b(?:investor|financial) (?:conferences?|community)\b", re.IGNORECASE),
+        re.compile(r"\b(?:webinar|livestream|fireside chat)\b", re.IGNORECASE),
+    ),
+    "award_or_recognition": (
+        re.compile(r"\bmagic quadrant\b", re.IGNORECASE),
+        re.compile(r"\bbest of show\b", re.IGNORECASE),
+        re.compile(r"\bwins?\b[^.]{0,60}\bawards?\b", re.IGNORECASE),
+        re.compile(r"\bnamed\b[^.]{0,80}\b(?:list|leader|best|top|most|lighthouse|winner)\b", re.IGNORECASE),
+        re.compile(r"\b(?:tops|ranks?|ranked)\b[^.]{0,60}\b(?:list|ranking)\b", re.IGNORECASE),
+        re.compile(r"\bmost trustworthy\b", re.IGNORECASE),
+        re.compile(r"\bbest (?:ceos?|places to work|employers?|workplaces?)\b", re.IGNORECASE),
+        re.compile(r"\bpositioned as a leader\b", re.IGNORECASE),
+    ),
+    "sponsorship": (
+        re.compile(r"\bofficial\b[^.]{0,60}\bpartner\b", re.IGNORECASE),
+        re.compile(r"\b(?:golf|championships?|kentucky derby|olympic games|world cup|motorsport|formula (?:1|one))\b", re.IGNORECASE),
+    ),
+    "careers_or_community": (
+        re.compile(r"\bcareers?\b", re.IGNORECASE),
+        re.compile(r"\b(?:scholarships?|internships?|apprenticeships?|workforce development)\b", re.IGNORECASE),
+        re.compile(r"\b(?:feeding america|food banks?|non-?profits?|charit(?:y|able)|philanthrop\w*|volunteer\w*)\b", re.IGNORECASE),
+    ),
+    "consumer_gaming": (
+        re.compile(r"\bgeforce now\b", re.IGNORECASE),
+        re.compile(r"\bgamers?\b", re.IGNORECASE),
+        re.compile(r"\b(?:pc|new|blockbuster|aaa|video) games?\b", re.IGNORECASE),
+        re.compile(r"\bgames? coming to\b", re.IGNORECASE),
+        re.compile(r"\b(?:gaming bundle|gamer days|gamescom)\b", re.IGNORECASE),
+    ),
+    "survey_or_report": (
+        re.compile(r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine) in (?:10|ten)\b", re.IGNORECASE),
+    ),
+}
+
+# Presentation/showcase/venue framing — demotes ONLY when the headline
+# carries no concrete development (see _has_concrete_development): a
+# process milestone, launch, contract, or result that merely happens to
+# be announced at a conference keeps its normal classification.
+_PRESENTATION_OR_VENUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bkeynote\b", re.IGNORECASE),
+    re.compile(r"\bshowcas(?:e|es|ing)\b", re.IGNORECASE),
+    # Capitalized event name + year ("at AI Infra Summit 2026", "at Hot
+    # Chips 2026") or an event-type noun ("at VLSI Symposium");
+    # case-sensitive on purpose.
+    re.compile(r"\bat (?:the )?(?:[A-Z][\w&'.-]*\s+){1,4}20\d\d\b"),
+    re.compile(r"\bat (?:the )?(?:[A-Z][\w&'.-]*\s+){0,4}(?:Summit|Symposium|Conference|Expo|Congress|Forum)\b"),
+    re.compile(r"^[A-Z][\w&'.-]*(?:\s+[A-Z][\w&'.-]*){0,3}\s+20\d\d:"),
+)
+
+# Issuer lane only: generic thought-leadership/essay headline shapes.
+# Never applied to the editorial lane, where "Why ..."/"How ..." headlines
+# are ordinary analysis journalism. Hosting (e.g. a blogs.* domain) is
+# deliberately NOT a signal — companies publish real technical and
+# product news on their blogs. Demotes only without a concrete
+# development, like the presentation/venue patterns above.
+_ISSUER_ESSAY_HEADLINE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\[[^\]]{2,60}\]"),  # "[AI Ecosystem] ...", "[AI Infrastructure Insight] ..."
+    re.compile(r"^(?:Why|How|What)\b"),
+    re.compile(r"\bthe future of\b", re.IGNORECASE),
+)
+
+# Concrete-development markers: launches/availability, results and
+# records, contracts/orders/deals, milestones and process/yield advances,
+# partnerships, acquisitions, production. Presentation verbs (outlines,
+# discusses, showcases, highlights, details) are deliberately absent —
+# they describe the talk, not a development.
+_CONCRETE_DEVELOPMENT_PATTERN = re.compile(
+    r"\b(?:launch(?:es|ed|ing)?|introduc(?:es|ed|ing)|unveil(?:s|ed|ing)?|releas(?:es|ed|ing)|announc(?:es|ed|ing)|"
+    r"availab(?:le|ility)|ships?|shipped|shipping|(?:in|mass|volume|full) production|milestones?|breakthroughs?|"
+    r"achiev(?:es|ed)|records?|first|contracts?|orders?|agreements?|acqui\w+|partners?|partnerships?|"
+    r"collaborat\w+|results|process(?:es)?|nodes?|yields?|tape[- ]?outs?|deliver(?:s|ed|ing)?|expands?|"
+    r"invest(?:s|ed|ment)?|deploy\w*|adopts?)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_concrete_development(headline: str) -> bool:
+    return bool(_CONCRETE_DEVELOPMENT_PATTERN.search(headline)) or _has_numeric_magnitude(headline)
+
+
+def _low_signal_format_hit(headline: str, *, issuer_lane: bool) -> str | None:
+    """The first matching low-signal format as "<kind>:<matched text>",
+    or None. Headline-only by design — see the module docstring."""
+    headline = (headline or "").strip()
+    if not headline:
+        return None
+    for kind, patterns in _LOW_SIGNAL_HEADLINE_PATTERNS.items():
+        for pattern in patterns:
+            match = pattern.search(headline)
+            if match:
+                return f"{kind}:{match.group(0).strip().lower()}"
+    if _contains_any(headline, _SURVEY_RESEARCH_KEYWORDS):
+        return f"survey_or_report:{_contains_any(headline, _SURVEY_RESEARCH_KEYWORDS)[0]}"
+    concrete = _has_concrete_development(headline)
+    if not concrete:
+        for pattern in _PRESENTATION_OR_VENUE_PATTERNS:
+            match = pattern.search(headline)
+            if match:
+                return f"event_appearance:{match.group(0).strip().lower()}"
+        if issuer_lane:
+            for pattern in _ISSUER_ESSAY_HEADLINE_PATTERNS:
+                match = pattern.search(headline)
+                if match:
+                    return f"issuer_essay:{match.group(0).strip().lower()}"
+    return None
+
+
+# --- Issuer naming (see "Issuer naming" in the module docstring). A
+# deliberately lenient name check — it only has to recognise the
+# issuer's own releases in its own feed, so it accepts the full name,
+# the legal-suffix-stripped name, a distinctive first word, and an
+# alphabetic ticker (case-sensitive, so "AMD" never matches "amd" in
+# prose). ---
+_ISSUER_LEGAL_SUFFIX_RE = re.compile(
+    r"(?:,?\s+(?:Inc\.?|Incorporated|Corp\.?|Corporation|Co\.?,?\s*Ltd\.?|Co\.?|Ltd\.?|Limited|plc|PLC|N\.?V\.?|"
+    r"Holdings|Group|Company))+$",
+)
+_GENERIC_FIRST_WORDS = frozenset({
+    "advanced", "applied", "american", "general", "global", "international", "national", "new",
+    "united", "first", "micro", "texas", "the",
+})
+
+
+@dataclass(frozen=True)
+class IssuerNameForms:
+    names: tuple[str, ...]  # matched case-insensitively, whole words
+    symbols: tuple[str, ...] = ()  # matched case-sensitively, whole words
+
+
+def issuer_name_forms(company_name: str, ticker: str | None = None) -> IssuerNameForms:
+    name = (company_name or "").strip()
+    forms: list[str] = [name] if name else []
+    stripped = _ISSUER_LEGAL_SUFFIX_RE.sub("", name).strip()
+    if stripped and stripped not in forms:
+        forms.append(stripped)
+    first_word = stripped.split()[0] if stripped else ""
+    if len(first_word) >= 3 and first_word.lower() not in _GENERIC_FIRST_WORDS and first_word not in forms:
+        forms.append(first_word)
+    symbols = (ticker,) if ticker and ticker.isalpha() and len(ticker) >= 2 else ()
+    return IssuerNameForms(names=tuple(forms), symbols=symbols)
+
+
+def _issuer_is_named(text: str, forms: IssuerNameForms) -> bool:
+    if any(_boundary_pattern(name).search(text) for name in forms.names):
+        return True
+    return any(re.search(r"\b" + re.escape(symbol) + r"\b", text) for symbol in forms.symbols)
+
 # --- Gate D: fact-attribution language — a deterministic proxy for "new
 # attributable facts," not true NLP fact extraction (see module
 # docstring). ---
@@ -675,9 +865,12 @@ def _combined_text(title: str | None, description: str | None) -> str:
 
 def _classify_core(
     text: str, *, is_primary_disclosure: bool, is_independent_news: bool,
+    headline: str = "", issuer_lane: bool = False,
 ) -> tuple[NewsMaterialityTier, tuple[str, ...]]:
     reasons: list[str] = []
     survey_content = _is_survey_or_research_content(text)
+    # Weak-path-only block (see "Low-signal formats" in the docstring).
+    low_signal_format = _low_signal_format_hit(headline, issuer_lane=issuer_lane)
 
     if is_primary_disclosure:
         reasons.append("primary_disclosure")
@@ -726,7 +919,7 @@ def _classify_core(
     interview_format = _is_interview_or_podcast_format(text)
     taxonomy_hits = _matched_taxonomy_buckets(text)
     local_hit = _taxonomy_anchor_local_hits(text)
-    if local_hit and not survey_content and not uncertain_reporting and not interview_format:
+    if local_hit and not survey_content and not uncertain_reporting and not interview_format and not low_signal_format:
         local_taxonomy_hits, local_anchor_hits = local_hit
         reasons.append(f"taxonomy_anchored_consequence:{local_taxonomy_hits[0]}:{local_anchor_hits[0]}")
 
@@ -735,7 +928,7 @@ def _classify_core(
         substantive = len((text or "").strip()) >= _SUBSTANTIVE_EXCERPT_MIN_CHARS
         if (
             reporting_hit and substantive and (taxonomy_hits or anchor_hits)
-            and not uncertain_reporting and not interview_format
+            and not uncertain_reporting and not interview_format and not low_signal_format
         ):
             reasons.append(f"credible_editorial_reporting:{reporting_hit[0]}")
 
@@ -751,18 +944,21 @@ def _classify_core(
     # entirely unaffected by uncertain_reporting) — a substantive
     # issuer/regulator/court denial with concrete consequence still
     # reaches HIGH_SIGNAL above, before this fallback is ever reached.
-    if taxonomy_hits and not uncertain_reporting:
+    if taxonomy_hits and not uncertain_reporting and not low_signal_format:
         return NewsMaterialityTier.WATCHLIST, (f"on_taxonomy_no_anchor:{taxonomy_hits[0]}",)
     capital_return_mention_hit = _contains_any(text, _CAPITAL_RETURN_MENTION_KEYWORDS)
     if capital_return_mention_hit:
         return NewsMaterialityTier.WATCHLIST, (f"capital_return_mention_no_qualifying_action:{capital_return_mention_hit[0]}",)
     if earnings_hit and not earnings_qualifies:
         return NewsMaterialityTier.WATCHLIST, (f"scheduling_notice_not_yet_substantive:{earnings_hit[0]}",)
+    if low_signal_format:
+        return NewsMaterialityTier.BACKGROUND, (f"low_signal_format:{low_signal_format}",)
     return NewsMaterialityTier.BACKGROUND, ("off_taxonomy_no_anchor",)
 
 
 def classify_issuer_story(
     headline: str | None, excerpt: str | None, source_class: SourceClass,
+    *, issuer_names: IssuerNameForms | None = None,
 ) -> tuple[NewsMaterialityTier, tuple[str, ...]]:
     """Issuer-lane classification (daily_news_pipeline.py). SourceClass is
     always OFFICIAL_COMPANY in this pipeline today (see SourceClass's own
@@ -770,11 +966,19 @@ def classify_issuer_story(
     compatibility only, since the type itself already allows it.
     `headline`/`excerpt` accept None for input-robustness (see
     _combined_text) even though both live pipelines already guarantee a
-    non-empty title before ever calling this function."""
+    non-empty title before ever calling this function.
+
+    `issuer_names` is optional (Signals quality pass): when supplied, an
+    item that names the issuer in neither its headline nor its excerpt
+    is BACKGROUND ("issuer_not_named"). Omitted, that check is off.
+    Issuer-lane essay headlines are recognised either way (see "Low-
+    signal formats" in the module docstring)."""
     text = _combined_text(headline, excerpt)
+    if issuer_names is not None and not _issuer_is_named(text, issuer_names):
+        return NewsMaterialityTier.BACKGROUND, ("issuer_not_named",)
     return _classify_core(
         text, is_primary_disclosure=(source_class == SourceClass.REGULATORY_FILING),
-        is_independent_news=False,
+        is_independent_news=False, headline=headline or "", issuer_lane=True,
     )
 
 
@@ -799,4 +1003,5 @@ def classify_editorial_story(
     return _classify_core(
         text, is_primary_disclosure=is_primary_disclosure,
         is_independent_news=(source_category == SourceCategory.INDEPENDENT_NEWS),
+        headline=headline or "",
     )

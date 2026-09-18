@@ -206,7 +206,7 @@ def test_english_daily_news_row_never_shows_a_translate_action(tmp_path):
     French fixture below. An ordinary English row must still never show
     one, exactly as before this fix."""
     from src.data_access.daily_news import daily_news_store
-    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+    from src.models.daily_news_models import NewsMaterialityTier, NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
 
     story = NewsStory(
         id="newsitem-apple-abc123", company_name="Apple Inc.", ticker="AAPL", theme_slug="ai-buildout",
@@ -221,6 +221,10 @@ def test_english_daily_news_row_never_shows_a_translate_action(tmp_path):
         ),
         status=NewsStoryStatus.PUBLISHED,
         state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at="2026-09-01T00:00:00+00:00")],
+        # Explicit visible tier (Signals quality pass): this test is about
+        # translation, not tiering; an untiered placeholder headline would
+        # now be tiered Background at read time and kept off the Dashboard.
+        materiality_tier=NewsMaterialityTier.WATCHLIST,
     )
     daily_news_store.upsert_new_stories(tmp_path, [story])
     settings = _settings(tmp_path)
@@ -241,7 +245,7 @@ def test_french_daily_news_row_shows_translate_action_and_translates_on_click(tm
     from datetime import datetime, timezone
 
     from src.data_access.daily_news import daily_news_store
-    from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
+    from src.models.daily_news_models import NewsMaterialityTier, NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
 
     published_at = datetime.now(timezone.utc).isoformat()
     story = NewsStory(
@@ -257,6 +261,10 @@ def test_french_daily_news_row_shows_translate_action_and_translates_on_click(tm
         ),
         status=NewsStoryStatus.PUBLISHED,
         state_history=[NewsStateTransition(status=NewsStoryStatus.PUBLISHED, at=published_at)],
+        # Explicit visible tier (Signals quality pass): this test is about
+        # translation, not tiering; an untiered placeholder headline would
+        # now be tiered Background at read time and kept off the Dashboard.
+        materiality_tier=NewsMaterialityTier.WATCHLIST,
     )
     daily_news_store.upsert_new_stories(tmp_path, [story])
     settings = _settings(tmp_path)

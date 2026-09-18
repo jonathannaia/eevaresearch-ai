@@ -62,7 +62,17 @@ def _seed_candidate(cache_dir, candidate: CandidateSignal) -> None:
     candidate_store.upsert_new_candidates(cache_dir, [candidate], filename)
 
 
-def _news_story(story_id: str, company_name: str, headline: str, published_at: str, status: NewsStoryStatus = NewsStoryStatus.PUBLISHED) -> NewsStory:
+def _news_story(
+    story_id: str, company_name: str, headline: str, published_at: str,
+    status: NewsStoryStatus = NewsStoryStatus.PUBLISHED,
+    materiality_tier: NewsMaterialityTier | None = NewsMaterialityTier.HIGH_SIGNAL,
+) -> NewsStory:
+    # Explicitly tiered by default (Signals quality pass): an untiered
+    # story is now tiered at read time and a Background one never
+    # reaches this preview, so the tier-agnostic tests below pin a
+    # visible tier rather than depend on how their placeholder headline
+    # happens to classify. Tier behavior itself is tested in
+    # tests/test_recently_updated_quality.py.
     return NewsStory(
         id=story_id, company_name=company_name, ticker="ORCL", theme_slug="ai-buildout",
         headline=headline, eeva_summary="Summary.", is_fallback_summary=False,
@@ -76,6 +86,7 @@ def _news_story(story_id: str, company_name: str, headline: str, published_at: s
         ),
         status=status,
         state_history=[NewsStateTransition(status=status, at=published_at)],
+        materiality_tier=materiality_tier,
     )
 
 

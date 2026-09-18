@@ -79,7 +79,7 @@ from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
 from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, DailyNewsSourceEntry, normalize_source_url
-from src.models.daily_news_models import EditorialStory
+from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 if TYPE_CHECKING:
     from src.data_access.daily_news.daily_news_backend import EditorialStoryRepositoryProtocol
@@ -512,6 +512,22 @@ def run_editorial_discovery(
         items_capped=items_capped, stories_published=len(newly_published), source_failures=source_failures,
         admitted_examples=tuple(admitted_examples), rejected_examples=tuple(rejected_examples),
     )
+
+
+def effective_editorial_tier(story: EditorialStory) -> NewsMaterialityTier:
+    """The tier to DISPLAY for an editorial story (Signals quality pass,
+    legacy-tier option (a)). A stored tier always wins. A story persisted
+    before materiality_tier existed (None) is classified here, at read
+    time, from its stored headline/excerpt and its source's registered
+    category — never written back. A story whose source is no longer in
+    the registry keeps the old Watchlist default."""
+    if story.materiality_tier is not None:
+        return story.materiality_tier
+    source = next((e for e in EDITORIAL_SOURCE_REGISTRY if e.source_id == story.source_feed_id), None)
+    if source is None:
+        return NewsMaterialityTier.WATCHLIST
+    tier, _ = classify_editorial_story(story.headline, story.excerpt, source.category)
+    return tier
 
 
 def select_visible_editorial_stories(

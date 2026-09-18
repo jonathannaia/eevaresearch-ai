@@ -17,6 +17,7 @@ window instead, exercising the actual rendered UI.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -1141,28 +1142,68 @@ def test_no_background_control_rendered_within_watchlist_when_there_are_zero_bac
     assert len(at.expander) == 0
 
 
-def test_legacy_unclassified_story_defaults_to_watchlist_for_display_only(tmp_path):
-    """A story persisted before materiality_tier existed (None, the
-    field's own real default — see NewsMaterialityTier's own docstring)
-    must still render safely: shown in Watchlist (a safe display
-    default), never silently hidden like Background, never overclaimed
-    as High Signal. Explicitly overrides the shared _story() fixture's
-    own new High-Signal default (see that function's own comment) back
-    to the true, real persisted default this test is about."""
-    story = _story(materiality_tier=None)
-    assert story.materiality_tier is None  # the actual persisted/default value — never mutated by this test
-    daily_news_store.upsert_new_stories(tmp_path, [story])
+def _legacy_story(story_id: str, headline: str, excerpt: str) -> NewsStory:
+    """A story persisted before materiality_tier existed (None — the
+    field's real persisted default), with its own headline/excerpt."""
+    base = _story(id=story_id, headline=headline, materiality_tier=None)
+    source = replace(
+        base.sources[0], title=headline, excerpt_original=excerpt,
+        url=f"https://nvidianews.nvidia.com/news/{story_id}",
+    )
+    return replace(base, sources=(source,))
 
+
+def _run_signals_page(tmp_path, tier: str | None = None):
     with patch("src.ui.pages.daily_news.get_settings", return_value=_settings(tmp_path)):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
-        at.query_params["tier"] = "watchlist"
+        if tier:
+            at.query_params["tier"] = tier
         at.run()
-
     assert not at.exception
+    return at
+
+
+def test_legacy_unclassified_results_story_is_tiered_at_read_time_as_high_signal(tmp_path):
+    """Signals quality pass, legacy-tier option (a): an untiered story is
+    classified at read time with the current rules, never written back."""
+    story = _legacy_story("legacy-results", "NVIDIA Announces Financial Results", "NVIDIA reported strong quarterly results.")
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    at = _run_signals_page(tmp_path)
+
+    assert "NVIDIA Announces Financial Results" in " ".join(m.value for m in at.markdown)
+    assert daily_news_store.load_stories(tmp_path)["legacy-results"].materiality_tier is None  # never persisted
+
+
+def test_legacy_unclassified_ambiguous_story_stays_watchlist(tmp_path):
+    story = _legacy_story(
+        "legacy-mediatek",
+        "NVIDIA and MediaTek Deepen Long-Standing Partnership to Build AI Edge to Cloud Computing Platforms",
+        "NVIDIA and MediaTek expanded their collaboration on AI data center and edge platforms.",
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    at = _run_signals_page(tmp_path, tier="watchlist")
+
     markdown_text = " ".join(m.value for m in at.markdown)
-    assert "Watchlist" in markdown_text
-    assert "NVIDIA Announces Financial Results" in markdown_text
+    assert "Watchlist (1)" in markdown_text
+    assert "NVIDIA and MediaTek Deepen" in markdown_text
     assert len(at.expander) == 0
+
+
+def test_legacy_unclassified_consumer_gaming_story_is_background_not_watchlist(tmp_path):
+    story = _legacy_story(
+        "legacy-gaming",
+        "‘NBA 2K27’ With NVIDIA DLSS 5 Leads 26 New Games Coming to GeForce NOW",
+        "NVIDIA GeForce NOW adds 26 new games this week.",
+    )
+    daily_news_store.upsert_new_stories(tmp_path, [story])
+
+    at = _run_signals_page(tmp_path, tier="watchlist")
+
+    assert "Watchlist (0)" in " ".join(m.value for m in at.markdown)
+    assert [e.label for e in at.expander] == ["Show Background (1)"]
+    assert daily_news_store.load_stories(tmp_path)["legacy-gaming"].materiality_tier is None
 
 
 def test_no_high_signal_items_shows_the_exact_approved_empty_state(tmp_path):

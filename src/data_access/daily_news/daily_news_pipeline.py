@@ -25,10 +25,11 @@ from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import canonical_url, daily_news_store, dedup, localization_dedup, rss_atom_client
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_FEEDS, tracked_company_for
-from src.data_access.daily_news.materiality_classification import classify_issuer_story
+from src.data_access.daily_news.materiality_classification import classify_issuer_story, issuer_name_forms
 from src.data_access.daily_news.summary_grounding import generate_summary
 from src.data_access.translation import translation_service
 from src.models.daily_news_models import (
+    NewsMaterialityTier,
     NewsSourceReference,
     NewsStateTransition,
     NewsStory,
@@ -167,6 +168,25 @@ def _classification_text(raw_description: str | None) -> str | None:
     marker = _RELATED_CONTENT_MARKER_RE.search(cleaned)
     trimmed = cleaned[:marker.start()].strip() if marker else cleaned
     return trimmed or None
+
+
+def effective_issuer_tier(story: NewsStory) -> NewsMaterialityTier:
+    """The tier to DISPLAY for an issuer story (Signals quality pass,
+    legacy-tier option (a)). A stored tier always wins. A story persisted
+    before materiality_tier existed (None) is classified here, at read
+    time, with the same rules run_discovery() applies to new items —
+    the result is never written back; the stored record is untouched.
+    A story with no source reference keeps the old Watchlist default."""
+    if story.materiality_tier is not None:
+        return story.materiality_tier
+    if not story.sources:
+        return NewsMaterialityTier.WATCHLIST
+    source_ref = story.sources[0]
+    tier, _ = classify_issuer_story(
+        story.headline, _classification_text(source_ref.excerpt_original), source_ref.source_class,
+        issuer_names=issuer_name_forms(story.company_name, story.ticker),
+    )
+    return tier
 
 
 def _parse_utc_datetime(published_at: str) -> datetime | None:
@@ -696,6 +716,7 @@ def run_discovery(
             # both display-only concerns).
             materiality_tier, materiality_reasons = classify_issuer_story(
                 entry.title, _classification_text(entry.summary), SourceClass.OFFICIAL_COMPANY,
+                issuer_names=issuer_name_forms(source.company_name, company.krx_code),
             )
 
             story = NewsStory(

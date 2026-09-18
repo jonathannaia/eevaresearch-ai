@@ -88,14 +88,14 @@ thing shown — never a raw error, category, or retry mechanics."""
 from __future__ import annotations
 
 import html
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 
 import streamlit as st
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
-from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
+from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, dedup, editorial_pipeline
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic import filing_display
@@ -316,6 +316,12 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
             continue
         if not story.sources:
             continue
+        # Signals quality pass: a Background issuer story never reaches
+        # this default preview — the same rule _load_editorial_rows()
+        # below already applies to the editorial lane. A legacy story
+        # (no stored tier) is tiered at read time, never written back.
+        if daily_news_pipeline.effective_issuer_tier(story) == NewsMaterialityTier.BACKGROUND:
+            continue
         source_ref = story.sources[0]
         sort_key = _parse_iso(source_ref.published_at)
         if sort_key is None or _is_materially_future(sort_key, now):
@@ -342,15 +348,10 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
 
 
 def _effective_editorial_tier(story: EditorialStory) -> NewsMaterialityTier:
-    """Mirrors src.ui.pages.daily_news._effective_tier() exactly — None
-    (persisted before materiality_tier existed, never reclassified)
-    defaults to Watchlist, the same "shown, not silently hidden like
-    Background, never overclaimed like High Signal" convention that
-    page already uses. A small, local re-implementation rather than an
-    import from a UI page module into a component (this file is a
-    shared component several pages use; a page must never become one of
-    its own component's dependencies)."""
-    return story.materiality_tier or NewsMaterialityTier.WATCHLIST
+    """Same shared, data-layer rule src.ui.pages.daily_news._effective_tier()
+    uses: a stored tier wins; a legacy None is tiered at read time and
+    never written back (Signals quality pass, legacy-tier option (a))."""
+    return editorial_pipeline.effective_editorial_tier(story)
 
 
 def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
@@ -590,7 +591,36 @@ def _select_recently_updated_rows(settings: Settings, now: datetime | None = Non
     # timestamp tie, so the shown order never depends on which source
     # happened to be loaded first.
     deduped.sort(key=lambda r: (r.sort_key.timestamp(), _row_identity_key(r)), reverse=True)
-    return deduped
+    return _merge_same_headline_signal_rows(deduped)
+
+
+def _merge_same_headline_signal_rows(rows: list[_Row]) -> list[_Row]:
+    """Signals quality pass: one joint announcement published by several
+    tracked issuers ("AMD, Cisco and HUMAIN Expand...") arrives as one
+    story per issuer, each with its own URL — the identity-key dedup
+    above can never collapse those. Signals rows with the same
+    normalized headline collapse into the first (newest) one, whose
+    company label lists every issuer once, in first-seen order. Filing
+    rows are never merged. Each row's own label is kept whole (a legal
+    name such as "Cisco Systems, Inc." contains a comma, so labels are
+    never split). `rows` must already be in display order."""
+    merged: list[_Row] = []
+    index_by_headline: dict[str, int] = {}
+    labels_by_index: dict[int, list[str]] = {}
+    for row in rows:
+        key = dedup.normalize_title_unicode(row.title) if row.source_label == "Signals" else ""
+        if not key or key not in index_by_headline:
+            if key:
+                index_by_headline[key] = len(merged)
+                labels_by_index[len(merged)] = [row.company_name] if row.company_name else []
+            merged.append(row)
+            continue
+        index = index_by_headline[key]
+        labels = labels_by_index[index]
+        if row.company_name and row.company_name not in labels:
+            labels.append(row.company_name)
+            merged[index] = replace(merged[index], company_name=", ".join(labels))
+    return merged
 
 
 def render_recently_updated(settings: Settings) -> None:
