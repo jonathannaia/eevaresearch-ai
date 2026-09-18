@@ -448,6 +448,16 @@ class Settings:
     research_agent_publication_kill_switch_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED")
     )
+    # Gates the hidden, read-only src/ui/pages/verified_updates.py page —
+    # the public surface for the agent's AUTO_PUBLISHED records (design
+    # §9.2). Separate from research_agent_live_enabled (the worker's own
+    # switch), same "a new surface is its own flag" convention as
+    # research_cases_enabled/company_discovery_admin_enabled above.
+    # Disabled by default; even when enabled the page only ever reads
+    # verified_update_store and never imports the agent package.
+    verified_updates_page_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_VERIFIED_UPDATES_PAGE_ENABLED")
+    )
 
 
 def get_settings() -> Settings:

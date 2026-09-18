@@ -54,6 +54,7 @@ from src.ui.pages import (
     signals,
     theme_workspace,
     themes_research,
+    verified_updates,
 )
 from src.ui.ui import HIDDEN_FROM_NAV, LAST_SEEN_KEY, PRIMARY_NAV, READ_IDS_KEY, SYSTEM_NAV, with_chrome
 
@@ -175,6 +176,19 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     pages["company_discovery_admin"] = st.Page(
         with_chrome(company_discovery_admin.render, "company_discovery_admin"),
         title="Company Discovery — Admin", url_path="company-discovery-admin", visibility="hidden",
+    )
+    # Autonomous Research Agent — Verified Updates (design/AUTONOMOUS_
+    # EVIDENCE_FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §9.2). The
+    # public surface for AUTO_PUBLISHED VerifiedUpdate records — a
+    # separate, narrower card than the Signal Board, never a repurposed
+    # Signal. Same hidden-but-reachable pattern as the admin pages above
+    # (nav placement is deferred per §15), and gated a second way by
+    # settings.verified_updates_page_enabled (checked inside the page
+    # itself, default disabled). Read-only: the page only ever reads
+    # verified_update_store; nothing here imports the agent package.
+    pages["verified_updates"] = st.Page(
+        with_chrome(verified_updates.render, "verified_updates"),
+        title="Verified Updates", url_path="verified-updates", visibility="hidden",
     )
     # Admin Users v1 (design/DECISIONS.md) — same hidden-but-reachable
     # pattern as the admin pages above: `visibility="hidden"` keeps it out
