@@ -14,14 +14,37 @@
 <meta property="og:description" content="EevaResearch helps investors monitor material corporate filings across EDINET, DART, and SEC EDGAR.">
 
 <style>
+  /*
+    Midnight Teal brand pass (visual only — same information architecture,
+    same copy, same CTA destination, same metadata). Token names/values
+    mirror the Streamlit app's own assets/styles.css :root block exactly
+    (--bg/--rail/--surface/--surface-hover/--border/--text/--text-secondary/
+    --text-muted/--accent/--accent-hover/--accent-soft) for cross-surface
+    brand consistency.
+
+    Necessary duplication, documented rather than silently introduced:
+    this static page (eevaresearch.com, a Netlify-style static host driven
+    by this directory's own _redirects/robots.txt) and the Streamlit app
+    (app.eevaresearch.com, served by Render from src/ui/*) are two
+    completely separate deployments with no shared build step or asset
+    pipeline — this file cannot import assets/styles.css, and there is no
+    existing shared static-token mechanism to reuse instead. The values
+    below are therefore a deliberate, hand-kept copy of the same palette,
+    not a second, divergent one — if the Streamlit app's token values
+    change again, this block should be revisited too.
+  */
   :root {
-    --ink: #0F172A;
-    --ink-muted: #475569;
-    --navy: #102A43;
-    --surface: #FFFFFF;
-    --bg: #F8FAFC;
-    --hairline: #E2E8F0;
-    --accent: #1D4ED8;
+    --bg: #101417;
+    --rail: #0B0F11;
+    --surface: #171D20;
+    --surface-hover: #1D2529;
+    --border: #263137;
+    --text: #F1F4F2;
+    --text-secondary: #B1BCBB;
+    --text-muted: #889593;
+    --accent: #21B7A8;
+    --accent-hover: #29CBBB;
+    --accent-soft: rgba(33, 183, 168, 0.14);
   }
 
   * { box-sizing: border-box; }
@@ -34,7 +57,7 @@
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
-    color: var(--ink);
+    color: var(--text);
     line-height: 1.55;
     min-height: 100vh;
     display: flex;
@@ -46,20 +69,33 @@
     align-items: center;
     gap: 0.6rem;
     padding: 1.5rem clamp(1.25rem, 5vw, 3rem);
+    background: var(--rail);
   }
 
+  /* The logo asset itself is a solid black mark on an OPAQUE near-white
+     background (assets/eeva-logo.png / landing/favicon-v2.png, unchanged
+     — no new logo was created, no source pixels edited). invert(1) alone
+     would flip that opaque background to black, producing exactly the
+     "unthemed image tile" artifact the brief warns against — just black
+     instead of white. mix-blend-mode: screen fixes that without touching
+     the source file: screen-blending the (now black, post-invert)
+     background against this dark canvas makes it disappear into the
+     backdrop, while the (now white, post-invert) glyph stays solid white
+     regardless of what's behind it — net effect: a light-colored mark,
+     no visible tile of any color. */
   header img {
     width: 32px;
     height: 32px;
-    border-radius: 6px;
     display: block;
+    filter: invert(1);
+    mix-blend-mode: screen;
   }
 
   header span {
     font-size: 1.05rem;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: var(--navy);
+    color: var(--text);
   }
 
   main {
@@ -67,78 +103,103 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem clamp(1.25rem, 5vw, 3rem) 4rem;
+    padding: clamp(2rem, 6vw, 4rem) clamp(1.25rem, 5vw, 3rem);
   }
 
+  /* Subtle panel/divider hierarchy (brief requirement): a soft, bordered
+     surface distinct from the page canvas, giving the hero real visual
+     weight instead of text floating directly on --bg — restrained (no
+     shadow/glow/gradient), just one elevation step up, same --surface/
+     --border pair the Streamlit app itself uses for cards. */
   .card {
     max-width: 640px;
     width: 100%;
     text-align: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: clamp(2.25rem, 6vw, 3.5rem) clamp(1.5rem, 6vw, 3rem);
   }
 
+  /* Same invert(1) + screen-blend treatment as the header mark (see that
+     comment for why both are needed), plus a slightly smaller size and a
+     touch of opacity — "reduce visual heaviness" — still immediately
+     recognizable, just not the dominant element on the page. */
   .card img.mark {
-    width: 64px;
-    height: 64px;
-    border-radius: 12px;
+    width: 52px;
+    height: 52px;
     margin: 0 auto 1.5rem;
     display: block;
+    filter: invert(1);
+    mix-blend-mode: screen;
+    opacity: 0.92;
   }
 
   h1 {
     font-size: clamp(1.9rem, 4vw, 2.5rem);
     font-weight: 600;
     letter-spacing: -0.02em;
-    color: var(--navy);
+    color: var(--text);
     margin: 0 0 0.6rem;
   }
 
   .tagline {
     font-size: 1.15rem;
     font-weight: 500;
-    color: var(--ink);
+    color: var(--text-secondary);
     margin: 0 0 1.25rem;
   }
 
   .description {
     font-size: 1rem;
-    color: var(--ink-muted);
+    color: var(--text-muted);
     margin: 0 auto 2.25rem;
     max-width: 520px;
   }
 
   .cta {
     display: inline-block;
-    background: var(--navy);
-    color: #FFFFFF;
+    background: var(--accent);
+    color: var(--rail);
     text-decoration: none;
     font-size: 1rem;
     font-weight: 600;
     padding: 0.85rem 1.9rem;
     border-radius: 8px;
+    border: none;
     transition: background 0.15s ease;
   }
 
-  .cta:hover,
-  .cta:focus {
-    background: #0B1E33;
+  .cta:hover {
+    background: var(--accent-hover);
+  }
+
+  .cta:focus-visible {
+    outline: 2px solid var(--accent-hover);
+    outline-offset: 3px;
   }
 
   .cta-note {
     margin: 1rem 0 0;
     font-size: 0.85rem;
-    color: var(--ink-muted);
+    color: var(--text-muted);
   }
 
   footer {
     text-align: center;
     padding: 1.5rem clamp(1.25rem, 5vw, 3rem) 2rem;
     font-size: 0.8rem;
-    color: var(--ink-muted);
-    border-top: 1px solid var(--hairline);
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
   }
 
   a {
     color: var(--accent);
+  }
+
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 </style>
 </head>
