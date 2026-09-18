@@ -178,3 +178,35 @@ def test_record_review_decision_does_not_modify_unrelated_fields(tmp_path):
     assert updated.matched_rules == ["earnings:x:실적"]
     assert updated.filing.corp_name == "SK Hynix"
     assert updated.excerpt_original == "본문 발췌."
+
+
+# --- published_by: explicit human provenance only on a reviewer publish ---
+
+def test_record_review_decision_publish_records_human_reviewer_provenance(tmp_path):
+    candidate = _candidate()
+    assert candidate.published_by is None
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    updated = record_review_decision(tmp_path, candidate.id, candidate_store._CACHE_FILENAME, CandidateStatus.PUBLISHED)
+
+    assert updated.published_by == "human_reviewer"
+    assert candidate_store.load_candidates(tmp_path)[candidate.id].published_by == "human_reviewer"
+
+
+@pytest.mark.parametrize("status", (CandidateStatus.MONITORING, CandidateStatus.DISMISSED))
+def test_record_review_decision_non_publish_outcome_leaves_published_by_null(tmp_path, status):
+    candidate = _candidate()
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    record_review_decision(tmp_path, candidate.id, candidate_store._CACHE_FILENAME, status)
+
+    assert candidate_store.load_candidates(tmp_path)[candidate.id].published_by is None
+
+
+def test_record_review_decision_non_publish_outcome_never_relabels_prior_publisher(tmp_path):
+    candidate = _candidate(status=CandidateStatus.PUBLISHED, published_by="autonomous_agent")
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    record_review_decision(tmp_path, candidate.id, candidate_store._CACHE_FILENAME, CandidateStatus.DISMISSED)
+
+    assert candidate_store.load_candidates(tmp_path)[candidate.id].published_by == "autonomous_agent"

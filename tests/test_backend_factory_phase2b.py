@@ -120,6 +120,21 @@ def test_record_review_decision_with_sqlite_settings_routes_through_sqlite(tmp_p
     assert reloaded.status == CandidateStatus.PUBLISHED
 
 
+def test_record_review_decision_sqlite_publish_records_human_reviewer_provenance(tmp_path):
+    settings = _sqlite_settings(tmp_path)
+    publish_me, dismiss_me = _candidate(_edgar_filing("acc-p")), _candidate(_edgar_filing("acc-d"))
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([publish_me, dismiss_me])
+    assert repo.get_candidate(publish_me.id).published_by is None
+
+    for candidate, status in ((publish_me, CandidateStatus.PUBLISHED), (dismiss_me, CandidateStatus.DISMISSED)):
+        review_actions.record_review_decision(
+            tmp_path / "unused-cache-dir", candidate.id, "edgar_candidates.json", status, settings=settings,
+        )
+    assert repo.get_candidate(publish_me.id).published_by == "human_reviewer"
+    assert repo.get_candidate(dismiss_me.id).published_by is None
+
+
 # --- 3/4. Synthetic EDGAR/DART/EDINET filing-event dedup through the selected display path ---
 
 @pytest.mark.parametrize(

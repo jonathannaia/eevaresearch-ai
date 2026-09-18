@@ -391,7 +391,9 @@ def test_skipping_the_prior_filing_comparison_never_publishes(tmp_path, registry
     decision = request_publication_decision.run(ctx, saved.packet_id)
     assert decision.decision == "REVIEW_REQUIRED" and decision.reasons == ("row8:prior_comparison_errored",)
     assert verified_update_store.load_verified_updates(tmp_path) == ()
-    assert candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"].status is CandidateStatus.NEEDS_REVIEW
+    candidate = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
+    assert candidate.status is CandidateStatus.NEEDS_REVIEW
+    assert candidate.published_by is None  # no publication transition, so no provenance written
 
 
 def test_missing_candidate_withholds_publication_even_when_the_matrix_passes(tmp_path, registry, filing_events):
@@ -412,7 +414,9 @@ def test_kill_switch_routes_to_review_required_and_marks_the_candidate(tmp_path,
     decision = request_publication_decision.run(ctx, packet_id)
     assert decision.decision == "REVIEW_REQUIRED" and decision.reasons == ("row0:kill_switch_enabled",)
     assert verified_update_store.load_verified_updates(tmp_path) == ()
-    assert candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"].status is CandidateStatus.NEEDS_REVIEW
+    candidate = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
+    assert candidate.status is CandidateStatus.NEEDS_REVIEW
+    assert candidate.published_by is None  # no publication transition, so no provenance written
 
 
 def test_save_rejects_fabricated_evidence_ids_and_scope_mismatch(tmp_path, registry, filing_events):

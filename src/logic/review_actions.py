@@ -33,7 +33,14 @@ only when a caller passes an explicit `settings` with
 behavior otherwise) — this function never calls `get_settings()` and
 never reads an ambient `EDGE_*` environment variable itself. Any other
 `settings.db_backend` value (unset/blank/"json"/unrecognized) behaves
-exactly like `settings=None`."""
+exactly like `settings=None`.
+
+Publication provenance: this function is, by contract, a human
+reviewer's decision, so a PUBLISHED outcome is the one place human
+provenance is actually known — it records `published_by =
+"human_reviewer"` there and nowhere else. MONITORING/DISMISSED leave
+`published_by` exactly as it was (NULL, or whoever last published); no
+historical row is ever back-labelled."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -43,6 +50,7 @@ from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.dart import candidate_store
 from src.models.models import CandidateSignal, CandidateStatus, StateTransition
+from src.models.verified_update import PUBLISHED_BY_HUMAN_REVIEWER
 
 # The only statuses a human reviewer may set through this function. Any
 # other CandidateStatus (pipeline-internal states, or the automated
@@ -117,6 +125,8 @@ def record_review_decision(
         candidate.status = status
         candidate.reviewed_at = now
         candidate.reviewed_note = note
+        if status is CandidateStatus.PUBLISHED:
+            candidate.published_by = PUBLISHED_BY_HUMAN_REVIEWER
         candidate.state_history.append(StateTransition(status=status, at=now, detail=detail))
         outcome = repo.update_candidate(candidate, expected_version=expected_version)
         return outcome.current if outcome.status == "updated" else None
@@ -129,6 +139,8 @@ def record_review_decision(
     candidate.status = status
     candidate.reviewed_at = now
     candidate.reviewed_note = note
+    if status is CandidateStatus.PUBLISHED:
+        candidate.published_by = PUBLISHED_BY_HUMAN_REVIEWER
     candidate.state_history.append(StateTransition(status=status, at=now, detail=detail))
 
     candidate_store.update_candidate(cache_dir, candidate, filename)
