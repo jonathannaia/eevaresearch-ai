@@ -269,6 +269,22 @@ def test_record_review_decision_with_postgres_settings_routes_through_postgres_n
     assert not (tmp_path / "unused-cache-dir").exists()
 
 
+def test_record_review_decision_postgres_publish_records_human_reviewer_provenance(pg_isolated_dsn, tmp_path):
+    settings = _postgres_settings(pg_isolated_dsn)
+    publish_me = _candidate("cand-p", _filing("0001045810-26-000011"))
+    dismiss_me = _candidate("cand-d", _filing("0001045810-26-000012"))
+    repo = backend_factory.get_candidate_repository(settings, "SEC EDGAR")
+    repo.upsert_new_candidates([publish_me, dismiss_me])
+    assert repo.get_candidate("cand-p").published_by is None
+
+    for candidate_id, status in (("cand-p", CandidateStatus.PUBLISHED), ("cand-d", CandidateStatus.DISMISSED)):
+        review_actions.record_review_decision(
+            tmp_path / "unused-cache-dir", candidate_id, "edgar_candidates.json", status, settings=settings,
+        )
+    assert repo.get_candidate("cand-p").published_by == "human_reviewer"
+    assert repo.get_candidate("cand-d").published_by is None
+
+
 @pytest.mark.parametrize("status", [CandidateStatus.PUBLISHED, CandidateStatus.MONITORING, CandidateStatus.DISMISSED])
 def test_record_review_decision_postgres_sets_status_reviewed_fields_and_appends_transition(pg_isolated_dsn, tmp_path, status):
     settings = _postgres_settings(pg_isolated_dsn)

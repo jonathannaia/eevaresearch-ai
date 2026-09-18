@@ -495,6 +495,56 @@ def test_v22_upgrade_leaves_pre_existing_published_candidate_null(pg_isolated_co
     assert row["published_by"] is None
 
 
+def test_v22_upgraded_database_serves_candidate_repository_reads_and_writes(pg_isolated_connection):
+    """The deployed-baseline upgrade path end to end at the repository
+    level: a row written at v21 (pre-published_by column list) loads
+    through the widened SELECT as published_by=None, a new insert
+    persists NULL, and an explicit autonomous_agent update round-trips —
+    without touching the historical PUBLISHED row."""
+    from src.data_access.postgres_state_db import candidate_repository
+    from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+
+    conn = pg_isolated_connection
+    _migrate_up_to(conn, 21)
+    conn.execute(
+        "INSERT INTO filing_events (source_name, corp_code, rcept_no, corp_name, stock_code, report_nm, rcept_dt, flr_nm) "
+        "VALUES ('SEC EDGAR', '0000045810', 'acc-v21', 'NVIDIA', 'NVDA', '8-K', '20260101', 'NVIDIA')"
+    )
+    conn.execute(
+        "INSERT INTO candidates (id, source, filing_corp_code, filing_rcept_no, confidence, status, "
+        "extraction_state, translation_state, excerpt_quality, created_at, updated_at) "
+        "VALUES ('cand-v21', 'SEC EDGAR', '0000045810', 'acc-v21', 'High', 'Published', "
+        "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
+    )
+    conn.commit()
+    assert postgres_schema.migrate(conn) == 22
+
+    historical = candidate_repository.get_candidate(conn, "cand-v21")
+    assert historical.status is CandidateStatus.PUBLISHED
+    assert historical.published_by is None
+
+    filing = FilingEvent(
+        rcept_no="acc-v22", corp_code="0000045810", corp_name="NVIDIA", stock_code="NVDA", report_nm="8-K",
+        rcept_dt="20260102", flr_nm="NVIDIA", source_name="SEC EDGAR", original_language="English",
+    )
+    fresh = CandidateSignal(
+        id="cand-v22", filing=filing, matched_rules=["earnings"], confidence="Moderate",
+        status=CandidateStatus.NEEDS_REVIEW,
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at="2026-01-02T00:00:00+00:00")],
+    )
+    candidate_repository.upsert_new_candidates(conn, "SEC EDGAR", [fresh])
+    stored = candidate_repository.get_candidate(conn, "cand-v22")
+    assert stored.published_by is None
+
+    stored.status, stored.published_by = CandidateStatus.PUBLISHED, "autonomous_agent"
+    outcome = candidate_repository.update_candidate(
+        conn, stored, expected_version=candidate_repository.get_candidate_version(conn, "cand-v22"),
+    )
+    assert outcome.status == "updated"
+    assert candidate_repository.get_candidate(conn, "cand-v22").published_by == "autonomous_agent"
+    assert candidate_repository.get_candidate(conn, "cand-v21").published_by is None
+
+
 def test_v20_statements_are_additive_only_four_nullable_columns():
     assert postgres_schema._V20_STATEMENTS == (
         "ALTER TABLE daily_news_stories ADD COLUMN materiality_tier TEXT",
