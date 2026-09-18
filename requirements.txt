@@ -39,3 +39,17 @@ tzdata>=2024.1
 # an open range, since this is the one new dependency this phase was
 # explicitly approved to add and no other.
 feedparser==6.0.14
+# Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_
+# AGENT_DESIGN_2026_09_17.md, §7/§6) — the two dependencies this phase was
+# explicitly approved to add and no other, pinned to the exact versions
+# verified at implementation time (same convention as feedparser above).
+# claude-agent-sdk: the agent runtime / tool-execution loop, used ONLY by
+# scripts/research_agent_worker.py and src/mcp_agent/agent_session.py —
+# never imported by app.py or any UI page (enforced by tests/
+# test_research_agent_worker_scope_guard.py). mcp: the official Python
+# MCP SDK (2.x, MCPServer API) hosting the ten read-only tools in
+# src/mcp_agent/server.py as a separate stdio process. Neither package
+# is imported at Streamlit startup; nothing in tests performs a live
+# model or network call through either.
+claude-agent-sdk==0.2.155
+mcp==2.2.0

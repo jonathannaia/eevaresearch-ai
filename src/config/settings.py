@@ -424,6 +424,30 @@ class Settings:
     r2_secret_access_key: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_SECRET_ACCESS_KEY") or None)
     r2_bucket: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_BUCKET") or None)
     r2_endpoint: str | None = field(default_factory=lambda: os.getenv("EDGE_R2_ENDPOINT") or None)
+    # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_
+    # AGENT_DESIGN_2026_09_17.md, §8.3/§11/§12) — three settings, all fail
+    # closed. research_agent_live_enabled is the master switch for the
+    # standalone worker (scripts/research_agent_worker.py) only, mirroring
+    # radar_live_scan_enabled's convention exactly: disabled by default,
+    # never read by the Streamlit dashboard. research_agent_service_token
+    # is the agent's own narrow inbound MCP-server credential (§8.3
+    # identity 1) — the first machine-to-machine inbound credential in
+    # this codebase, scoped to the ten tools in src/mcp_agent and nothing
+    # else; None means unconfigured and the server refuses to start. Never
+    # logged/printed — presence-checked only, same discipline as
+    # dart_api_key above. research_agent_publication_kill_switch_enabled
+    # (§11) forces every publication decision to REVIEW_REQUIRED regardless
+    # of policy outcome — the no-deploy mitigation if a validator bug is
+    # found post-launch.
+    research_agent_live_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_AGENT_LIVE_ENABLED")
+    )
+    research_agent_service_token: str | None = field(
+        default_factory=lambda: os.getenv("EDGE_RESEARCH_AGENT_SERVICE_TOKEN") or None
+    )
+    research_agent_publication_kill_switch_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED")
+    )
 
 
 def get_settings() -> Settings:
