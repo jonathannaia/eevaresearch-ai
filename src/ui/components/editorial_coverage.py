@@ -35,7 +35,7 @@ from src.data_access.daily_news.editorial_pipeline import (
     select_visible_editorial_stories,
     select_visible_editorial_stories_for_company,
 )
-from src.logic.formatting import fmt_datetime_local
+from src.logic.formatting import fmt_datetime_local, fmt_time_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 _THEME_DISPLAY_NAMES: dict[str, str] = {
@@ -126,42 +126,46 @@ def get_editorial_stories_for_company(settings: Settings, company_name: str) -> 
     return select_visible_editorial_stories_for_company(stories, company_name)
 
 
+def badge_label(source_feed_id: str) -> str:
+    """Public alias of the per-feed item-type label (e.g. "Market news")."""
+    return _badge_label(source_feed_id)
+
+
+def theme_display_name(slug: str) -> str:
+    return _THEME_DISPLAY_NAMES.get(slug, slug)
+
+
 def render_editorial_card(story: EditorialStory, tier: NewsMaterialityTier | None = None) -> None:
-    """One editorial card's content — extracted, unchanged in substance,
-    from the former render_editorial_coverage()'s own per-item loop body.
-    A compact item-type label (unified Daily News feed, design/
-    DECISIONS.md), styled with the same neutral er-status-tag/
-    er-tag-neutral pattern already used elsewhere in this app — no new
-    CSS, no change to the excerpt/attribution/tag content below it.
-    Government / Public Sector Daily News lane (design/DECISIONS.md):
-    the label itself is now derived from story.source_feed_id via
-    _badge_label() rather than a hardcoded literal — every existing
-    source still renders exactly 'Market news', unchanged. `tier`
-    (Signals materiality classification, design/DECISIONS.md) is
-    optional and caller-supplied — this function never reads
-    story.materiality_tier directly, so the caller's own effective-tier
-    fallback (None -> Watchlist for display only) stays the single
-    source of truth."""
-    with st.container(border=True, key=f"card-editorial-{story.id}"):
-        tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
-        st.markdown(
-            f'<span class="er-status-tag er-tag-neutral">{_esc(_badge_label(story.source_feed_id))}</span>{tier_badge}',
-            unsafe_allow_html=True,
-        )
-        local_time = fmt_datetime_local(story.published_at) if story.published_at else ""
-        st.markdown(
-            f'<div class="er-muted" style="margin-top:0.3rem;">{_esc(story.publisher)} · Editorial · {_esc(local_time)}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(f'<div class="er-card-title">{_esc(story.headline)}</div>', unsafe_allow_html=True)
-        if story.excerpt:
+    """One editorial card — redesign v2 density: time cell, item-type
+    label (derived from story.source_feed_id via _badge_label, unchanged),
+    tier badge, publisher · Editorial attribution, headline, the feed's
+    own bounded excerpt in a serif inset (only when one exists — never a
+    fallback), company/theme chips, and the canonical source link. Same
+    content and pinned labels as before; only the layout moved. `tier` is
+    caller-supplied; this function never reads story.materiality_tier."""
+    clock, zone = fmt_time_local(story.published_at) if story.published_at else ("", "")
+    with st.container(key=f"card-editorial-{story.id}"):
+        time_col, body_col = st.columns([1, 11])
+        with time_col:
+            st.markdown(f'<div class="er-time-cell">{_esc(clock)}<span class="er-time-zone">{_esc(zone)}</span></div>', unsafe_allow_html=True)
+        with body_col:
+            tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
             st.markdown(
-                f'<div class="er-muted" style="font-size:0.72rem; margin-top:0.4rem;">'
-                f'Excerpt provided by {_esc(story.publisher)}</div>',
+                '<div class="er-split-head" style="margin:0;">'
+                f'<div><span class="er-status-tag er-tag-neutral">{_esc(_badge_label(story.source_feed_id))}</span>{tier_badge}</div>'
+                f'<div class="er-muted">{_esc(story.publisher)} · Editorial</div></div>',
                 unsafe_allow_html=True,
             )
-            st.write(story.excerpt)
-        tag_html = _tag_chips_html(story.matched_companies, story.matched_themes)
-        if tag_html:
-            st.markdown(f'<div style="margin-top:0.3rem;">{tag_html}</div>', unsafe_allow_html=True)
-        st.markdown(f"[Read original source →]({story.source_url})")
+            st.markdown(f'<div class="er-signal-headline">{_esc(story.headline)}</div>', unsafe_allow_html=True)
+            if story.excerpt:
+                st.markdown(
+                    f'<div class="er-inset"><div class="er-inset-label">Excerpt provided by {_esc(story.publisher)}</div>'
+                    f'<div class="er-excerpt">{_esc(story.excerpt)}</div></div>',
+                    unsafe_allow_html=True,
+                )
+            tag_html = _tag_chips_html(story.matched_companies, story.matched_themes)
+            st.markdown(
+                f'<div class="er-signal-foot"><div>{tag_html}</div>'
+                f'<a class="er-feed-link" href="{_esc(story.source_url)}" target="_blank" rel="noopener noreferrer">Read original source →</a></div>',
+                unsafe_allow_html=True,
+            )

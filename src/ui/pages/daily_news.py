@@ -113,7 +113,7 @@ from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
 from src.data_access.daily_news.company_aliases import daily_news_company_names
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
-from src.logic.formatting import fmt_datetime_local
+from src.logic.formatting import fmt_datetime_local, fmt_day_label, fmt_time_local, local_date, today_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui.components.editorial_coverage import (
     get_editorial_stories_for_company,
@@ -121,6 +121,7 @@ from src.ui.components.editorial_coverage import (
     render_editorial_card,
 )
 from src.ui.components.empty_state import empty_state
+from src.ui.components.primitives import chip_html, esc, page_header
 from src.ui.components.section import section_header
 
 _FRESHNESS_WINDOW_DAYS = 7
@@ -474,84 +475,96 @@ def _toggle_show_translation(story_id: str) -> None:
 def _render_card(
     story: NewsStory, settings: Settings, is_historical: bool = False, tier: NewsMaterialityTier | None = None,
 ) -> None:
-    # Text-only layout for every card, regardless of whether a validated
-    # image_url/image_alt exists on the story — optional source-image
-    # rendering is disabled for now (UI decision; the underlying
-    # extraction/validation/storage of those fields is untouched, see
-    # rss_atom_client.py / canonical_url.validate_image_url() /
-    # daily_news_models.NewsSourceReference).
+    """Redesign v2 density for the issuer card — the same six approved
+    fields (company; publisher; source-type label; local time; headline;
+    summary-or-nothing; "Read original source" link), the same
+    "Company news" / tier / "Historical" labels, only laid out as a
+    time-cell + content row. Text-only, as before (optional source-image
+    rendering stays disabled)."""
     source = story.sources[0]
-    local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
-    # Source-attribution pass (design/DECISIONS.md): resolved only from
-    # the story's own already-typed source_class — an unrecognized
-    # enum-shaped value (should never occur; every SourceClass member is
-    # mapped above) degrades to the raw stored value rather than
-    # inventing a label or crashing the card.
+    clock, zone = fmt_time_local(source.published_at) if source.published_at else ("", "")
     source_type_label = _SOURCE_CLASS_LABELS.get(source.source_class, source.source_class.value)
 
-    with st.container(border=True, key=f"card-issuer-{story.id}"):
-        tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
-        st.markdown(f'<span class="er-status-tag er-tag-neutral">Company news</span>{tier_badge}', unsafe_allow_html=True)
-        if is_historical:
-            # System-wide company-matched-news fix (design/DECISIONS.md),
-            # requirement 6: an older official card shown via the
-            # stale-feed fallback must be unmistakably labeled as such,
-            # not only via a page-level notice that can scroll out of
-            # view or be suppressed entirely when fresh editorial
-            # coverage is also shown (see render()'s own fallback_notice
-            # logic below). Reuses the existing "genuinely incomplete,
-            # not wrong" dashed/outline treatment already established
-            # for this exact purpose (see radar_status.py's own
-            # RETRIEVAL_FAILURE_STATUSES comment) — never the loud
-            # er-tag-neg pill, which this codebase reserves for genuine
-            # failures.
+    with st.container(key=f"card-issuer-{story.id}"):
+        time_col, body_col = st.columns([1, 11])
+        with time_col:
+            st.markdown(f'<div class="er-time-cell">{esc(clock)}<span class="er-time-zone">{esc(zone)}</span></div>', unsafe_allow_html=True)
+        with body_col:
+            tier_badge = f" {_tier_badge_html(tier)}" if tier is not None else ""
+            historical = (
+                '<span class="er-chip er-chip-uncertainty" style="margin-left:0.4rem;">Historical — not from the last 7 days</span>'
+                if is_historical else ""
+            )
+            st.markdown(f'<span class="er-status-tag er-tag-neutral">Company news</span>{tier_badge}{historical}', unsafe_allow_html=True)
+            local_time = fmt_datetime_local(source.published_at) if source.published_at else ""
             st.markdown(
-                '<span class="er-chip er-chip-uncertainty" style="margin-left:0.4rem;">'
-                "Historical — not from the last 7 days</span>",
+                f'<div class="er-muted" style="margin-top:0.3rem;">{esc(story.company_name)} · {esc(source.publisher)} · {esc(source_type_label)} · {esc(local_time)}</div>',
                 unsafe_allow_html=True,
             )
-        st.markdown(
-            f'<div class="er-muted" style="margin-top:0.3rem;">{story.company_name} · {source.publisher} · {source_type_label} · {local_time}</div>',
-            unsafe_allow_html=True,
-        )
-        headline = story.original_title if story.translation_unavailable else story.headline
-        st.markdown(f"**{headline}**")
+            headline = story.original_title if story.translation_unavailable else story.headline
+            st.markdown(f'<div class="er-signal-headline">{esc(headline)}</div>', unsafe_allow_html=True)
 
-        if story.translation_unavailable:
-            st.caption("Translation unavailable — original text shown above.")
-        elif story.eeva_summary:
-            st.write(story.eeva_summary)
+            if story.translation_unavailable:
+                st.caption("Translation unavailable — original text shown above.")
+            elif story.eeva_summary:
+                st.markdown(
+                    f'<div class="er-inset"><div class="er-inset-label">Summary · {esc(source.publisher)}</div>'
+                    f'<div class="er-excerpt">{esc(story.eeva_summary)}</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-        # Dashboard/Signals quality fix (design/
-        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): a clear source-
-        # language indicator plus an on-demand, clearly-labeled
-        # Translate control for a Latin-script non-English headline
-        # (translation_unavailable/original_title above already handle
-        # the separate, unrelated CJK/Hangul-script case). Never shown
-        # for English content. The translated text — when shown — is
-        # always explicitly labeled "Title translation," a translation
-        # of the headline only, never presented as source-original text
-        # and never turned into a summary/interpretation.
-        if _can_translate_headline(source.original_language):
-            st.caption(f"Source language: {source.original_language}")
-            translated_headline = st.session_state.get(_translated_headline_key(story.id))
-            show_translation = st.session_state.get(_show_translation_key(story.id), False)
-            if translated_headline:
-                if show_translation:
-                    st.markdown(
-                        f'<div class="er-muted" style="font-size:0.82rem;">'
-                        f'Title translation: {html.escape(translated_headline)}</div>',
-                        unsafe_allow_html=True,
-                    )
-                label = "Hide translation" if show_translation else "Show translation"
-                st.button(label, key=f"signals-toggle-translation-{story.id}", on_click=_toggle_show_translation, args=(story.id,))
-            elif st.session_state.get(_translate_failed_key(story.id)):
-                st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable</div>', unsafe_allow_html=True)
-            else:
-                st.button("Translate", key=f"signals-translate-{story.id}", on_click=_do_translate_headline, args=(story, settings))
+            if _can_translate_headline(source.original_language):
+                st.caption(f"Source language: {source.original_language}")
+                translated_headline = st.session_state.get(_translated_headline_key(story.id))
+                show_translation = st.session_state.get(_show_translation_key(story.id), False)
+                if translated_headline:
+                    if show_translation:
+                        st.markdown(
+                            f'<div class="er-muted" style="font-size:0.82rem;">'
+                            f'Title translation: {html.escape(translated_headline)}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    label = "Hide translation" if show_translation else "Show translation"
+                    st.button(label, key=f"signals-toggle-translation-{story.id}", on_click=_toggle_show_translation, args=(story.id,))
+                elif st.session_state.get(_translate_failed_key(story.id)):
+                    st.markdown('<div class="er-muted" style="font-size:0.76rem;">Translation unavailable</div>', unsafe_allow_html=True)
+                else:
+                    st.button("Translate", key=f"signals-translate-{story.id}", on_click=_do_translate_headline, args=(story, settings))
 
-        st.markdown(f"[Read original source →]({source.url})")
+            st.markdown(
+                f'<div class="er-signal-foot">{chip_html(story.company_name, "theme")}'
+                f'<a class="er-feed-link" href="{esc(source.url)}" target="_blank" rel="noopener noreferrer">Read original source →</a></div>',
+                unsafe_allow_html=True,
+            )
 
+
+def _date_group_label(day, today) -> str:
+    if day == today:
+        return f"Today · {fmt_day_label(day)}"
+    if (today - day).days == 1:
+        return f"Yesterday · {fmt_day_label(day)}"
+    return fmt_day_label(day)
+
+
+def _item_published_at(kind: str, item: NewsStory | EditorialStory) -> str:
+    if kind == "issuer":
+        return item.sources[0].published_at if item.sources else ""
+    return item.published_at or ""
+
+
+def _render_grouped(items, render_item, tier_for) -> None:
+    """Emits a mono date-group rule whenever the Eastern-time calendar
+    date of an item's own real published_at changes — never a
+    render-time date. An item with an unparseable timestamp renders
+    under no divider rather than an invented one."""
+    today = today_local()
+    current = object()
+    for kind, item in items:
+        day = local_date(_item_published_at(kind, item))
+        if day is not None and day != current:
+            current = day
+            st.markdown(f'<div class="er-date-group">{esc(_date_group_label(day, today))}</div>', unsafe_allow_html=True)
+        render_item(kind, item, tier_for(item))
 
 def render() -> None:
     """Unified Signals feed (design/DECISIONS.md): one page, one
@@ -566,17 +579,17 @@ def render() -> None:
 
     active_tier_view = _resolve_active_tier_view()
 
-    st.markdown('<div class="er-page-title">Signals</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="er-muted">{_SUBTITLE}</div>', unsafe_allow_html=True)
+    head_col, switch_col = st.columns([3, 1.2], vertical_alignment="center")
+    with head_col:
+        page_header("Signals", _SUBTITLE)
+    with switch_col:
+        _render_tier_switch(active_tier_view)
 
-    _render_tier_switch(active_tier_view)
-
-    selected_company = st.selectbox("Companies", options=_company_options(), index=0)
-
-    st.markdown(
-        '<div class="er-muted">Showing tracked coverage from the past 7 days.</div>',
-        unsafe_allow_html=True,
-    )
+    filter_col, count_col = st.columns([2, 3], vertical_alignment="bottom")
+    with filter_col:
+        selected_company = st.selectbox("Companies", options=_company_options(), index=0)
+    count_slot = count_col.empty()
+    st.markdown('<div class="er-muted">Showing tracked coverage from the past 7 days.</div>', unsafe_allow_html=True)
 
     # Redesign v2: the selection composition lives in build_signals_feed()
     # (same rules, same order, same tier partition — see its docstring);
@@ -600,6 +613,12 @@ def render() -> None:
     high_signal_items = list(feed.high_signal)
     watchlist_items = list(feed.watchlist)
     background_items = list(feed.background)
+    active_count = len(high_signal_items) if active_tier_view == _HIGH_SIGNALS_QUERY_VALUE else len(watchlist_items)
+    active_noun = "high signals" if active_tier_view == _HIGH_SIGNALS_QUERY_VALUE else "watchlist items"
+    count_slot.markdown(
+        f'<div class="er-split-meta" style="text-align:right;">{active_count} {active_noun} · tracked coverage · past 7 days</div>',
+        unsafe_allow_html=True,
+    )
 
     def _render_item(kind: str, item: NewsStory | EditorialStory, tier: NewsMaterialityTier) -> None:
         if kind == "issuer":
@@ -617,8 +636,7 @@ def render() -> None:
     if active_tier_view == _HIGH_SIGNALS_QUERY_VALUE:
         section_header(f"High Signals ({len(high_signal_items)})")
         if high_signal_items:
-            for kind, item in high_signal_items:
-                _render_item(kind, item, NewsMaterialityTier.HIGH_SIGNAL)
+            _render_grouped(high_signal_items, _render_item, lambda item: NewsMaterialityTier.HIGH_SIGNAL)
         else:
             # This is NOT the same as the true "zero coverage at all"
             # empty state above (which already returned): items exist
@@ -628,8 +646,7 @@ def render() -> None:
     else:
         section_header(f"Watchlist ({len(watchlist_items)})", "Relevant but early, unquantified, or not yet material.")
         if watchlist_items:
-            for kind, item in watchlist_items:
-                _render_item(kind, item, _effective_tier(item))
+            _render_grouped(watchlist_items, _render_item, _effective_tier)
         else:
             empty_state(_NO_WATCHLIST_EMPTY_STATE)
 

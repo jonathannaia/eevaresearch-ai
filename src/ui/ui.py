@@ -456,23 +456,16 @@ def render_sidebar(current_key: str) -> None:
                 st.markdown('<div class="er-rail-group-label">Admin</div>', unsafe_allow_html=True)
                 _nav_item(admin_users_page, "admin_users", "Users", current_key)
 
-        # Redesign v2: real refresh data only — omitted entirely when no
-        # durable scan status is available (see _latest_filings_refresh_label).
-        _render_sidebar_refresh()
+        # Redesign v2: the bottom group (real refresh data, if any, above the
+        # account control) — one keyed container so assets/styles.css can
+        # anchor the pair to the sidebar's visual bottom via margin-top:auto
+        # on a real flex child (stSidebarUserContent is made a flex column).
+        with st.container(key="rail-bottom"):
+            _render_sidebar_refresh()
+            _render_sidebar_account(current_key)
 
-        # Account control — anchored to the visual bottom of the sidebar
-        # (application-shell dark/dim pass, Perplexity-inspired layout).
-        # Rendered last, after every nav group above, so it is always the
-        # final element in source order; .er-rail-account's own
-        # margin-top: auto (assets/styles.css) is what actually pushes it
-        # to the bottom of the sidebar's flex column rather than its
-        # position in the markup alone. Same st.user.is_logged_in/
-        # st.user.get("email")/st.logout calls as the prior top-bar avatar
-        # popover used, same "only the email claim is shown, never a
-        # token/cookie/session id" rule — only the location and widget
-        # keys changed (topbar-avatar-*/topbar-sign-out-* -> sidebar-
-        # account-*/sidebar-sign-out-*), not the mechanism or the content.
-        _render_sidebar_account(current_key)
+        # Account control — rendered inside the rail-bottom container above
+        # (redesign v2), still last in source order after every nav group.
 
         # Reader-facing data-integrity pass (design/DECISIONS.md): the
         # previous blanket "Demo environment · sample data" status was

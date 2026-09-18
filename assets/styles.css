@@ -1274,3 +1274,33 @@ table.er-table .er-mono { font-size: 0.8rem; }
    primary state. */
 .st-key-radar-filter-include-admin label p { color: var(--text-secondary) !important; font-size: 0.85rem !important; }
 .er-reference-line { font-family: var(--font-mono); font-size: 0.74rem; line-height: 1.7; }
+
+/* ---------- v2 Signals + Research theses ---------- */
+.er-signal-headline { font-weight: 600; font-size: 1.05rem; line-height: 1.4; color: var(--text); margin: 0.45rem 0 0.55rem 0; }
+.er-signal-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-top: 0.7rem; }
+.er-signal-foot > div, .er-signal-foot > span { display: inline-flex; align-items: center; gap: 0.45rem; }
+[class*="st-key-card-issuer-"], [class*="st-key-card-editorial-"] { padding: var(--space-4) var(--space-5) !important; }
+[class*="st-key-card-issuer-"] [data-testid="stHorizontalBlock"], [class*="st-key-card-editorial-"] [data-testid="stHorizontalBlock"] { gap: 0.5rem; }
+.er-thesis-summary { color: var(--text-secondary); line-height: 1.6; margin-top: 0.6rem; font-size: 0.95rem; }
+.er-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.er-legend { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 0.75rem; }
+.er-legend-row { display: grid; grid-template-columns: 12px 1fr; gap: 0.6rem; align-items: start; }
+.er-legend-row .er-evdot { margin-top: 0.4rem; }
+.er-legend-name { font-weight: 500; color: var(--text); }
+[class*="st-key-card-thesis-legend"] { position: sticky; top: var(--space-4); }
+/* Segmented controls read as the v2 pill group. */
+[data-testid="stSegmentedControl"] button { border-radius: var(--r-md) !important; }
+/* Sidebar bottom anchor (redesign v2): Streamlit 1.61 nests every sidebar
+   element inside a block-level stSidebarUserContent — margin-top:auto on
+   the account block never had a flex parent to act against. Make that
+   wrapper the flex column and anchor the one keyed bottom container. */
+[data-testid="stSidebarUserContent"] { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* The keyed class lands on an inner wrapper; the flex child is the
+   stLayoutWrapper that contains it (verified live), so anchor that. */
+[data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(.st-key-rail-bottom) { margin-top: auto; }
+[data-testid="stSidebarUserContent"] { padding-bottom: 1rem !important; }
+/* The vertical block sits one block-level wrapper below stSidebarUserContent
+   (verified live in 1.61.1): carry the flex column through that wrapper so
+   the keyed bottom container's margin-top:auto has a stretched flex parent. */
+[data-testid="stSidebarUserContent"] > div { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+[data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] { flex: 1 1 auto; }

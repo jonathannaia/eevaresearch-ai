@@ -65,8 +65,9 @@ from src.logic import theme_evidence
 from src.logic.formatting import fmt_datetime_local
 from src.logic.market_map import jurisdiction_for_source
 from src.logic.source_link import public_source_url
-from src.models.theme_research import CompanyRole, ResearchTheme
+from src.models.theme_research import CompanyRole, EvidenceDirection, ResearchTheme, ThemeCategory, ThemeStatus
 from src.ui.components.empty_state import empty_state
+from src.ui.components.primitives import EVIDENCE_DIRECTIONS, chip_html, evidence_bar_html, page_header
 from src.ui.components.section import section_header
 from src.ui.ui import get_page
 
@@ -170,10 +171,43 @@ def render() -> None:
         _render_index(repository)
 
 
+_CATEGORY_FILTER_KEY = "theses-category-filter"
+_ALL_CATEGORIES_LABEL = "All"
+_READING_A_THESIS: tuple[tuple[str, str, str], ...] = (
+    ("supports", "Supports", "Primary-source evidence consistent with the thesis."),
+    ("mixed", "Mixed", "Cuts both ways; needs a reviewer's call."),
+    ("contradicts", "Contradicts", "Evidence against the thesis. Always shown, never collapsed."),
+    ("context", "Context", "Frames the question without deciding it."),
+)
+
+
+def _category_counts(themes) -> dict[str, int]:
+    counts: dict[str, int] = {c.value: 0 for c in ThemeCategory}
+    for theme in themes:
+        counts[_enum_label(theme.category)] = counts.get(_enum_label(theme.category), 0) + 1
+    return counts
+
+
+def _render_category_filter(themes) -> str | None:
+    """A real-count category filter over the published list (redesign v2)
+    — display filtering of already-published theses only; the repository
+    read and every thesis's own data are untouched. Returns the selected
+    category label, or None for All."""
+    counts = _category_counts(themes)
+    options = [f"{_ALL_CATEGORIES_LABEL} {len(themes)}"] + [
+        f"{label} {n}" if n else label for label, n in counts.items()
+    ]
+    choice = st.segmented_control(
+        "Thesis type", options=options, default=options[0], key=_CATEGORY_FILTER_KEY, label_visibility="collapsed",
+    )
+    if not choice or choice == options[0]:
+        return None
+    return choice.rsplit(" ", 1)[0] if choice[-1].isdigit() else choice
+
+
 def _render_index(repository: ThemeRepositoryProtocol) -> None:
-    st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
+    page_header(_PAGE_TITLE, _THESIS_EXPLAINER)
     _scope_statement()
-    st.markdown(f'<div class="er-muted" style="margin-top:0.3rem;">{_esc(_THESIS_EXPLAINER)}</div>', unsafe_allow_html=True)
 
     try:
         themes = repository.list_published_themes()
@@ -185,14 +219,37 @@ def _render_index(repository: ThemeRepositoryProtocol) -> None:
         empty_state(_EMPTY_STATE_TITLE, _EMPTY_STATE_DETAIL, key="themes-empty")
         return
 
+    selected = _render_category_filter(themes)
+    shown = [t for t in themes if selected is None or _enum_label(t.category) == selected]
+    # Recently updated first — a real field (ResearchTheme.updated_at), the
+    # only sort the page offers.
+    shown = sorted(shown, key=lambda t: t.updated_at, reverse=True)
+
     detail_page = get_page("themes")
-    for theme in themes:
-        try:
-            evidence = repository.evidence_for_theme(theme.id)
-            company_map = repository.company_map_for_theme(theme.id)
-        except Exception:  # noqa: BLE001 — one theme's count lookup failing must not take down the whole index
-            evidence, company_map = (), ()
-        _render_card(theme, evidence, company_map, detail_page)
+    tickers = _ticker_by_company_name()
+    main_col, side_col = st.columns([2.2, 1], gap="medium")
+    with main_col:
+        if not shown:
+            st.markdown(f'<div class="er-muted">No {_esc(selected)} theses are published yet.</div>', unsafe_allow_html=True)
+        for theme in shown:
+            try:
+                evidence = repository.evidence_for_theme(theme.id)
+                company_map = repository.company_map_for_theme(theme.id)
+            except Exception:  # noqa: BLE001 — one theme's count lookup failing must not take down the whole index
+                evidence, company_map = (), ()
+            _render_card(theme, evidence, company_map, detail_page, tickers)
+    with side_col:
+        _render_reading_legend()
+
+
+def _render_reading_legend() -> None:
+    rows = "".join(
+        f'<div class="er-legend-row"><span class="er-evdot er-ev-{slug}"></span>'
+        f'<div><div class="er-legend-name">{_esc(name)}</div><div class="er-muted">{_esc(text)}</div></div></div>'
+        for slug, name, text in _READING_A_THESIS
+    )
+    with st.container(key="card-thesis-legend"):
+        st.markdown(f'<div class="er-section-label er-tight">Reading a thesis</div><div class="er-legend">{rows}</div>', unsafe_allow_html=True)
 
 
 _DIRECTION_TAG_CLASS = {"Supports": "er-tag-pos", "Contradicts": "er-tag-neg", "Mixed": "er-tag-mix"}
@@ -207,6 +264,22 @@ def _evidence_direction_chips_html(evidence) -> str:
         f'style="margin-right:0.35rem;">{direction} · {count}</span>'
         for direction, count in counts.items()
     )
+
+
+def _ticker_by_company_name() -> dict[str, str]:
+    """Exact TrackedCompany.name -> public securities code/ticker (EDINET's
+    5-char code shown as its 4-digit public form). A mapped company that
+    is not a tracked company gets no code — never a guessed one."""
+    from src.logic import filing_display
+
+    codes: dict[str, str] = {}
+    for company in get_tracked_companies():
+        code = company.krx_code or ""
+        if company.source == filing_display.EDINET_SOURCE_NAME:
+            code = filing_display.edinet_display_securities_code(code) or code
+        if code:
+            codes[company.name] = code
+    return codes
 
 
 def _theme_tags_html(company_map) -> str:
@@ -226,57 +299,73 @@ def _theme_tags_html(company_map) -> str:
     )
 
 
-def _render_card(theme: ResearchTheme, evidence, company_map, detail_page) -> None:
-    # Modern editorial redesign (design/DECISIONS.md, user-approved
-    # preview) — "richer thesis cards": badges (category/status as
-    # status-tag chips, not plain muted text), the working thesis as a
-    # real summary line (previously only the one-sentence hypothesis),
-    # an evidence-direction breakdown (new), and an Open button using the
-    # app's existing cta-secondary button treatment (previously a bare,
-    # unstyled page_link). The container key changes from
-    # "theme-card-{id}" (which never actually matched the shared
-    # `[class*="st-key-card-"]` card rule — "theme-card-" doesn't
-    # contain "card-" immediately after "st-key-", so this card was
-    # unknowingly using Streamlit's own native border=True styling this
-    # whole time, not this app's design system) to "card-theme-{id}",
-    # which does match — the same white/bordered/hover card every other
-    # page already uses. border=True is dropped since the CSS border
-    # replaces it now, matching every other card in the app.
-    distinct_companies = {item.company for item in evidence} | {entry.company_name for entry in company_map}
-    with st.container(key=f"card-theme-{theme.id}"):
-        top_cols = st.columns([6, 3], vertical_alignment="center")
-        with top_cols[0]:
-            st.markdown(
-                f'<span class="er-status-tag er-tag-info">{_enum_label(theme.category)}</span> '
-                f'<span class="er-status-tag er-tag-neutral">{_enum_label(theme.status)}</span>',
-                unsafe_allow_html=True,
-            )
-        with top_cols[1]:
-            st.markdown(
-                f'<div class="er-muted" style="text-align:right;">{_esc(fmt_datetime_local(theme.updated_at))}</div>',
-                unsafe_allow_html=True,
-            )
+def _company_chips_html(company_map, tickers: dict[str, str]) -> str:
+    names = sorted({entry.company_name for entry in company_map})
+    chips = []
+    for name in names:
+        code = tickers.get(name)
+        code_html = f' <span class="er-mono er-mono-muted">{_esc(code)}</span>' if code else ""
+        chips.append(f'<span class="er-status-tag er-tag-theme">{_esc(name)}{code_html}</span>')
+    return "".join(chips)
 
-        st.markdown(f'<div class="er-card-title" style="margin-top:0.5rem; font-size:1.05rem;">{_esc(theme.title)}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{_esc(theme.working_thesis)}</div>', unsafe_allow_html=True)
+
+def _render_card(theme: ResearchTheme, evidence, company_map, detail_page, tickers: dict[str, str] | None = None) -> None:
+    """Redesign v2 thesis card: category + real status chips (ThemeStatus
+    is an authored field — "New" appears only when the status really is
+    NEW), the updated timestamp, a serif title, the working thesis, the
+    key question in a serif inset, an evidence bar with all four real
+    direction counts (Contradicts always rendered, never collapsed), the
+    mapped companies with their tracked-company codes, and the existing
+    Open link. Same container key prefix (card-theme-) as before."""
+    tickers = tickers or {}
+    distinct_companies = {item.company for item in evidence} | {entry.company_name for entry in company_map}
+    counts = Counter(getattr(item.direction, "value", item.direction) for item in evidence)
+    bar_counts = {label: counts.get(label, 0) for label, _ in EVIDENCE_DIRECTIONS}
+    with st.container(key=f"card-theme-{theme.id}"):
+        status_variant = "accent" if theme.status == ThemeStatus.NEW else "neutral"
+        st.markdown(
+            '<div class="er-split-head">'
+            f'<div>{chip_html(_enum_label(theme.category), "info")} {chip_html(_enum_label(theme.status), status_variant)}</div>'
+            f'<div class="er-split-meta">Updated {_esc(fmt_datetime_local(theme.updated_at))}</div></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f'<div class="er-card-title er-serif-title">{_esc(theme.title)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="er-thesis-summary">{_esc(theme.working_thesis)}</div>', unsafe_allow_html=True)
         theme_tags = _theme_tags_html(company_map)
         if theme_tags:
             st.markdown(f'<div style="margin-top:0.4rem;">{theme_tags}</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div style="margin-top:0.5rem;"><strong>Key question:</strong> {_esc(theme.key_question)}</div>',
+            f'<div class="er-inset" style="margin-top:0.8rem;"><div class="er-inset-label">Key question</div>'
+            f'<div class="er-serif-question">{_esc(theme.key_question)}</div></div>',
             unsafe_allow_html=True,
         )
-        st.markdown(f'<div style="margin-top:0.6rem;">{_evidence_direction_chips_html(evidence)}</div>', unsafe_allow_html=True)
-
-        bottom_cols = st.columns([2, 2, 4], vertical_alignment="center")
-        with bottom_cols[0]:
-            st.markdown(f'<div class="er-muted">Evidence: {len(evidence)}</div>', unsafe_allow_html=True)
-        with bottom_cols[1]:
-            st.markdown(f'<div class="er-muted">Companies: {len(distinct_companies)}</div>', unsafe_allow_html=True)
-        with bottom_cols[2]:
+        ev_col, co_col = st.columns([1.1, 1], gap="medium")
+        with ev_col:
+            st.markdown(
+                f'<div class="er-split-head" style="margin:0.9rem 0 0.4rem 0;"><div class="er-inset-label" style="margin:0;">Evidence</div>'
+                f'<div class="er-mono">{len(evidence)} items</div></div>{evidence_bar_html(bar_counts)}',
+                unsafe_allow_html=True,
+            )
+        with co_col:
+            st.markdown(
+                f'<div class="er-split-head" style="margin:0.9rem 0 0.4rem 0;"><div class="er-inset-label" style="margin:0;">Companies</div>'
+                f'<div class="er-mono">{len(distinct_companies)}</div></div>'
+                f'<div class="er-chip-row">{_company_chips_html(company_map, tickers)}</div>',
+                unsafe_allow_html=True,
+            )
+        foot_cols = st.columns([3, 1.2], vertical_alignment="center")
+        with foot_cols[0]:
+            review = bar_counts["Mixed"] + bar_counts["Contradicts"]
+            if review:
+                st.markdown(
+                    f'<div class="er-muted"><span class="er-evdot er-ev-mixed"></span> {review} item{"s" if review != 1 else ""} '
+                    "need review (mixed or contradicting)</div>",
+                    unsafe_allow_html=True,
+                )
+        with foot_cols[1]:
             if detail_page is not None:
-                with st.container(key=f"cta-secondary-open-theme-{theme.id}"):
-                    st.page_link(detail_page, label="Open →", query_params={"theme_id": theme.id})
+                with st.container(key=f"cta-primary-open-theme-{theme.id}"):
+                    st.page_link(detail_page, label="Open thesis →", query_params={"theme_id": theme.id})
 
 
 def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
@@ -309,7 +398,7 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
     company_map = tuple(entry for entry in company_map if entry.theme_id == theme.id)
 
     # 1. Title, category, status, last updated
-    st.markdown(f'<div class="er-page-title">{_esc(theme.title)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="er-page-title er-serif-title" style="font-size:1.9rem;">{_esc(theme.title)}</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="er-muted">{_enum_label(theme.category)} · {_enum_label(theme.status)} · '
         f'Updated {_esc(fmt_datetime_local(theme.updated_at))}</div>',

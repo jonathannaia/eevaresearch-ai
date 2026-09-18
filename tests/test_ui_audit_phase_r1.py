@@ -92,8 +92,10 @@ def test_default_header_has_only_the_approved_subtitle_and_no_live_chip(tmp_path
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert "Latest Filings" in all_text
-    assert "Radar watches tracked companies for material filings, theme developments, and high-confidence signals." in all_text
+    # Redesign v2 header copy (title "Filings" + one subtitle) — the same
+    # "title + exactly one subtitle, no live chip" contract, new strings.
+    assert 'class="er-page-title">Filings</div>' in all_text
+    assert "Material filings from tracked companies across SEC EDGAR, DART and EDINET." in all_text
     # Genuinely deleted, not relocated — these exact strings exist nowhere
     # in the page, default view or not.
     assert "Automated primary-filing discovery" not in all_text

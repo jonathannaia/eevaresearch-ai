@@ -288,7 +288,7 @@ def test_published_index_card_has_an_open_link_to_the_right_theme():
     isolated per-page AppTest harness can never actually render this
     page_link — checked at the source level instead."""
     source = (REPO_ROOT / "src" / "ui" / "pages" / "themes_research.py").read_text(encoding="utf-8")
-    assert 'st.page_link(detail_page, label="Open →", query_params={"theme_id": theme.id})' in source
+    assert 'st.page_link(detail_page, label="Open thesis →", query_params={"theme_id": theme.id})' in source
 
 
 @pytest.mark.parametrize("visibility", [ThemeVisibility.INTERNAL, ThemeVisibility.READY_TO_PUBLISH, ThemeVisibility.ARCHIVED])
