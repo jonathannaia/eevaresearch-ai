@@ -81,10 +81,10 @@
    disclosed here and in the test file:
      - --text-muted (#788583 as given) measures only 4.06:1-4.45:1
        against --surface/--surface-hover — under the 4.5:1 AA normal-text
-       floor. Nudged lighter to #889593 (4.65:1 in the worst case) —
+       floor. Nudged lighter (4.65:1 in the worst case) —
        same "nudge the minimum amount needed, disclose it" precedent
        every earlier pass in this file has used at least once.
-     - --border/--border-soft (#263137/#1E282C as given) are used
+     - --border/--border-soft (as given) are used
        exactly as specified, NOT nudged for 3:1 — both measure well under
        3:1 against every surface (a deliberate, requested outcome: "reduce
        excessive card-border visibility" needs a genuinely quiet border,
@@ -107,101 +107,105 @@
    touches directly for surface-hierarchy/density (nav active-state left
    accent bar, card-border/pill-radius reduction, dashboard row density) —
    each documented at its own rule below, never scattered inline. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Noto+Serif+KR:wght@400;600&display=swap');
 
+/* Redesign v2 (design/redesign-v2, dashboard/filings/signals/theses) — a
+   fifth full token re-valuation of this same single layer, following
+   the exact discipline every earlier pass in this file's header used:
+   every existing token keeps its NAME and ROLE and only its VALUE moves
+   (no second, parallel vocabulary), and the only genuinely new tokens
+   are roles the v2 system names that had no counterpart here before
+   (--border-shell, --text-label, --context, the four --theme-* hues).
+   Values are the v2 spec's literally, with two derived tokens
+   (--surface-hover/--surface-active — the spec names an inset and an
+   active-nav surface but no generic hover/pressed step; these are the
+   next two luminance steps above --surface, verified strictly
+   increasing) and one deliberate scope restriction disclosed here and
+   in tests/test_visual_theme_redesign.py: --text-label (#7A8089 as
+   specified) measures 4.64:1/4.75:1/4.92:1 on --surface/--rail/--bg but
+   only 4.39:1/4.11:1 on --surface-hover/--surface-active — so it is
+   used ONLY for small uppercase labels on canvas/sidebar/card surfaces,
+   never on a hover/pressed surface, and --text-muted (#9197A0, ≥5.57:1
+   everywhere) stays the general muted-text tier. Card/shell/row borders
+   are deliberately quiet (<3:1) exactly as the prior pass's header
+   argues; the focus ring (--focus, ≥9:1) carries interactive-boundary
+   contrast on its own. The primary CTA is now the accent itself with a
+   near-black label (--invert-fg #06110E on --invert-bg #6FD3BC,
+   10.71:1), so --invert-bg/--accent coincide by design for the first
+   time — kept as two tokens because they still have two roles (fill vs.
+   text/icon accent) and every rule below reads the role it means.
+   Fonts: Geist (UI) / Geist Mono (timestamps, tickers, codes, counts,
+   uppercase labels) / Source Serif 4 (verbatim excerpts, thesis titles
+   and key questions) with Noto Serif KR as the Korean serif fallback —
+   loaded through the same Google Fonts mechanism .streamlit/config.toml
+   already used for Inter/JetBrains Mono, no new dependency class. No
+   gradient anywhere; the primary-CTA glow stays a box-shadow blur,
+   retinted to the accent hue. Radii: 14px cards / 9px controls / 6px
+   chips (--r-lg/--r-md/--r-sm). */
 :root {
-    /* Backgrounds — page / sidebar / card / hover-surface / active-surface.
-       Midnight teal-slate, not pure black or pure gray — a deliberately
-       graduated four-step ladder (bg < rail < surface < surface-hover <
-       surface-active, strictly increasing luminance) so canvas, sidebar,
-       card, and hover/selected states are each individually
-       distinguishable at a glance, not just "dark vs. less dark." */
-    --bg: #101417;
-    --rail: #0B0F11;
-    --surface: #171D20;
-    --surface-hover: #1D2529;
-    /* Third elevation tier — selected/pressed states, plus the same
-       "track/badge/disabled fill" internal role the prior pass's
-       --surface-3 filled (breadth-bar track, unread-count badge,
-       disabled-button background); still the lightest of the four real
-       surfaces. */
-    --surface-active: #202A2E;
-    --surface-input: #171D20;
-    /* Borders — see the header comment above for the full contrast
-       rationale (both deliberately quiet, neither held to 3:1).
-       --border-soft is the lowest-emphasis divider (footer rules, chart
-       gridlines, the quietest card/row separators); --border is the
-       slightly more present functional boundary (default card border,
-       secondary-button/input outline at rest) — still restrained by
-       design, per "reduce excessive card-border visibility." */
-    --border-soft: #1E282C;
-    --border: #263137;
-    /* A supplementary, slightly-more-visible hover/focus affordance for
-       card borders specifically — never the sole way a boundary is
-       perceived (see the header comment's --focus note), just a small
-       "this became interactive" cue. */
-    --card-border-hover: #34424A;
-    --text: #F1F4F2;
-    --text-secondary: #B1BCBB;
-    /* Single muted tier (collapses the prior pass's always-equal
-       --text-3/--text-4 pair) — nudged from the literally-specified
-       #788583, see header comment. */
-    --text-muted: #889593;
-    /* Primary CTA fill/label — a deliberately darker, more saturated
-       teal than --accent itself (never --accent or --accent-hover
-       directly: white on --accent measures only 2.5:1 and white on
-       --accent-hover only 2.03:1 — both fail 4.5:1 as a button fill).
-       --invert-bg/--invert-bg-hover are new, derived tokens (this file's
-       own established pattern — the prior two passes both kept an
-       --invert-bg distinct from --accent for the exact same reason);
-       white label text measures 5.58:1 on --invert-bg and 4.93:1 on
-       --invert-bg-hover, both comfortably clear of 4.5:1. */
-    --invert-bg: #0F7568;
-    --invert-bg-hover: #157E72;
-    --invert-fg: #FFFFFF;
-    --glow: rgba(33, 183, 168, .35);
-    --accent: #21B7A8;
-    /* --accent-hover is deliberately LIGHTER than --accent (unlike the
-       prior pass's own accent-hover, which was a darker button-fill
-       color under a different name) — its role here is a text/icon/link
-       hover-brighten, not a button fill (see --invert-bg-hover above for
-       that role instead). 7.68:1 as text against every real surface,
-       comfortably past 4.5:1. */
-    --accent-hover: #29CBBB;
-    --accent-soft: rgba(33, 183, 168, 0.14);
-    --focus: #21B7A8;
-    --link: #21B7A8;
-    --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 16px;
-    --font-ui: "Inter", sans-serif;
-    --font-mono: "JetBrains Mono", monospace;
-    --font-serif: "Source Serif 4", "Noto Serif JP", "Noto Serif KR", "Noto Serif SC", serif;
-    /* Restrained semantic accents only — see the direction-color note
-       elsewhere in this file's history (unchanged policy: small dots,
-       thin rails, small arrows, compact status tags/badges — never a
-       large fill, never decorative). --info is genuinely new (the prior
-       three palettes had no fourth/neutral-blue semantic role) — wired
-       to the one existing status-tag variant that previously used plain
-       neutral gray with no color of its own (.er-tag-info). Every
-       *-dim tint mixes the status color into --surface (#171D20, the
-       real ambient background every status tag/chip/alert renders on)
-       at .16 alpha — verified ≥4.73:1 for text-on-its-own-tint at that
-       alpha for all four colors (tests/test_visual_theme_redesign.py). */
-    --positive: #3BCB8A;
-    --positive-dim: rgba(59, 203, 138, .16);
-    --negative: #F07178;
-    --negative-dim: rgba(240, 113, 120, .16);
-    --warning: #E4B65A;
-    --warning-dim: rgba(228, 182, 90, .16);
-    --info: #62A8E5;
-    --info-dim: rgba(98, 168, 229, .16);
-    /* Spacing rhythm (final polish pass) — a shared scale so every
-       component reaches for one of these instead of a one-off margin.
-       4: tight label/value pair. 8: related inline metadata. 12: small
-       internal card grouping. 16: standard card padding/action gap. 24:
-       between component groups. 32: between major Dashboard modules.
-       40-48: between major page blocks. */
+    /* Surfaces — v2 ladder (strictly increasing luminance, verified in
+       tests): canvas < sidebar < card < hover < active. The sidebar is
+       now one step LIGHTER than the canvas (the reverse of the prior
+       pass), per the v2 shell. --surface-input is the v2 inset surface. */
+    --bg: #0B0C0E;
+    --rail: #0F1113;
+    --surface: #121417;
+    --surface-hover: #171A1E;
+    --surface-active: #1C2025;
+    --surface-input: #0F1113;
+    /* Borders — row divider < shell border < card border, all quiet. */
+    --border-soft: #1B1E22;
+    --border-shell: #1D2024;
+    --border: #22252A;
+    --card-border-hover: #2C3036;
+    --text: #E8EAEC;
+    --text-secondary: #B9BEC5;
+    --text-muted: #9197A0;
+    /* Small uppercase labels on canvas/sidebar/card only — see header. */
+    --text-label: #7A8089;
+    /* Primary CTA: accent fill, near-black label (10.71:1). */
+    --invert-bg: #6FD3BC;
+    --invert-bg-hover: #A8EBDA;
+    --invert-fg: #06110E;
+    --glow: rgba(111, 211, 188, .28);
+    --accent: #6FD3BC;
+    --accent-hover: #A8EBDA;
+    /* Active-nav surface (v2 "Active nav" #15201D) — the same tinted-
+       fill role this token has always had; an opaque value now rather
+       than an alpha wash, so it composites identically on every surface. */
+    --accent-soft: #15201D;
+    --focus: #6FD3BC;
+    --link: #7DD8C2;
+    --link-hover: #A8EBDA;
+    --r-sm: 6px;
+    --r-md: 9px;
+    --r-lg: 14px;
+    --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "Geist Mono", "SFMono-Regular", Menlo, monospace;
+    --font-serif: "Source Serif 4", "Noto Serif KR", "Noto Serif JP", Georgia, serif;
+    /* Semantic accents — v2 Supports / Mixed / Contradicts, same
+       restrained-use policy as before (dots, rails, bars, compact tags;
+       never large fills). --context is the fourth evidence direction: a
+       neutral bar/dot fill only, never a text color (1.85:1). Every *-dim
+       tint mixes its hue into --surface at .16 alpha; text-on-own-tint
+       verified ≥5.06:1 for all four (tests/test_visual_theme_redesign.py). */
+    --positive: #5FC88A;
+    --positive-dim: rgba(95, 200, 138, .16);
+    --negative: #E07A6F;
+    --negative-dim: rgba(224, 122, 111, .16);
+    --warning: #E0B060;
+    --warning-dim: rgba(224, 176, 96, .16);
+    --info: #8FB4E8;
+    --info-dim: rgba(143, 180, 232, .16);
+    --context: #3E434A;
+    /* Theme hues (v2) — swatch/dot/bar fills for the four taxonomy
+       themes only; text always stays a --text-* token. */
+    --theme-ai-buildout: #6FD3BC;
+    --theme-memory: #8FB4E8;
+    --theme-space: #C9A0E8;
+    --theme-photonics: #E0B060;
+    /* Spacing rhythm — unchanged scale; page padding 36–40px and section
+       gap 16–24px map onto --space-7/--space-4..5. */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -237,9 +241,8 @@
 /* ---------- base / layout ---------- */
 .stApp { background: var(--bg); }
 .block-container {
-    max-width: 1360px;
-    padding-top: 1.25rem;
-    padding-bottom: 3rem;
+    max-width: 1480px;
+    padding: var(--space-6) var(--space-7) var(--space-8) var(--space-7);
 }
 /* Sidebar expand/collapse control. Streamlit renders both with
    `visibility: hidden` by default (a hover-to-reveal treatment that
@@ -297,8 +300,8 @@ a:hover { color: var(--accent-hover); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
-    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;
+    font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem;
 }
 .er-hero-title {
     /* 40px only on the Home hero (brief §5 type scale) — the only page
@@ -311,27 +314,28 @@ a:hover { color: var(--accent-hover); }
     max-width: 640px; margin-bottom: 0.5rem;
 }
 .er-page-title {
-    font-weight: 600; font-size: 1.55rem; color: var(--text); margin: 0 0 var(--space-1) 0;
+    font-weight: 600; font-size: 1.9rem; line-height: 1.15; letter-spacing: -0.015em;
+    color: var(--text); margin: 0 0 var(--space-2) 0;
 }
 /* Muted one-line description directly under a page title (final polish
    pass) — distinct from .er-hero-sub (Home only, wider/larger) and from
    section_header()'s own optional subtitle (which sits under a *section*
    label, not the page title). */
-.er-page-subtitle { font-size: 0.9rem; color: var(--text-secondary); margin: 0 0 var(--space-6) 0; line-height: 1.5; }
+.er-page-subtitle { font-size: 0.95rem; color: var(--text-secondary); margin: 0 0 var(--space-5) 0; line-height: 1.5; max-width: 72ch; }
 .er-card-title { font-weight: 600; font-size: 0.95rem; color: var(--text); }
-.er-section-label { font-size: 13px; color: var(--text-muted); margin: var(--space-6) 0 var(--space-2) 0; font-weight: 500; }
+.er-section-label { font-size: 1rem; color: var(--text); margin: var(--space-6) 0 var(--space-3) 0; font-weight: 600; }
 .er-section-label:first-child { margin-top: 0; }
 .er-muted { color: var(--text-secondary); font-size: 0.85rem; }
 .er-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
-.er-metric-value { font-family: var(--font-mono); font-weight: 500; font-size: 1.05rem; color: var(--text); }
+.er-metric-value { font-family: var(--font-mono); font-weight: 500; font-size: 2rem; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
 .er-metric-label {
-    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--text-muted);
+    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-label);
     margin-bottom: var(--space-1); display: block;
 }
 .er-excerpt {
     font-family: var(--font-serif);
-    font-size: 0.92rem; line-height: 1.65; color: var(--text-secondary);
+    font-size: 1rem; line-height: 1.7; color: var(--text);
 }
 
 /* ---------- footer ---------- */
@@ -507,8 +511,8 @@ a:hover { color: var(--accent-hover); }
    collapse/expand (a visibility toggle, not a width one) is unaffected. */
 [data-testid="stSidebar"] {
     background: var(--rail) !important;
-    border-right: 1px solid var(--border-soft);
-    width: 240px !important; min-width: 240px !important; max-width: 240px !important;
+    border-right: 1px solid var(--border-shell);
+    width: 248px !important; min-width: 248px !important; max-width: 248px !important;
 }
 /* Application-shell dark/dim pass (Perplexity-inspired layout): this is
    the same scroll-content wrapper the pre-existing padding-top rule
@@ -535,7 +539,7 @@ a:hover { color: var(--accent-hover); }
    own docstring/comments in src/ui/ui.py). */
 .er-rail-brand {
     display: flex; align-items: center; gap: 0.4rem;
-    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--border-soft);
+    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--border-shell);
     margin-bottom: 1rem;
 }
 .er-rail-brand > div[data-testid="stHorizontalBlock"] { width: 100%; align-items: center; }
@@ -553,7 +557,7 @@ a:hover { color: var(--accent-hover); }
    generic/global button-size override. */
 .er-rail-brand [class*="st-key-cta-secondary-cmdk-trigger"] [data-testid="stBaseButton-secondary"] {
     width: 34px !important; height: 34px !important; min-height: 34px !important;
-    padding: 0 !important; border-radius: var(--r-sm) !important;
+    padding: 0 !important; border-radius: var(--r-md) !important;
     display: flex !important; align-items: center; justify-content: center;
 }
 /* Midnight Teal pass: lighter at rest (no visible border, only the icon
@@ -633,28 +637,28 @@ a:hover { color: var(--accent-hover); }
     background-repeat: no-repeat; background-position: center; background-size: contain;
 }
 .st-key-navitem-dashboard [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-dashboard-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%23889593%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%2321B7A8%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
@@ -675,7 +679,7 @@ a:hover { color: var(--accent-hover); }
    carries forward from it here. */
 .er-rail-account {
     margin-top: auto; padding-top: var(--space-3);
-    border-top: 1px solid var(--border-soft);
+    border-top: 1px solid var(--border-shell);
 }
 /* Avatar popover trigger — a plain st.popover button restyled into a
    circular avatar. Scoped to the sidebar-account-* container key prefix
@@ -691,7 +695,7 @@ a:hover { color: var(--accent-hover); }
 
 /* live-status dot (the one non-breadth-bar permitted motion instance) */
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-muted); }
-.dot.live { background: var(--text); position: relative; }
+.dot.live { background: var(--positive); position: relative; }
 @media (prefers-reduced-motion: no-preference) {
     .dot.live::after {
         content: ""; position: absolute; inset: -4px; border-radius: 50%;
@@ -742,31 +746,31 @@ a:hover { color: var(--accent-hover); }
        badges elsewhere in this file stay pill-shaped on purpose (see
        .er-chip/.er-status-tag/.er-fresh, untouched by this redesign);
        only actual buttons changed shape. */
-    border: none !important; border-radius: var(--r-sm) !important; font-weight: 600 !important;
+    border: none !important; border-radius: var(--r-md) !important; font-weight: 600 !important;
     /* Soft teal aura (not neon, and not a gradient — a box-shadow blur,
        never a background-image): a thin teal-tinted ring, the --glow
-       blur (rgba(33,183,168,.35) — the accent hue, reused for the
+       blur (rgba(111,211,188,.28) — the accent hue, reused for the
        live-status dot and breadth-bar leader, the app's other two glow
        spots), and a teal-tinted drop shadow for depth. Ring/shadow rgb
-       triple (15,117,104) is --invert-bg's own value — kept as a literal
+       triple (111,211,188) is --invert-bg's own value — kept as a literal
        triple here (not var()) only because rgba() can't consume a hex
        custom property directly; same value either way. */
-    box-shadow: 0 0 0 1px rgba(15,117,104,.25), 0 0 22px var(--glow), 0 2px 10px rgba(15,117,104,.18) !important;
+    box-shadow: 0 0 0 1px rgba(111,211,188,.25), 0 0 22px var(--glow), 0 2px 10px rgba(111,211,188,.14) !important;
     transition: box-shadow .22s ease, background .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(21,126,114,.45), 0 0 26px rgba(21,126,114,.32), 0 4px 16px rgba(21,126,114,.24) !important;
+    box-shadow: 0 0 0 1px rgba(168,235,218,.45), 0 0 26px rgba(111,211,188,.30), 0 4px 16px rgba(111,211,188,.18) !important;
     background: var(--invert-bg-hover) !important;
 }
 /* Restrained pressed state (beta UI polish pass) — a flatter, tighter
    shadow than hover's glow (no added blur/elevation on press), same
-   --invert-bg-hover fill and same rgba(21,126,114,...) hue already used
+   --invert-bg-hover fill and same rgba(111,211,188,...) hue already used
    above, just a smaller ring and no glow — reads as "pressed down,"
    not "still hovering." No new color, no animation. */
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:active {
-    box-shadow: 0 0 0 1px rgba(21,126,114,.55) !important;
+    box-shadow: 0 0 0 1px rgba(168,235,218,.55) !important;
     background: var(--invert-bg-hover) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
@@ -778,7 +782,7 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"] {
     background: transparent !important; border: 1px solid var(--border) !important;
-    border-radius: var(--r-sm) !important; color: var(--text) !important;
+    border-radius: var(--r-md) !important; color: var(--text) !important;
     transition: border-color .15s ease, background-color .15s ease;
 }
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:hover,
@@ -838,7 +842,7 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-/* Focus ring uses the dedicated --focus token (#21B7A8) rather than a
+/* Focus ring uses the dedicated --focus token (#6FD3BC) rather than a
    plain dark or muted-text color — well past the 3:1 AA minimum for a
    focus indicator, and reads as an intentional accent ring rather than a
    generic outline. */
@@ -901,7 +905,7 @@ a:hover { color: var(--accent-hover); }
 [data-testid="stExpander"] {
     background: var(--surface) !important;
     border: 1px solid var(--border) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-lg) !important;
 }
 [data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
 [data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--border-soft) !important; }
@@ -943,7 +947,7 @@ a:hover { color: var(--accent-hover); }
    density/radius override further below for the one place this pass
    does tighten them. */
 [class*="st-key-card-"] {
-    border: 1px solid var(--border-soft) !important; border-radius: var(--r-md) !important;
+    border: 1px solid var(--border) !important; border-radius: var(--r-lg) !important;
     background: var(--surface) !important; transition: border-color .15s ease, box-shadow .15s ease;
     /* Slightly less vertical padding than Streamlit's own default (was a
        uniform 14px) so cards don't consume unnecessary height, matching
@@ -952,13 +956,13 @@ a:hover { color: var(--accent-hover); }
 }
 [class*="st-key-card-"]:hover {
     border-color: var(--card-border-hover) !important;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, .04) !important;
+    box-shadow: none !important;
 }
 /* Subtheme/Map cards don't open anything (UX-refinement pass) — suppress
    the hover border-darken so they don't visually imply they're
    clickable (updated from "suppress hover brighten" for the new
    border-based hover cue above; same intent, same scoped selector). */
-[class*="st-key-card-subtheme-"]:hover { border-color: var(--border-soft) !important; box-shadow: none !important; }
+[class*="st-key-card-subtheme-"]:hover { border-color: var(--border) !important; box-shadow: none !important; }
 /* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
    page's one "primary" content well: same shared white card as every
    other card above, plus a restrained indigo left-edge accent rule
@@ -1124,3 +1128,82 @@ a:hover { color: var(--accent-hover); }
 .er-hero-watermark svg, .er-hero-watermark img { width: 100%; height: 100%; object-fit: contain; }
 .er-hero-content { position: relative; z-index: 1; }
 
+
+/* ---------- v2 primitives (design/redesign-v2; src/ui/components/primitives.py) ----------
+   Every class below reads tokens only. Venue badges, chips, evidence
+   bars, key/value grids, summary tiles, inset boxes, the top bar and the
+   date-group rule are the reusable pieces the four redesigned pages
+   share; nothing here is page-specific. */
+.er-venue {
+    display: inline-flex; align-items: center; font-family: var(--font-mono);
+    font-size: 0.64rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 0.1rem 0.45rem; border-radius: var(--r-sm); line-height: 1.6;
+    background: var(--surface-active); color: var(--text-secondary); border: 1px solid var(--border);
+}
+.er-venue-edgar { background: var(--info-dim); color: var(--info); border-color: transparent; }
+.er-venue-dart { background: rgba(201, 160, 232, .16); color: var(--theme-space); border-color: transparent; }
+.er-venue-edinet { background: var(--positive-dim); color: var(--positive); border-color: transparent; }
+.er-status-tag.er-tag-mono { font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.02em; }
+.er-status-tag.er-tag-theme { background: var(--surface-active); color: var(--text-secondary); border: 1px solid var(--border); }
+.er-status-tag.er-tag-accent { background: var(--accent-soft); color: var(--accent); }
+.er-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
+.er-mono-muted { color: var(--text-muted); }
+.er-theme-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 0.45rem; background: var(--text-muted); vertical-align: middle; }
+.er-theme-ai-buildout { background: var(--theme-ai-buildout); }
+.er-theme-memory { background: var(--theme-memory); }
+.er-theme-space { background: var(--theme-space); }
+.er-theme-photonics { background: var(--theme-photonics); }
+/* Evidence bar — segments fill by real count; the track shows through
+   when every count is zero. Context is a neutral fill, never text. */
+.er-evbar { display: flex; height: 6px; border-radius: 999px; background: var(--surface-active); overflow: hidden; gap: 2px; }
+.er-evbar-seg { display: block; height: 100%; }
+.er-ev-supports { background: var(--positive); }
+.er-ev-mixed { background: var(--warning); }
+.er-ev-contradicts { background: var(--negative); }
+.er-ev-context { background: var(--context); }
+.er-evlegend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; margin-top: 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-secondary); }
+.er-evlabel { display: inline-flex; align-items: center; gap: 0.4rem; }
+.er-evdot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.er-evdot.er-ev-context { background: var(--text-muted); }
+/* Key/value grid — bordered cells on the inset surface. */
+.er-kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; margin-top: var(--space-4); }
+.er-kv { background: var(--surface-input); padding: var(--space-3) var(--space-4); }
+.er-kv-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.3rem; }
+.er-kv-value { font-size: 0.9rem; color: var(--text); line-height: 1.45; }
+/* Summary tiles (Dashboard). */
+[class*="st-key-card-summary-"] { padding: var(--space-4) var(--space-5) !important; min-height: 132px; }
+.er-tile-detail { font-size: 0.85rem; color: var(--text-secondary); margin-top: var(--space-2); line-height: 1.45; }
+/* Inset box — excerpts, key questions. */
+.er-inset { background: var(--surface-input); border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: var(--space-4) var(--space-5); }
+.er-inset-label { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem; }
+.er-serif-title { font-family: var(--font-serif); font-weight: 600; font-size: 1.45rem; line-height: 1.25; color: var(--text); letter-spacing: -0.005em; }
+.er-serif-question { font-family: var(--font-serif); font-size: 1.15rem; line-height: 1.5; color: var(--text); }
+/* Top bar — breadcrumb from the real route + Eastern-time date. */
+.er-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 0 var(--space-4) 0; margin-bottom: var(--space-5); border-bottom: 1px solid var(--border-shell); }
+.er-breadcrumb { font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem; }
+.er-breadcrumb .er-crumb-sep { color: var(--text-label); }
+.er-breadcrumb .er-crumb-current { color: var(--text); font-weight: 500; }
+.er-topbar-date { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0.02em; }
+/* Date-group rule (Signals): mono label + hairline. */
+.er-date-group { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0 var(--space-3) 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
+.er-date-group::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+/* Time cell (feeds): stacked mono time over its zone abbreviation. */
+.er-time-cell { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text); line-height: 1.2; white-space: nowrap; }
+.er-time-cell .er-time-zone { display: block; font-size: 0.62rem; color: var(--text-label); letter-spacing: 0.06em; margin-top: 0.15rem; }
+/* Semantic feed row (dashboard latest signals / regional brief). */
+.er-feed-row { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: start; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.er-feed-row:last-child { border-bottom: none; }
+.er-feed-title { font-size: 0.95rem; font-weight: 500; color: var(--text); line-height: 1.4; }
+.er-feed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
+.er-feed-link { font-size: 0.85rem; color: var(--link); white-space: nowrap; text-decoration: none; }
+.er-feed-link:hover { color: var(--link-hover); }
+/* Brief table — semantic table markup on the card surface. */
+table.er-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+table.er-table th { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-soft); }
+table.er-table td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border-soft); color: var(--text); vertical-align: middle; }
+table.er-table tr:last-child td { border-bottom: none; }
+table.er-table .er-mono { font-size: 0.8rem; }
+/* Sidebar count badge + status block. */
+.er-rail-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary); background: var(--surface-active); border-radius: var(--r-sm); padding: 0.05rem 0.4rem; margin-left: auto; }
+.er-rail-status-block { margin: var(--space-3) 0 0 0; padding: var(--space-3); border: 1px solid var(--border-shell); border-radius: var(--r-md); background: var(--surface); }
+.er-rail-status-block .er-rail-status-title { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: var(--text); font-weight: 500; }

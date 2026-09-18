@@ -44,27 +44,43 @@ def _token(name: str) -> str:
 # --- New palette tokens are present with the exact specified values ---
 # (--text-muted is the one deliberate exception — see its own test below.)
 
+# Redesign v2 (design/redesign-v2) — same test names/shape, new expected
+# values, exactly as this file has been revised for every prior palette
+# pass. Every existing token keeps its name and role; the v2 spec's own
+# values are pinned literally. --surface-hover/--surface-active are the
+# two derived elevation steps (the spec names an inset and an active-nav
+# surface but no generic hover/pressed step); --border-shell, --text-label,
+# --context and the four --theme-* hues are the only new roles.
 _EXPECTED_TOKENS = {
-    "bg": "#101417",
-    "rail": "#0B0F11",
-    "surface": "#171D20",
-    "surface-hover": "#1D2529",
-    "surface-active": "#202A2E",
-    "surface-input": "#171D20",
-    "border": "#263137",
-    "border-soft": "#1E282C",
-    "text": "#F1F4F2",
-    "text-secondary": "#B1BCBB",
-    "invert-fg": "#FFFFFF",
-    "accent": "#21B7A8",
-    "accent-hover": "#29CBBB",
-    "accent-soft": "rgba(33, 183, 168, 0.14)",
-    "focus": "#21B7A8",
-    "link": "#21B7A8",
-    "positive": "#3BCB8A",
-    "negative": "#F07178",
-    "warning": "#E4B65A",
-    "info": "#62A8E5",
+    "bg": "#0B0C0E",
+    "rail": "#0F1113",
+    "surface": "#121417",
+    "surface-hover": "#171A1E",
+    "surface-active": "#1C2025",
+    "surface-input": "#0F1113",
+    "border": "#22252A",
+    "border-soft": "#1B1E22",
+    "border-shell": "#1D2024",
+    "text": "#E8EAEC",
+    "text-secondary": "#B9BEC5",
+    "text-label": "#7A8089",
+    "invert-fg": "#06110E",
+    "invert-bg": "#6FD3BC",
+    "accent": "#6FD3BC",
+    "accent-hover": "#A8EBDA",
+    "accent-soft": "#15201D",
+    "focus": "#6FD3BC",
+    "link": "#7DD8C2",
+    "link-hover": "#A8EBDA",
+    "positive": "#5FC88A",
+    "negative": "#E07A6F",
+    "warning": "#E0B060",
+    "info": "#8FB4E8",
+    "context": "#3E434A",
+    "theme-ai-buildout": "#6FD3BC",
+    "theme-memory": "#8FB4E8",
+    "theme-space": "#C9A0E8",
+    "theme-photonics": "#E0B060",
 }
 
 
@@ -74,17 +90,20 @@ def test_root_tokens_match_the_specified_midnight_teal_palette():
 
 
 def test_text_muted_is_nudged_lighter_than_the_literal_spec_value():
-    """#788583 (as given) measures only 4.06:1-4.45:1 against --surface/
-    --surface-hover — under the 4.5:1 AA normal-text floor. Nudged
-    lighter to #889593 (5.02:1 in the worst case) — the same "nudge the
-    minimum amount needed, disclose it" precedent every earlier pass in
-    this file has used at least once (e.g. the prior pass's own
-    --hairline-2 nudge)."""
-    assert _token("text-muted") == "#889593"
+    """v2: --text-muted is the spec's own #9197A0 (>=5.57:1 on every
+    surface, no nudge needed). The spec's darker label grey (#7A8089)
+    lands in the new, separately-scoped --text-label instead: it clears
+    4.5:1 only on --bg/--rail/--surface (4.92/4.75/4.64), NOT on
+    --surface-hover/--surface-active (4.39/4.11), so it is restricted to
+    small uppercase labels on those three surfaces — the disclosed
+    adjustment for this pass (see test_text_label_meets_aa_on_the_three_
+    surfaces_it_is_scoped_to below)."""
+    assert _token("text-muted") == "#9197A0"
+    assert _token("text-label") == "#7A8089"
 
 
 def test_glow_token_matches_the_new_teal_accent():
-    assert _token("glow") == "rgba(33, 183, 168, .35)"
+    assert _token("glow") == "rgba(111, 211, 188, .28)"
 
 
 def test_invert_bg_is_a_new_derived_token_not_the_accent_itself():
@@ -97,8 +116,12 @@ def test_invert_bg_is_a_new_derived_token_not_the_accent_itself():
     label text measures 5.58:1 / 4.93:1 respectively, both clearing
     4.5:1 (see test_primary_cta_label_meets_aa_contrast_on_default_and_
     hover_fill below for the exact numbers pinned)."""
-    assert _token("invert-bg") == "#0F7568"
-    assert _token("invert-bg-hover") == "#157E72"
+    # v2: the primary CTA is the accent itself with a near-black label
+    # (10.71:1) — --invert-bg and --accent coincide by design, kept as two
+    # tokens because they still name two roles (fill vs. text/icon accent).
+    assert _token("invert-bg") == "#6FD3BC"
+    assert _token("invert-bg-hover") == "#A8EBDA"
+    assert _token("invert-fg") == "#06110E"
 
 
 def test_accent_hover_is_now_a_text_hover_brighten_not_a_button_fill():
@@ -134,8 +157,9 @@ def test_border_and_border_soft_are_deliberately_not_held_to_3to1():
     interactive-control focus — is carried entirely by --focus (an
     --accent copy, checked separately below), never by --border's own
     contrast."""
-    assert _token("border") == "#263137"
-    assert _token("border-soft") == "#1E282C"
+    assert _token("border") == "#22252A"
+    assert _token("border-soft") == "#1B1E22"
+    assert _token("border-shell") == "#1D2024"
 
 
 # --- No legacy palette color (including the retired indigo/purple accent
@@ -166,6 +190,11 @@ _LEGACY_HEXES = [
     "#23262D", "#6B7280", "#838B99", "#F5F6F7", "#B7BCC4", "#8B909A",
     "#4F46E5", "#818CF8", "#4338CA", "#23223F",
     "#2ED99C", "#F87171", "#FBBF24",
+    # Midnight Teal pass — retired by redesign v2: every surface, text,
+    # border, accent, derived-CTA and status value it defined.
+    "#101417", "#0B0F11", "#171D20", "#1D2529", "#202A2E", "#1E282C", "#263137",
+    "#34424A", "#F1F4F2", "#B1BCBB", "#889593", "#0F7568", "#157E72", "#21B7A8",
+    "#29CBBB", "#3BCB8A", "#F07178", "#E4B65A", "#62A8E5",
 ]
 
 
@@ -198,6 +227,8 @@ def test_no_stale_indigo_or_purple_brand_tokens_remain_in_the_public_shell():
 
 
 def test_no_legacy_glow_or_alpha_rgba_remains():
+    for retired in ("rgba(33, 183, 168", "rgba(33,183,168", "rgba(15,117,104", "rgba(21,126,114"):
+        assert retired not in _CSS, f"retired Midnight Teal alpha {retired!r} still present"
     # Both the light-editorial-indigo pass's own glow rgba triple
     # (79, 70, 229 == #4F46E5) and the application-shell dark pass's own
     # (129, 140, 248 == #818CF8) must be gone from --glow specifically.
@@ -244,7 +275,9 @@ def test_surface_hierarchy_is_a_strictly_increasing_luminance_ladder():
     --surface-active) is strictly increasing as each rule intends: a
     resting card, its hover state, and a selected/active state are each
     a visibly distinct step up."""
-    ladder = ["rail", "bg", "surface", "surface-hover", "surface-active"]
+    # v2: the sidebar is one step LIGHTER than the canvas (the reverse of
+    # the prior pass), so the ladder is bg < rail < surface < hover < active.
+    ladder = ["bg", "rail", "surface", "surface-hover", "surface-active"]
     luminances = [_relative_luminance(_token(name)) for name in ladder]
     assert luminances == sorted(luminances), f"surface ladder not strictly increasing: {list(zip(ladder, luminances))}"
     assert len(set(luminances)) == len(luminances), "two surface tiers share the same luminance"
@@ -370,9 +403,14 @@ def test_primary_cta_uses_the_8px_radius_not_a_pill_and_keeps_the_glow():
 
 
 def test_fonts_are_unchanged():
-    assert '--font-ui: "Inter", sans-serif;' in _CSS
-    assert '--font-mono: "JetBrains Mono", monospace;' in _CSS
-    assert '--font-serif: "Source Serif 4"' in _CSS
+    # v2 typography: Geist / Geist Mono / Source Serif 4 (+ Noto Serif KR
+    # as the Korean serif fallback), loaded through the same Google Fonts
+    # mechanism the prior Inter/JetBrains Mono setup used.
+    assert '--font-ui: "Geist",' in _CSS
+    assert '--font-mono: "Geist Mono",' in _CSS
+    assert '--font-serif: "Source Serif 4", "Noto Serif KR"' in _CSS
+    assert "family=Geist" in _CSS and "family=Geist+Mono" in _CSS
+    assert "family=Source+Serif+4" in _CSS and "family=Noto+Serif+KR" in _CSS
 
 
 # --- Keyboard focus: every focusable control gets a visible ring ---
@@ -399,11 +437,12 @@ def test_sidebar_account_popover_gets_a_visible_focus_ring():
 # --- .streamlit/config.toml native-widget theme matches the new palette ---
 
 def test_config_toml_theme_matches_new_palette():
-    assert 'backgroundColor = "#101417"' in _CONFIG
-    assert 'secondaryBackgroundColor = "#1D2529"' in _CONFIG
-    assert 'textColor = "#F1F4F2"' in _CONFIG
-    assert 'primaryColor = "#21B7A8"' in _CONFIG
-    assert 'linkColor = "#21B7A8"' in _CONFIG
+    assert 'backgroundColor = "#0B0C0E"' in _CONFIG
+    assert 'secondaryBackgroundColor = "#171A1E"' in _CONFIG
+    assert 'textColor = "#E8EAEC"' in _CONFIG
+    assert 'primaryColor = "#6FD3BC"' in _CONFIG
+    assert 'linkColor = "#7DD8C2"' in _CONFIG
+    assert 'font = "Geist:' in _CONFIG and 'codeFont = "Geist Mono:' in _CONFIG
     assert 'base = "dark"' in _CONFIG
 
 
@@ -415,6 +454,9 @@ def test_config_toml_has_no_legacy_values():
         '"#212121"', '"#2A2A2A"', '"#ECECEC"', '"#B4B4B4"',
         # application-shell dark/indigo pass, retired by this pass
         '"#0B0D10"', '"#1D2026"', '"#F5F6F7"', '"#818CF8"', '"#6B7280"',
+        # Midnight Teal pass, retired by redesign v2
+        '"#101417"', '"#1D2529"', '"#F1F4F2"', '"#21B7A8"', '"#263137"', '"#171D20"',
+        'JetBrains', '"Inter:',
     ):
         assert legacy not in _CONFIG, f"legacy value {legacy!r} still present in config.toml"
 
@@ -429,10 +471,12 @@ def test_charts_component_uses_new_palette_not_legacy_colors():
         "#0F172A", "#64748B", "#D9E2EC",  # indigo/editorial-white pass
         "#F5F6F7", "#B7BCC4", "#8B909A", "#23262D",  # application-shell dark/indigo pass
         "rgba(85,120,160", "rgba(255,255,255,.14)", "rgba(122,141,162", "rgba(139,144,154",
+        "#F1F4F2", "#B1BCBB", "#889593", "rgba(136,149,147", "#1E282C", '"Inter"',  # Midnight Teal pass
     ):
         assert legacy not in source
-    assert "#F1F4F2" in source
-    assert "#889593" in source
+    assert "#E8EAEC" in source
+    assert "#9197A0" in source
+    assert '"Geist"' in source
 
 
 def test_no_python_source_file_references_a_retired_css_token_name():
@@ -477,8 +521,8 @@ def _contrast_ratio(fg: str, bg: str) -> float:
 
 
 # The four real app surfaces text/controls actually render on.
-_MAIN_BACKGROUNDS = ["#101417", "#171D20", "#1D2529"]
-_ALL_BACKGROUNDS = ["#101417", "#0B0F11", "#171D20", "#1D2529"]
+_MAIN_BACKGROUNDS = ["#0B0C0E", "#121417", "#171A1E"]
+_ALL_BACKGROUNDS = ["#0B0C0E", "#0F1113", "#121417", "#171A1E"]
 
 
 def test_primary_and_secondary_text_meet_aa_normal_text_contrast_on_every_surface():
@@ -513,6 +557,18 @@ def test_muted_text_sidebar_override_is_still_present_though_no_longer_load_bear
     ]
     for pattern in sidebar_muted_selectors:
         assert re.search(pattern, _CSS, re.DOTALL), f"expected sidebar text-secondary fix not found for pattern: {pattern}"
+
+
+def test_text_label_meets_aa_on_the_three_surfaces_it_is_scoped_to():
+    """--text-label (#7A8089, the v2 label grey) is used only for small
+    uppercase labels on canvas/sidebar/card surfaces — see the :root
+    header. It clears 4.5:1 there and is documented NOT to on the two
+    hover/pressed surfaces, where --text-muted is used instead."""
+    label = _token("text-label")
+    for bg in ("#0B0C0E", "#0F1113", "#121417"):
+        assert _contrast_ratio(label, bg) >= 4.5, (label, bg)
+    for bg in ("#171A1E", "#1C2025"):
+        assert _contrast_ratio(label, bg) < 4.5, "scope note is stale: --text-label now clears AA on a hover surface"
 
 
 def test_link_and_accent_hover_meet_aa_normal_text_contrast_on_every_surface():

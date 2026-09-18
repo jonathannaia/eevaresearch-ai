@@ -20,7 +20,7 @@ from src.models.models import CapitalRotationMetric, Theme
 
 _COLOR_SCALE = alt.Scale(
     domain=["leader", "positive", "negative"],
-    range=["#F1F4F2", "#B1BCBB", "#889593"],
+    range=["#E8EAEC", "#B9BEC5", "#9197A0"],
 )
 
 
@@ -50,14 +50,14 @@ def rotation_bar_chart(metrics: list[CapitalRotationMetric], themes: dict[str, T
             tooltip=[alt.Tooltip("Theme:N"), alt.Tooltip("Value:Q", format="+.1f")],
         )
     )
-    zero_rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="rgba(136,149,147,.45)").encode(y="y:Q")
+    zero_rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="rgba(145,151,160,.45)").encode(y="y:Q")
 
     return (
         (bars + zero_rule)
         .properties(height=260, background="transparent")
         .configure_view(strokeWidth=0)
         .configure_axis(
-            domainColor="rgba(136,149,147,.45)", gridColor="#1E282C", tickColor="rgba(136,149,147,.45)",
-            labelColor="#889593", titleColor="#889593", labelFont="Inter", titleFont="Inter",
+            domainColor="rgba(145,151,160,.45)", gridColor="#1B1E22", tickColor="rgba(145,151,160,.45)",
+            labelColor="#9197A0", titleColor="#9197A0", labelFont="Geist", titleFont="Geist",
         )
     )

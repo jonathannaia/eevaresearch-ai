@@ -62,6 +62,43 @@ def fmt_datetime_local(iso_str: str, tz: ZoneInfo = _EASTERN) -> str:
         return iso_str
 
 
+def fmt_time_local(iso_str: str, tz: ZoneInfo = _EASTERN) -> tuple[str, str]:
+    """`("19:17", "EDT")` — the same Eastern-time conversion as
+    fmt_datetime_local, split so a feed can stack the clock time over its
+    zone abbreviation. `("", "")` on any parse failure, never a guess."""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone(tz)
+        return f"{local_dt:%H:%M}", f"{local_dt:%Z}"
+    except (ValueError, TypeError):
+        return "", ""
+
+
+def local_date(iso_str: str, tz: ZoneInfo = _EASTERN) -> date | None:
+    """The Eastern-time calendar date of a UTC/ISO timestamp — the one
+    honest grouping key for a "Today / Sep 16" feed divider. None on any
+    parse failure."""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(tz).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def fmt_day_label(value: date) -> str:
+    """`"Thu, Sep 17"` — weekday + short date for feed dividers."""
+    return f"{value:%a}, {value:%b} {value.day}"
+
+
+def fmt_long_date(value: date) -> str:
+    """`"Thursday · Sep 17, 2026"` — the Dashboard date eyebrow."""
+    return f"{value:%A} · {value:%b} {value.day}, {value.year}"
+
+
 def today_local(now: datetime | None = None) -> date:
     """Today's calendar date in the app's one established display
     timezone (_EASTERN, same convention fmt_datetime_local already uses)

@@ -1,4 +1,9 @@
 [theme]
+# Redesign v2 (design/redesign-v2): same theme keys, values re-mapped
+# to the v2 palette that assets/styles.css's :root now carries — see that
+# file's header for the reconciliation. secondaryBackgroundColor = the
+# --surface-hover step; borders = --border (card); code = --surface-input.
+#
 # Midnight Teal institutional-research pass (visual-hierarchy-and-token
 # pass only — no navigation/data/feature/architecture change) — a full
 # replacement of the prior application-shell dark/indigo palette, not an
@@ -16,24 +21,24 @@
 # consistently to native-widget borders too, not just custom cards.
 base = "dark"
 
-primaryColor = "#21B7A8"
-backgroundColor = "#101417"
-secondaryBackgroundColor = "#1D2529"
-textColor = "#F1F4F2"
+primaryColor = "#6FD3BC"
+backgroundColor = "#0B0C0E"
+secondaryBackgroundColor = "#171A1E"
+textColor = "#E8EAEC"
 
-linkColor = "#21B7A8"
+linkColor = "#7DD8C2"
 linkUnderline = false
 
-borderColor = "#263137"
-dataframeBorderColor = "#263137"
-dataframeHeaderBackgroundColor = "#171D20"
+borderColor = "#22252A"
+dataframeBorderColor = "#22252A"
+dataframeHeaderBackgroundColor = "#121417"
 
-codeTextColor = "#F1F4F2"
-codeBackgroundColor = "#171D20"
+codeTextColor = "#E8EAEC"
+codeBackgroundColor = "#0F1113"
 
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
-headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
-codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
+headingFont = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
+codeFont = "Geist Mono:https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
 
 baseFontSize = 15
 headingFontWeights = [600, 600, 600, 600, 600, 600]

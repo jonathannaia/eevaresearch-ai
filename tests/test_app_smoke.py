@@ -182,8 +182,8 @@ def test_dark_theme_tokens_are_loaded_into_the_page():
     style_blocks = [m.value for m in at.get("markdown") if m.value.startswith("<style>")]
     assert style_blocks, "no <style> block was rendered at all"
     css_in_page = style_blocks[0]
-    assert "--bg: #101417;" in css_in_page
-    assert "--accent: #21B7A8;" in css_in_page
+    assert "--bg: #0B0C0E;" in css_in_page
+    assert "--accent: #6FD3BC;" in css_in_page
     assert 'base = "light"' not in css_in_page  # sanity: this is CSS, not the toml, but guards against a copy/paste mixup
 
 
