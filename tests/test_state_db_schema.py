@@ -557,11 +557,10 @@ def test_transaction_helper_rolls_back_on_failure_leaving_no_partial_write():
 # migration assertions, no database connection required. ---
 
 
-def test_v19_is_registered_immediately_after_v18_and_is_current():
-    assert schema.CURRENT_SCHEMA_VERSION == 19
+def test_v19_is_registered_immediately_after_v18():
     versions = [v for v, _ in schema._MIGRATIONS]
     assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
-    assert versions[-2:] == [18, 19]
+    assert versions.index(19) == versions.index(18) + 1
     assert dict(schema._MIGRATIONS)[19] is schema._V19_STATEMENTS
 
 
@@ -580,10 +579,51 @@ def test_v19_migration_is_idempotent_when_applied_twice_to_the_same_connection()
     conn = connection.connect_in_memory()
     first = schema.migrate(conn)
     second = schema.migrate(conn)
-    assert first == second == 19
+    assert first == second == schema.CURRENT_SCHEMA_VERSION
     columns = [row["name"] for row in conn.execute("PRAGMA table_info(daily_news_stories)").fetchall()]
     assert columns.count("materiality_tier") == 1
     assert columns.count("materiality_reasons") == 1
+
+
+# --- V20: Autonomous Research Agent — CandidateSignal.published_by ---------
+# (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1)
+
+def test_v20_is_registered_immediately_after_v19_and_is_current():
+    assert schema.CURRENT_SCHEMA_VERSION == 20
+    versions = [v for v, _ in schema._MIGRATIONS]
+    assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
+    assert versions[-2:] == [19, 20]
+    assert dict(schema._MIGRATIONS)[20] is schema._V20_STATEMENTS
+
+
+def test_v20_statements_are_additive_only_one_provenance_column_on_candidates():
+    assert schema._V20_STATEMENTS == (
+        "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+    )
+    for statement in schema._V20_STATEMENTS:
+        assert statement.strip().upper().startswith("ALTER TABLE CANDIDATES ADD COLUMN")
+
+
+def test_v20_migration_is_idempotent_when_applied_twice_to_the_same_connection():
+    conn = connection.connect_in_memory()
+    first = schema.migrate(conn)
+    second = schema.migrate(conn)
+    assert first == second == 20
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(candidates)").fetchall()]
+    assert columns.count("published_by") == 1
+
+
+def test_v20_published_by_is_not_null_with_the_dataclass_default_so_old_rows_read_back_human_reviewer():
+    """Pre-existing rows must read back exactly what CandidateSignal.
+    published_by would have defaulted to in code — the column carries the
+    default at the schema level (NOT NULL DEFAULT 'human_reviewer'), so
+    no backfill and no application-side coalescing is ever needed."""
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    info = {row["name"]: row for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
+    published_by = info["published_by"]
+    assert published_by["notnull"] == 1
+    assert published_by["dflt_value"] == "'human_reviewer'"
 
 
 def test_v19_columns_are_nullable_and_untouched_existing_rows_read_back_as_null():

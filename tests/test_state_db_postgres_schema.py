@@ -431,12 +431,35 @@ def test_migration_leaves_no_open_transaction_between_steps(pg_isolated_connecti
 # migration assertions, no database connection required. ---
 
 
-def test_v20_is_registered_immediately_after_v19_and_is_current():
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 20
+def test_v20_is_registered_immediately_after_v19():
+    # Was pinned to "== 20 and is current" until V21 landed without
+    # updating it (a pre-existing failure at baseline); now an adjacency-
+    # only check, with the "is current" pin moved to the V22 test below.
     versions = [v for v, _ in postgres_schema._MIGRATIONS]
     assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
-    assert versions[-2:] == [19, 20]
+    assert versions.index(20) == versions.index(19) + 1
     assert dict(postgres_schema._MIGRATIONS)[20] is postgres_schema._V20_STATEMENTS
+
+
+# --- V22: Autonomous Research Agent — CandidateSignal.published_by ---------
+# (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1)
+# Mirrors the SQLite backend's V20 exactly; the two backends version
+# independently (Postgres carries the editorial_stories-only V20/V21).
+
+def test_v22_is_registered_immediately_after_v21_and_is_current():
+    assert postgres_schema.CURRENT_SCHEMA_VERSION == 22
+    versions = [v for v, _ in postgres_schema._MIGRATIONS]
+    assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
+    assert versions[-2:] == [21, 22]
+    assert dict(postgres_schema._MIGRATIONS)[22] is postgres_schema._V22_STATEMENTS
+
+
+def test_v22_statements_are_additive_only_one_provenance_column_on_candidates():
+    assert postgres_schema._V22_STATEMENTS == (
+        "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+    )
+    for statement in postgres_schema._V22_STATEMENTS:
+        assert statement.strip().upper().startswith("ALTER TABLE CANDIDATES ADD COLUMN")
 
 
 def test_v20_statements_are_additive_only_four_nullable_columns():

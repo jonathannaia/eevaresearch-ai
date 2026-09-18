@@ -130,6 +130,7 @@ def _row_to_candidate(conn: sqlite3.Connection, row: sqlite3.Row) -> CandidateSi
         translation_failure_at=row["translation_failure_at"],
         translation_retry_count=row["translation_retry_count"],
         translation_next_retry_at=row["translation_next_retry_at"],
+        published_by=row["published_by"],
     )
 
 
@@ -159,8 +160,8 @@ def _insert_candidate(conn: sqlite3.Connection, candidate: CandidateSignal, now:
             materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
             evidence_location_json, evidence_source_member, translation_failure_category,
             translation_failure_reason, translation_failure_at, translation_retry_count,
-            translation_next_retry_at, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            translation_next_retry_at, published_by, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         """,
         (
             candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
@@ -172,7 +173,7 @@ def _insert_candidate(conn: sqlite3.Connection, candidate: CandidateSignal, now:
             _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
             candidate.evidence_source_member, candidate.translation_failure_category,
             candidate.translation_failure_reason, candidate.translation_failure_at, candidate.translation_retry_count,
-            candidate.translation_next_retry_at,
+            candidate.translation_next_retry_at, candidate.published_by,
             now, now,
         ),
     )
@@ -241,6 +242,7 @@ def update_candidate(
                 excerpt_retrieved_at = ?, flag_reason_json = ?, evidence_location_json = ?,
                 evidence_source_member = ?, translation_failure_category = ?, translation_failure_reason = ?,
                 translation_failure_at = ?, translation_retry_count = ?, translation_next_retry_at = ?,
+                published_by = ?,
                 version = version + 1, updated_at = ?
             WHERE id = ? AND version = ?
             """,
@@ -256,6 +258,7 @@ def update_candidate(
                 candidate.evidence_source_member, candidate.translation_failure_category,
                 candidate.translation_failure_reason, candidate.translation_failure_at,
                 candidate.translation_retry_count, candidate.translation_next_retry_at,
+                candidate.published_by,
                 now, candidate.id, expected_version,
             ),
         )

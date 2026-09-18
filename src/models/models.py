@@ -290,6 +290,26 @@ class CandidateStatus(str, Enum):
     # processing-budget concept, unrelated to human review). Never
     # eligible for Signal promotion — see signal_promotion.py.
     MONITORING = "Monitoring"
+    # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_
+    # RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1) — every deterministic
+    # evidence-completeness/contradiction check in
+    # src.logic.publication_policy passed, but auto-publication was
+    # withheld by policy category (§5.2 row 10), not by any check
+    # failing. Distinct from NEEDS_REVIEW: NEEDS_REVIEW carries no
+    # guarantee anything was verified; VERIFIED_DRAFT means every fact
+    # and every evidence record already passed verification and only the
+    # publication category itself needs a human glance. Never set by
+    # anything other than publication_policy.evaluate_publication_
+    # eligibility(); becomes PUBLISHED only via review_actions.
+    # record_review_decision() (existing function, new caller).
+    VERIFIED_DRAFT = "Verified draft"
+    # Autonomous Research Agent — text was retrieved and read, but
+    # claim-to-evidence validation could not resolve enough evidence to
+    # support any claim (every claim was dropped, not softened — see
+    # publication_policy.py). Distinct from PARSE_FAILED (no text was
+    # ever obtained) and from NEEDS_REVIEW (a draft exists and looks
+    # plausible). Never publicly rendered.
+    INSUFFICIENT_EVIDENCE = "Insufficient evidence"
 
 
 class TranslationState(str, Enum):
@@ -687,3 +707,12 @@ class CandidateSignal:
     translation_failure_at: str | None = None
     translation_retry_count: int = 0
     translation_next_retry_at: str | None = None
+    # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_
+    # RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1) — provenance only, never
+    # a publication gate. signal_promotion.is_eligible_for_signal()'s
+    # existing check (status == PUBLISHED) already means "live and
+    # public" regardless of this field's value; this exists purely so
+    # PUBLISHED candidates set by the autonomous agent are distinguishable
+    # from human-reviewed ones for audit, rollback, and rendering.
+    # Default preserves every existing construction site unchanged.
+    published_by: str = "human_reviewer"

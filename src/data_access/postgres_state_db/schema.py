@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 21
+CURRENT_SCHEMA_VERSION = 22
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -686,6 +686,16 @@ _V21_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE editorial_stories ADD COLUMN identified_companies_json TEXT NOT NULL DEFAULT '[]'",
 )
 
+# Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_
+# AGENT_DESIGN_2026_09_17.md, §5.1) — one additive, provenance-only
+# column, mirroring the SQLite backend's own V20 exactly. NOT NULL
+# DEFAULT 'human_reviewer' matches CandidateSignal.published_by's own
+# dataclass default, so every pre-existing row reads back identically to
+# how it would have constructed in code.
+_V22_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -712,6 +722,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (19, _V19_STATEMENTS),
     (20, _V20_STATEMENTS),
     (21, _V21_STATEMENTS),
+    (22, _V22_STATEMENTS),
 )
 
 

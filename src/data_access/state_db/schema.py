@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 19
+CURRENT_SCHEMA_VERSION = 20
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -849,6 +849,15 @@ _V19_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE daily_news_stories ADD COLUMN materiality_reasons TEXT",
 )
 
+# Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_
+# AGENT_DESIGN_2026_09_17.md, §5.1) — one additive, provenance-only
+# column. NOT NULL DEFAULT 'human_reviewer' matches CandidateSignal.
+# published_by's own dataclass default exactly, so every pre-existing
+# row reads back identically to how it would have constructed in code.
+_V20_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE candidates ADD COLUMN published_by TEXT NOT NULL DEFAULT 'human_reviewer'",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -873,6 +882,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (17, _V17_STATEMENTS),
     (18, _V18_STATEMENTS),
     (19, _V19_STATEMENTS),
+    (20, _V20_STATEMENTS),
 )
 
 

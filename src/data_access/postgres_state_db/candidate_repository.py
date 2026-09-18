@@ -135,6 +135,7 @@ def _row_to_candidate(conn: psycopg.Connection, row) -> CandidateSignal:
         translation_failure_at=row["translation_failure_at"],
         translation_retry_count=row["translation_retry_count"],
         translation_next_retry_at=row["translation_next_retry_at"],
+        published_by=row["published_by"],
     )
 
 
@@ -183,6 +184,7 @@ def _row_to_candidate_from_lookups(
         translation_failure_at=row["translation_failure_at"],
         translation_retry_count=row["translation_retry_count"],
         translation_next_retry_at=row["translation_next_retry_at"],
+        published_by=row["published_by"],
     )
 
 
@@ -247,8 +249,8 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             materiality_assessment, excerpt_supplemental, excerpt_retrieved_at, flag_reason_json,
             evidence_location_json, evidence_source_member, translation_failure_category,
             translation_failure_reason, translation_failure_at, translation_retry_count,
-            translation_next_retry_at, version, created_at, updated_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+            translation_next_retry_at, published_by, version, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
         """,
         (
             candidate.id, filing.source_name, filing.corp_code, filing.rcept_no,
@@ -260,7 +262,7 @@ def _insert_candidate(conn: psycopg.Connection, candidate: CandidateSignal, now:
             _flag_reason_to_json(candidate.flag_reason), _evidence_location_to_json(candidate.evidence_location),
             candidate.evidence_source_member, candidate.translation_failure_category,
             candidate.translation_failure_reason, candidate.translation_failure_at, candidate.translation_retry_count,
-            candidate.translation_next_retry_at,
+            candidate.translation_next_retry_at, candidate.published_by,
             now, now,
         ),
     )
@@ -327,6 +329,7 @@ def update_candidate(
                 excerpt_retrieved_at = %s, flag_reason_json = %s, evidence_location_json = %s,
                 evidence_source_member = %s, translation_failure_category = %s, translation_failure_reason = %s,
                 translation_failure_at = %s, translation_retry_count = %s, translation_next_retry_at = %s,
+                published_by = %s,
                 version = version + 1, updated_at = %s
             WHERE id = %s AND version = %s
             """,
@@ -342,6 +345,7 @@ def update_candidate(
                 candidate.evidence_source_member, candidate.translation_failure_category,
                 candidate.translation_failure_reason, candidate.translation_failure_at,
                 candidate.translation_retry_count, candidate.translation_next_retry_at,
+                candidate.published_by,
                 now, candidate.id, expected_version,
             ),
         )
