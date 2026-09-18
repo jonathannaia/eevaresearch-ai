@@ -50,6 +50,11 @@ _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDD
     # Open-beta feedback (design/DECISIONS.md) — same hidden-but-reachable
     # pattern as the pages above.
     "feedback",
+    # Autonomous Research Agent — Verified Updates (design/AUTONOMOUS_
+    # EVIDENCE_FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §9.2) — same
+    # hidden-but-reachable pattern, gated inside the page by
+    # settings.verified_updates_page_enabled (default off).
+    "verified_updates",
 ]
 
 

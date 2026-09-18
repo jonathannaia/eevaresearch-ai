@@ -145,13 +145,18 @@ def test_extraction_state_matches_the_six_approved_states():
     }
 
 
-def test_candidate_status_matches_the_seventeen_approved_lifecycle_states():
+def test_candidate_status_matches_the_nineteen_approved_lifecycle_states():
+    # Seventeen Radar lifecycle states plus the two additive terminal
+    # states of the Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_
+    # FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1): VERIFIED_DRAFT and
+    # INSUFFICIENT_EVIDENCE. No existing value changed.
     assert {s.value for s in CandidateStatus} == {
         "New filing event", "Candidate detected", "Queued for document processing",
         "Document retrieval in progress", "Extraction pending", "Extracted",
         "Translation pending", "Translated", "Needs review", "Processing deferred",
         "Parse failed", "Retrieval failed", "Translation unavailable",
         "Published", "Dismissed", "Not material", "Monitoring",
+        "Verified draft", "Insufficient evidence",
     }
 
 
