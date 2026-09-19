@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import html
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -163,11 +164,19 @@ def _css_text() -> str:
     return _css_text_cached(mtime)
 
 
+_IMPORT_RULE = re.compile(r"@import url\([^)]*\);\s*")
+
+
 def load_css(preference: ThemePreference = "system") -> None:
     """One <style> block: the resolved theme's color tokens
     (src/ui/theme_tokens.py) followed by assets/styles.css, which only
-    ever consumes them."""
-    st.markdown(f"<style>{render_token_css(preference)}\n{_css_text()}</style>", unsafe_allow_html=True)
+    ever consumes them. The stylesheet's @import rules (web fonts) are
+    hoisted to the very top of the block — a browser ignores an @import
+    that follows any other rule."""
+    css = _css_text()
+    imports = "".join(match.group(0).strip() + "\n" for match in _IMPORT_RULE.finditer(css))
+    rest = _IMPORT_RULE.sub("", css)
+    st.markdown(f"<style>{imports}{render_token_css(preference)}\n{rest}</style>", unsafe_allow_html=True)
 
 
 def brand_mark_html(size_px: int | None = None) -> str:

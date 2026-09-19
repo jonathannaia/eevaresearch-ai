@@ -127,7 +127,7 @@ from src.logic import filing_display
 from src.logic.source_link import public_source_url
 from src.models.models import CandidateSignal, FilingEvent
 from src.ui.components import radar_status
-from src.ui.components.primitives import chip_html, lang_attr, venue_badge_html
+from src.ui.components.primitives import chip_html, cjk_html, lang_attr, venue_badge_html
 from src.ui.components.radar_status import RadarItem
 
 # Redesign v2: every translated title/excerpt this card shows is a stored
@@ -160,7 +160,7 @@ def _filed_label(filing: FilingEvent) -> str | None:
 
 
 def _identity_line(filing: FilingEvent) -> str:
-    identity = html.escape(filing.corp_name)
+    identity = cjk_html(filing.corp_name, filing.original_language)
     if filing.stock_code:
         identity += f" · {html.escape(filing.stock_code)}"
     return identity
@@ -499,7 +499,8 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         summary_label_html += "</div>"
         st.markdown(summary_label_html, unsafe_allow_html=True)
         summary_attr = lang_attr(filing.original_language) if (not is_english and has_any_translation and not show_translated) else ""
-        st.markdown(f'<div class="er-filing-summary"{summary_attr}>{html.escape(summary)}</div>', unsafe_allow_html=True)
+        summary_html = html.escape(summary) if summary_attr else cjk_html(summary, filing.original_language)
+        st.markdown(f'<div class="er-filing-summary"{summary_attr}>{summary_html}</div>', unsafe_allow_html=True)
 
         if not is_english and has_any_translation:
             toggle_label = "Original" if show_translated else "English"

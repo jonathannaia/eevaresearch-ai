@@ -23,16 +23,32 @@
      --*-tint                 derived with color-mix() from the tokens
                               above, never given colors of their own.
    No gradients, glows, or theme-transition animations anywhere. */
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Noto+Serif+KR:wght@400;600&display=swap');
+/* Typography: IBM Plex Sans (UI and metadata) with IBM Plex Sans KR / JP
+   for Korean and Japanese UI text, IBM Plex Mono (timestamps, tickers,
+   filing codes, receipt numbers, counts, uppercase labels), Source Serif 4
+   (verbatim excerpts, thesis titles, thesis key questions) with Noto Serif
+   KR as the Korean excerpt fallback. Google Fonts serves the KR/JP families
+   as unicode-range slices, so a browser downloads only the slices whose
+   glyphs actually appear on the page. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Noto+Serif+KR:wght@400;600&display=swap');
 
 /* Non-color tokens. Color tokens: src/ui/theme_tokens.py. */
 :root {
     --r-sm: 6px;
     --r-md: 9px;
     --r-lg: 14px;
-    --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "Geist Mono", "SFMono-Regular", Menlo, monospace;
-    --font-serif: "Source Serif 4", "Noto Serif KR", "Noto Serif JP", Georgia, serif;
+    /* Hangul falls through Plex Sans to Plex Sans KR; Japanese text
+       (lang="ja") swaps to the JP-first stack so kanji take Japanese
+       glyph forms rather than the KR font's. */
+    --font-ui: "IBM Plex Sans", "IBM Plex Sans KR", "IBM Plex Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui-ja: "IBM Plex Sans", "IBM Plex Sans JP", "IBM Plex Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", "IBM Plex Sans KR", "IBM Plex Sans JP", "SFMono-Regular", Menlo, monospace;
+    --font-serif: "Source Serif 4", "Noto Serif KR", Georgia, serif;
+    --font-serif-ja: "Source Serif 4", "Hiragino Mincho ProN", "Yu Mincho", "IBM Plex Sans JP", Georgia, serif;
+    /* Type scale fixed points. */
+    --fs-page-title: 30px;
+    --fs-card-title: 15px;
+    --fs-label: 11px;
     /* Spacing rhythm; page padding 36–40px and section gap 16–24px map
        onto --space-7/--space-4..5. */
     --space-1: 4px;
@@ -110,7 +126,11 @@
     border-color: var(--accent) !important;
 }
 
-html, body, [class*="css"] { font-family: var(--font-ui); }
+html, body, [class*="css"] { font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+/* Japanese original-language text: JP-first stacks. Declared before the
+   component rules below so a component's own mono/serif choice still
+   wins, then re-applied to the serif and mono roles explicitly. */
+:lang(ja) { font-family: var(--font-ui-ja); }
 h1, h2, h3 { font-family: var(--font-ui); letter-spacing: -0.006em; color: var(--text); }
 p, li, span, div { letter-spacing: -0.006em; }
 /* Accessible link color (≥4.5:1 on every surface, both themes) for any plain
@@ -123,7 +143,7 @@ a:hover { color: var(--link-hover); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
-    font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.08em;
+    font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 500; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem;
 }
 .er-hero-title {
@@ -137,7 +157,7 @@ a:hover { color: var(--link-hover); }
     max-width: 640px; margin-bottom: 0.5rem;
 }
 .er-page-title {
-    font-weight: 600; font-size: 1.9rem; line-height: 1.15; letter-spacing: -0.015em;
+    font-weight: 600; font-size: var(--fs-page-title); line-height: 1.15; letter-spacing: -0.02em;
     color: var(--text); margin: 0 0 var(--space-2) 0;
 }
 /* Muted one-line description directly under a page title (final polish
@@ -145,14 +165,14 @@ a:hover { color: var(--link-hover); }
    section_header()'s own optional subtitle (which sits under a *section*
    label, not the page title). */
 .er-page-subtitle { font-size: 0.95rem; color: var(--text-secondary); margin: 0 0 var(--space-5) 0; line-height: 1.5; max-width: 72ch; }
-.er-card-title { font-weight: 600; font-size: 0.95rem; color: var(--text); }
+.er-card-title { font-weight: 600; font-size: var(--fs-card-title); color: var(--text); }
 .er-section-label { font-size: 1rem; color: var(--text); margin: var(--space-6) 0 var(--space-3) 0; font-weight: 600; }
 .er-section-label:first-child { margin-top: 0; }
 .er-muted { color: var(--text-secondary); font-size: 0.85rem; }
 .er-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
 .er-metric-value { font-family: var(--font-mono); font-weight: 500; font-size: 2rem; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
 .er-metric-label {
-    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500; letter-spacing: 0.08em;
+    font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 500; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--text-label);
     margin-bottom: var(--space-1); display: block;
 }
@@ -258,6 +278,7 @@ a:hover { color: var(--link-hover); }
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 92px; background: var(--surface-chip); border: 1px solid var(--border-subtle);
     border-radius: 4px; padding: 0.15rem var(--space-2); font-size: 0.75rem; white-space: nowrap;
+    font-family: var(--font-mono);
 }
 
 /* ---------- direction: glyph + text-weight, with a restrained evidence hue
@@ -404,7 +425,7 @@ a:hover { color: var(--link-hover); }
     color: var(--accent) !important;
 }
 .er-rail-group-label {
-    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
     /* sidebar contrast fix: --text-muted/muted is 4.34:1 on --rail, just under
        AA's 4.5:1 for normal text — --text-secondary/secondary (9.4:1) instead,
        here and at the other sidebar-only call sites noted in the :root
@@ -968,14 +989,14 @@ a:hover { color: var(--link-hover); }
 /* Key/value grid — bordered cells on the inset surface. */
 .er-kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; margin-top: var(--space-4); }
 .er-kv { background: var(--surface-input); padding: var(--space-3) var(--space-4); }
-.er-kv-label { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.3rem; }
+.er-kv-label { font-family: var(--font-mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.3rem; }
 .er-kv-value { font-size: 0.9rem; color: var(--text); line-height: 1.45; }
 /* Summary tiles (Dashboard). */
 [class*="st-key-card-summary-"] { padding: var(--space-4) var(--space-5) !important; min-height: 132px; }
 .er-tile-detail { font-size: 0.85rem; color: var(--text-secondary); margin-top: var(--space-2); line-height: 1.45; }
 /* Inset box — excerpts, key questions. */
 .er-inset { background: var(--surface-input); border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: var(--space-4) var(--space-5); }
-.er-inset-label { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem; }
+.er-inset-label { font-family: var(--font-mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem; }
 .er-serif-title { font-family: var(--font-serif); font-weight: 600; font-size: 1.45rem; line-height: 1.25; color: var(--text); letter-spacing: -0.005em; }
 .er-serif-question { font-family: var(--font-serif); font-size: 1.15rem; line-height: 1.5; color: var(--text); }
 /* Top bar — breadcrumb from the real route + Eastern-time date. */
@@ -985,7 +1006,7 @@ a:hover { color: var(--link-hover); }
 .er-breadcrumb .er-crumb-current { color: var(--text); font-weight: 500; }
 .er-topbar-date { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0.02em; }
 /* Date-group rule (Signals): mono label + hairline. */
-.er-date-group { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0 var(--space-3) 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
+.er-date-group { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0 var(--space-3) 0; font-family: var(--font-mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
 .er-date-group::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
 /* Time cell (feeds): stacked mono time over its zone abbreviation. */
 .er-time-cell { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text); line-height: 1.2; white-space: nowrap; }
@@ -993,13 +1014,13 @@ a:hover { color: var(--link-hover); }
 /* Semantic feed row (dashboard latest signals / regional brief). */
 .er-feed-row { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: start; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
 .er-feed-row:last-child { border-bottom: none; }
-.er-feed-title { font-size: 0.95rem; font-weight: 500; color: var(--text); line-height: 1.4; }
+.er-feed-title { font-size: var(--fs-card-title); font-weight: 600; color: var(--text); line-height: 1.4; }
 .er-feed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
 .er-feed-link { font-size: 0.85rem; color: var(--link); white-space: nowrap; text-decoration: none; }
 .er-feed-link:hover { color: var(--link-hover); }
 /* Brief table — semantic table markup on the card surface. */
 table.er-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-table.er-table th { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-subtle); }
+table.er-table th { font-family: var(--font-mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-subtle); }
 table.er-table td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border-subtle); color: var(--text); vertical-align: middle; }
 table.er-table tr:last-child td { border-bottom: none; }
 table.er-table .er-mono { font-size: 0.8rem; }
@@ -1031,7 +1052,7 @@ table.er-table .er-mono { font-size: 0.8rem; }
 
 /* ---------- v2 Dashboard ---------- */
 .er-split-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin: 0 0 var(--space-3) 0; }
-.er-greeting { font-weight: 600; font-size: 2.1rem; line-height: 1.1; letter-spacing: -0.02em; color: var(--text); margin: 0.15rem 0 0.4rem 0; }
+.er-greeting { font-weight: 600; font-size: var(--fs-page-title); line-height: 1.15; letter-spacing: -0.02em; color: var(--text); margin: 0.15rem 0 0.4rem 0; }
 [class*="st-key-card-recent-theme-activity-"] { padding: var(--space-3) var(--space-4) !important; border-radius: var(--r-md) !important; }
 .er-rta-count { text-align: right; }
 [class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: none !important; gap: 0.25rem; }
@@ -1058,7 +1079,7 @@ table.er-table .er-mono { font-size: 0.8rem; }
 .er-filing-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .er-filing-head-left { display: inline-flex; align-items: center; gap: 0.5rem; }
 .er-filing-filed { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
-[class*="st-key-radar-item-"] .er-card-title { font-weight: 600; font-size: 1.05rem; line-height: 1.35; color: var(--text); margin-top: 0.45rem; }
+[class*="st-key-radar-item-"] .er-card-title { font-weight: 600; font-size: var(--fs-card-title); line-height: 1.35; color: var(--text); margin-top: 0.45rem; }
 .er-filing-native { font-family: var(--font-serif); font-size: 0.95rem; color: var(--text-secondary); margin-top: 0.2rem; }
 .er-filing-summary { color: var(--text); margin-top: 0.35rem; line-height: 1.55; }
 .er-mt-note { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); margin-top: 0.45rem; }
@@ -1072,7 +1093,7 @@ table.er-table .er-mono { font-size: 0.8rem; }
 .er-reference-line { font-family: var(--font-mono); font-size: 0.74rem; line-height: 1.7; }
 
 /* ---------- v2 Signals + Research theses ---------- */
-.er-signal-headline { font-weight: 600; font-size: 1.05rem; line-height: 1.4; color: var(--text); margin: 0.45rem 0 0.55rem 0; }
+.er-signal-headline { font-weight: 600; font-size: var(--fs-card-title); line-height: 1.4; color: var(--text); margin: 0.45rem 0 0.55rem 0; }
 .er-signal-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-top: 0.7rem; }
 .er-signal-foot > div, .er-signal-foot > span { display: inline-flex; align-items: center; gap: 0.45rem; }
 [class*="st-key-card-issuer-"], [class*="st-key-card-editorial-"] { padding: var(--space-4) var(--space-5) !important; }
@@ -1100,3 +1121,11 @@ table.er-table .er-mono { font-size: 0.8rem; }
    the keyed bottom container's margin-top:auto has a stretched flex parent. */
 [data-testid="stSidebarUserContent"] > div { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] { flex: 1 1 auto; }
+
+/* ---------- Japanese original-language serif text ----------
+   The serif roles (excerpts, native titles, thesis type) take the JP-first
+   serif stack for lang="ja"; mono and every other role already win over
+   the generic :lang(ja) UI rule by source order. */
+.er-excerpt:lang(ja), .er-filing-native:lang(ja), .er-serif-title:lang(ja), .er-serif-question:lang(ja) {
+    font-family: var(--font-serif-ja);
+}

@@ -105,6 +105,7 @@ from src.logic.source_link import public_source_url
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStoryStatus
 from src.models.models import CandidateStatus, FilingEvent
 from src.ui.components.editorial_coverage import get_visible_editorial_stories
+from src.ui.components.primitives import cjk_html
 from src.ui.ui import get_page
 
 PREVIEW_COUNT = 5
@@ -498,7 +499,7 @@ def _render_row(row: _Row, settings: Settings) -> None:
     show_english = st.session_state.get(_show_english_key(row), False)
     display_title = translated_text if (translated_text and show_english) else row.title
 
-    company_html = f"{_esc(row.company_name)} " if row.company_name else ""
+    company_html = f"{cjk_html(row.company_name, row.original_language)} " if row.company_name else ""
     metadata_html = (
         f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.2rem; display:flex; align-items:center; '
         f'gap:0.4rem; flex-wrap:wrap;">{company_html}'
@@ -507,7 +508,7 @@ def _render_row(row: _Row, settings: Settings) -> None:
     )
     content_html = (
         f'<div style="flex:1; min-width:0;">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{_esc(display_title)}</div>'
+        f'<div class="er-card-title" style="font-size:0.88rem;">{cjk_html(display_title, row.original_language)}</div>'
         f"{metadata_html}"
         f"</div>"
     )

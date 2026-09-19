@@ -121,7 +121,7 @@ from src.ui.components.editorial_coverage import (
     render_editorial_card,
 )
 from src.ui.components.empty_state import empty_state
-from src.ui.components.primitives import chip_html, esc, page_header
+from src.ui.components.primitives import chip_html, cjk_html, esc, page_header
 from src.ui.components.section import section_header
 
 _FRESHNESS_WINDOW_DAYS = 7
@@ -502,7 +502,7 @@ def _render_card(
                 unsafe_allow_html=True,
             )
             headline = story.original_title if story.translation_unavailable else story.headline
-            st.markdown(f'<div class="er-signal-headline">{esc(headline)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="er-signal-headline">{cjk_html(headline, source.original_language)}</div>', unsafe_allow_html=True)
 
             if story.translation_unavailable:
                 st.caption("Translation unavailable — original text shown above.")

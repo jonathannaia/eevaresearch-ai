@@ -31,6 +31,7 @@ import streamlit as st
 from src.logic.source_link import public_source_url
 from src.models.models import CandidateSignal, ClaimType, ExtractionState, FilingEvent, TranslationState
 from src.ui.components.evidence_chips import evidence_chip_html
+from src.ui.components.primitives import cjk_html
 
 _DART_SOURCE = "OpenDART / DART"
 _EDINET_SOURCE = "EDINET"
@@ -192,13 +193,19 @@ def render_analyst_view(filing: FilingEvent, candidate: CandidateSignal) -> None
     if excerpt_len >= _MIN_SUBSTANTIVE_EXCERPT_CHARS:
         if filing.source_url:
             st.markdown(evidence_chip_html(ClaimType.FACT, has_source=True), unsafe_allow_html=True)
-        st.markdown(f'<div style="margin-top:0.15rem;">{_source_facts_html(filing)}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="margin-top:0.15rem;">{cjk_html(_source_facts_html(filing), filing.original_language)}</div>',
+            unsafe_allow_html=True,
+        )
         why_phrases = _why_entered_radar_phrases(filing.source_name, candidate.matched_rules)
         if why_phrases:
             st.markdown(evidence_chip_html(ClaimType.INTERPRETATION), unsafe_allow_html=True)
             st.markdown('<div style="margin-top:0.1rem;">Radar flagged this filing because:</div>', unsafe_allow_html=True)
             for phrase in why_phrases:
-                st.markdown(f'<div style="margin-top:0.1rem; margin-left:0.8rem;">• {phrase}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="margin-top:0.1rem; margin-left:0.8rem;">• {cjk_html(phrase, filing.original_language)}</div>',
+                    unsafe_allow_html=True,
+                )
     else:
         st.markdown(f'<div style="margin-top:0.15rem;">{_INSUFFICIENT_EXCERPT_TEXT}</div>', unsafe_allow_html=True)
     # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites

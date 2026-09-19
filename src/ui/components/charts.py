@@ -67,6 +67,6 @@ def rotation_bar_chart(
         .configure_view(strokeWidth=0)
         .configure_axis(
             domainColor=rule, gridColor=token(theme, "border-subtle"), tickColor=rule,
-            labelColor=muted, titleColor=muted, labelFont="Geist", titleFont="Geist",
+            labelColor=muted, titleColor=muted, labelFont="IBM Plex Sans", titleFont="IBM Plex Sans",
         )
     )

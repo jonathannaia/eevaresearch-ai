@@ -22,6 +22,7 @@ from src.models.models import CapitalRotationMetric, Catalyst, EvidenceItem, Sig
 from src.ui.components.badges import demo_badge, direction_dot_html, direction_rail_class, freshness_badge
 from src.ui.components.evidence_chips import evidence_chip
 from src.ui.components.excerpts import render_excerpt
+from src.ui.components.primitives import cjk_html, lang_attr
 
 
 def _esc(value: object) -> str:
@@ -177,14 +178,15 @@ def signal_card(
         top = st.columns([3, 1])
         with top[0]:
             dot = '<span class="er-unread-dot"></span>' if unread else ""
-            st.markdown(f'<div class="er-card-title">{dot}{signal.title}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="er-card-title">{dot}{cjk_html(signal.title, signal.original_language)}</div>', unsafe_allow_html=True)
             if signal.title_translated:
                 # signal.title above is already the translation (see
                 # signal_promotion._title) — this retains the original
                 # beneath it, explicitly labeled, never overwritten.
                 st.markdown(
                     f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.1rem;">'
-                    f'English — machine translation. Original ({signal.original_language}): {signal.title_native}</div>',
+                    f'English — machine translation. Original ({signal.original_language}): '
+                    f'{cjk_html(signal.title_native, signal.original_language)}</div>',
                     unsafe_allow_html=True,
                 )
             tag_line = signal.theme_slug + (f" / {signal.subtheme_slug}" if signal.subtheme_slug else "")
@@ -199,7 +201,7 @@ def signal_card(
                 source_label_text = f"{signal.source_name} · {jurisdiction}" if jurisdiction else signal.source_name
                 st.markdown(
                     f'<div class="er-muted" style="font-size:0.85rem; margin-top:0.15rem;">'
-                    f'{identity} · {source_label_text} · {fmt_date(signal.last_updated)}</div>',
+                    f'{cjk_html(f"{identity} · {source_label_text} · {fmt_date(signal.last_updated)}", signal.original_language)}</div>',
                     unsafe_allow_html=True,
                 )
         with top[1]:
@@ -207,7 +209,7 @@ def signal_card(
                 demo_badge("Sample")
 
         st.markdown(
-            f'<div style="margin:0.4rem 0; max-height:3.2em; overflow:hidden;">{signal.interpretation}</div>',
+            f'<div style="margin:0.4rem 0; max-height:3.2em; overflow:hidden;">{cjk_html(signal.interpretation, signal.original_language)}</div>',
             unsafe_allow_html=True,
         )
         if signal.excerpt_translated:
@@ -234,12 +236,14 @@ def signal_card(
                         unsafe_allow_html=True,
                     )
                     st.markdown(
-                        f'<div class="er-excerpt" style="font-size:0.85rem; margin:0.15rem 0 0.3rem;">{signal.excerpt}</div>',
+                        f'<div class="er-excerpt"{lang_attr(signal.original_language)} style="font-size:0.85rem; margin:0.15rem 0 0.3rem;">'
+                        f'{html.escape(signal.excerpt)}</div>',
                         unsafe_allow_html=True,
                     )
         elif signal.excerpt:
             st.markdown(
-                f'<div class="er-excerpt" style="font-size:0.85rem; margin:0.3rem 0;">{signal.excerpt}</div>',
+                f'<div class="er-excerpt"{lang_attr(signal.original_language)} style="font-size:0.85rem; margin:0.3rem 0;">'
+                f'{html.escape(signal.excerpt)}</div>',
                 unsafe_allow_html=True,
             )
             if signal.translation_state and signal.translation_state != "Not requested":
@@ -327,7 +331,7 @@ def compact_signal_row(signal: Signal) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="er-muted" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{signal.interpretation}</div>',
+            f'<div class="er-muted" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{cjk_html(signal.interpretation, signal.original_language)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -372,7 +376,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
         with row[1]:
             tag_line = signal.theme_slug + (f" / {signal.subtheme_slug}" if signal.subtheme_slug else "")
             title_html = (
-                f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {_esc(signal.title)}</div>'
+                f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {cjk_html(signal.title, signal.original_language)}</div>'
                 f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>'
             )
             # EDINET filing-source usability fix (design/
@@ -387,7 +391,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
             if signal.source_name == filing_display.EDINET_SOURCE_NAME and signal.title_translated:
                 title_html += (
                     f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">'
-                    f'Title translation. Original: {_esc(signal.title_native)}</div>'
+                    f'Title translation. Original: {cjk_html(signal.title_native, signal.original_language)}</div>'
                 )
             st.markdown(title_html, unsafe_allow_html=True)
             jurisdiction = jurisdiction_for_source(signal.source_name)
@@ -396,7 +400,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
                 provenance.append(fmt_date(signal.last_updated))
             if provenance:
                 st.markdown(
-                    f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">{_esc(" · ".join(provenance))}</div>',
+                    f'<div class="er-muted" style="font-size:0.74rem; margin-top:0.1rem;">{cjk_html(" · ".join(provenance), signal.original_language)}</div>',
                     unsafe_allow_html=True,
                 )
             # EDINET-safety fix (design/DECISIONS.md): applied after the
@@ -424,7 +428,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
                     open_signal_drawer(signal)
         st.markdown(
             f'<div class="er-muted" style="font-size:0.82rem; margin-top:var(--space-2); white-space:nowrap; '
-            f'overflow:hidden; text-overflow:ellipsis;">{_esc(signal.interpretation)}</div>',
+            f'overflow:hidden; text-overflow:ellipsis;">{cjk_html(signal.interpretation, signal.original_language)}</div>',
             unsafe_allow_html=True,
         )
 

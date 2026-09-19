@@ -11,6 +11,7 @@ it is given (all four directions, so Contradicts is never collapsed).
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import Mapping
 
 import streamlit as st
@@ -47,6 +48,40 @@ def lang_attr(original_language: str | None) -> str:
     """` lang="ko"` / ` lang="ja"` for original-language text, else ""."""
     code = _LANG_ATTR.get((original_language or "").strip())
     return f' lang="{code}"' if code else ""
+
+
+# One run of Korean/Japanese/Han script, allowing spaces, digits and CJK
+# punctuation inside it (e.g. "주요사항보고서(자기주식취득결정)" or
+# "有価証券報告書－第46期(2025/04/01－2026/03/31)"), but never starting or
+# ending on them. Latin letters/digits glued to a run with no space
+# ("SK하이닉스") belong to it.
+_CJK_CHAR = "　-〿぀-ヿ㐀-䶿一-鿿가-힯！-ﾟᄀ-ᇿ㄰-㆏"
+_CJK_RUN = re.compile(rf"[A-Za-z0-9]*[{_CJK_CHAR}](?:[{_CJK_CHAR}\s\d()（）\[\]/.,:·ㆍ~\-－]*[{_CJK_CHAR})）\]])?[A-Za-z0-9]*")
+_HANGUL = re.compile(r"[가-힯ᄀ-ᇿ㄰-㆏]")
+_KANA = re.compile(r"[぀-ヿｦ-ﾟ]")
+
+
+def cjk_html(text: object, original_language: str | None = None) -> str:
+    """Escaped `text` with every Korean/Japanese run wrapped in
+    `<span lang="ko|ja">`, so original-language fragments inside an
+    English sentence ("삼성전자 filed … on Aug 14") get the right font,
+    line breaking and screen-reader voice while the English around them
+    keeps the page's own language. Hangul means Korean and kana means
+    Japanese; a Han-only run takes the source's own language, and is left
+    untagged when that is unknown rather than guessed."""
+    if text is None:
+        return ""
+    raw = str(text)
+    hint = _LANG_ATTR.get((original_language or "").strip())
+    out, pos = [], 0
+    for match in _CJK_RUN.finditer(raw):
+        run = match.group(0)
+        code = "ko" if _HANGUL.search(run) else "ja" if _KANA.search(run) else hint
+        out.append(html.escape(raw[pos:match.start()]))
+        out.append(f'<span lang="{code}">{html.escape(run)}</span>' if code else html.escape(run))
+        pos = match.end()
+    out.append(html.escape(raw[pos:]))
+    return "".join(out)
 
 
 def chip_html(label: str, variant: str = "neutral", *, dot: bool = False, mono: bool = False) -> str:

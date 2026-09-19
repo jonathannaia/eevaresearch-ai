@@ -40,7 +40,7 @@ from src.logic.formatting import fmt_date
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
-from src.ui.components.primitives import esc, lang_attr, venue_badge_html
+from src.ui.components.primitives import cjk_html, esc, lang_attr, venue_badge_html
 from src.ui.ui import get_page
 
 MAX_ITEMS_PER_REGION = 3
@@ -90,17 +90,21 @@ def _row_html(filing: FilingEvent) -> str:
     title_text = filing_display.edinet_type_label(filing) if is_edinet else filing.report_nm
     form_code = (filing.pblntf_ty or "").strip() if not filing.source_name.startswith("OpenDART") else ""
     form_html = f'<span class="er-status-tag er-tag-mono er-tag-theme">{esc(form_code)}</span>' if form_code else ""
-    issuer_html = esc(filing.corp_name)
+    issuer_html = cjk_html(filing.corp_name, filing.original_language)
     if is_edinet:
         code = filing_display.edinet_display_securities_code(filing.stock_code)
         if code:
             issuer_html += f' <span class="er-mono er-mono-muted">{esc(code)}</span>'
+    # A DART title is Korean end to end, so the whole cell carries lang;
+    # an EDINET label mixes an English type name with the Japanese
+    # original, so only its Japanese run is tagged.
     title_attr = lang_attr(filing.original_language) if is_edinet is False else ""
+    title_html = esc(title_text) if title_attr else cjk_html(title_text, filing.original_language)
     return (
         "<tr>"
         f'<td class="er-brief-form">{form_html}</td>'
         f'<td><div class="er-brief-issuer">{issuer_html}</div>'
-        f'<div class="er-brief-title"{title_attr}>{esc(title_text)}</div></td>'
+        f'<div class="er-brief-title"{title_attr}>{title_html}</div></td>'
         f"<td>{venue_badge_html(filing.source_name)}</td>"
         f'<td class="er-mono er-brief-date">{esc(date_label)}</td>'
         f'<td class="er-brief-link">{link_html}</td>'

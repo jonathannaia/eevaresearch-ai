@@ -8,9 +8,12 @@
 # System / Light / Dark natively and defaults to System, and each section's
 # backgroundColor equals that theme's --bg so the canvas Streamlit paints
 # before the app's own CSS arrives is already the right color.
-font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
-headingFont = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
-codeFont = "Geist Mono:https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
+# Fonts: Streamlit accepts one family per source URL and uses the name
+# verbatim as the start of a font-family list, so the KR/JP families are
+# named here as fallbacks and loaded by assets/styles.css's @import.
+font = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+headingFont = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
 
 baseFontSize = 15
 headingFontWeights = [600, 600, 600, 600, 600, 600]

@@ -16,6 +16,7 @@ from src.models.models import ClaimType, Signal
 from src.ui.components.badges import direction_dot_html
 from src.ui.components.evidence_chips import evidence_chip
 from src.ui.components.excerpts import render_excerpt
+from src.ui.components.primitives import cjk_html, esc, lang_attr
 from src.ui.ui import READ_IDS_KEY
 
 
@@ -32,7 +33,7 @@ def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
             identity = f"{signal.issuer} · {signal.exchange_symbol}" if signal.exchange_symbol else signal.issuer
             source_label = f"{identity} · {signal.source_name}"
         st.markdown(
-            f'<div class="er-mono er-muted">{source_label} · {fmt_date(signal.last_updated)} · {tag}</div>',
+            f'<div class="er-mono er-muted">{cjk_html(f"{source_label} · {fmt_date(signal.last_updated)} · {tag}", signal.original_language)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -81,9 +82,13 @@ def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
                     f'<div class="er-muted" style="font-size:0.78rem; margin-top:0.3rem;">Original ({signal.original_language}):</div>',
                     unsafe_allow_html=True,
                 )
-                st.markdown(f'<div class="er-excerpt">{signal.excerpt}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="er-excerpt"{lang_attr(signal.original_language)}>{esc(signal.excerpt)}</div>', unsafe_allow_html=True,
+                )
             else:
-                st.markdown(f'<div class="er-excerpt">{signal.excerpt}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="er-excerpt"{lang_attr(signal.original_language)}>{esc(signal.excerpt)}</div>', unsafe_allow_html=True,
+                )
                 if signal.translation_state and signal.translation_state != "Not requested":
                     st.markdown(
                         f'<div class="er-muted" style="font-size:0.78rem;">{signal.translation_state}.</div>',

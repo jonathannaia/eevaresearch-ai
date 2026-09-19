@@ -48,8 +48,8 @@ def test_stylesheet_defines_no_color_tokens_of_its_own():
     roots = re.findall(r"(?m)^:root \{([^}]*)\}", _CSS)
     assert len(roots) == 1
     declared = set(re.findall(r"--([a-z0-9-]+):", roots[0]))
-    assert declared == {"r-sm", "r-md", "r-lg", "font-ui", "font-mono", "font-serif",
-                        *(f"space-{i}" for i in range(1, 9))}
+    assert declared == {"r-sm", "r-md", "r-lg", "font-ui", "font-ui-ja", "font-mono", "font-serif", "font-serif-ja",
+                        "fs-page-title", "fs-card-title", "fs-label", *(f"space-{i}" for i in range(1, 9))}
 
 
 def test_no_retired_token_name_is_consumed_anywhere():
@@ -260,11 +260,75 @@ def test_cards_step_their_border_up_on_hover_without_a_shadow():
     assert "border-color: var(--border-strong) !important;" in body and "box-shadow: none !important;" in body
 
 
-# --- fonts (unchanged until the typography commit) ----------------------------------
+# --- typography -------------------------------------------------------------------
 
-def test_fonts_are_unchanged():
-    assert '--font-ui: "Geist",' in _CSS
-    assert '--font-mono: "Geist Mono",' in _CSS
-    assert '--font-serif: "Source Serif 4", "Noto Serif KR"' in _CSS
-    assert "family=Geist" in _CSS and "family=Geist+Mono" in _CSS
-    assert "family=Source+Serif+4" in _CSS and "family=Noto+Serif+KR" in _CSS
+_CONFIG_TEXT = (REPO_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_font_families_are_ibm_plex_with_source_serif_and_the_noto_serif_kr_fallback():
+    imports = re.findall(r"@import url\('([^']+)'\)", _CSS)
+    assert len(imports) == 1
+    url = imports[0]
+    for family in ("family=IBM+Plex+Sans:wght@400;500;600", "family=IBM+Plex+Mono:wght@400;500",
+                   "family=IBM+Plex+Sans+KR:wght@400;500;600", "family=IBM+Plex+Sans+JP:wght@400;500;600",
+                   "family=Source+Serif+4:opsz,wght@8..60,400;8..60,600", "family=Noto+Serif+KR:wght@400;600"):
+        assert family in url, family
+    assert "display=swap" in url
+    assert "Geist" not in _CSS and "Geist" not in _CONFIG_TEXT
+
+
+def test_role_stacks_put_the_right_face_first_and_keep_cjk_fallbacks():
+    assert '--font-ui: "IBM Plex Sans", "IBM Plex Sans KR", "IBM Plex Sans JP",' in _CSS
+    assert '--font-ui-ja: "IBM Plex Sans", "IBM Plex Sans JP", "IBM Plex Sans KR",' in _CSS
+    assert '--font-mono: "IBM Plex Mono",' in _CSS
+    assert '--font-serif: "Source Serif 4", "Noto Serif KR",' in _CSS
+    assert '--font-serif-ja: "Source Serif 4",' in _CSS
+
+
+def test_japanese_text_takes_japanese_glyph_forms():
+    assert ":lang(ja) { font-family: var(--font-ui-ja); }" in _CSS
+    body = _rule(r"\.er-excerpt:lang\(ja\), \.er-filing-native:lang\(ja\), \.er-serif-title:lang\(ja\), \.er-serif-question:lang\(ja\)")
+    assert "var(--font-serif-ja)" in body
+    # The generic rule precedes every component rule, so mono and serif roles still win.
+    assert _CSS.index(":lang(ja) {") < _CSS.index(".er-mono {") < _CSS.index(".er-excerpt:lang(ja)")
+
+
+def test_numerals_are_tabular_everywhere():
+    assert "font-variant-numeric: tabular-nums" in _rule(r'html, body, \[class\*="css"\]')
+
+
+def test_page_and_card_title_scale():
+    assert "--fs-page-title: 30px;" in _CSS and "--fs-card-title: 15px;" in _CSS and "--fs-label: 11px;" in _CSS
+    page = _rule(r"\.er-page-title")
+    assert "font-size: var(--fs-page-title)" in page and "font-weight: 600" in page and "letter-spacing: -0.02em" in page
+    assert "font-size: var(--fs-page-title)" in _rule(r"\.er-greeting")
+    for selector in (r"\.er-card-title", r'\[class\*="st-key-radar-item-"\] \.er-card-title', r"\.er-signal-headline", r"\.er-feed-title"):
+        body = _rule(selector)
+        assert "font-size: var(--fs-card-title)" in body and "font-weight: 600" in body, selector
+
+
+def test_uppercase_labels_are_11px_mono_with_wide_tracking():
+    for selector in (r"\.er-eyebrow", r"\.er-metric-label", r"\.er-rail-group-label", r"\.er-kv-label",
+                     r"\.er-inset-label", r"\.er-date-group", r"table\.er-table th"):
+        body = _rule(selector)
+        assert "font-family: var(--font-mono)" in body, selector
+        assert "font-size: var(--fs-label)" in body, selector
+        assert "letter-spacing: 0.08em" in body and "text-transform: uppercase" in body, selector
+
+
+def test_mono_carries_timestamps_tickers_codes_and_counts():
+    for selector in (r"\.er-mono", r"\.er-metric-value", r"\.er-time-cell", r"\.er-topbar-date", r"\.er-filing-filed",
+                     r"\.er-date-badge", r"\.er-rail-count", r"\.er-reference-line", r"\.er-order-marker",
+                     r"\.er-divbar-value", r"\.er-spine-source", r"\.er-footer \.er-footer-version"):
+        assert "font-family: var(--font-mono)" in _rule(selector), selector
+
+
+def test_serif_is_reserved_for_verbatim_excerpts_and_thesis_type():
+    for selector in (r"\.er-excerpt", r"\.er-serif-title", r"\.er-serif-question", r"\.er-filing-native"):
+        assert "font-family: var(--font-serif)" in _rule(selector), selector
+
+
+def test_native_theme_fonts_match_the_stylesheet_stacks():
+    assert 'font = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:' in _CONFIG_TEXT
+    assert 'headingFont = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:' in _CONFIG_TEXT
+    assert 'codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:' in _CONFIG_TEXT

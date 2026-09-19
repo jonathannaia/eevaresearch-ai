@@ -398,7 +398,7 @@ def _render_detail(repository: ThemeRepositoryProtocol, theme_id: str) -> None:
     company_map = tuple(entry for entry in company_map if entry.theme_id == theme.id)
 
     # 1. Title, category, status, last updated
-    st.markdown(f'<div class="er-page-title er-serif-title" style="font-size:1.9rem;">{_esc(theme.title)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="er-page-title er-serif-title" style="font-size:var(--fs-page-title);">{_esc(theme.title)}</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="er-muted">{_enum_label(theme.category)} · {_enum_label(theme.status)} · '
         f'Updated {_esc(fmt_datetime_local(theme.updated_at))}</div>',

@@ -70,6 +70,7 @@ from src.models.theme_research import (
     ThemeVisibility,
 )
 from src.ui.components.empty_state import empty_state
+from src.ui.components.primitives import cjk_html
 from src.ui.components.section import section_header
 from src.ui.ui import get_page
 
@@ -578,7 +579,8 @@ def _render_candidate_review(
 
         filing = candidate.filing
         st.markdown(
-            f'<div><strong>{_esc(filing.corp_name)}</strong> — {_esc(filing.report_nm)} ({_esc(filing.rcept_dt)})</div>',
+            f'<div><strong>{cjk_html(filing.corp_name, filing.original_language)}</strong> — '
+            f'{cjk_html(filing.report_nm, filing.original_language)} (<span class="er-mono">{_esc(filing.rcept_dt)}</span>)</div>',
             unsafe_allow_html=True,
         )
         _detail_row("Matched sector tag", _esc(match.matched_sector_tag) or "—")
