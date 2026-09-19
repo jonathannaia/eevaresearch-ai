@@ -588,11 +588,12 @@ def test_v19_migration_is_idempotent_when_applied_twice_to_the_same_connection()
 # --- V20: Autonomous Research Agent — CandidateSignal.published_by ---------
 # (design/AUTONOMOUS_EVIDENCE_FIRST_RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1)
 
-def test_v20_is_registered_immediately_after_v19_and_is_current():
-    assert schema.CURRENT_SCHEMA_VERSION == 20
+def test_v20_is_registered_immediately_after_v19():
+    # Was "... and is current" until V21 (user_preferences) landed; the
+    # "is current" pin moved to the V21 test below.
     versions = [v for v, _ in schema._MIGRATIONS]
     assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
-    assert versions[-2:] == [19, 20]
+    assert versions.index(20) == versions.index(19) + 1
     assert dict(schema._MIGRATIONS)[20] is schema._V20_STATEMENTS
 
 
@@ -608,7 +609,7 @@ def test_v20_migration_is_idempotent_when_applied_twice_to_the_same_connection()
     conn = connection.connect_in_memory()
     first = schema.migrate(conn)
     second = schema.migrate(conn)
-    assert first == second == 20
+    assert first == second == schema.CURRENT_SCHEMA_VERSION
     columns = [row["name"] for row in conn.execute("PRAGMA table_info(candidates)").fetchall()]
     assert columns.count("published_by") == 1
 
@@ -640,7 +641,7 @@ def test_v20_upgrade_leaves_pre_existing_published_candidate_null():
         "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
     )
     conn.commit()
-    assert schema.migrate(conn) == 20
+    assert schema.migrate(conn) == schema.CURRENT_SCHEMA_VERSION
     row = conn.execute("SELECT published_by FROM candidates WHERE id = 'cand-pre-v20'").fetchone()
     assert row["published_by"] is None
 

@@ -446,11 +446,12 @@ def test_v20_is_registered_immediately_after_v19():
 # Mirrors the SQLite backend's V20 exactly; the two backends version
 # independently (Postgres carries the editorial_stories-only V20/V21).
 
-def test_v22_is_registered_immediately_after_v21_and_is_current():
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 22
+def test_v22_is_registered_immediately_after_v21():
+    # Was "... and is current" until V23 (user_preferences) landed; the
+    # "is current" pin moved to tests/test_user_preferences_repository.py.
     versions = [v for v, _ in postgres_schema._MIGRATIONS]
     assert versions == sorted(versions)  # strictly ordered, no gaps/duplicates
-    assert versions[-2:] == [21, 22]
+    assert versions.index(22) == versions.index(21) + 1
     assert dict(postgres_schema._MIGRATIONS)[22] is postgres_schema._V22_STATEMENTS
 
 
@@ -490,7 +491,7 @@ def test_v22_upgrade_leaves_pre_existing_published_candidate_null(pg_isolated_co
         "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
     )
     conn.commit()
-    assert postgres_schema.migrate(conn) == 22
+    assert postgres_schema.migrate(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
     row = conn.execute("SELECT published_by FROM candidates WHERE id = 'cand-pre-v22'").fetchone()
     assert row["published_by"] is None
 
@@ -517,7 +518,7 @@ def test_v22_upgraded_database_serves_candidate_repository_reads_and_writes(pg_i
         "'Not fetched', 'Not requested', 'Unknown', 'now', 'now')"
     )
     conn.commit()
-    assert postgres_schema.migrate(conn) == 22
+    assert postgres_schema.migrate(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
 
     historical = candidate_repository.get_candidate(conn, "cand-v21")
     assert historical.status is CandidateStatus.PUBLISHED

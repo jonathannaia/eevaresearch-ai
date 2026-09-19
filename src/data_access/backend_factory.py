@@ -97,6 +97,7 @@ from src.data_access.postgres_state_db import theme_matching_repository as postg
 from src.data_access.postgres_state_db import theme_repository as postgres_themes
 from src.data_access.postgres_state_db import feedback_repository as postgres_feedback
 from src.data_access.postgres_state_db import user_account_repository as postgres_user_accounts
+from src.data_access.postgres_state_db import user_preferences_repository as postgres_user_preferences
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
@@ -114,6 +115,7 @@ from src.data_access.state_db import theme_matching_repository as sqlite_theme_m
 from src.data_access.state_db import theme_repository as sqlite_themes
 from src.data_access.state_db import feedback_repository as sqlite_feedback
 from src.data_access.state_db import user_account_repository as sqlite_user_accounts
+from src.data_access.state_db import user_preferences_repository as sqlite_user_preferences
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
@@ -137,6 +139,7 @@ from src.models.feedback_submission import (
     FeedbackTrackingWorkflow,
 )
 from src.models.user_account import UserAccount
+from src.models.user_preferences import UserPreferences, is_theme_preference
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -1328,6 +1331,89 @@ def get_user_account_repository(settings: Settings) -> UserAccountRepositoryProt
     if backend == "postgres":
         return PostgresUserAccountRepository(conn=_require_postgres_connection(settings))
     return JsonUserAccountRepository(cache_dir=settings.cache_dir)
+
+
+# --- User preferences repository — Theming + Typography release. The
+# signed-in account's saved theme (System / Dark / Light). Same three-
+# backend shape and ambient backend selection as UserAccountRepository
+# above, including a zero-configuration JSON store for local dev (one
+# `user_preferences.json` file under settings.cache_dir, keyed by
+# normalized email). Readers call it once per browser session, never per
+# rerun, and close() it when done: each factory call opens its own
+# database connection.
+
+class UserPreferencesRepositoryProtocol(Protocol):
+    def get_preferences(self, email: str) -> UserPreferences | None: ...
+    def set_theme_preference(self, email: str, theme_preference: str, now: str) -> None: ...
+    def close(self) -> None: ...
+
+
+def _user_preferences_json_path(cache_dir: Path) -> Path:
+    return cache_dir / "user_preferences.json"
+
+
+@dataclass(frozen=True)
+class JsonUserPreferencesRepository:
+    cache_dir: Path
+
+    def _load(self) -> dict[str, dict]:
+        path = _user_preferences_json_path(self.cache_dir)
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def get_preferences(self, email: str) -> UserPreferences | None:
+        normalized_email = email.strip().lower()
+        record = self._load().get(normalized_email)
+        if record is None or not is_theme_preference(record.get("theme_preference")):
+            return None
+        return UserPreferences(email=normalized_email, theme_preference=record["theme_preference"], updated_at=record["updated_at"])
+
+    def set_theme_preference(self, email: str, theme_preference: str, now: str) -> None:
+        if not is_theme_preference(theme_preference):
+            raise ValueError(f"unknown theme preference: {theme_preference!r}")
+        records = self._load()
+        records[email.strip().lower()] = {"theme_preference": theme_preference, "updated_at": now}
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        _user_preferences_json_path(self.cache_dir).write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def close(self) -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class SqliteUserPreferencesRepository:
+    conn: sqlite3.Connection
+
+    def get_preferences(self, email: str) -> UserPreferences | None:
+        return sqlite_user_preferences.get_preferences(self.conn, email)
+
+    def set_theme_preference(self, email: str, theme_preference: str, now: str) -> None:
+        sqlite_user_preferences.set_theme_preference(self.conn, email, theme_preference, now)
+
+    def close(self) -> None:
+        self.conn.close()
+
+
+@dataclass(frozen=True)
+class PostgresUserPreferencesRepository:
+    conn: psycopg.Connection
+
+    def get_preferences(self, email: str) -> UserPreferences | None:
+        return postgres_user_preferences.get_preferences(self.conn, email)
+
+    def set_theme_preference(self, email: str, theme_preference: str, now: str) -> None:
+        postgres_user_preferences.set_theme_preference(self.conn, email, theme_preference, now)
+
+    def close(self) -> None:
+        self.conn.close()
+
+
+def get_user_preferences_repository(settings: Settings) -> UserPreferencesRepositoryProtocol:
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteUserPreferencesRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresUserPreferencesRepository(conn=_require_postgres_connection(settings))
+    return JsonUserPreferencesRepository(cache_dir=settings.cache_dir)
 
 
 # Open-beta feedback (design/DECISIONS.md) — same JSON-fallback shape as

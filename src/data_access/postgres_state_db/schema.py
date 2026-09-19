@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 22
+CURRENT_SCHEMA_VERSION = 23
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -699,6 +699,22 @@ _V22_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN published_by TEXT",
 )
 
+# Theming + Typography release — isolated Postgres counterpart to
+# state_db/schema.py's own V21 (see that module's comment). A new table
+# with no foreign key: CREATE TABLE takes no lock on any existing table,
+# so no application session reading candidates or user_accounts can
+# block it or be blocked by it. Like every step, it must still be applied
+# schema-first, before any service runs code at this version.
+_V23_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE user_preferences (
+        email TEXT PRIMARY KEY,
+        theme_preference TEXT NOT NULL CHECK (theme_preference IN ('system', 'dark', 'light')),
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -726,6 +742,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (20, _V20_STATEMENTS),
     (21, _V21_STATEMENTS),
     (22, _V22_STATEMENTS),
+    (23, _V23_STATEMENTS),
 )
 
 

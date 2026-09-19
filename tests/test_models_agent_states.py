@@ -103,7 +103,7 @@ def test_legacy_json_record_without_published_by_loads_as_none(tmp_path):
 def test_published_by_round_trips_through_sqlite_insert_and_update():
     conn = connection.connect_in_memory()
     schema.migrate(conn)
-    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION == 20
+    assert schema.get_schema_version(conn) == schema.CURRENT_SCHEMA_VERSION
     candidate = _candidate("sq-1")
     candidate_repository.upsert_new_candidates(conn, "SEC EDGAR", [candidate])
     stored = candidate_repository.get_candidate(conn, "sq-1")

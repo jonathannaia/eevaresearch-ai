@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 20
+CURRENT_SCHEMA_VERSION = 21
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -860,6 +860,23 @@ _V20_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE candidates ADD COLUMN published_by TEXT",
 )
 
+# Theming + Typography release — the signed-in account's saved theme
+# (System / Dark / Light). A new table, keyed by the same normalized
+# email as user_accounts (V15) but with no foreign key and no change to
+# that table: creating it touches no existing table. The CHECK constraint
+# is the database's own guard against any value outside the three
+# choices. Mirrors the Postgres backend's V23 exactly (the two backends
+# version independently).
+_V21_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE user_preferences (
+        email TEXT PRIMARY KEY,
+        theme_preference TEXT NOT NULL CHECK (theme_preference IN ('system', 'dark', 'light')),
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -885,6 +902,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (18, _V18_STATEMENTS),
     (19, _V19_STATEMENTS),
     (20, _V20_STATEMENTS),
+    (21, _V21_STATEMENTS),
 )
 
 
