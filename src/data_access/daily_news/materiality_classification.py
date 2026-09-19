@@ -165,6 +165,32 @@ release bodies routinely mention a conference call, a trade-show demo,
 or a careers page in boilerplate, and that must never demote them. An
 ambiguous item that matches no format stays exactly where it was.
 
+--- Positive recall (issuer lane only, headline only, 2026-09-18) ---
+Three narrow additions for material company events the gates above
+missed, evaluated only when the item names its issuer and carries no
+low-signal format, rumor/negation, or interview framing:
+  - A definitive transaction ("to acquire", "completes acquisition of",
+    "signs definitive agreement to merge", "to be acquired by") ->
+    HIGH_SIGNAL. Hedged language ("in talks", "explores", "may
+    acquire", "terminates") and partial/minority stakes never qualify.
+  - A commitment/deal term (invest, commit, partnership, agreement,
+    contract, order, financing, supply, ...) or an issuer-specific
+    government/industrial-policy award (CHIPS Act, government/state
+    grant, subsidy, public incentive, ministry or Department of
+    Commerce funding) with a headline currency amount at or above that
+    currency's floor (100 million for $/€/£; 10 billion for ¥) ->
+    HIGH_SIGNAL, unless the headline is CSR/social-impact framed
+    (foundation, philanthropy, donation, charity, scholarship,
+    community, education, sustainability, relief, humanitarian, ...)
+    or survey content. A bare "grant" without public-policy context,
+    and vague partnership language without an amount, never qualify.
+  - A full/volume/mass production or shipping milestone -> WATCHLIST,
+    never HIGH_SIGNAL, and only where the item would otherwise be
+    BACKGROUND.
+The editorial lane is unchanged: its headlines include market
+forecasts ("AI investment to hit $1 trillion") that are not
+company-specific.
+
 --- Issuer naming (issuer lane only, Signals quality pass) ---
 classify_issuer_story() accepts the assigned issuer's name forms; when
 supplied and neither the headline nor the excerpt names the issuer, the
@@ -606,6 +632,102 @@ def _low_signal_format_hit(headline: str, *, issuer_lane: bool) -> str | None:
     return None
 
 
+# --- Positive recall (issuer lane, headline only — see "Positive recall"
+# in the module docstring). Never evaluated for issuer_not_named, a
+# low-signal format, rumor/negation, or interview framing. ---
+_DEFINITIVE_TRANSACTION_PATTERN = re.compile(
+    r"\b(?:to acquire|acquires|has acquired|agrees? to acquire|completes? (?:the |its )?acquisition of|"
+    r"announces? (?:the |its )?acquisition of|signs? (?:a )?definitive agreement to (?:acquire|merge|be acquired)|"
+    r"to merge with|to be acquired by|agrees? to be acquired)\b",
+    re.IGNORECASE,
+)
+# Hedged or non-definitive deal language. Modal verbs are matched only
+# directly before a deal verb, so the month "May" never blocks a real
+# "Completes Acquisition in May".
+_TRANSACTION_HEDGE_PATTERN = re.compile(
+    r"\b(?:in talks|explor(?:e|es|ing)|consider(?:s|ing)?|weighs?|plans? to|seeks? to|bids?|offer to|not|"
+    r"no longer|terminat\w*|abandon\w*|withdraw\w*|cancel\w*|calls? off|"
+    r"(?:may|might|could)\s+(?:acquire|buy|merge|be acquired))\b",
+    re.IGNORECASE,
+)
+# A partial or minority holding is not a definitive acquisition.
+_PARTIAL_STAKE_PATTERN = re.compile(r"\b(?:stakes?|minority interest|equity interest)\b", re.IGNORECASE)
+_COMMITMENT_TERM_PATTERN = re.compile(
+    r"\b(?:invest(?:s|ed|ing|ment|ments)?|commit(?:s|ted|ment|ments)?|partnership|agreement|deal|contract|"
+    r"orders?|financ(?:e|es|ing)|fund(?:s|ed|ing)?|supply)\b",
+    re.IGNORECASE,
+)
+# Issuer-specific government/industrial-policy awards qualify as a
+# commitment term. A bare "grant" does not — only one with explicit
+# public-policy context (CHIPS Act, a government/federal/state grant, a
+# subsidy, a public incentive, ministry or Department of Commerce funding).
+_POLICY_AWARD_PATTERN = re.compile(
+    r"\b(?:CHIPS(?: and Science)? Act|(?:government|federal|state|national|public) (?:grants?|funding|awards?)|"
+    r"subsid(?:y|ies)|(?:government|federal|state|public|tax) incentives?|incentive package|ministry|"
+    r"department of commerce|commerce department)\b",
+    re.IGNORECASE,
+)
+# CSR/social-impact framing never qualifies as a quantified commitment —
+# checked AFTER a policy award is recognised, so charitable language
+# always wins (a "CHIPS Act workforce development grant" stays excluded).
+_CSR_IMPACT_PATTERN = re.compile(
+    r"\b(?:foundation|philanthrop\w*|donat(?:e|es|ed|ing|ion|ions)|charit(?:y|ies|able)|non-?profits?|"
+    r"scholarships?|community|communities|education(?:al)?|workforce development|sustainability|"
+    r"social[- ]impact|relief|humanitarian)\b",
+    re.IGNORECASE,
+)
+_CURRENCY_AMOUNT_PATTERN = re.compile(
+    r"(?P<currency>[$£€¥])\s?(?P<number>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(?P<unit>billion|million|bn|mn|b|m)?\b",
+    re.IGNORECASE,
+)
+_CURRENCY_UNIT_MULTIPLIERS = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "mn": 1e6, "m": 1e6}
+# Per-currency floors, in that currency's own units: 100 million for
+# $/€/£; 10 billion for ¥ (roughly the same order of magnitude — ¥100
+# million is under $1 million). A currency not listed here never counts.
+_COMMITMENT_AMOUNT_FLOORS: dict[str, float] = {"$": 1e8, "€": 1e8, "£": 1e8, "¥": 1e10}
+_PRODUCTION_MILESTONE_PATTERN = re.compile(
+    r"\b(?:(?:in|enters?|begins?|starts?|reach(?:es)?)\s+(?:full|volume|mass)\s+production|"
+    r"(?:now|begins?|starts?) shipping)\b",
+    re.IGNORECASE,
+)
+
+
+def _headline_currency_amount(headline: str) -> str | None:
+    """The first currency amount in the headline that meets its own
+    currency's floor (_COMMITMENT_AMOUNT_FLOORS), written with a unit word
+    or as a full comma-grouped figure, or None. A magnitude check, not a
+    valuation — no exchange-rate conversion."""
+    for match in _CURRENCY_AMOUNT_PATTERN.finditer(headline):
+        floor = _COMMITMENT_AMOUNT_FLOORS.get(match.group("currency"))
+        if floor is None:
+            continue
+        value = float(match.group("number").replace(",", ""))
+        value *= _CURRENCY_UNIT_MULTIPLIERS.get((match.group("unit") or "").lower(), 1.0)
+        if value >= floor:
+            return match.group(0).strip()
+    return None
+
+
+def _definitive_transaction_hit(headline: str) -> str | None:
+    match = _DEFINITIVE_TRANSACTION_PATTERN.search(headline)
+    if not match or _TRANSACTION_HEDGE_PATTERN.search(headline) or _PARTIAL_STAKE_PATTERN.search(headline):
+        return None
+    return match.group(0).lower()
+
+
+def _quantified_commitment_hit(headline: str) -> str | None:
+    term = _COMMITMENT_TERM_PATTERN.search(headline) or _POLICY_AWARD_PATTERN.search(headline)
+    amount = _headline_currency_amount(headline)
+    if not term or not amount or _CSR_IMPACT_PATTERN.search(headline):
+        return None
+    return f"{term.group(0).lower()}:{amount}"
+
+
+def _production_milestone_hit(headline: str) -> str | None:
+    match = _PRODUCTION_MILESTONE_PATTERN.search(headline)
+    return match.group(0).lower() if match else None
+
+
 # --- Issuer naming (see "Issuer naming" in the module docstring). A
 # deliberately lenient name check — it only has to recognise the
 # issuer's own releases in its own feed, so it accepts the full name,
@@ -932,6 +1054,19 @@ def _classify_core(
         ):
             reasons.append(f"credible_editorial_reporting:{reporting_hit[0]}")
 
+    # Positive recall (issuer lane only): appended after every existing
+    # gate, so an item that already qualifies keeps its original first
+    # reason; never evaluated for a low-signal format, rumor/negation,
+    # or interview framing (issuer_not_named returned before this call).
+    recall_allowed = issuer_lane and not low_signal_format and not uncertain_reporting and not interview_format
+    if recall_allowed:
+        transaction_hit = _definitive_transaction_hit(headline)
+        if transaction_hit:
+            reasons.append(f"definitive_transaction:{transaction_hit}")
+        commitment_hit = _quantified_commitment_hit(headline)
+        if commitment_hit and not survey_content:
+            reasons.append(f"quantified_commitment:{commitment_hit}")
+
     if reasons:
         return NewsMaterialityTier.HIGH_SIGNAL, tuple(reasons)
     # Denial/rumor fallback fix (Signals precision follow-up, design/
@@ -951,6 +1086,10 @@ def _classify_core(
         return NewsMaterialityTier.WATCHLIST, (f"capital_return_mention_no_qualifying_action:{capital_return_mention_hit[0]}",)
     if earnings_hit and not earnings_qualifies:
         return NewsMaterialityTier.WATCHLIST, (f"scheduling_notice_not_yet_substantive:{earnings_hit[0]}",)
+    if recall_allowed:
+        production_hit = _production_milestone_hit(headline)
+        if production_hit:
+            return NewsMaterialityTier.WATCHLIST, (f"production_milestone:{production_hit}",)
     if low_signal_format:
         return NewsMaterialityTier.BACKGROUND, (f"low_signal_format:{low_signal_format}",)
     return NewsMaterialityTier.BACKGROUND, ("off_taxonomy_no_anchor",)

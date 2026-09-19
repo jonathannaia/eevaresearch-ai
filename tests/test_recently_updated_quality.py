@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.config.settings import Settings
-from src.data_access.daily_news import daily_news_store
+from src.data_access.daily_news import daily_news_pipeline, daily_news_store
 from src.models.daily_news_models import (
     NewsMaterialityTier, NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass,
 )
@@ -121,3 +121,29 @@ def test_different_headlines_from_different_issuers_are_never_merged(tmp_path):
         ("NVIDIA", "AWS and NVIDIA to Deliver 2 Million Additional GPUs and Next-Generation Infrastructure"),
         ("Cisco Systems, Inc.", "Cisco Reports Fourth Quarter Earnings"),
     ]
+
+
+def test_definitive_acquisition_reaches_the_dashboard_while_low_signal_items_stay_out(tmp_path):
+    """Positive recall (2026-09-18): a real untiered acquisition release is
+    tiered High Signal at read time and shown; the untiered consumer and
+    event items around it stay out. Nothing is written back."""
+    now = datetime.now(timezone.utc)
+    daily_news_store.upsert_new_stories(tmp_path, [
+        _story("ifa", "NVIDIA", "NVDA", "Sparks Fly: NVIDIA Accelerates Local AI at IFA 2026", now, None),
+        _story("gaming", "NVIDIA", "NVDA", "‘NBA 2K27’ With NVIDIA DLSS 5 Leads 26 New Games Coming to GeForce NOW",
+               now - timedelta(minutes=5), None),
+        _story("hf", "NVIDIA", "NVDA", "NVIDIA to Acquire Hugging Face", now - timedelta(minutes=10), None,
+               url="https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/",
+               excerpt="I’m excited to announce that NVIDIA has agreed to acquire Hugging Face for $12,930,300,000."),
+        _story("stake", "Intel Corp.", "INTC", "Intel Takes a Minority Stake in Example Foundry Startup",
+               now - timedelta(minutes=15), None),
+    ])
+
+    assert _titles(tmp_path, now) == [
+        "NVIDIA to Acquire Hugging Face", "Intel Takes a Minority Stake in Example Foundry Startup",
+    ]
+    stored = daily_news_store.load_stories(tmp_path)
+    assert daily_news_pipeline.effective_issuer_tier(stored["hf"]) == NewsMaterialityTier.HIGH_SIGNAL
+    # A minority stake keeps its normal classification (on-taxonomy Watchlist), never promoted.
+    assert daily_news_pipeline.effective_issuer_tier(stored["stake"]) == NewsMaterialityTier.WATCHLIST
+    assert all(s.materiality_tier is None for s in stored.values())

@@ -1174,3 +1174,258 @@ def test_omitting_issuer_names_keeps_previous_behavior_for_other_callers():
     )
     assert tier == NewsMaterialityTier.WATCHLIST
     assert reasons[0].startswith("on_taxonomy_no_anchor:")
+
+
+# --- Positive recall (issuer lane, headline only, 2026-09-18). The
+# promoted examples are real items from the local issuer-lane cache; the
+# guard tables below pin the pre-existing High Signal set and the P0/P1
+# Background demotions from that same cache, so a recall rule can never
+# silently reopen a low-signal leak or disturb an existing result. ---
+
+from src.data_access.daily_news.materiality_classification import (  # noqa: E402
+    _definitive_transaction_hit,
+    _quantified_commitment_hit,
+)
+
+_EXISTING_HIGH_SIGNAL = (
+    ('Advanced Micro Devices', 'AMD', 'AMD Reports Second Quarter 2026 Financial Results', ''),
+    ('Advanced Micro Devices', 'AMD', 'AMD and Anthropic Announce Strategic Partnership to Deploy Up to 2 Gigawatts of AMD Instinct MI450 Series GPUs', ''),
+    ('Arista Networks, Inc.', 'ANET', 'Arista Networks, Inc. Reports First Quarter 2026 Financial Results', ''),
+    ('Arista Networks, Inc.', 'ANET', 'Arista Networks, Inc. Reports Fourth Quarter and Year End 2025 Financial Results', ''),
+    ('Arista Networks, Inc.', 'ANET', 'Arista Networks, Inc. Reports Second Quarter 2026 Financial Results', ''),
+    ('Bloom Energy Corp', 'BE', 'Bloom Energy Reports Record Second Quarter 2026 Financial Results and Raises Full Year 2026 Guidance', ''),
+    ('Bloom Energy Corp', 'BE', 'Bloom Energy and Oracle Expand Strategic Partnership to Deploy up to 2.8 GW to Accelerate AI Infrastructure Build-Out', ''),
+    ('Cisco Systems, Inc.', 'CSCO', 'Cisco Reports Fourth Quarter Earnings', ''),
+    ('Cisco Systems, Inc.', 'CSCO', 'Cisco Reports Third Quarter Earnings', ''),
+    ('Intel Corp.', 'INTC', 'Intel Announces Proposed $15 Billion Common Stock Offering', 'SANTA CLARA, Calif., August 10, 2026 - Intel Corporation (Nasdaq: INTC) today announced a $15 billion underwritten public offering of common stock.Why NowCustomers continue to signal a strong and sustainable demand environment, driven by unprecedented investment in AI compute. Progress in emerging a'),
+    ('Intel Corp.', 'INTC', 'Intel Announces Upsize and Pricing of $20 Billion Common Stock Offering', ''),
+    ('Intel Corp.', 'INTC', 'Intel Reports Second-Quarter 2026 Financial Results', ''),
+    ('Marvell Technology, Inc.', 'MRVL', 'Marvell Technology, Inc. Reports First Quarter of Fiscal Year 2027 Financial Results', ''),
+    ('Marvell Technology, Inc.', 'MRVL', 'Marvell Technology, Inc. Reports Second Quarter of Fiscal Year 2027 Financial Results', ''),
+    ('MaxLinear, Inc.', 'MXL', 'MaxLinear, Inc. Announces First Quarter 2026 Financial Results', ''),
+    ('MaxLinear, Inc.', 'MXL', 'MaxLinear, Inc. Announces Second Quarter 2026 Financial Results', ''),
+    ('NVIDIA', 'NVDA', 'AWS and NVIDIA to Deliver 2 Million Additional GPUs and Next-Generation Infrastructure for Agentic and Physical AI', 'Amazon Web Services (AWS), an Amazon.com, Inc. company (NASDAQ: AMZN), and NVIDIA (NASDAQ: NVDA) today announced a major expansion of their strategic collaboration to meet surging global demand for AI infrastructure as demand continues to accelerate.'),
+    ('NVIDIA', 'NVDA', 'NVIDIA AI Factory Compute Is Becoming an Investable Asset Class', 'We announced partnerships with Apollo, BlackRock, Blackstone, Brookfield, Goldman Sachs and KKR to establish independent financing platforms designed to mobilize over $500 billion of third-party capital to support the buildout of AI infrastructure over time. This is a major milestone for NVIDIA and '),
+    ('NVIDIA', 'NVDA', 'NVIDIA Announces Financial Results for Second Quarter Fiscal 2027', ''),
+    ('NVIDIA', 'NVDA', 'NVIDIA Guarantees SB Energy’s PORTS-Pike Technology Campus in Ohio to Exclusively Host NVIDIA AI Compute', 'NVIDIA announced that it has secured land, power and shell (LPS) capacity through a partnership with SB Energy at the PORTS-Pike Technology Campus in Pike County, Ohio, to host NVIDIA compute...'),
+    ('Quanta Services, Inc.', 'PWR', 'QUANTA SERVICES REPORTS FIRST QUARTER 2026 RESULTS', ''),
+    ('Quanta Services, Inc.', 'PWR', 'QUANTA SERVICES REPORTS SECOND QUARTER 2026 RESULTS', ''),
+    ('Quanta Services, Inc.', 'PWR', 'Quanta Services Announces Quarterly Cash Dividend and New $1 Billion Stock Repurchase Program', ''),
+    ('Rockwell Automation', 'ROK', 'Rockwell Automation Approves $1 Billion for Common Stock Repurchase and Declares Common Stock Dividend', ''),
+    ('Rockwell Automation', 'ROK', 'Rockwell Automation Reports Second Quarter 2026 Results', ''),
+    ('Rockwell Automation', 'ROK', 'Rockwell Automation Reports Third Quarter 2026 Results', ''),
+    ('nVent Electric plc', 'NVT', 'nVent Electric plc Second Quarter 2026 Financial Results Available on Company’s Website', ''),
+    ('nVent Electric plc', 'NVT', 'nVent Expands Data Center Liquid Cooling Capacity', ''),
+)
+_P0P1_DEMOTIONS = (
+    ('Bloom Energy Corp', 'BE', 'AI Data Center Growth Hinges on Solving Both Power Constraints and Community Concerns, Bloom Energy Report Finds', ''),
+    ('Intel Corp.', 'INTC', 'Creating Pathways to Semiconductor Careers: Intel Launches SEPP', ''),
+    ('Intel Corp.', 'INTC', 'Intel Outlines Architectures for Agentic AI at Hot Chips 2026', ''),
+    ('Intel Corp.', 'INTC', 'Intel at AI Infra Summit 2026', ''),
+    ('NVIDIA', 'NVDA', 'How XPUs Meet a World-Class AI Factory', ''),
+    ('NVIDIA', 'NVDA', 'Why Scaling AI Compute Performance Requires a New Power Architecture', ''),
+    ('SK Hynix', '000660', '[AI Infrastructure Insight] Why faster GPUs alone can’t deliver AI performance', ''),
+    ('nVent Electric plc', 'NVT', 'Siemens and partners develop reference  architecture purpose-built for NVIDIA AI data centers', ''),
+)
+
+
+def _tier(company, ticker, headline, excerpt=""):
+    return classify_issuer_story(
+        headline, excerpt, SourceClass.OFFICIAL_COMPANY, issuer_names=issuer_name_forms(company, ticker),
+    )
+
+
+def test_existing_high_signal_items_stay_high_signal_with_their_original_first_reason():
+    for company, ticker, headline, excerpt in _EXISTING_HIGH_SIGNAL:
+        tier, reasons = _tier(company, ticker, headline, excerpt)
+        assert tier == NewsMaterialityTier.HIGH_SIGNAL, headline
+        assert not reasons[0].startswith(("definitive_transaction", "quantified_commitment", "production_milestone")), (headline, reasons)
+
+
+def test_p0_p1_background_demotions_stay_background():
+    for company, ticker, headline, excerpt in _P0P1_DEMOTIONS:
+        tier, reasons = _tier(company, ticker, headline, excerpt)
+        assert tier == NewsMaterialityTier.BACKGROUND, headline
+        assert reasons[0].startswith(("low_signal_format:", "issuer_not_named")), (headline, reasons)
+
+
+def test_definitive_transactions_promote_to_high_signal():
+    for company, ticker, headline, expected in (
+        ("NVIDIA", "NVDA", "NVIDIA to Acquire Hugging Face", "definitive_transaction:to acquire"),
+        ("Advanced Micro Devices", "AMD", "AMD Acquires Taalas to Advance Compute Solutions for Rapidly Growing AI Inference Market", "definitive_transaction:acquires"),
+        ("nVent Electric plc", "NVT", "nVent to Acquire Maverick Power", "definitive_transaction:to acquire"),
+        ("nVent Electric plc", "NVT", "nVent Completes Acquisition of Maverick Power", "definitive_transaction:completes acquisition of"),
+        ("Marvell Technology, Inc.", "MRVL", "Marvell Signs Definitive Agreement to Acquire Example Photonics", "definitive_transaction:signs definitive agreement to acquire"),
+    ):
+        assert _tier(company, ticker, headline) == (NewsMaterialityTier.HIGH_SIGNAL, (expected,)), headline
+
+
+def test_quantified_commitments_promote_to_high_signal():
+    for company, ticker, headline, expected in (
+        ("Bloom Energy Corp", "BE", "Brookfield and Bloom Energy Expand AI Infrastructure Partnership to $25 Billion; Fivefold Increase to Build and Finance Rapid Power for AI Infrastructure", "quantified_commitment:partnership:$25 Billion"),
+        ("Marvell Technology, Inc.", "MRVL", "Marvell to Invest $250 Million in India, Expanding Bangalore Facility to Drive Next-generation AI Technology Development", "quantified_commitment:invest:$250 Million"),
+        ("Advanced Micro Devices", "AMD", "AMD Commits up to £2 Billion to Accelerate AI Innovation and Research in the United Kingdom", "quantified_commitment:commits:£2 Billion"),
+        ("Intel Corp.", "INTC", "Intel Announces $5 Billion Supply Agreement with Example Foundry Customer", "quantified_commitment:supply:$5 Billion"),
+    ):
+        assert _tier(company, ticker, headline) == (NewsMaterialityTier.HIGH_SIGNAL, (expected,)), headline
+    # A full comma-grouped figure counts; the floor is inclusive at 100 million.
+    assert _quantified_commitment_hit("Example Signs $12,930,300,000 Supply Agreement") == "supply:$12,930,300,000"
+    assert _quantified_commitment_hit("Example Signs $100 Million Supply Agreement") == "supply:$100 Million"
+
+
+def test_production_milestones_are_a_watchlist_floor_never_high_signal():
+    for headline in (
+        "NVIDIA Groq 3 LPX Now in Full Production With World-Class Speed for Agentic AI",
+        "With Groq 3 LPX in Full Production, NVIDIA Extends Vera Rubin Inference for Agents",
+    ):
+        tier, reasons = _tier("NVIDIA", "NVDA", headline)
+        assert tier == NewsMaterialityTier.WATCHLIST, headline
+        assert reasons == ("production_milestone:in full production",)
+    # A production milestone never lifts an item that already has a higher tier, or out of a low-signal format.
+    assert _tier("SK Hynix", "000660", "SK Hynix Begins Mass Production of HBM4E, Ships 1 Million Units")[0] != NewsMaterialityTier.BACKGROUND
+    assert _tier("NVIDIA", "NVDA", "GeForce NOW Begins Shipping New Games to Gamers")[0] == NewsMaterialityTier.BACKGROUND
+
+
+def test_partial_and_minority_stakes_are_not_definitive_acquisitions():
+    for headline in (
+        "NVIDIA Acquires 5% Stake in Example Robotics",
+        "Intel Takes a Minority Stake in Example Foundry Startup",
+        "AMD Buys a Stake in Example Photonics",
+        "Cisco to Acquire Minority Interest in Example Security",
+    ):
+        assert _definitive_transaction_hit(headline) is None, headline
+    # Normal classification applies instead — never promoted by this rule.
+    tier, reasons = _tier("NVIDIA", "NVDA", "NVIDIA Acquires 5% Stake in Example Robotics")
+    assert not any(r.startswith("definitive_transaction") for r in reasons), reasons
+
+
+def test_hedged_or_negated_transactions_are_not_promoted():
+    for company, ticker, headline in (
+        ("NVIDIA", "NVDA", "NVIDIA Reportedly in Talks to Acquire Example AI"),
+        ("Advanced Micro Devices", "AMD", "AMD Explores Acquisition of Example Chip Startup"),
+        ("Intel Corp.", "INTC", "Intel May Acquire Example Foundry Assets"),
+        ("Marvell Technology, Inc.", "MRVL", "Marvell Terminates Agreement to Acquire Example Photonics"),
+        ("Cisco Systems, Inc.", "CSCO", "Cisco Will Not Acquire Example Security After Review"),
+        ("Intel Corp.", "INTC", "Intel Denies Report It Plans to Acquire Example Foundry"),
+    ):
+        tier, reasons = _tier(company, ticker, headline)
+        assert tier != NewsMaterialityTier.HIGH_SIGNAL, (headline, reasons)
+    # The month "May" is not a hedge.
+    assert _definitive_transaction_hit("nVent Completes Acquisition of Maverick Power in May") == "completes acquisition of"
+
+
+def test_csr_and_social_impact_commitments_are_not_promoted():
+    for headline in (
+        "Intel Foundation Commits $200 Million to STEM Education Programs",
+        "NVIDIA Donates $150 Million to University AI Research Partnership",
+        "Cisco Commits $500 Million to Community Broadband Partnership",
+        "AMD Invests $300 Million in Sustainability and Social-Impact Programs",
+        "Quanta Services Commits $100 Million to Workforce Development Partnership",
+        "Marvell Pledges $250 Million Humanitarian Relief Fund",
+        "Cisco Foundation Awards $150 Million in Grants to Nonprofits",
+        "Intel Commits $120 Million to Charity Partnership",
+        "AMD Funds $200 Million Scholarship Program",
+        # CSR language still wins over a public-policy award.
+        "Example Receives $200 Million CHIPS Act Workforce Development Grant",
+    ):
+        assert _quantified_commitment_hit(headline) is None, headline
+
+
+def test_government_and_industrial_policy_awards_use_the_quantified_commitment_path():
+    for headline, expected in (
+        ("Example Receives $6.1 Billion CHIPS Act Grant", "chips act:$6.1 Billion"),
+        ("Intel Receives $500 Million State Incentive Package for Ohio Fab", "state incentive:$500 Million"),
+        ("Example Wins $300 Million Department of Commerce Funding for Advanced Packaging", "department of commerce:$300 Million"),
+        ("Example Secures \u20ac200 Million Government Subsidy for Dresden Fab", "government subsidy:\u20ac200 Million"),
+    ):
+        hit = _quantified_commitment_hit(headline)
+        assert hit is not None, headline
+        assert hit.split(":", 1)[1] == expected.split(":", 1)[1], (headline, hit)
+    tier, reasons = _tier("Intel Corp.", "INTC", "Intel Receives $500 Million State Incentive Package for Ohio Fab")
+    assert tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons[0].startswith("quantified_commitment:")
+
+
+def test_policy_awards_still_obey_every_safeguard():
+    # A bare "grant" with no public-policy context does not qualify.
+    assert _quantified_commitment_hit("Intel Receives $500 Million Grant") is None
+    # Below the floor.
+    assert _quantified_commitment_hit("Example Receives $50 Million CHIPS Act Grant") is None
+    for company, ticker, headline in (
+        # Rumor language.
+        ("Intel Corp.", "INTC", "Intel's $8 Billion CHIPS Act Grant Reportedly Delayed"),
+        # Issuer mismatch.
+        ("NVIDIA", "NVDA", "Example Foundry Receives $6.1 Billion CHIPS Act Grant"),
+        # Low-signal format.
+        ("Intel Corp.", "INTC", "Intel to Present at Investor Conference on $8 Billion CHIPS Act Award"),
+    ):
+        tier, reasons = _tier(company, ticker, headline)
+        assert not any(r.startswith("quantified_commitment") for r in reasons), (headline, reasons)
+
+
+def test_quantified_commitment_floor_is_currency_aware():
+    # $ / \u20ac / \u00a3: 100 million, inclusive.
+    for headline in (
+        "Example Signs $100 Million Supply Agreement",
+        "Example Signs \u20ac100 Million Supply Agreement",
+        "Example Signs \u00a3100 Million Supply Agreement",
+    ):
+        assert _quantified_commitment_hit(headline) is not None, headline
+    assert _quantified_commitment_hit("Example Signs \u20ac99 Million Supply Agreement") is None
+    # \u00a5: 10 billion, inclusive — \u00a5100 million (under $1 million) never qualifies.
+    assert _quantified_commitment_hit("Example Commits \u00a510 Billion to Kumamoto Fab Supply Agreement") == "commits:\u00a510 Billion"
+    assert _quantified_commitment_hit("Example Commits \u00a510,000,000,000 to Kumamoto Fab Supply Agreement") is not None
+    for headline in (
+        "Example Commits \u00a5100 Million to Kumamoto Fab Supply Agreement",
+        "Example Commits \u00a59.9 Billion to Kumamoto Fab Supply Agreement",
+        "Example Commits \u00a5500,000,000 to Kumamoto Fab Supply Agreement",
+    ):
+        assert _quantified_commitment_hit(headline) is None, headline
+
+
+def test_yen_commitments_reach_high_signal_only_above_the_floor_and_within_safeguards():
+    tier, reasons = _tier("NVIDIA", "NVDA", "NVIDIA Commits \u00a510 Billion to Japan AI Supply Partnership")
+    assert (tier, reasons[0]) == (NewsMaterialityTier.HIGH_SIGNAL, "quantified_commitment:commits:\u00a510 Billion")
+    for company, ticker, headline in (
+        ("NVIDIA", "NVDA", "NVIDIA Commits \u00a5100 Million to Japan AI Supply Partnership"),
+        ("NVIDIA", "NVDA", "Example Partners Commit \u00a510 Billion to Japan AI Data Center Fund"),
+        ("NVIDIA", "NVDA", "NVIDIA Survey Finds Japanese Operators Plan \u00a510 Billion AI Investment"),
+        ("NVIDIA", "NVDA", "NVIDIA Donates \u00a510 Billion to Japan AI Education Foundation"),
+    ):
+        tier, reasons = _tier(company, ticker, headline)
+        assert tier != NewsMaterialityTier.HIGH_SIGNAL, (headline, reasons)
+
+
+def test_recall_rules_cannot_leak_issuer_mismatch_low_signal_surveys_or_small_amounts():
+    for company, ticker, headline in (
+        # Issuer mismatch — issuer_not_named runs first.
+        ("nVent Electric plc", "NVT", "Siemens to Acquire Example Grid Software"),
+        ("NVIDIA", "NVDA", "Example Partners Commit $2 Billion to AI Data Center Fund"),
+        # Gaming / low-signal formats.
+        ("Intel Corp.", "INTC", "Intel Gamer Days 2026 Kicking Off with AAA Gaming Bundle & Partnerships"),
+        ("NVIDIA", "NVDA", "NVIDIA Acquires Exclusive GeForce NOW Rights to New Games for Gamers"),
+        ("Cisco Systems, Inc.", "CSCO", "Cisco Named Official Partner of the $500 Million Golf Championship Series"),
+        # Unquantified partnerships.
+        ("MaxLinear, Inc.", "MXL", "MaxLinear and Edgecore Networks Announce Strategic Partnership to Advance Edge Networks for Enterprise and SMB"),
+        ("NVIDIA", "NVDA", "NVIDIA and MediaTek Deepen Long-Standing Partnership to Build AI Edge to Cloud Computing Platforms"),
+        # Surveys and quantified non-commitments.
+        ("Cisco Systems, Inc.", "CSCO", "The $600 Billion Wake-up Call: New Splunk Research Reveals Downtime is a Systemic Business Crisis"),
+        ("Bloom Energy Corp", "BE", "Bloom Energy Survey Finds Operators Plan $900 Million in Onsite Power Investment"),
+        ("Bloom Energy Corp", "BE", "Bloom Energy Introduces Power Connect, Cutting Onsite Power Installation Time by Over 40%"),
+        # Below the 100 million floor.
+        ("Marvell Technology, Inc.", "MRVL", "Marvell to Invest $50 Million in Example Design Center"),
+        ("Cisco Systems, Inc.", "CSCO", "Cisco Awards $50,000 Grant to Local Nonprofit Partnership"),
+        ("Intel Corp.", "INTC", "Intel Signs $99,999,999 Supply Agreement"),
+    ):
+        tier, reasons = _tier(company, ticker, headline)
+        assert tier != NewsMaterialityTier.HIGH_SIGNAL, (headline, reasons)
+        assert not any(r.startswith(("definitive_transaction", "quantified_commitment")) for r in reasons), (headline, reasons)
+
+
+def test_editorial_lane_is_unchanged_by_the_recall_rules():
+    for headline in (
+        "Nvidia to acquire Hugging Face in $13 billion deal",
+        "AI data center investment to hit $1 trillion by 2030",
+    ):
+        _, reasons = classify_editorial_story(headline, "", SourceCategory.INDEPENDENT_NEWS)
+        assert not any(r.startswith(("definitive_transaction", "quantified_commitment", "production_milestone")) for r in reasons), headline
