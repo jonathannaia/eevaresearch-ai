@@ -189,7 +189,7 @@ def _render_latest_signals(feed) -> None:
         with head_cols[0]:
             st.markdown(
                 '<div class="er-split-head" style="margin:0;"><div class="er-section-label" style="margin:0;">Latest signals</div>'
-                f'{chip_html("High signal", "pos", dot=True)}</div>',
+                f'{chip_html("High signal", "high-signal", dot=True)}</div>',
                 unsafe_allow_html=True,
             )
         with head_cols[1]:

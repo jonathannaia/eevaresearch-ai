@@ -144,12 +144,12 @@ _SOURCE_CLASS_LABELS: dict[SourceClass, str] = {
 _SUBTITLE = "Material disclosures and developments across AI infrastructure and global technology supply chains."
 
 # Signals materiality classification (design/DECISIONS.md) — tier-based
-# presentation. Reuses the existing er-status-tag/er-tag-* badge system
-# (Research Theses' evidence-direction chips already established
-# pos/neg/mix as green/rose/amber) — no new CSS, no new design language.
+# presentation. Reuses the existing er-status-tag/er-tag-* badge system;
+# tier badges use the status classes (er-tag-high-signal / -watchlist),
+# never the evidence-direction ones Research Theses reserves.
 _TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
-    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-pos",
-    NewsMaterialityTier.WATCHLIST: "er-tag-mix",
+    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-high-signal",
+    NewsMaterialityTier.WATCHLIST: "er-tag-watchlist",
     NewsMaterialityTier.BACKGROUND: "er-tag-neutral",
 }
 _NO_HIGH_SIGNAL_EMPTY_STATE = "No High Signals match the current filters."

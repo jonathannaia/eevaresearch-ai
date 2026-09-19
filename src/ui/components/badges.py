@@ -64,7 +64,7 @@ def demo_badge(label: str = "Demo data") -> None:
 
 def direction_accent(direction: Direction) -> str:
     """'pos' / 'neg' / 'mix' — the restrained color bucket for this
-    direction, used to pick an er-glyph-*/er-rail-*/er-tag-* class."""
+    direction, used to pick an er-glyph-*/er-rail-* class."""
     return _DIRECTION_ACCENT.get(direction, "mix")
 
 

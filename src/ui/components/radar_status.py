@@ -48,12 +48,12 @@ _STATUS_BUCKET = {
     CandidateStatus.EXTRACTED: "info",
     CandidateStatus.TRANSLATION_PENDING: "info",
     CandidateStatus.TRANSLATED: "info",
-    CandidateStatus.NEEDS_REVIEW: "mix",
+    CandidateStatus.NEEDS_REVIEW: "attention",
     CandidateStatus.PROCESSING_DEFERRED: "neutral",
-    CandidateStatus.PARSE_FAILED: "neg",
-    CandidateStatus.RETRIEVAL_FAILED: "neg",
-    CandidateStatus.TRANSLATION_UNAVAILABLE: "neg",
-    CandidateStatus.PUBLISHED: "pos",
+    CandidateStatus.PARSE_FAILED: "attention",
+    CandidateStatus.RETRIEVAL_FAILED: "attention",
+    CandidateStatus.TRANSLATION_UNAVAILABLE: "attention",
+    CandidateStatus.PUBLISHED: "live",
     CandidateStatus.DISMISSED: "neutral",
     CandidateStatus.NOT_MATERIAL: "neutral",
     CandidateStatus.MONITORING: "neutral",
@@ -103,7 +103,7 @@ _SUPPRESSED_ON_DEFAULT_CARD = frozenset({
 })
 
 # The two genuine-failure statuses this phase gives a quiet, honest,
-# non-color-only note instead of the loud `er-tag-neg` pill. Reuses
+# non-color-only note instead of the bordered `er-tag-attention` pill. Reuses
 # evidence_chips.py's existing dashed/outline "uncertainty" treatment
 # (transparent background, muted text, dashed border — see
 # assets/styles.css) rather than a new visual system: this reads as
@@ -137,7 +137,7 @@ def translation_unavailable_tag_html(item: RadarItem) -> str | None:
     candidate whose excerpt translation failed (see retry_policy.py's
     module docstring for why this isn't a CandidateStatus value)."""
     if item.candidate is not None and item.candidate.translation_state == TranslationState.UNAVAILABLE:
-        return '<span class="er-status-tag er-tag-neg">Translation unavailable</span>'
+        return '<span class="er-status-tag er-tag-neutral">Translation unavailable</span>'
     return None
 
 
@@ -145,7 +145,7 @@ def review_needed_tag_html(item: RadarItem) -> str | None:
     """"Review needed" badge (design/DECISIONS.md) — reuses the same
     quiet, dashed "genuinely incomplete, not wrong" er-chip-uncertainty
     treatment already established for RETRIEVAL_FAILURE_NOTE above,
-    never the loud er-tag-neg pill this codebase reserves for genuine
+    never the bordered er-tag-attention pill this codebase reserves for genuine
     failures. Pure passthrough of filing_display.review_needed()'s own
     determination — see that function's own docstring for exactly what
     triggers it and why. Works identically for a bare "New filing" (no

@@ -56,8 +56,8 @@ _DEFAULT_BADGE_LABEL = "Market news"
 # discipline — the issuer page importing FROM this module, not the
 # reverse, is the one direction already established).
 _TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
-    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-pos",
-    NewsMaterialityTier.WATCHLIST: "er-tag-mix",
+    NewsMaterialityTier.HIGH_SIGNAL: "er-tag-high-signal",
+    NewsMaterialityTier.WATCHLIST: "er-tag-watchlist",
     NewsMaterialityTier.BACKGROUND: "er-tag-neutral",
 }
 

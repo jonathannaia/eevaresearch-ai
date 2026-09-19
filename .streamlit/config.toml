@@ -1,41 +1,13 @@
 [theme]
-# Redesign v2 (design/redesign-v2): same theme keys, values re-mapped
-# to the v2 palette that assets/styles.css's :root now carries — see that
-# file's header for the reconciliation. secondaryBackgroundColor = the
-# --surface-hover step; borders = --border (card); code = --surface-input.
-#
-# Midnight Teal institutional-research pass (visual-hierarchy-and-token
-# pass only — no navigation/data/feature/architecture change) — a full
-# replacement of the prior application-shell dark/indigo palette, not an
-# additive layer. Same theme keys as before, values re-mapped to a
-# midnight-teal-slate palette with one consistent teal accent.
-# secondaryBackgroundColor drives most native widget chrome (text
-# inputs, selectboxes, dataframe headers) — mapped to assets/styles.css's
-# --surface-hover token (the "input/table surface" tone one step up from
-# page background), distinct from card surfaces (--surface, handled by
-# assets/styles.css via custom-classed containers). borderColor/
-# dataframeBorderColor use assets/styles.css's --border value (#263137)
-# — deliberately quiet, not held to the old 3:1 non-text-contrast floor
-# (see that token's own :root comment): "reduce excessive card-border
-# visibility" is the explicit direction for this pass, applied
-# consistently to native-widget borders too, not just custom cards.
-base = "dark"
-
-primaryColor = "#6FD3BC"
-backgroundColor = "#0B0C0E"
-secondaryBackgroundColor = "#171A1E"
-textColor = "#E8EAEC"
-
-linkColor = "#7DD8C2"
-linkUnderline = false
-
-borderColor = "#22252A"
-dataframeBorderColor = "#22252A"
-dataframeHeaderBackgroundColor = "#121417"
-
-codeTextColor = "#E8EAEC"
-codeBackgroundColor = "#0F1113"
-
+# Native Streamlit widget theme. Colors are a generated mirror of
+# src/ui/theme_tokens.py (the single source of truth) and are
+# parity-checked by tests/test_theme_tokens.py; edit the tokens there,
+# never a color here. Keys in this [theme] section are shared by both
+# [theme.dark] and [theme.light] (Streamlit merges them, the per-theme
+# section wins). With both sections present Streamlit offers
+# System / Light / Dark natively and defaults to System, and each section's
+# backgroundColor equals that theme's --bg so the canvas Streamlit paints
+# before the app's own CSS arrives is already the right color.
 font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
 headingFont = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
 codeFont = "Geist Mono:https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
@@ -46,8 +18,39 @@ headingFontWeights = [600, 600, 600, 600, 600, 600]
 baseRadius = "small"
 buttonRadius = "small"
 
+linkUnderline = false
 showWidgetBorder = true
 showSidebarBorder = false
+
+[theme.dark]
+primaryColor = "#8AA8E0"
+backgroundColor = "#111110"
+secondaryBackgroundColor = "#22211E"
+textColor = "#ECE9E4"
+linkColor = "#9DB6EA"
+borderColor = "#2A2825"
+dataframeBorderColor = "#2A2825"
+dataframeHeaderBackgroundColor = "#1A1917"
+codeTextColor = "#ECE9E4"
+codeBackgroundColor = "#161513"
+
+[theme.dark.sidebar]
+backgroundColor = "#141412"
+
+[theme.light]
+primaryColor = "#23386E"
+backgroundColor = "#F6F4EF"
+secondaryBackgroundColor = "#F0EDE6"
+textColor = "#1C1B19"
+linkColor = "#2F4F9E"
+borderColor = "#E2DED5"
+dataframeBorderColor = "#E2DED5"
+dataframeHeaderBackgroundColor = "#FCFBF8"
+codeTextColor = "#1C1B19"
+codeBackgroundColor = "#FFFFFF"
+
+[theme.light.sidebar]
+backgroundColor = "#EFECE5"
 
 [server]
 headless = true

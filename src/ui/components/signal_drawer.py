@@ -94,7 +94,7 @@ def open_signal_drawer(signal: Signal, evidence_repository=None) -> None:
 
         st.markdown(
             f'<div class="er-section-label">Contrary evidence</div>'
-            f'<div style="background:rgba(255,255,255,.025); padding:0.6rem 0.75rem; border-radius:var(--r-sm);">'
+            f'<div style="background:var(--surface-input); padding:0.6rem 0.75rem; border-radius:var(--r-sm);">'
             f'{signal.contrary_evidence or "None recorded."}</div>',
             unsafe_allow_html=True,
         )

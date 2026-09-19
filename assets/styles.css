@@ -1,211 +1,40 @@
-/* EevaResearch — consolidated stylesheet (UI restructure, design/eevaresearch-brief.md
-   + design/DECISIONS.md's UX-refinement iteration). Single source of truth
-   for all app styling, loaded once via src/ui/ui.py::load_css(). No inline
-   <style> blocks anywhere else.
+/* EevaResearch — consolidated stylesheet. Single source of truth for all
+   app styling, injected once per render by src/ui/ui.py::load_css().
+   No inline <style> blocks anywhere else.
 
-   Light editorial visual-theme redesign (design/DECISIONS.md): a full
-   replacement of the shared token system, not an additive layer over the
-   prior midnight-navy pass (commit 6e34c76) — every background/text/
-   border/accent token below is redefined for a white-card, off-white-page
-   editorial look with a midnight-blue primary action. Layout, components,
-   copy, and the pill/glow button *mechanics* are unchanged; only the color
-   values feeding them moved. Verified against WCAG contrast math at
-   redesign time: primary text ≥16:1, secondary text ≥9.4:1, muted text
-   ≥4.5:1 (once panel-appropriate — see the --text-muted/--text-muted note below),
-   and the three status accents (green/amber/rose) ≥4.4:1 against every
-   surface tone below — all clear of the 4.5:1 (normal text) / 3:1 (UI
-   controls, focus indicators) AA minimums this pass targets. Two values
-   were nudged slightly off their literally-specified hex to actually clear
-   3:1 (the functional border) — see that token's own comment for the
-   before/after math; this is called out again in the redesign's commit
-   message and PR-facing report, not just here.
+   Theming + Typography release (Dark / Light): every color below is a
+   semantic custom property. The values live in exactly one place,
+   src/ui/theme_tokens.py, which load_css() renders ahead of this file for
+   the resolved theme (Dark, Light, or System via prefers-color-scheme,
+   with an explicit data-theme stamp on <html> always winning). This file
+   never contains a color literal — tests/test_no_hardcoded_colors.py
+   enforces that — so every rule here re-colors in place when the theme
+   changes, with no second palette to keep in sync.
 
-   Direction color (added in the UX-refinement pass, explicitly approved as
-   NOT a reversal of the black/white system): green/amber/rose are
-   restrained SEMANTIC accents only — small dots, thin rails, small arrows,
-   subtle metric accents, compact status tags, tiny chart-state markers.
-   Never large card backgrounds, never bright/neon, never colored headings,
-   never decorative. Glyph + text-weight still carry direction on their own;
-   color is an additional accent, not a replacement. Darker/more saturated
-   than a pastel would be, specifically so they still read as text-weight
-   (4.5:1+) when used as chip/glyph foreground, not just as a 3:1 dot fill.
-
-   Motion is restricted to two instances (breadth-bar fill, live-status-dot
-   pulse), both gated by prefers-reduced-motion.
-
-   Modern editorial redesign (design/DECISIONS.md, user-approved preview) —
-   a second full token replacement, same "layout/components/copy/mechanics
-   unchanged, only the values feeding them moved" discipline as the pass
-   above: white cards with a visible 1px border (previously borderless,
-   separated by surface value only — now separated by an actual border
-   per the approved Linear/Notion-style direction), indigo-600 accent
-   replacing the previous midnight-blue, Inter loaded for real via Google
-   Fonts (previously specified but never actually fetched, silently
-   falling back to the browser's own sans-serif). Every component below
-   that reads these tokens (cards, buttons, chips, sidebar, focus rings)
-   picks up the new look automatically; only the handful of rules noted
-   inline (card border/hover behavior, button radius, sidebar width) are
-   direct rule edits rather than pure token swaps, since those describe
-   different *shapes*, not just different colors.
-
-   Application-shell dark/dim pass (design/DECISIONS.md, Perplexity-
-   inspired sidebar layout — narrowly scoped to the app shell, not a full
-   redesign) — a third full token replacement: near-black/slate surfaces,
-   muted-but-readable secondary text, one consistent indigo-400 accent.
-   Retired by the pass below — kept here only as
-   prior-generation history, same convention this header comment has
-   followed for every earlier pass.
-
-   Midnight Teal institutional-research pass (design/DECISIONS.md,
-   visual-hierarchy-and-token pass only — no navigation/data/feature/
-   architecture change) — a fourth full token replacement, and the first
-   in this file's history to also rename several tokens (not just
-   revalue them): --hairline/--hairline-2 become --border-soft/--border,
-   --text-2 becomes --text-secondary, --text-3/--text-4 (always-equal
-   duplicates) collapse into the single --text-muted, --surface-2/
-   --surface-3 become --surface-hover/--surface-active, and --pos/--neg/
-   --mix become --positive/--negative/--warning — clearer names for the
-   same roles, applied as one mechanical rename across every usage in
-   this file (never a second, parallel token vocabulary). One genuinely
-   new role is added: --info/--info-dim, for the one existing neutral
-   "info" status-tag variant that previously had no color of its own.
-
-   Every base/text/accent/semantic value below was specified directly;
-   every value derived here (--invert-bg/--invert-bg-hover, the nudged
-   --text-muted, --glow, and every *-dim tint) was chosen or adjusted
-   using the exact same WCAG relative-luminance/contrast-ratio math this
-   file's test suite already uses (tests/test_visual_theme_redesign.py,
-   revised in place again for this palette — same "full replacement,
-   same test names/shape, new expected values" discipline as every prior
-   pass). Two adjustments from the literally-specified values, both
-   disclosed here and in the test file:
-     - --text-muted (#788583 as given) measures only 4.06:1-4.45:1
-       against --surface/--surface-hover — under the 4.5:1 AA normal-text
-       floor. Nudged lighter (4.65:1 in the worst case) —
-       same "nudge the minimum amount needed, disclose it" precedent
-       every earlier pass in this file has used at least once.
-     - --border/--border-soft (as given) are used
-       exactly as specified, NOT nudged for 3:1 — both measure well under
-       3:1 against every surface (a deliberate, requested outcome: "reduce
-       excessive card-border visibility" needs a genuinely quiet border,
-       not one held to the old functional-boundary contrast floor).
-       Card/panel dividers were never the surface WCAG's 1.4.11 non-text-
-       contrast rule protects (that's for a control whose boundary is the
-       *only* way to perceive it, e.g. a plain input) — this file already
-       carried that exact exemption for --hairline before this pass (see
-       its own now-superseded comment, kept in git history); it now
-       applies to both border tokens. The one place a boundary must still
-       be reliably perceivable regardless — interactive-control focus —
-       is carried entirely by --focus (an --accent copy, ≥6.2:1 against
-       every surface, ≥3:1 UI-control floor cleared many times over), not
-       by --border's own contrast.
-   No gradients were introduced anywhere in this pass — the existing
-   primary-CTA "glow" (a box-shadow blur, not a background-image
-   gradient) is retinted, not restructured. Layout, copy, and button/
-   chip *mechanics* are otherwise unchanged; only the color values
-   feeding them moved, plus the handful of structural rules this pass
-   touches directly for surface-hierarchy/density (nav active-state left
-   accent bar, card-border/pill-radius reduction, dashboard row density) —
-   each documented at its own rule below, never scattered inline. */
+   Roles (see theme_tokens.py for the full contract):
+     --accent / --link        interactive elements only, never evidence;
+     --ev-*                   evidence meaning only (Supports / Mixed /
+                              Contradicts / Context), as dots, bars, rails,
+                              borders and tints — never as text;
+     --cat-*                  the four taxonomy categories, dots/bars only;
+     --live, --high-signal-*  status;
+     --venue-*                filing-venue badges (tint + text);
+     --surface-hover/-pressed, --accent-hover/-pressed, --focus-ring,
+     --*-tint                 derived with color-mix() from the tokens
+                              above, never given colors of their own.
+   No gradients, glows, or theme-transition animations anywhere. */
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Noto+Serif+KR:wght@400;600&display=swap');
 
-/* Redesign v2 (design/redesign-v2, dashboard/filings/signals/theses) — a
-   fifth full token re-valuation of this same single layer, following
-   the exact discipline every earlier pass in this file's header used:
-   every existing token keeps its NAME and ROLE and only its VALUE moves
-   (no second, parallel vocabulary), and the only genuinely new tokens
-   are roles the v2 system names that had no counterpart here before
-   (--border-shell, --text-label, --context, the four --theme-* hues).
-   Values are the v2 spec's literally, with two derived tokens
-   (--surface-hover/--surface-active — the spec names an inset and an
-   active-nav surface but no generic hover/pressed step; these are the
-   next two luminance steps above --surface, verified strictly
-   increasing) and one deliberate scope restriction disclosed here and
-   in tests/test_visual_theme_redesign.py: --text-label (#7A8089 as
-   specified) measures 4.64:1/4.75:1/4.92:1 on --surface/--rail/--bg but
-   only 4.39:1/4.11:1 on --surface-hover/--surface-active — so it is
-   used ONLY for small uppercase labels on canvas/sidebar/card surfaces,
-   never on a hover/pressed surface, and --text-muted (#9197A0, ≥5.57:1
-   everywhere) stays the general muted-text tier. Card/shell/row borders
-   are deliberately quiet (<3:1) exactly as the prior pass's header
-   argues; the focus ring (--focus, ≥9:1) carries interactive-boundary
-   contrast on its own. The primary CTA is now the accent itself with a
-   near-black label (--invert-fg #06110E on --invert-bg #6FD3BC,
-   10.71:1), so --invert-bg/--accent coincide by design for the first
-   time — kept as two tokens because they still have two roles (fill vs.
-   text/icon accent) and every rule below reads the role it means.
-   Fonts: Geist (UI) / Geist Mono (timestamps, tickers, codes, counts,
-   uppercase labels) / Source Serif 4 (verbatim excerpts, thesis titles
-   and key questions) with Noto Serif KR as the Korean serif fallback —
-   loaded through the same Google Fonts mechanism .streamlit/config.toml
-   already used for Inter/JetBrains Mono, no new dependency class. No
-   gradient anywhere; the primary-CTA glow stays a box-shadow blur,
-   retinted to the accent hue. Radii: 14px cards / 9px controls / 6px
-   chips (--r-lg/--r-md/--r-sm). */
+/* Non-color tokens. Color tokens: src/ui/theme_tokens.py. */
 :root {
-    /* Surfaces — v2 ladder (strictly increasing luminance, verified in
-       tests): canvas < sidebar < card < hover < active. The sidebar is
-       now one step LIGHTER than the canvas (the reverse of the prior
-       pass), per the v2 shell. --surface-input is the v2 inset surface. */
-    --bg: #0B0C0E;
-    --rail: #0F1113;
-    --surface: #121417;
-    --surface-hover: #171A1E;
-    --surface-active: #1C2025;
-    --surface-input: #0F1113;
-    /* Borders — row divider < shell border < card border, all quiet. */
-    --border-soft: #1B1E22;
-    --border-shell: #1D2024;
-    --border: #22252A;
-    --card-border-hover: #2C3036;
-    --text: #E8EAEC;
-    --text-secondary: #B9BEC5;
-    --text-muted: #9197A0;
-    /* Small uppercase labels on canvas/sidebar/card only — see header. */
-    --text-label: #7A8089;
-    /* Primary CTA: accent fill, near-black label (10.71:1). */
-    --invert-bg: #6FD3BC;
-    --invert-bg-hover: #A8EBDA;
-    --invert-fg: #06110E;
-    --glow: rgba(111, 211, 188, .28);
-    --accent: #6FD3BC;
-    --accent-hover: #A8EBDA;
-    /* Active-nav surface (v2 "Active nav" #15201D) — the same tinted-
-       fill role this token has always had; an opaque value now rather
-       than an alpha wash, so it composites identically on every surface. */
-    --accent-soft: #15201D;
-    --focus: #6FD3BC;
-    --link: #7DD8C2;
-    --link-hover: #A8EBDA;
     --r-sm: 6px;
     --r-md: 9px;
     --r-lg: 14px;
     --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono: "Geist Mono", "SFMono-Regular", Menlo, monospace;
     --font-serif: "Source Serif 4", "Noto Serif KR", "Noto Serif JP", Georgia, serif;
-    /* Semantic accents — v2 Supports / Mixed / Contradicts, same
-       restrained-use policy as before (dots, rails, bars, compact tags;
-       never large fills). --context is the fourth evidence direction: a
-       neutral bar/dot fill only, never a text color (1.85:1). Every *-dim
-       tint mixes its hue into --surface at .16 alpha; text-on-own-tint
-       verified ≥5.06:1 for all four (tests/test_visual_theme_redesign.py). */
-    --positive: #5FC88A;
-    --positive-dim: rgba(95, 200, 138, .16);
-    --negative: #E07A6F;
-    --negative-dim: rgba(224, 122, 111, .16);
-    --warning: #E0B060;
-    --warning-dim: rgba(224, 176, 96, .16);
-    --info: #8FB4E8;
-    --info-dim: rgba(143, 180, 232, .16);
-    --context: #3E434A;
-    /* Theme hues (v2) — swatch/dot/bar fills for the four taxonomy
-       themes only; text always stays a --text-* token. */
-    --theme-ai-buildout: #6FD3BC;
-    --theme-memory: #8FB4E8;
-    --theme-space: #C9A0E8;
-    --theme-photonics: #E0B060;
-    /* Spacing rhythm — unchanged scale; page padding 36–40px and section
-       gap 16–24px map onto --space-7/--space-4..5. */
+    /* Spacing rhythm; page padding 36–40px and section gap 16–24px map
+       onto --space-7/--space-4..5. */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -277,26 +106,20 @@
 }
 [data-testid="stSidebarCollapseButton"] button:hover,
 [data-testid="stExpandSidebarButton"]:hover {
-    background: var(--surface-active) !important;
+    background: var(--surface-pressed) !important;
     border-color: var(--accent) !important;
 }
 
 html, body, [class*="css"] { font-family: var(--font-ui); }
 h1, h2, h3 { font-family: var(--font-ui); letter-spacing: -0.006em; color: var(--text); }
 p, li, span, div { letter-spacing: -0.006em; }
-/* Accessible link color (6.4-6.7:1 against every surface) for any plain
+/* Accessible link color (≥4.5:1 on every surface, both themes) for any plain
    content link — every nav/button/pill <a> above has its own higher-
    specificity and/or !important color rule elsewhere in this file and
    wins the cascade regardless, so this only reaches genuinely plain,
    unclassed anchors (e.g. native markdown-syntax links). */
 a { color: var(--link); }
-/* Midnight Teal pass: --accent-hover is now a genuine text-hover-
-   brighten shade (lighter than --accent, 7.68:1 against every surface —
-   see its own :root comment) — restored to its natural role here, one
-   pass after the prior palette's own --accent-hover (a dark button-fill
-   color under a different meaning) had to redirect this rule to plain
-   --accent instead. */
-a:hover { color: var(--accent-hover); }
+a:hover { color: var(--link-hover); }
 
 /* ---------- type scale ---------- */
 .er-eyebrow {
@@ -340,7 +163,7 @@ a:hover { color: var(--accent-hover); }
 
 /* ---------- footer ---------- */
 .er-footer {
-    margin-top: var(--space-8); padding-top: var(--space-5); border-top: 1px solid var(--border-soft);
+    margin-top: var(--space-8); padding-top: var(--space-5); border-top: 1px solid var(--border-subtle);
     color: var(--text-muted); font-size: 0.78rem; line-height: 1.6;
 }
 .er-footer .er-footer-version { font-family: var(--font-mono); margin-top: var(--space-2); }
@@ -351,7 +174,7 @@ a:hover { color: var(--accent-hover); }
 .er-footer-compact { margin-top: var(--space-6); padding-top: var(--space-4); }
 
 /* ---------- rows (catalyst timeline etc.) ---------- */
-.er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; }
+.er-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; }
 .er-row:last-child { border-bottom: none; }
 /* Recently Updated detached-translation-control fix (design/DECISIONS.md):
    each row's markdown content and its own (optional) translate action/
@@ -362,7 +185,7 @@ a:hover { color: var(--accent-hover); }
    suppressed only inside this wrapper (its base rule above is untouched,
    still used as-is by regional_brief.py/cards.py elsewhere). */
 [class*="st-key-card-recently-updated-row-"] .er-row { border-bottom: none; }
-[class*="st-key-card-recently-updated-row-"] { border-bottom: 1px solid var(--border-soft); }
+[class*="st-key-card-recently-updated-row-"] { border-bottom: 1px solid var(--border-subtle); }
 [class*="st-key-card-recently-updated-row-"]:last-child { border-bottom: none; }
 /* Narrowly targeted override, same pattern as .st-key-cta-tertiary-clear-
    watchlist-filter above: this row's own translate action/toggle sits
@@ -433,24 +256,24 @@ a:hover { color: var(--accent-hover); }
    x-position across rows, regardless of "Sep 5" vs "Dec 25" width. */
 .er-date-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 92px; background: var(--surface-hover); border: 1px solid var(--border-soft);
+    min-width: 92px; background: var(--surface-chip); border: 1px solid var(--border-subtle);
     border-radius: 4px; padding: 0.15rem var(--space-2); font-size: 0.75rem; white-space: nowrap;
 }
 
-/* ---------- direction: glyph + text-weight, with a restrained color accent
-   on the glyph only (UX-refinement pass — see :root note). The label text
-   itself stays neutral; only the small glyph carries the semantic hue. ---------- */
+/* ---------- direction: glyph + text-weight, with a restrained evidence hue
+   on the glyph only. The label text itself stays neutral; the glyph is a
+   non-text indicator whose meaning the adjacent label always carries. ---------- */
 .er-dir { font-weight: 600; color: var(--text); }
 .er-dir.er-dir-weakening, .er-dir.er-dir-mixed { font-weight: 400; color: var(--text-muted); }
 .er-dir-glyph { margin-right: 0.3rem; font-weight: 700; }
-.er-dir-glyph.er-glyph-pos { color: var(--positive); }
-.er-dir-glyph.er-glyph-neg { color: var(--negative); }
-.er-dir-glyph.er-glyph-mix { color: var(--warning); }
+.er-dir-glyph.er-glyph-pos { color: var(--ev-supports); }
+.er-dir-glyph.er-glyph-neg { color: var(--ev-contradicts); }
+.er-dir-glyph.er-glyph-mix { color: var(--ev-mixed); }
 
 /* Thin left rail on a card — a restrained accent, not a filled background. */
-.er-rail-pos { border-left: 2px solid var(--positive); }
-.er-rail-neg { border-left: 2px solid var(--negative); }
-.er-rail-mix { border-left: 2px solid var(--warning); }
+.er-rail-pos { border-left: 2px solid var(--ev-supports); }
+.er-rail-neg { border-left: 2px solid var(--ev-contradicts); }
+.er-rail-mix { border-left: 2px solid var(--ev-mixed); }
 
 /* Compact status tag — small label, tinted background, for tight spaces
    (Theme Health cards, chart-state markers). Midnight Teal pass: radius
@@ -461,16 +284,28 @@ a:hover { color: var(--accent-hover); }
     display: inline-flex; align-items: center; gap: 0.3rem;
     font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: var(--r-sm);
 }
-.er-status-tag.er-tag-pos { background: var(--positive-dim); color: var(--positive); }
-.er-status-tag.er-tag-neg { background: var(--negative-dim); color: var(--negative); }
-.er-status-tag.er-tag-mix { background: var(--warning-dim); color: var(--warning); }
-/* Neutral bucket for Radar Inbox's status vocabulary (New filing /
-   Processing deferred / Dismissed, and Candidate signal) — built from
-   existing neutral tokens, no accent hue. The "info" bucket (Midnight
-   Teal pass) now uses the new --info semantic token, its first real
-   call site — previously plain neutral gray with no color of its own. */
-.er-status-tag.er-tag-neutral { background: var(--surface-hover); color: var(--text-muted); }
-.er-status-tag.er-tag-info { background: var(--info-dim); color: var(--info); border: 1px solid transparent; }
+/* Status tags (workflow and tier states) — neutral text on a neutral or
+   status tint; never an evidence hue. */
+.er-status-tag.er-tag-neutral { background: var(--surface-chip); color: var(--text-secondary); }
+.er-status-tag.er-tag-info { background: var(--selected-bg); color: var(--text); border: 1px solid var(--selected-ring); }
+.er-status-tag.er-tag-watchlist,
+.er-status-tag.er-tag-attention { background: var(--surface-chip); color: var(--text); border: 1px solid var(--border-strong); }
+.er-status-tag.er-tag-high-signal { background: var(--high-signal-bg); color: var(--high-signal-text); }
+.er-status-tag.er-tag-live { background: var(--surface-chip); color: var(--text); }
+.er-status-tag.er-tag-live::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--live); display: inline-block;
+}
+/* Evidence-direction tags (Research Theses) — the evidence hue is a dot
+   and a faint tint; the label itself stays --text in both themes. */
+.er-status-tag.er-tag-ev-supports { background: var(--ev-supports-tint); color: var(--text); }
+.er-status-tag.er-tag-ev-mixed { background: var(--ev-mixed-tint); color: var(--text); }
+.er-status-tag.er-tag-ev-contradicts { background: var(--ev-contradicts-tint); color: var(--text); }
+.er-status-tag[class*="er-tag-ev-"]::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+}
+.er-status-tag.er-tag-ev-supports::before { background: var(--ev-supports); }
+.er-status-tag.er-tag-ev-mixed::before { background: var(--ev-mixed); }
+.er-status-tag.er-tag-ev-contradicts::before { background: var(--ev-contradicts); }
 
 /* Small mono order marker ("01", "02"...) — Priority Signals only, a
    restrained way to read the row as ranked rather than an arbitrary list. */
@@ -479,39 +314,33 @@ a:hover { color: var(--accent-hover); }
     display: inline-block; min-width: 1.5em;
 }
 
-/* "Moving against thesis" warning treatment (final polish pass) — a muted
-   rose left rail + tinted background (the same --negative-dim tint already used
-   for status-tag pills elsewhere, so this isn't a new color, just a new
-   application of it) plus a small rose dot on the label. Deliberately NOT
-   tiny low-contrast rose text alone: the label is rose, but the quoted
-   invalidation note itself renders in --text (near-white) so it stays
-   readable at any width, and the tint stays restrained rather than a large
-   bright warning block. */
+/* "Moving against thesis" callout — a Contradicts-hue left rail, a faint
+   Contradicts tint, and a small Contradicts dot on the label. The label
+   and the quoted invalidation note both stay --text, so nothing depends
+   on reading a hue as text in either theme. */
 .er-alert-neg {
-    border-left: 3px solid var(--negative); background: var(--negative-dim);
+    border-left: 3px solid var(--ev-contradicts); background: var(--ev-contradicts-tint);
     border-radius: var(--r-sm); padding: var(--space-3) var(--space-4);
 }
 .er-alert-neg-label {
     display: inline-flex; align-items: center; gap: var(--space-1);
-    color: var(--negative); font-weight: 600; font-size: 0.8rem;
+    color: var(--text); font-weight: 600; font-size: 0.8rem;
 }
 .er-alert-neg-label::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--negative); display: inline-block; flex-shrink: 0;
+    background: var(--ev-contradicts); display: inline-block; flex-shrink: 0;
 }
 .er-alert-neg-note { color: var(--text); font-size: 0.85rem; margin-top: var(--space-1); line-height: 1.5; }
 
 /* ---------- sidebar rail ---------- */
-/* Modern editorial redesign: fixed 240px width (previously unset,
-   Streamlit's own resizable default) and white background (--rail is
-   now the same white as --surface, separated only by the existing
-   border-right) — the approved preview's exact sidebar spec. Width/
+/* Fixed sidebar width on its own --bg-sidebar surface, separated from
+   the canvas by a --border-strong right edge. Width/
    min-width/max-width all pinned so Streamlit's own sidebar-resize drag
    handle can't widen/narrow it away from the approved measurement;
    collapse/expand (a visibility toggle, not a width one) is unaffected. */
 [data-testid="stSidebar"] {
-    background: var(--rail) !important;
-    border-right: 1px solid var(--border-shell);
+    background: var(--bg-sidebar) !important;
+    border-right: 1px solid var(--border-strong);
     width: 248px !important; min-width: 248px !important; max-width: 248px !important;
 }
 /* Application-shell dark/dim pass (Perplexity-inspired layout): this is
@@ -539,7 +368,7 @@ a:hover { color: var(--accent-hover); }
    own docstring/comments in src/ui/ui.py). */
 .er-rail-brand {
     display: flex; align-items: center; gap: 0.4rem;
-    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--border-shell);
+    padding: 0.25rem 0.25rem 1rem 0.25rem; border-bottom: 1px solid var(--border-strong);
     margin-bottom: 1rem;
 }
 .er-rail-brand > div[data-testid="stHorizontalBlock"] { width: 100%; align-items: center; }
@@ -614,7 +443,7 @@ a:hover { color: var(--accent-hover); }
    (src/ui/ui.py::render_sidebar()) — a real ancestor of the page_link in
    every case. */
 [class*="st-key-navitem-"][class*="-active"] [data-testid="stPageLink"] a {
-    background: var(--accent-soft); color: var(--accent) !important; font-weight: 600;
+    background: var(--nav-active-bg); color: var(--accent) !important; font-weight: 600;
     border-left: 2px solid var(--accent);
 }
 
@@ -622,43 +451,40 @@ a:hover { color: var(--accent-hover); }
    a small line icon before each Workspace item's label, CSS-only (no
    Python/page_link restructuring: st.page_link's own label is plain
    text and can't carry an icon itself, so each icon is a ::before
-   background-image on the link, keyed off the existing per-item
+   mask on the link painted with a token (--text-muted at rest, --accent
+   when active), keyed off the existing per-item
    st.container(key=f"navitem-{key}") wrapper class already used for the
    active-state styling above — nothing about that container's own
-   purpose or the page_link mechanism changes). Muted gray by default,
-   switching to teal only when that same container's key carries the
-   "-active" suffix (see the active-state rule and its own comment,
-   just above). */
+   purpose or the page_link mechanism changes). Each icon's SVG is only a
+   shape (stroke="currentColor", read as an alpha mask); its color comes
+   from background-color, so it follows the theme like any other rule. */
 [class*="st-key-navitem-"] [data-testid="stPageLink"] a {
     display: flex !important; align-items: center; gap: 10px;
 }
 [class*="st-key-navitem-"] [data-testid="stPageLink"] a::before {
     content: ""; width: 16px; height: 16px; flex-shrink: 0;
-    background-repeat: no-repeat; background-position: center; background-size: contain;
+    background-color: var(--text-muted);
+    -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-mask-size: contain;
+    mask-repeat: no-repeat; mask-position: center; mask-size: contain;
+}
+[class*="st-key-navitem-"][class*="-active"] [data-testid="stPageLink"] a::before {
+    background-color: var(--accent);
 }
 .st-key-navitem-dashboard [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-dashboard-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-radar_inbox-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-daily_news-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-themes [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-themes-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
 .er-rail-status {
     display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono);
@@ -679,7 +505,7 @@ a:hover { color: var(--accent-hover); }
    carries forward from it here. */
 .er-rail-account {
     margin-top: auto; padding-top: var(--space-3);
-    border-top: 1px solid var(--border-shell);
+    border-top: 1px solid var(--border-strong);
 }
 /* Avatar popover trigger — a plain st.popover button restyled into a
    circular avatar. Scoped to the sidebar-account-* container key prefix
@@ -687,19 +513,19 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-sidebar-account-"] [data-testid="stPopoverButton"],
 [class*="st-key-sidebar-account-"] [data-testid="stBaseButton-secondary"] {
     width: 32px !important; height: 32px !important; border-radius: 50% !important;
-    background: var(--accent) !important; color: var(--invert-fg) !important;
+    background: var(--accent) !important; color: var(--accent-contrast) !important;
     font-weight: 600 !important; padding: 0 !important; border: none !important;
     display: flex !important; align-items: center; justify-content: center;
 }
-.er-rail-account-email { font-size: 0.8rem; color: var(--text-secondary); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--border-soft); margin-bottom: 0.5rem; word-break: break-all; }
+.er-rail-account-email { font-size: 0.8rem; color: var(--text-secondary); padding: 0.2rem 0.1rem 0.6rem 0.1rem; border-bottom: 1px solid var(--border-subtle); margin-bottom: 0.5rem; word-break: break-all; }
 
 /* live-status dot (the one non-breadth-bar permitted motion instance) */
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--text-muted); }
-.dot.live { background: var(--positive); position: relative; }
+.dot.live { background: var(--live); position: relative; }
 @media (prefers-reduced-motion: no-preference) {
     .dot.live::after {
         content: ""; position: absolute; inset: -4px; border-radius: 50%;
-        border: 1px solid var(--glow); animation: dot-pulse 2.4s ease-out infinite;
+        border: 1px solid var(--live-ring); animation: dot-pulse 2.4s ease-out infinite;
     }
 }
 @keyframes dot-pulse {
@@ -711,9 +537,9 @@ a:hover { color: var(--accent-hover); }
    Key-prefix convention carried over from round 3: a wrapping
    st.container(key="cta-{tier}-...") gets a `st-key-{key}` class from
    Streamlit, matched here via substring attribute selector. primary =
-   solid invert fill + glow (one of the app's exactly three glow spots),
-   secondary = outlined pill, tertiary = ghost/text link. Full pill radius
-   per §5; no hover lift anywhere — the glow alone carries primary's state. */
+   solid --accent fill with --accent-contrast label, secondary = outlined,
+   tertiary = ghost/text link. No hover lift and no glow: hover and press
+   step the fill through --accent-hover / --accent-pressed. */
 /* Streamlit's own default gap between stacked sibling elements is small —
    noticeably smaller than the space already used between other groups —
    so a CTA sitting right under a paragraph or card description read as
@@ -740,43 +566,23 @@ a:hover { color: var(--accent-hover); }
 
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"] {
-    background: var(--invert-bg) !important; color: var(--invert-fg) !important;
-    /* Modern editorial redesign: 8px radius (--r-sm), not a full pill —
-       matches the approved preview's button shape. Small status chips/
-       badges elsewhere in this file stay pill-shaped on purpose (see
-       .er-chip/.er-status-tag/.er-fresh, untouched by this redesign);
-       only actual buttons changed shape. */
+    background: var(--accent) !important; color: var(--accent-contrast) !important;
     border: none !important; border-radius: var(--r-md) !important; font-weight: 600 !important;
-    /* Soft teal aura (not neon, and not a gradient — a box-shadow blur,
-       never a background-image): a thin teal-tinted ring, the --glow
-       blur (rgba(111,211,188,.28) — the accent hue, reused for the
-       live-status dot and breadth-bar leader, the app's other two glow
-       spots), and a teal-tinted drop shadow for depth. Ring/shadow rgb
-       triple (111,211,188) is --invert-bg's own value — kept as a literal
-       triple here (not var()) only because rgba() can't consume a hex
-       custom property directly; same value either way. */
-    box-shadow: 0 0 0 1px rgba(111,211,188,.25), 0 0 22px var(--glow), 0 2px 10px rgba(111,211,188,.14) !important;
-    transition: box-shadow .22s ease, background .18s ease;
+    box-shadow: none !important;
+    transition: background-color .18s ease;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:hover {
-    box-shadow: 0 0 0 1px rgba(168,235,218,.45), 0 0 26px rgba(111,211,188,.30), 0 4px 16px rgba(111,211,188,.18) !important;
-    background: var(--invert-bg-hover) !important;
+    background: var(--accent-hover) !important;
 }
-/* Restrained pressed state (beta UI polish pass) — a flatter, tighter
-   shadow than hover's glow (no added blur/elevation on press), same
-   --invert-bg-hover fill and same rgba(111,211,188,...) hue already used
-   above, just a smaller ring and no glow — reads as "pressed down,"
-   not "still hovering." No new color, no animation. */
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:active {
-    box-shadow: 0 0 0 1px rgba(168,235,218,.55) !important;
-    background: var(--invert-bg-hover) !important;
+    background: var(--accent-pressed) !important;
 }
 [class*="st-key-cta-primary-"] [data-testid="stPageLink"] a span,
-[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--invert-fg) !important; }
+[class*="st-key-cta-primary-"] [data-testid="stPageLink"] a p { color: var(--accent-contrast) !important; }
 [class*="st-key-cta-primary-"] [data-testid="stBaseButton-secondary"]:disabled {
-    background: var(--surface-active) !important; color: var(--text-muted) !important; box-shadow: none !important; cursor: not-allowed;
+    background: var(--surface-chip) !important; color: var(--text-muted) !important; box-shadow: none !important; cursor: not-allowed;
 }
 
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a,
@@ -789,13 +595,11 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:hover {
     border-color: var(--text-secondary) !important; background: var(--surface) !important;
 }
-/* Restrained pressed state (beta UI polish pass) — one step darker than
-   hover's --surface fill (the existing --surface-hover token, already used
-   elsewhere as the next elevation step, e.g. the shared card hover
-   rule above), same --text-secondary border as hover. No new color. */
+/* Pressed: the derived --surface-pressed step, same --text-secondary
+   border as hover. */
 [class*="st-key-cta-secondary-"] [data-testid="stPageLink"] a:active,
 [class*="st-key-cta-secondary-"] [data-testid="stBaseButton-secondary"]:active {
-    border-color: var(--text-secondary) !important; background: var(--surface-hover) !important;
+    border-color: var(--text-secondary) !important; background: var(--surface-pressed) !important;
 }
 /* Priority Signals' Review Evidence sits in a tight compact row inside a
    narrow column — shrink its footprint so it doesn't overpower the row
@@ -842,11 +646,9 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-cta-tertiary-"] [data-testid="stPageLink"] a:hover,
 [class*="st-key-cta-tertiary-"] [data-testid="stBaseButton-secondary"]:hover { color: var(--text) !important; }
 
-/* Focus ring uses the dedicated --focus token (#6FD3BC) rather than a
-   plain dark or muted-text color — well past the 3:1 AA minimum for a
-   focus indicator, and reads as an intentional accent ring rather than a
-   generic outline. */
-.btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: 3px; }
+/* Focus ring: --focus-ring, derived from --accent (≥3:1 against every
+   surface in both themes — tests/test_theme_tokens.py). */
+.btn:focus-visible, [data-testid="stBaseButton-secondary"]:focus-visible { outline: 2px solid var(--focus-ring) !important; outline-offset: 3px; }
 
 [data-testid="stPageLink"] a:focus-visible,
 [data-testid="stBaseButton-secondary"]:focus-visible,
@@ -857,7 +659,7 @@ a:hover { color: var(--accent-hover); }
 [data-baseweb="select"]:focus-within,
 [data-testid="stDateInput"] input:focus-visible,
 [data-testid="stChatInput"] textarea:focus-visible {
-    outline: 2px solid var(--focus) !important; outline-offset: 2px;
+    outline: 2px solid var(--focus-ring) !important; outline-offset: 2px;
 }
 /* stPopoverButton (the sidebar's circular account-avatar trigger,
    [class*="st-key-sidebar-account-"] rule above) carries only its own
@@ -896,10 +698,10 @@ a:hover { color: var(--accent-hover); }
 }
 /* Multiselect/select popover menu + selected-value tag chips. */
 [data-baseweb="popover"] [data-baseweb="menu"] {
-    background: var(--surface-hover) !important;
+    background: var(--surface) !important;
 }
 [data-baseweb="tag"] {
-    background: var(--surface-active) !important;
+    background: var(--surface-chip) !important;
     color: var(--text) !important;
 }
 [data-testid="stExpander"] {
@@ -908,22 +710,23 @@ a:hover { color: var(--accent-hover); }
     border-radius: var(--r-lg) !important;
 }
 [data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
-[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--border-soft) !important; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: 1px solid var(--border-subtle) !important; }
 [data-testid="stTabs"] [data-baseweb="tab"] { color: var(--text-secondary) !important; }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { color: var(--text) !important; }
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] { background-color: var(--accent) !important; }
 [data-testid="stDataFrame"] { border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; }
 /* The one native-primary-type button in the app (Radar Inbox's "Scan ...
-   now" — see module note above): explicit white-on-navy pairing matching
-   the custom primary-CTA pill, rather than relying on Streamlit's own
-   default text-color choice for a primary-type button. */
+   now" — see module note above): the same --accent / --accent-contrast
+   pairing as the custom primary CTA, rather than relying on Streamlit's
+   own default text-color choice for a primary-type button. */
 [data-testid="stBaseButton-primary"] {
-    background: var(--invert-bg) !important; color: var(--invert-fg) !important;
+    background: var(--accent) !important; color: var(--accent-contrast) !important;
     border: none !important;
 }
-[data-testid="stBaseButton-primary"]:hover { background: var(--invert-bg-hover) !important; }
+[data-testid="stBaseButton-primary"]:hover { background: var(--accent-hover) !important; }
+[data-testid="stBaseButton-primary"]:active { background: var(--accent-pressed) !important; }
 [data-testid="stBaseButton-primary"]:disabled {
-    background: var(--surface-active) !important; color: var(--text-muted) !important;
+    background: var(--surface-chip) !important; color: var(--text-muted) !important;
 }
 
 /* ---------- cards ----------
@@ -941,7 +744,7 @@ a:hover { color: var(--accent-hover); }
    again separated mostly by surface tone (--surface against --bg/
    --rail), with the border reading as a faint structural hint rather
    than a hard outline, directly per "reduce excessive card-border
-   visibility." Hover still darkens the border (--card-border-hover)
+   visibility." Hover steps the border up to --border-strong
    rather than changing the fill. Radius/padding/spacing scale are
    otherwise unchanged here — see the dashboard-recently-updated-only
    density/radius override further below for the one place this pass
@@ -955,7 +758,7 @@ a:hover { color: var(--accent-hover); }
     padding: var(--space-3) var(--space-4) !important;
 }
 [class*="st-key-card-"]:hover {
-    border-color: var(--card-border-hover) !important;
+    border-color: var(--border-strong) !important;
     box-shadow: none !important;
 }
 /* Subtheme/Map cards don't open anything (UX-refinement pass) — suppress
@@ -964,8 +767,8 @@ a:hover { color: var(--accent-hover); }
    border-based hover cue above; same intent, same scoped selector). */
 [class*="st-key-card-subtheme-"]:hover { border-color: var(--border) !important; box-shadow: none !important; }
 /* Dashboard's Today's Read (Phase C, editorial-simplicity pass) — the
-   page's one "primary" content well: same shared white card as every
-   other card above, plus a restrained indigo left-edge accent rule
+   page's one "primary" content well: same shared card as every
+   other card above, plus a restrained --accent left-edge rule
    marking it as the page's lead element. No new fill, gradient, or
    one-off visual system — one border-side on the existing card shape. */
 .st-key-card-todays-read { border-left: 3px solid var(--accent) !important; }
@@ -991,15 +794,11 @@ a:hover { color: var(--accent-hover); }
     font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
     padding: 0.15rem 0.55rem; border-radius: 999px; line-height: 1.5;
 }
-.er-chip-fact { background: var(--invert-bg); color: var(--invert-fg); cursor: pointer; }
-.er-chip-fact:hover { box-shadow: 0 0 0 1px var(--invert-bg); }
-/* Midnight Teal pass: retinted from a stray hardcoded navy rgba
-   literal (left over from an earlier light-card palette and never
-   actually a token reference) to --accent-soft — the same
-   translucent-tinted-wash role this rule always wanted, now sourced from
-   the one shared token every other soft-accent fill in the app already
-   reads from. */
-.er-chip-interpretation { background: var(--accent-soft); color: var(--text); }
+/* .er-chip-fact is the one inverted chip (--text fill, --bg label) — the
+   strongest neutral in either theme, never the interactive accent. */
+.er-chip-fact { background: var(--text); color: var(--bg); cursor: pointer; }
+.er-chip-fact:hover { box-shadow: 0 0 0 1px var(--text); }
+.er-chip-interpretation { background: var(--selected-bg); color: var(--text); }
 .er-chip-inference { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
 .er-chip-uncertainty { background: transparent; color: var(--text-secondary); border: 1px dashed var(--border); }
 
@@ -1033,16 +832,16 @@ a:hover { color: var(--accent-hover); }
 }
 .er-fresh-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; position: relative; }
 
-.er-fresh-live { background: var(--surface-hover); color: var(--text); }
-.er-fresh-live .er-fresh-dot { background: var(--text); }
+.er-fresh-live { background: var(--surface-chip); color: var(--text); }
+.er-fresh-live .er-fresh-dot { background: var(--live); }
 @media (prefers-reduced-motion: no-preference) {
     .er-fresh-live .er-fresh-dot::after {
         content: ""; position: absolute; inset: -4px; border-radius: 50%;
-        border: 1px solid var(--glow); animation: dot-pulse 2.4s ease-out infinite;
+        border: 1px solid var(--live-ring); animation: dot-pulse 2.4s ease-out infinite;
     }
 }
 
-.er-fresh-stale { background: var(--surface-active); color: var(--text); }
+.er-fresh-stale { background: var(--surface-chip); color: var(--text); border: 1px solid var(--border-strong); }
 .er-fresh-stale .er-fresh-dot { background: var(--text-secondary); box-shadow: 0 0 0 2px var(--border); }
 .er-fresh-retry {
     background: none; border: none; color: var(--text); text-decoration: underline;
@@ -1053,11 +852,10 @@ a:hover { color: var(--accent-hover); }
 .er-fresh-demo .er-fresh-dot { background: var(--text-muted); }
 
 /* ---------- breadth bars (the one data-driven motion instance) ----------
-   Leading theme's bar is --text with glow (one of the app's exactly three
-   glow spots); the rest are --text-muted (brief §9/§16). */
-.bar { height: 4px; background: var(--surface-active); border-radius: 2px; overflow: hidden; }
+   Leading theme's bar is --text; the rest are --text-muted (brief §9/§16). */
+.bar { height: 4px; background: var(--surface-chip); border-radius: 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--text-muted); width: var(--w, 0%); border-radius: 2px; }
-.bar i.leader { background: var(--text); box-shadow: 0 0 8px var(--glow); }
+.bar i.leader { background: var(--text); }
 @media (prefers-reduced-motion: no-preference) {
     .bar i { animation: fill .9s cubic-bezier(.22, .9, .3, 1) both; }
 }
@@ -1071,7 +869,7 @@ a:hover { color: var(--accent-hover); }
    motion; the breadth strip above is the one animated data bar. ---------- */
 .er-divbar-row { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; }
 .er-divbar-label { width: 130px; font-size: 0.78rem; color: var(--text-secondary); flex-shrink: 0; }
-.er-divbar-track { flex: 1; height: 6px; background: var(--surface-active); border-radius: 3px; position: relative; }
+.er-divbar-track { flex: 1; height: 6px; background: var(--surface-chip); border-radius: 3px; position: relative; }
 /* A clear neutral midpoint marker — deliberately stronger than the
    surrounding hairlines elsewhere in the app (usability follow-up: at
    --border it read as barely-there against the track). Still neutral
@@ -1083,11 +881,11 @@ a:hover { color: var(--accent-hover); }
 /* ---------- unread / last-seen divider ---------- */
 .er-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text); display: inline-block; margin-right: 0.4rem; }
 .er-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.9rem 0; color: var(--text-muted); font-size: 0.72rem; }
-.er-divider::before, .er-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+.er-divider::before, .er-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
 
 /* ---------- skeleton loading rows ---------- */
 .er-skel { background: var(--surface); border-radius: var(--r-sm); }
-.er-skel-line { height: 0.8rem; border-radius: 4px; background: var(--surface-hover); margin-bottom: 0.5rem; }
+.er-skel-line { height: 0.8rem; border-radius: 4px; background: var(--surface-chip); margin-bottom: 0.5rem; }
 @media (prefers-reduced-motion: no-preference) {
     /* 1.4s per brief §14 ("subtle shimmer, 1.4s") — the one motion
        instance outside §16's "exactly two" count, since it's explicitly
@@ -1119,7 +917,7 @@ a:hover { color: var(--accent-hover); }
 .er-hero-wrap { position: relative; padding: 2rem 0 1.5rem 0; overflow: hidden; }
 .er-hero-signal-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 .er-signal-path { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 6 10; }
-.er-signal-path-2 { stroke: var(--border-soft); }
+.er-signal-path-2 { stroke: var(--border-subtle); }
 .er-signal-node { fill: var(--text-muted); }
 .er-hero-watermark {
     position: absolute; top: 50%; right: -4%; transform: translateY(-50%);
@@ -1138,29 +936,31 @@ a:hover { color: var(--accent-hover); }
     display: inline-flex; align-items: center; font-family: var(--font-mono);
     font-size: 0.64rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
     padding: 0.1rem 0.45rem; border-radius: var(--r-sm); line-height: 1.6;
-    background: var(--surface-active); color: var(--text-secondary); border: 1px solid var(--border);
+    background: var(--surface-chip); color: var(--text-secondary); border: 1px solid var(--border);
 }
-.er-venue-edgar { background: var(--info-dim); color: var(--info); border-color: transparent; }
-.er-venue-dart { background: rgba(201, 160, 232, .16); color: var(--theme-space); border-color: transparent; }
-.er-venue-edinet { background: var(--positive-dim); color: var(--positive); border-color: transparent; }
+.er-venue-edgar { background: var(--venue-edgar-bg); color: var(--venue-edgar-text); border-color: transparent; }
+.er-venue-dart { background: var(--venue-dart-bg); color: var(--venue-dart-text); border-color: transparent; }
+.er-venue-edinet { background: var(--venue-edinet-bg); color: var(--venue-edinet-text); border-color: transparent; }
+.er-venue-tdnet { background: var(--venue-tdnet-bg); color: var(--venue-tdnet-text); border-color: transparent; }
+.er-venue-cninfo { background: var(--venue-cninfo-bg); color: var(--venue-cninfo-text); border-color: transparent; }
+.er-venue-hkex { background: var(--venue-hkex-bg); color: var(--venue-hkex-text); border-color: transparent; }
 .er-status-tag.er-tag-mono { font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.02em; }
-.er-status-tag.er-tag-theme { background: var(--surface-active); color: var(--text-secondary); border: 1px solid var(--border); }
-.er-status-tag.er-tag-accent { background: var(--accent-soft); color: var(--accent); }
+.er-status-tag.er-tag-theme { background: var(--surface-chip); color: var(--text-secondary); border: 1px solid var(--border); }
 .er-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
 .er-mono-muted { color: var(--text-muted); }
 .er-theme-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 0.45rem; background: var(--text-muted); vertical-align: middle; }
-.er-theme-ai-buildout { background: var(--theme-ai-buildout); }
-.er-theme-memory { background: var(--theme-memory); }
-.er-theme-space { background: var(--theme-space); }
-.er-theme-photonics { background: var(--theme-photonics); }
+.er-theme-ai-buildout { background: var(--cat-ai-buildout); }
+.er-theme-memory { background: var(--cat-memory); }
+.er-theme-space { background: var(--cat-space); }
+.er-theme-photonics { background: var(--cat-photonics); }
 /* Evidence bar — segments fill by real count; the track shows through
    when every count is zero. Context is a neutral fill, never text. */
-.er-evbar { display: flex; height: 6px; border-radius: 999px; background: var(--surface-active); overflow: hidden; gap: 2px; }
+.er-evbar { display: flex; height: 6px; border-radius: 999px; background: var(--surface-chip); overflow: hidden; gap: 2px; }
 .er-evbar-seg { display: block; height: 100%; }
-.er-ev-supports { background: var(--positive); }
-.er-ev-mixed { background: var(--warning); }
-.er-ev-contradicts { background: var(--negative); }
-.er-ev-context { background: var(--context); }
+.er-ev-supports { background: var(--ev-supports); }
+.er-ev-mixed { background: var(--ev-mixed); }
+.er-ev-contradicts { background: var(--ev-contradicts); }
+.er-ev-context { background: var(--ev-context); }
 .er-evlegend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; margin-top: 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-secondary); }
 .er-evlabel { display: inline-flex; align-items: center; gap: 0.4rem; }
 .er-evdot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
@@ -1174,24 +974,24 @@ a:hover { color: var(--accent-hover); }
 [class*="st-key-card-summary-"] { padding: var(--space-4) var(--space-5) !important; min-height: 132px; }
 .er-tile-detail { font-size: 0.85rem; color: var(--text-secondary); margin-top: var(--space-2); line-height: 1.45; }
 /* Inset box — excerpts, key questions. */
-.er-inset { background: var(--surface-input); border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: var(--space-4) var(--space-5); }
+.er-inset { background: var(--surface-input); border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: var(--space-4) var(--space-5); }
 .er-inset-label { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); margin-bottom: 0.5rem; }
 .er-serif-title { font-family: var(--font-serif); font-weight: 600; font-size: 1.45rem; line-height: 1.25; color: var(--text); letter-spacing: -0.005em; }
 .er-serif-question { font-family: var(--font-serif); font-size: 1.15rem; line-height: 1.5; color: var(--text); }
 /* Top bar — breadcrumb from the real route + Eastern-time date. */
-.er-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 0 var(--space-4) 0; margin-bottom: var(--space-5); border-bottom: 1px solid var(--border-shell); }
+.er-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 0 var(--space-4) 0; margin-bottom: var(--space-5); border-bottom: 1px solid var(--border-strong); }
 .er-breadcrumb { font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem; }
 .er-breadcrumb .er-crumb-sep { color: var(--text-label); }
 .er-breadcrumb .er-crumb-current { color: var(--text); font-weight: 500; }
 .er-topbar-date { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0.02em; }
 /* Date-group rule (Signals): mono label + hairline. */
 .er-date-group { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0 var(--space-3) 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
-.er-date-group::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+.er-date-group::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
 /* Time cell (feeds): stacked mono time over its zone abbreviation. */
 .er-time-cell { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text); line-height: 1.2; white-space: nowrap; }
 .er-time-cell .er-time-zone { display: block; font-size: 0.62rem; color: var(--text-label); letter-spacing: 0.06em; margin-top: 0.15rem; }
 /* Semantic feed row (dashboard latest signals / regional brief). */
-.er-feed-row { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: start; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.er-feed-row { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: start; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
 .er-feed-row:last-child { border-bottom: none; }
 .er-feed-title { font-size: 0.95rem; font-weight: 500; color: var(--text); line-height: 1.4; }
 .er-feed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
@@ -1199,33 +999,29 @@ a:hover { color: var(--accent-hover); }
 .er-feed-link:hover { color: var(--link-hover); }
 /* Brief table — semantic table markup on the card surface. */
 table.er-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-table.er-table th { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-soft); }
-table.er-table td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border-soft); color: var(--text); vertical-align: middle; }
+table.er-table th { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-subtle); }
+table.er-table td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border-subtle); color: var(--text); vertical-align: middle; }
 table.er-table tr:last-child td { border-bottom: none; }
 table.er-table .er-mono { font-size: 0.8rem; }
 /* Sidebar count badge + status block. */
-.er-rail-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary); background: var(--surface-active); border-radius: var(--r-sm); padding: 0.05rem 0.4rem; margin-left: auto; }
-.er-rail-status-block { margin: var(--space-3) 0 0 0; padding: var(--space-3); border: 1px solid var(--border-shell); border-radius: var(--r-md); background: var(--surface); }
+.er-rail-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary); background: var(--surface-chip); border-radius: var(--r-sm); padding: 0.05rem 0.4rem; margin-left: auto; }
+.er-rail-status-block { margin: var(--space-3) 0 0 0; padding: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); }
 .er-rail-status-block .er-rail-status-title { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: var(--text); font-weight: 500; }
 
 /* ---------- v2 shell (sidebar groups, count badges, identity, top bar) ---------- */
 [class*="st-key-navitem-"] { position: relative; }
 [class*="st-key-navitem-"] [data-testid="stMarkdown"] { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: auto; }
 [class*="st-key-navitem-"] [data-testid="stMarkdown"] p { margin: 0; line-height: 1; }
-[class*="st-key-navitem-"][class*="-active"] .er-rail-count { background: var(--accent-soft); color: var(--accent); }
+[class*="st-key-navitem-"][class*="-active"] .er-rail-count { background: var(--selected-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--selected-ring); }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a p { font-size: 0.9rem; }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a { padding: 0.45rem 0.6rem 0.45rem calc(0.6rem - 2px) !important; }
 .st-key-navitem-coverage [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-coverage-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
 }
 .st-key-navitem-admin_users [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%239197A0%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
-}
-.st-key-navitem-admin_users-active [data-testid="stPageLink"] a::before {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22%236FD3BC%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
 }
 /* Identity beside the avatar popover. */
 .er-rail-identity { line-height: 1.25; }
@@ -1240,7 +1036,7 @@ table.er-table .er-mono { font-size: 0.8rem; }
 .er-rta-count { text-align: right; }
 [class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab-list"] { border-bottom: none !important; gap: 0.25rem; }
 [class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab"] { padding: 0.35rem 0.75rem !important; border-radius: var(--r-md); }
-[class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: var(--surface-active) !important; }
+[class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: var(--selected-bg) !important; }
 [class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab-highlight"] { display: none !important; }
 [class*="st-key-card-regional-brief"] [data-testid="stTabs"] [data-baseweb="tab-border"] { display: none !important; }
 .er-brief-form { width: 92px; }

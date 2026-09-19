@@ -16,6 +16,7 @@ import streamlit as st
 from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
 from src.data_access import backend_factory
 from src.logic.formatting import fmt_time_local, today_local
+from src.ui.theme_tokens import ThemePreference, render_token_css
 
 METHODOLOGY_STATEMENT = (
     "EevaResearch separates source-backed facts, market interpretation, model "
@@ -162,10 +163,11 @@ def _css_text() -> str:
     return _css_text_cached(mtime)
 
 
-def load_css() -> None:
-    css = _css_text()
-    if css:
-        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+def load_css(preference: ThemePreference = "system") -> None:
+    """One <style> block: the resolved theme's color tokens
+    (src/ui/theme_tokens.py) followed by assets/styles.css, which only
+    ever consumes them."""
+    st.markdown(f"<style>{render_token_css(preference)}\n{_css_text()}</style>", unsafe_allow_html=True)
 
 
 def brand_mark_html(size_px: int | None = None) -> str:

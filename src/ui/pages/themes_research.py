@@ -252,7 +252,7 @@ def _render_reading_legend() -> None:
         st.markdown(f'<div class="er-section-label er-tight">Reading a thesis</div><div class="er-legend">{rows}</div>', unsafe_allow_html=True)
 
 
-_DIRECTION_TAG_CLASS = {"Supports": "er-tag-pos", "Contradicts": "er-tag-neg", "Mixed": "er-tag-mix"}
+_DIRECTION_TAG_CLASS = {"Supports": "er-tag-ev-supports", "Contradicts": "er-tag-ev-contradicts", "Mixed": "er-tag-ev-mixed"}
 
 
 def _evidence_direction_chips_html(evidence) -> str:
@@ -322,7 +322,7 @@ def _render_card(theme: ResearchTheme, evidence, company_map, detail_page, ticke
     counts = Counter(getattr(item.direction, "value", item.direction) for item in evidence)
     bar_counts = {label: counts.get(label, 0) for label, _ in EVIDENCE_DIRECTIONS}
     with st.container(key=f"card-theme-{theme.id}"):
-        status_variant = "accent" if theme.status == ThemeStatus.NEW else "neutral"
+        status_variant = "info" if theme.status == ThemeStatus.NEW else "neutral"
         st.markdown(
             '<div class="er-split-head">'
             f'<div>{chip_html(_enum_label(theme.category), "info")} {chip_html(_enum_label(theme.status), status_variant)}</div>'

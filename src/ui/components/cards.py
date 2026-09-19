@@ -168,7 +168,7 @@ def signal_card(
     never inline. A thin left rail carries a restrained direction-color
     accent (UX-refinement pass)."""
     key = f"card-signal-{signal.id}"
-    rail_var = {"er-rail-pos": "var(--positive)", "er-rail-neg": "var(--negative)", "er-rail-mix": "var(--warning)"}[direction_rail_class(signal.direction)]
+    rail_var = {"er-rail-pos": "var(--ev-supports)", "er-rail-neg": "var(--ev-contradicts)", "er-rail-mix": "var(--ev-mixed)"}[direction_rail_class(signal.direction)]
     st.markdown(
         f'<style>.st-key-{key} {{ border-left: 2px solid {rail_var} !important; }}</style>',
         unsafe_allow_html=True,
@@ -362,7 +362,7 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
     provenance (company, jurisdiction, source, date, original-source
     link) directly, not just behind an extra click."""
     key = f"card-priority-signal-{signal.id}"
-    rail_var = {"er-rail-pos": "var(--positive)", "er-rail-neg": "var(--negative)", "er-rail-mix": "var(--warning)"}[direction_rail_class(signal.direction)]
+    rail_var = {"er-rail-pos": "var(--ev-supports)", "er-rail-neg": "var(--ev-contradicts)", "er-rail-mix": "var(--ev-mixed)"}[direction_rail_class(signal.direction)]
     st.markdown(f'<style>.st-key-{key} {{ border-left: 2px solid {rail_var} !important; }}</style>', unsafe_allow_html=True)
     with st.container(border=True, key=key):
         row = st.columns([0.4, 4.6, 1, 1, 1.6])

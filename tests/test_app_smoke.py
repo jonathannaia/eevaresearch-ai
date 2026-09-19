@@ -171,19 +171,21 @@ def test_account_control_shows_not_signed_in_when_no_user_session():
 
 def test_dark_theme_tokens_are_loaded_into_the_page():
     """load_css() (called by with_chrome()/every real page render, and
-    directly by the sidebar_rail.py harness) injects assets/styles.css
-    verbatim into an st.markdown(unsafe_allow_html=True) call — this
-    confirms the actual dark-token stylesheet reached this render, not
-    just that the file on disk has the right values (already checked by
-    tests/test_visual_theme_redesign.py)."""
+    directly by the sidebar_rail.py harness) injects the rendered theme
+    tokens (src/ui/theme_tokens.py) followed by assets/styles.css in one
+    st.markdown(unsafe_allow_html=True) call — this confirms the actual
+    token CSS reached this render (Dark as the bare :root default, Light
+    behind its data-theme stamp), not just that the source has the right
+    values (already checked by tests/test_theme_tokens.py)."""
     at = AppTest.from_file(str(HARNESS_DIR / "sidebar_rail.py"), default_timeout=10)
     at.run()
     assert not at.exception
     style_blocks = [m.value for m in at.get("markdown") if m.value.startswith("<style>")]
     assert style_blocks, "no <style> block was rendered at all"
     css_in_page = style_blocks[0]
-    assert "--bg: #0B0C0E;" in css_in_page
-    assert "--accent: #6FD3BC;" in css_in_page
+    assert "--bg:#111110;" in css_in_page
+    assert "--accent:#8AA8E0;" in css_in_page
+    assert ':root[data-theme="light"]{color-scheme:light;--bg:#F6F4EF;' in css_in_page
     assert 'base = "light"' not in css_in_page  # sanity: this is CSS, not the toml, but guards against a copy/paste mixup
 
 
