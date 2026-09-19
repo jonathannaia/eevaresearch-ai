@@ -5,7 +5,8 @@
 # never a color here. Keys in this [theme] section are shared by both
 # [theme.dark] and [theme.light] (Streamlit merges them, the per-theme
 # section wins). With both sections present Streamlit offers
-# System / Light / Dark natively and defaults to System, and each section's
+# System / Light / Dark natively and defaults to System; the app drives
+# that choice itself (src/ui/theme.py), and each section's
 # backgroundColor equals that theme's --bg so the canvas Streamlit paints
 # before the app's own CSS arrives is already the right color.
 # Fonts: Streamlit accepts one family per source URL and uses the name

@@ -66,7 +66,7 @@ def test_no_bare_signals_group_exists_anywhere_in_the_index():
     ))
     groups = {i["group"] for i in items}
     assert "Signals" not in groups
-    assert groups == {"Themes", "Radar Signals", "Actions"}
+    assert groups == {"Themes", "Radar Signals", "Actions", "Switch theme"}
 
 
 def test_themes_are_indexed_under_the_unchanged_themes_group():
@@ -82,10 +82,12 @@ def test_index_always_includes_the_open_methodology_action():
     assert {"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"} in items
 
 
-def test_empty_repositories_produce_only_the_static_action_item():
+def test_empty_repositories_produce_only_the_static_action_and_theme_commands():
     items = command_palette._index(_ctx())
-    assert len(items) == 1
-    assert items[0]["label"] == "Open Methodology"
+    assert [i["label"] for i in items] == [
+        "Open Methodology", "Switch theme: System", "Switch theme: Dark", "Switch theme: Light",
+    ]
+    assert [i["go"] for i in items[1:]] == ["theme:system", "theme:dark", "theme:light"]
 
 
 # --- _matches(): search should still find Radar Signals items by their new group name ---

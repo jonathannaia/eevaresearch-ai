@@ -17,6 +17,7 @@ import streamlit as st
 from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
 from src.data_access import backend_factory
 from src.logic.formatting import fmt_time_local, today_local
+from src.ui import theme
 from src.ui.theme_tokens import ThemePreference, render_token_css
 
 METHODOLOGY_STATEMENT = (
@@ -571,6 +572,7 @@ def _render_sidebar_account(nav_key: str) -> None:
                     st.caption("Ends your EevaResearch session. Google may remain signed in in this browser.")
                 else:
                     st.caption("Not signed in")
+                theme.render_theme_control()
         with identity_col:
             if display_name:
                 secondary_html = f'<div class="er-rail-identity-sub">{_esc(secondary)}</div>' if secondary else ""
@@ -583,7 +585,9 @@ def _render_sidebar_account(nav_key: str) -> None:
 
 def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = True) -> Callable[[], None]:
     def _wrapped() -> None:
-        load_css()
+        preference = theme.current_preference()
+        load_css(preference)
+        theme.render_bridge(preference)
         if show_sidebar:
             render_sidebar(nav_key)
             _render_topbar(nav_key)

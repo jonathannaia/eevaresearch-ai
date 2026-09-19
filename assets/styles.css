@@ -83,6 +83,12 @@
     display: none !important; visibility: hidden !important;
 }
 
+/* The theme bridge (src/ui/theme.py) is a script-only element; its keyed
+   container and layout wrapper never take space or leave a gap. */
+.st-key-theme-bridge,
+[data-testid="stLayoutWrapper"]:has(> .st-key-theme-bridge),
+[data-testid="stElementContainer"]:has(.st-key-theme-bridge) { display: none !important; }
+
 /* ---------- base / layout ---------- */
 .stApp { background: var(--bg); }
 .block-container {

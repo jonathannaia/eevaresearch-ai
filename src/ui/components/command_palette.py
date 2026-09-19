@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.ui import theme
 from src.ui.ui import get_page
 
 PALETTE_TRIGGER_KEY = "cmdk-trigger"
@@ -90,6 +91,12 @@ def _index(ctx) -> list[dict]:
         # route key — only the group label moved.
         items.append({"group": "Radar Signals", "label": s.title, "sub": s.theme_slug, "go": "signals"})
     items.append({"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"})
+    current = theme.current_preference()
+    for preference, label in theme.LABELS.items():
+        items.append({
+            "group": "Switch theme", "label": f"Switch theme: {label}",
+            "sub": "Current" if preference == current else "", "go": f"theme:{preference}",
+        })
     return items
 
 
@@ -127,7 +134,10 @@ def _open_palette() -> None:
             return
 
         last_group = None
-        for n, item in enumerate(shown[:25]):
+        # The list is capped for length, but the theme commands always stay
+        # reachable at the end, however many themes and signals match.
+        visible = shown[:25] + [i for i in shown[25:] if i["go"].startswith("theme:")]
+        for n, item in enumerate(visible):
             if item["group"] != last_group:
                 st.markdown(f'<div class="er-section-label" style="margin-top:0.75rem;">{item["group"]}</div>', unsafe_allow_html=True)
                 last_group = item["group"]
@@ -150,6 +160,12 @@ def _open_palette() -> None:
 
 
 def _navigate(item: dict) -> None:
+    if item["go"].startswith("theme:"):
+        # Applies on the rerun (which also closes the dialog): the new
+        # token CSS, data-theme stamp and native-widget theme.
+        if theme.set_preference(item["go"].removeprefix("theme:")):
+            st.rerun()
+        return
     page = get_page(item["go"])
     if page is None:
         return
