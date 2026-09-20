@@ -98,6 +98,7 @@ from src.data_access.postgres_state_db import theme_repository as postgres_theme
 from src.data_access.postgres_state_db import feedback_repository as postgres_feedback
 from src.data_access.postgres_state_db import user_account_repository as postgres_user_accounts
 from src.data_access.postgres_state_db import user_preferences_repository as postgres_user_preferences
+from src.data_access.postgres_state_db import agent_repository as postgres_agent_store
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
@@ -116,6 +117,7 @@ from src.data_access.state_db import theme_repository as sqlite_themes
 from src.data_access.state_db import feedback_repository as sqlite_feedback
 from src.data_access.state_db import user_account_repository as sqlite_user_accounts
 from src.data_access.state_db import user_preferences_repository as sqlite_user_preferences
+from src.data_access.state_db import agent_repository as sqlite_agent_store
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
@@ -140,6 +142,15 @@ from src.models.feedback_submission import (
 )
 from src.models.user_account import UserAccount
 from src.models.user_preferences import UserPreferences, is_theme_preference
+from src.models.agent_records import (
+    AgentAuditRow,
+    AgentControl,
+    AgentDecisionRow,
+    AgentJob,
+    AgentPacket,
+    AgentRun,
+    DecisionListRow,
+)
 
 _CANDIDATE_FILENAME_BY_SOURCE = {
     "OpenDART / DART": "dart_candidates.json",
@@ -1414,6 +1425,129 @@ def get_user_preferences_repository(settings: Settings) -> UserPreferencesReposi
     if backend == "postgres":
         return PostgresUserPreferencesRepository(conn=_require_postgres_connection(settings))
     return JsonUserPreferencesRepository(cache_dir=settings.cache_dir)
+
+
+# --- Agent store repository — Agent Observability and Shadow Mode. The
+# seven agent tables (Postgres V24 / SQLite V22) that replace the agent's
+# ephemeral local JSON files (blocker E5). Unlike every other repository
+# here there is deliberately NO JSON implementation: an agent run must be
+# durable and shared with the dashboard, so JSON persistence is refused
+# outright. SQLite serves local development and the test suites; a live
+# or shadow run additionally requires Postgres, enforced in
+# scripts/research_agent_worker.py's own startup check.
+
+class AgentStoreRepositoryProtocol(Protocol):
+    def start_run(self, run: AgentRun) -> None: ...
+    def complete_run(self, run_id: str, *, status: str, completed_at: str, considered: int = 0, sessions: int = 0,
+                     decisions: int = 0, errors: int = 0, cost_usd: str | None = None) -> None: ...
+    def latest_run(self) -> AgentRun | None: ...
+    def enqueue_job(self, job: AgentJob) -> bool: ...
+    def claim_job(self, *, mode: str, now: str, lease_expires_at: str, worker_instance: str) -> AgentJob | None: ...
+    def finish_job(self, job_id: str, *, state: str, now: str, last_error_code: str | None = None,
+                   next_attempt_at: str | None = None) -> None: ...
+    def reclaim_expired_leases(self, *, now: str) -> int: ...
+    def get_job(self, job_id: str) -> AgentJob | None: ...
+    def count_jobs_by_state(self, *, since: str | None = None) -> dict[str, int]: ...
+    def count_packets_since(self, *, since: str) -> int: ...
+    def save_packet(self, packet: AgentPacket) -> None: ...
+    def record_decision(self, decision: AgentDecisionRow) -> None: ...
+    def append_audit_events(self, events: Sequence[AgentAuditRow]) -> None: ...
+    def list_decisions(self, **filters) -> tuple[DecisionListRow, ...]: ...
+    def count_decisions(self, *, since: str | None = None) -> dict[str, int]: ...
+    def get_packet(self, packet_id: str) -> AgentPacket | None: ...
+    def get_decision(self, packet_id: str) -> AgentDecisionRow | None: ...
+    def audit_events_for_packet(self, packet_id: str) -> tuple[AgentAuditRow, ...]: ...
+    def get_control(self) -> AgentControl | None: ...
+    def set_mode_override(self, *, mode: str | None, reason: str | None, updated_by: str | None,
+                          now: str) -> None: ...
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class _AgentStoreRepository:
+    """Thin delegation to whichever module this backend selected. Both
+    modules expose the same function names, so the body is identical —
+    the modules themselves stay independent implementations."""
+    conn: Any
+    module: Any
+
+    def start_run(self, run: AgentRun) -> None:
+        self.module.start_run(self.conn, run)
+
+    def complete_run(self, run_id: str, **kwargs) -> None:
+        self.module.complete_run(self.conn, run_id, **kwargs)
+
+    def latest_run(self) -> AgentRun | None:
+        return self.module.latest_run(self.conn)
+
+    def enqueue_job(self, job: AgentJob) -> bool:
+        return self.module.enqueue_job(self.conn, job)
+
+    def claim_job(self, **kwargs) -> AgentJob | None:
+        return self.module.claim_job(self.conn, **kwargs)
+
+    def finish_job(self, job_id: str, **kwargs) -> None:
+        self.module.finish_job(self.conn, job_id, **kwargs)
+
+    def reclaim_expired_leases(self, **kwargs) -> int:
+        return self.module.reclaim_expired_leases(self.conn, **kwargs)
+
+    def get_job(self, job_id: str) -> AgentJob | None:
+        return self.module.get_job(self.conn, job_id)
+
+    def count_jobs_by_state(self, **kwargs) -> dict[str, int]:
+        return self.module.count_jobs_by_state(self.conn, **kwargs)
+
+    def count_packets_since(self, **kwargs) -> int:
+        return self.module.count_packets_since(self.conn, **kwargs)
+
+    def save_packet(self, packet: AgentPacket) -> None:
+        self.module.save_packet(self.conn, packet)
+
+    def record_decision(self, decision: AgentDecisionRow) -> None:
+        self.module.record_decision(self.conn, decision)
+
+    def append_audit_events(self, events: Sequence[AgentAuditRow]) -> None:
+        self.module.append_audit_events(self.conn, events)
+
+    def list_decisions(self, **filters) -> tuple[DecisionListRow, ...]:
+        return self.module.list_decisions(self.conn, **filters)
+
+    def count_decisions(self, **kwargs) -> dict[str, int]:
+        return self.module.count_decisions(self.conn, **kwargs)
+
+    def get_packet(self, packet_id: str) -> AgentPacket | None:
+        return self.module.get_packet(self.conn, packet_id)
+
+    def get_decision(self, packet_id: str) -> AgentDecisionRow | None:
+        return self.module.get_decision(self.conn, packet_id)
+
+    def audit_events_for_packet(self, packet_id: str) -> tuple[AgentAuditRow, ...]:
+        return self.module.audit_events_for_packet(self.conn, packet_id)
+
+    def get_control(self) -> AgentControl | None:
+        return self.module.get_control(self.conn)
+
+    def set_mode_override(self, **kwargs) -> None:
+        self.module.set_mode_override(self.conn, **kwargs)
+
+    def close(self) -> None:
+        self.conn.close()
+
+
+def get_agent_store_repository(settings: Settings) -> AgentStoreRepositoryProtocol:
+    """SQLite for local development and tests, Postgres for anything live.
+    The JSON backend is refused: agent records must be durable and visible
+    to the dashboard, which a per-process file can never be."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return _AgentStoreRepository(conn=_require_sqlite_connection(settings), module=sqlite_agent_store)
+    if backend == "postgres":
+        return _AgentStoreRepository(conn=_require_postgres_connection(settings), module=postgres_agent_store)
+    raise BackendConfigurationError(
+        "The agent store requires EDGE_DB_BACKEND=sqlite (local development) or =postgres (live). "
+        "JSON agent persistence is refused: agent runs must be durable and shared with the dashboard."
+    )
 
 
 # Open-beta feedback (design/DECISIONS.md) — same JSON-fallback shape as
