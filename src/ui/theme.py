@@ -47,7 +47,7 @@ LABELS: dict[ThemePreference, str] = {"system": "System", "dark": "Dark", "light
 ROUTE_PATHS: tuple[str, ...] = (
     "/", "/dashboard", "/radar-inbox", "/daily-news", "/coverage", "/themes", "/signals", "/methodology", "/about",
     "/disclaimer", "/daily-news-admin", "/research-cases", "/theme-workspace", "/company-discovery-admin",
-    "/verified-updates", "/admin-users", "/feedback",
+    "/verified-updates", "/admin-users", "/feedback", "/agent-review",
 )
 _ACCOUNT_PREF_KEY = "_eeva_theme_account_preference"
 _RELOAD_GUARD_KEY = "eeva.theme.reload"

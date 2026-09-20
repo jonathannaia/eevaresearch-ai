@@ -36,6 +36,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from src.logic.agent_health import HEARTBEAT_STALE_MINUTES
 from src.logic.publication_policy import POLICY_VERSION
 from src.models.agent_records import HEARTBEAT_EVENT, AgentAuditRow, AgentJob, AgentRun
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState
@@ -49,9 +50,6 @@ MAX_SESSIONS_PER_DAY = 50
 MAX_ATTEMPTS_PER_JOB = 3
 RETRY_BACKOFF_MINUTES: tuple[int, ...] = (60, 240)
 LEASE_MINUTES = 30
-# A run whose heartbeat is older than this is presumed dead, and another
-# worker may take over. Comfortably longer than one session.
-HEARTBEAT_STALE_MINUTES = 45
 HEARTBEAT_EVERY_SECONDS = 300
 
 # A constant, so every instance of this worker competes for the same lock.

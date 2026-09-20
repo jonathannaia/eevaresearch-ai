@@ -252,11 +252,12 @@ def _list_row(row: sqlite3.Row) -> DecisionListRow:
     )
 
 
-def list_decisions(
-    conn: sqlite3.Connection, *, policy_decision: str | None = None, effective_decision: str | None = None,
-    blocked_only: bool = False, issuer_id: str | None = None, source: str | None = None,
-    decided_from: str | None = None, decided_to: str | None = None, limit: int = 50, offset: int = 0,
-) -> tuple[DecisionListRow, ...]:
+def _list_filters(
+    *, policy_decision, effective_decision, blocked_only, issuer_id, source, decided_from, decided_to,
+    candidate_ids, event_type,
+) -> tuple[str, list]:
+    """One filter builder shared by the page query and its total, so a
+    page can never be counted against a different filter than it shows."""
     where, params = [], []
     if policy_decision:
         where.append("d.policy_decision = ?"); params.append(policy_decision)
@@ -272,12 +273,67 @@ def list_decisions(
         where.append("d.decided_at >= ?"); params.append(decided_from)
     if decided_to:
         where.append("d.decided_at <= ?"); params.append(decided_to)
-    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    if candidate_ids is not None:
+        ids = list(candidate_ids)
+        if not ids:
+            return " WHERE 1 = 0", []  # an empty allow-list matches nothing, never everything
+        where.append(f"p.candidate_id IN ({','.join('?' for _ in ids)})"); params.extend(ids)
+    if event_type:
+        where.append("EXISTS (SELECT 1 FROM agent_audit_events e WHERE e.packet_id = d.packet_id "
+                     "AND e.event_type = ?)")
+        params.append(event_type)
+    return ((" WHERE " + " AND ".join(where)) if where else ""), params
+
+
+def list_decisions(
+    conn: sqlite3.Connection, *, policy_decision: str | None = None, effective_decision: str | None = None,
+    blocked_only: bool = False, issuer_id: str | None = None, source: str | None = None,
+    decided_from: str | None = None, decided_to: str | None = None,
+    candidate_ids: Sequence[str] | None = None, event_type: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> tuple[DecisionListRow, ...]:
+    clause, params = _list_filters(
+        policy_decision=policy_decision, effective_decision=effective_decision, blocked_only=blocked_only,
+        issuer_id=issuer_id, source=source, decided_from=decided_from, decided_to=decided_to,
+        candidate_ids=candidate_ids, event_type=event_type,
+    )
     rows = conn.execute(
         f"{_LIST_SELECT}{clause} ORDER BY d.decided_at DESC, d.packet_id DESC LIMIT ? OFFSET ?",
         (*params, limit, offset),
     ).fetchall()
     return tuple(_list_row(row) for row in rows)
+
+
+def count_matching_decisions(
+    conn: sqlite3.Connection, *, policy_decision: str | None = None, effective_decision: str | None = None,
+    blocked_only: bool = False, issuer_id: str | None = None, source: str | None = None,
+    decided_from: str | None = None, decided_to: str | None = None,
+    candidate_ids: Sequence[str] | None = None, event_type: str | None = None,
+) -> int:
+    """How many rows the current filter matches in total — what the page
+    counter and the last-page boundary are computed from."""
+    clause, params = _list_filters(
+        policy_decision=policy_decision, effective_decision=effective_decision, blocked_only=blocked_only,
+        issuer_id=issuer_id, source=source, decided_from=decided_from, decided_to=decided_to,
+        candidate_ids=candidate_ids, event_type=event_type,
+    )
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM agent_decisions d JOIN agent_packets p ON p.packet_id = d.packet_id"
+        f"{clause}", tuple(params),
+    ).fetchone()
+    return int(row["n"])
+
+
+def distinct_issuers(conn: sqlite3.Connection) -> tuple[str, ...]:
+    rows = conn.execute(
+        "SELECT DISTINCT issuer_id FROM agent_packets WHERE issuer_id IS NOT NULL ORDER BY issuer_id"
+    ).fetchall()
+    return tuple(r["issuer_id"] for r in rows)
+
+
+def distinct_event_types(conn: sqlite3.Connection) -> tuple[str, ...]:
+    rows = conn.execute("SELECT DISTINCT event_type FROM agent_audit_events ORDER BY event_type").fetchall()
+    return tuple(r["event_type"] for r in rows)
 
 
 def count_decisions(conn: sqlite3.Connection, *, since: str | None = None) -> dict[str, int]:

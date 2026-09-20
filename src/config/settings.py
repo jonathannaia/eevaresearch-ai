@@ -458,6 +458,15 @@ class Settings:
     research_agent_mode: str = field(
         default_factory=lambda: os.getenv("EDGE_RESEARCH_AGENT_MODE") or "off"
     )
+    # Gates the hidden, read-only src/ui/pages/agent_review.py page. Same
+    # "a new surface is its own flag" convention as the admin pages above,
+    # and disabled by default. It is only the first of two gates: the page
+    # also requires is_admin(), and checks both before it constructs any
+    # repository or reads any row, so a non-admin who reaches it by a
+    # direct URL triggers no query at all.
+    agent_review_page_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_AGENT_REVIEW_PAGE_ENABLED")
+    )
     # Gates the hidden, read-only src/ui/pages/verified_updates.py page —
     # the public surface for the agent's AUTO_PUBLISHED records (design
     # §9.2). Separate from research_agent_live_enabled (the worker's own

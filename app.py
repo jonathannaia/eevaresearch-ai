@@ -40,6 +40,7 @@ from src.ui.beta_gate import BetaGateReason, evaluate_beta_gate
 from src.ui.pages import (
     about,
     admin_users,
+    agent_review,
     company_discovery_admin,
     coverage,
     daily_news,
@@ -196,6 +197,18 @@ def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
     # manual, conditional st.page_link only when is_admin() is true — the
     # page's own authorization check (before any repository access) is
     # the real boundary, not the link's visibility.
+    # Agent Review (Agent Observability and Shadow Mode release) — same
+    # hidden-but-reachable pattern as the admin pages above, and gated
+    # twice inside the page itself: EDGE_AGENT_REVIEW_PAGE_ENABLED
+    # (default off) and is_admin(), both checked before any repository is
+    # constructed or any row is read. Read-only: the page shows what the
+    # agent decided and what it was allowed to do, and exposes no control
+    # that changes either. It imports no agent runtime — see
+    # tests/test_agent_review_scope_guard.py.
+    pages["agent_review"] = st.Page(
+        with_chrome(agent_review.render, "agent_review"),
+        title="Agent Review", url_path="agent-review", visibility="hidden",
+    )
     pages["admin_users"] = st.Page(
         with_chrome(admin_users.render, "admin_users"),
         title="Admin — Users", url_path="admin-users", visibility="hidden",

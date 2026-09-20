@@ -55,6 +55,10 @@ _ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDD
     # hidden-but-reachable pattern, gated inside the page by
     # settings.verified_updates_page_enabled (default off).
     "verified_updates",
+    # Agent Review (Agent Observability and Shadow Mode release) — same
+    # hidden-but-reachable pattern, gated inside the page by both
+    # settings.agent_review_page_enabled (default off) and is_admin().
+    "agent_review",
 ]
 
 
