@@ -47,7 +47,15 @@ from src.mcp_agent.tools import (
 )
 from src.mcp_agent.tools._context import ToolContext
 from src.models.issuer import CoverageState, Issuer
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, LocationKind, StateTransition
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    EvidenceLocation,
+    ExtractionState,
+    FilingEvent,
+    LocationKind,
+    StateTransition,
+)
 from src.models.research_case import ResearchEvidenceItem
 from src.models.verified_update import PUBLISHED_BY_AUTONOMOUS_AGENT, VERIFIED_FILING_FACT
 
@@ -93,15 +101,25 @@ def _filing(rcept_no: str = ACCESSION, rcept_dt: str = "2026-09-10", **overrides
     return FilingEvent(**defaults)
 
 
-def _candidate(filing: FilingEvent, candidate_id: str = "cand-1", matched_rules=("periodic_report:10-Q",)) -> CandidateSignal:
+def _candidate(filing: FilingEvent, candidate_id: str = "cand-1", matched_rules=("periodic_report:10-Q",),
+               excerpt: str | None = EXCERPT) -> CandidateSignal:
+    """A persisted, extracted candidate — which since blocker E4 is also the
+    agent's only evidence source, so it carries the excerpt the pipeline
+    stored and the evidence location recorded with it."""
     return CandidateSignal(id=candidate_id, filing=filing, matched_rules=list(matched_rules), confidence="Moderate",
-                           status=CandidateStatus.EXTRACTED, state_history=[StateTransition(CandidateStatus.EXTRACTED, AT)])
+                           status=CandidateStatus.EXTRACTED, state_history=[StateTransition(CandidateStatus.EXTRACTED, AT)],
+                           excerpt_original=excerpt, excerpt_retrieved_at=AT,
+                           evidence_location=EvidenceLocation(kind=LocationKind.SECTION, section="Item 2") if excerpt else None)
 
 
-def _seed_excerpt_cache(cache_dir: Path, accession: str = ACCESSION, text: str = EXCERPT) -> None:
-    (cache_dir / "edgar_document_excerpts.json").write_text(json.dumps({
-        accession: {"state": ExtractionState.EXTRACTED.value, "excerpt_original": text, "detail": "", "retrieved_at": AT, "location_section": "Item 2"},
-    }), encoding="utf-8")
+def _seed_excerpt_cache(cache_dir: Path, accession: str = ACCESSION, text: str | None = EXCERPT) -> None:
+    """Blocker E4: the excerpt the agent reads is the one the pipeline
+    persisted on the candidate, so seeding evidence means seeding a
+    candidate. The adapter excerpt caches are never consulted any more."""
+    stored = candidate_store.load_candidates(cache_dir, "edgar_candidates.json")
+    candidate = _candidate(_filing(rcept_no=accession), excerpt=text)
+    stored[candidate.id] = candidate
+    candidate_store.save_candidates(cache_dir, stored, "edgar_candidates.json")
 
 
 def _context(cache_dir: Path, *, issuer_id: str = "coreweave", source_name: str = "SEC EDGAR", seed: str = ACCESSION, **settings_overrides) -> ToolContext:
@@ -261,13 +279,16 @@ def test_excerpt_rejects_unknown_document_and_enforces_call_budget(tmp_path, reg
     assert get_filing_evidence_excerpt.run(ctx, ACCESSION, max_chars=100).error.kind is ToolErrorKind.BUDGET_EXCEEDED
 
 
-def test_excerpt_surfaces_a_cached_parse_failure_as_a_typed_error(tmp_path, registry, filing_events):
-    (tmp_path / "edgar_document_excerpts.json").write_text(json.dumps({ACCESSION: {"state": ExtractionState.PARSE_FAILED.value, "excerpt_original": None, "detail": "no text layer", "retrieved_at": AT}}), encoding="utf-8")
+def test_excerpt_surfaces_a_candidate_without_stored_text_as_a_typed_error(tmp_path, registry, filing_events):
+    """A candidate whose extraction produced nothing fails closed and marks
+    the session's retrieval error, exactly as an unreadable document did
+    before blocker E4 moved evidence to the stored excerpt."""
+    _seed_excerpt_cache(tmp_path, text=None)
     ctx = _context(tmp_path)
     resolve_tracked_issuer.run(ctx, "SEC EDGAR", native_id=CIK)
     search_filing_metadata.run(ctx, "coreweave", "SEC EDGAR", 30)
     result = get_filing_evidence_excerpt.run(ctx, ACCESSION)
-    assert result.error.kind is ToolErrorKind.PARSE_FAILED and ctx.retrieval_error is False
+    assert result.error.kind is ToolErrorKind.RETRIEVAL_FAILED and ctx.retrieval_error is True
 
 
 def test_locator_anchors_on_an_edgar_item_header_and_shares_the_char_budget(tmp_path, registry, filing_events):
@@ -338,32 +359,36 @@ def test_official_sources_come_only_from_the_registered_ir_domain_and_regulator_
 
 # --- save + decide: the golden path and its fail-closed branches --------------------------
 
-def test_golden_path_auto_publishes_writes_candidate_status_then_public_store_and_audits_everything(tmp_path, registry, filing_events):
+def test_golden_path_decides_auto_published_and_writes_nothing_outside_the_packet_store(tmp_path, registry, filing_events):
+    """Blocker E3: the tool evaluates and records; it never writes a
+    candidate row or the public store. A matrix that returns AUTO_PUBLISHED
+    therefore still changes nothing a reader can see."""
     _seed_excerpt_cache(tmp_path)
-    candidate_store.save_candidates(tmp_path, {"cand-1": _candidate(_filing())}, "edgar_candidates.json")
+    before = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
+    before_status, before_reviewed = before.status, before.reviewed_at
     ctx = _context(tmp_path)
     evidence_id, packet_id = _run_to_saved_packet(ctx)
 
     decision = request_publication_decision.run(ctx, packet_id)
     assert decision.error is None and decision.decision == "AUTO_PUBLISHED"
     assert all(passed for _, _, passed, _ in decision.row_results) and len(decision.row_results) == 11
+    assert decision.verified_update_id is None
 
-    updates = verified_update_store.load_verified_updates(tmp_path)
-    assert len(updates) == 1 and updates[0].id == decision.verified_update_id
-    assert (updates[0].label, updates[0].published_by, updates[0].evidence_ids) == (VERIFIED_FILING_FACT, PUBLISHED_BY_AUTONOMOUS_AGENT, (evidence_id,))
-    assert updates[0].source_document_id == ACCESSION and updates[0].excerpt_or_locator == "section:Item 2"
-
+    assert verified_update_store.load_verified_updates(tmp_path) == ()
     candidate = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
-    assert candidate.status is CandidateStatus.PUBLISHED and candidate.published_by == PUBLISHED_BY_AUTONOMOUS_AGENT
-    assert candidate.state_history[-1].detail.startswith("autonomous_agent:AUTO_PUBLISHED")
+    assert candidate.status is before_status and candidate.reviewed_at == before_reviewed
+    assert candidate.published_by is None
+    assert all(not t.detail.startswith("autonomous_agent:") for t in candidate.state_history)
 
     stored = packet_store.load_packet(tmp_path, packet_id)
     assert stored.decision == "AUTO_PUBLISHED" and stored.evidence[0].evidence_id == evidence_id
     event_types = [e.event_type for e in load_audit_events_for_session(tmp_path, "sess-1")]
-    for expected in ("issuer_resolution_attempted", "filing_metadata_searched", "evidence_excerpt_retrieved", "prior_filing_comparison_performed",
-                     "research_packet_saved", "publication_decision_requested", "publication_decision_made", "candidate_status_written", "verified_updates_published"):
+    for expected in ("issuer_resolution_attempted", "filing_metadata_searched", "evidence_excerpt_retrieved",
+                     "prior_filing_comparison_performed", "research_packet_saved", "publication_decision_requested",
+                     "publication_decision_made"):
         assert expected in event_types, expected
-    assert event_types.index("candidate_status_written") < event_types.index("verified_updates_published")
+    assert "candidate_status_written" not in event_types
+    assert "verified_updates_published" not in event_types
 
 
 def test_decision_is_idempotent_across_a_fresh_session_and_budget_limited_within_one(tmp_path, registry, filing_events):
@@ -377,7 +402,7 @@ def test_decision_is_idempotent_across_a_fresh_session_and_budget_limited_within
     replay_ctx.packet_id = packet_id
     replay = request_publication_decision.run(replay_ctx, packet_id)
     assert (replay.decision, replay.reasons) == (first.decision, first.reasons) and replay.verified_update_id is None
-    assert len(verified_update_store.load_verified_updates(tmp_path)) == 1
+    assert verified_update_store.load_verified_updates(tmp_path) == ()
 
 
 def test_skipping_the_prior_filing_comparison_never_publishes(tmp_path, registry, filing_events):
@@ -392,21 +417,25 @@ def test_skipping_the_prior_filing_comparison_never_publishes(tmp_path, registry
     assert decision.decision == "REVIEW_REQUIRED" and decision.reasons == ("row8:prior_comparison_errored",)
     assert verified_update_store.load_verified_updates(tmp_path) == ()
     candidate = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
-    assert candidate.status is CandidateStatus.NEEDS_REVIEW
-    assert candidate.published_by is None  # no publication transition, so no provenance written
+    assert candidate.status is CandidateStatus.EXTRACTED and candidate.reviewed_at is None
+    assert candidate.published_by is None
 
 
-def test_missing_candidate_withholds_publication_even_when_the_matrix_passes(tmp_path, registry, filing_events):
+def test_a_missing_candidate_no_longer_changes_the_decision_because_nothing_is_written(tmp_path, registry, filing_events):
     _seed_excerpt_cache(tmp_path)
+    candidate_store.save_candidates(tmp_path, {}, "edgar_candidates_missing.json")
     ctx = _context(tmp_path)
     _, packet_id = _run_to_saved_packet(ctx)
     decision = request_publication_decision.run(ctx, packet_id)
+    # Before blocker E3 this returned a VALIDATION_FAILED error, because the
+    # tool tried to mark the candidate PUBLISHED. It writes nothing now, so
+    # the decision stands on its own and no error is produced.
     assert decision.decision == "AUTO_PUBLISHED" and decision.verified_update_id is None
-    assert decision.error.kind is ToolErrorKind.VALIDATION_FAILED and "not_found" in decision.error.detail
+    assert decision.error is None
     assert verified_update_store.load_verified_updates(tmp_path) == ()
 
 
-def test_kill_switch_routes_to_review_required_and_marks_the_candidate(tmp_path, registry, filing_events):
+def test_kill_switch_routes_to_review_required_and_still_marks_no_candidate(tmp_path, registry, filing_events):
     _seed_excerpt_cache(tmp_path)
     candidate_store.save_candidates(tmp_path, {"cand-1": _candidate(_filing())}, "edgar_candidates.json")
     ctx = _context(tmp_path, research_agent_publication_kill_switch_enabled=True)
@@ -414,9 +443,12 @@ def test_kill_switch_routes_to_review_required_and_marks_the_candidate(tmp_path,
     decision = request_publication_decision.run(ctx, packet_id)
     assert decision.decision == "REVIEW_REQUIRED" and decision.reasons == ("row0:kill_switch_enabled",)
     assert verified_update_store.load_verified_updates(tmp_path) == ()
+    # The kill switch used to route to REVIEW_REQUIRED *and* write
+    # NEEDS_REVIEW with a reviewed_at stamp. Since blocker E3 it writes
+    # nothing at all, which is what makes shadow mode possible.
     candidate = candidate_store.load_candidates(tmp_path, "edgar_candidates.json")["cand-1"]
-    assert candidate.status is CandidateStatus.NEEDS_REVIEW
-    assert candidate.published_by is None  # no publication transition, so no provenance written
+    assert candidate.status is CandidateStatus.EXTRACTED and candidate.reviewed_at is None
+    assert candidate.published_by is None
 
 
 def test_save_rejects_fabricated_evidence_ids_and_scope_mismatch(tmp_path, registry, filing_events):

@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
+from src.data_access import backend_factory
+
 from src.data_access.dart import dart_rules
 from src.data_access.dart import document_service as dart_documents
 from src.data_access.dart import scan_service as dart_scan
@@ -91,6 +93,32 @@ def _cik_matches(filing: FilingEvent, native_id: str) -> bool:
 
 def _exact_matches(filing: FilingEvent, native_id: str) -> bool:
     return filing.corp_code == native_id
+
+
+def fetch_stored_excerpt(ctx: ToolContext, filing: FilingEvent) -> FetchedExcerpt:
+    """Blocker E4: evidence comes from the candidate the pipeline already
+    persisted, never from an adapter cache or a network fetch.
+
+    The excerpt and its evidence location were written atomically at
+    extraction time, so this is the exact text a human reviewer sees. It
+    also means a session on a separate service (where no adapter file cache
+    exists) retrieves the same evidence as one running beside the pipeline,
+    and that the agent can never trigger a fetch of its own."""
+    repository = backend_factory.get_candidate_repository(ctx.settings, filing.source_name)
+    candidates = repository.load_candidates()
+    for candidate in candidates.values():
+        if candidate.filing.rcept_no != filing.rcept_no:
+            continue
+        text = (candidate.excerpt_original or "").strip()
+        if not text:
+            return FetchedExcerpt(ExtractionState.NOT_FETCHED, "", "the stored candidate carries no excerpt", "")
+        location = candidate.evidence_location
+        return FetchedExcerpt(
+            ExtractionState.EXTRACTED, candidate.excerpt_original, "", candidate.excerpt_retrieved_at or "",
+            location_section=getattr(location, "section", None) if location is not None else None,
+            source_member=candidate.evidence_source_member,
+        )
+    return FetchedExcerpt(ExtractionState.NOT_FETCHED, "", "no persisted candidate for this filing", "")
 
 
 @dataclass(frozen=True)

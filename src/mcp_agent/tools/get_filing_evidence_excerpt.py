@@ -1,8 +1,9 @@
 """get_filing_evidence_excerpt (design §6) — a capped excerpt of ONE
-filing already returned by search_filing_metadata this session, via the
-adapter's cache-first document_service (a cached document is never
-re-fetched; a miss performs the same single bounded fetch a human page
-view would). Suppression is re-checked here as a second gate. The
+filing already returned by search_filing_metadata this session, read from
+the excerpt the pipeline already persisted on the candidate (blocker E4).
+No adapter cache and no fetch of any kind is involved, so a session runs
+identically on a separate service. Suppression is re-checked here as a
+second gate. The
 excerpt is scrubbed for instruction-shaped text before it reaches the
 model, and every returned excerpt becomes a resolvable EvidenceRecord
 in the session registry. 5 calls per session, shared 20k-char budget."""
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 from src.mcp_agent.budgets import MAX_EXCERPT_CHARS
 from src.mcp_agent.contracts import EvidenceExcerptResult, ToolErrorKind
-from src.mcp_agent.tools._common import SOURCE_ADAPTERS, consume, guarded, register_evidence, reject, require_document
+from src.mcp_agent.tools._common import consume, fetch_stored_excerpt, guarded, register_evidence, reject, require_document
 from src.mcp_agent.tools._context import ToolContext
 from src.models.models import EvidenceLocation, ExtractionState, LocationKind
 
@@ -31,7 +32,7 @@ def run(ctx: ToolContext, document_id: str, max_chars: int = MAX_EXCERPT_CHARS) 
     if error is not None:
         return EvidenceExcerptResult(document_id=document_id, error=error)
 
-    fetched, error = guarded(ctx, NAME, inputs, lambda: SOURCE_ADAPTERS[filing.source_name].fetch(ctx, filing))
+    fetched, error = guarded(ctx, NAME, inputs, lambda: fetch_stored_excerpt(ctx, filing))
     if error is not None:
         return EvidenceExcerptResult(document_id=document_id, error=error)
     if fetched.state is ExtractionState.PARSE_FAILED:

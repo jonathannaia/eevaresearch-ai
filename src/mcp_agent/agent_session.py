@@ -261,17 +261,33 @@ class SessionHooks:
         }
 
 
+def present_service_token(settings: Settings) -> None:
+    """Puts the service token in this process's own environment, which the
+    CLI and its stdio MCP child both inherit, so it never appears on any
+    command line. Raises rather than starting an unauthenticated session.
+
+    The check the server performs with it is a configuration guard, not a
+    trust boundary (blocker E2): both sides read the same environment."""
+    if not settings.research_agent_service_token:
+        raise ValueError("research agent service token is not configured")
+    os.environ[ENV_PRESENTED_TOKEN] = settings.research_agent_service_token
+
+
 def build_options(
     settings: Settings, scope: SessionScope, hooks: SessionHooks, *,
     python_executable: str = sys.executable, cwd: Path = PROJECT_ROOT, model: str | None = None,
 ) -> ClaudeAgentOptions:
     if not settings.research_agent_service_token:
         raise ValueError("research agent service token is not configured")
+    # Blocker E1: the SDK serializes this dict verbatim into the CLI's argv
+    # (--mcp-config), which is world-readable through /proc/<pid>/cmdline.
+    # Only the non-secret session scope goes here. The service token and
+    # every other credential reach the stdio child through the inherited
+    # process environment instead — see present_service_token() below,
+    # which the worker calls once before any session starts.
     env = {
-        **os.environ,
         ENV_SESSION_ID: scope.session_id, ENV_CANDIDATE_ID: scope.candidate_id, ENV_ISSUER_ID: scope.issuer_id,
         ENV_SOURCE_NAME: scope.source_name, ENV_SEED_DOCUMENT_ID: scope.seed_document_id,
-        ENV_PRESENTED_TOKEN: settings.research_agent_service_token,
     }
     return ClaudeAgentOptions(
         tools=[],

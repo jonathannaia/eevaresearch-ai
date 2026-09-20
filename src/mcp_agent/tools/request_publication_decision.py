@@ -1,28 +1,22 @@
-"""request_publication_decision (design §6, §7.5) — the ONLY path to a
-public state, and a backend policy service rather than an agent
-decision. The agent can ask; it supplies no input that can change the
+"""request_publication_decision (design §6, §7.5) — the backend policy
+service the agent may ask for a decision. The agent can ask; it supplies no input that can change the
 outcome once packet_id is fixed: the matrix is evaluated against the
 already-persisted packet and the server-side session context, and the
 recorded decision is returned unchanged on any repeat call (idempotent).
 
-Fail closed, in order: a decision that cannot be persisted publishes
-nothing; an AUTO_PUBLISHED decision whose candidate cannot be marked
-PUBLISHED (missing candidate, version conflict, write error) publishes
-nothing — the public store is written only after the candidate status
-write succeeds, so CandidateSignal.status stays the single source of
-truth for "is this public" (signal_promotion reads it, nothing else).
+The agent can ask; it supplies no input that can change the outcome once
+packet_id is fixed: the matrix is evaluated against the already-persisted
+packet and the server-side session context, and the recorded decision is
+returned unchanged on any repeat call (idempotent).
+
+Fail closed: a decision that cannot be persisted returns an error and
+changes nothing. Since blocker E3 this tool performs no write outside the
+packet store — see src/mcp_agent/publication_writes.py for the candidate
+and public-store writes, which only a future publish-mode worker calls.
 1 call per session."""
 from __future__ import annotations
 
-import hashlib
-
-from src.data_access import backend_factory, verified_update_store
-from src.logic.publication_policy import (
-    DECISION_TO_CANDIDATE_STATUS,
-    PublicationContext,
-    PublicationDecision,
-    evaluate_publication_eligibility,
-)
+from src.logic.publication_policy import PublicationContext, evaluate_publication_eligibility
 from src.mcp_agent import packet_store
 from src.mcp_agent.contracts import (
     IssuerResolution,
@@ -31,23 +25,13 @@ from src.mcp_agent.contracts import (
     RelationshipContextResult,
     RelationshipContextStatus,
     ResolutionConfidence,
-    SourceTier,
     Suppression,
     ToolError,
     ToolErrorKind,
 )
 from src.mcp_agent.tools._common import consume, guarded, reject
 from src.mcp_agent.tools._context import ToolContext
-from src.models.models import CandidateStatus, StateTransition
-from src.models.verified_update import (
-    PUBLISHED_BY_AUTONOMOUS_AGENT,
-    VERIFIED_COMPANY_ANNOUNCEMENT,
-    VERIFIED_FILING_FACT,
-    VerifiedUpdate,
-)
-
 NAME = "request_publication_decision"
-FACTUAL_CONTEXT_MAX_CHARS = 200
 
 
 def _build_context(ctx: ToolContext, stored: packet_store.StoredPacket) -> PublicationContext:
@@ -64,48 +48,6 @@ def _build_context(ctx: ToolContext, stored: packet_store.StoredPacket) -> Publi
         kill_switch_enabled=ctx.settings.research_agent_publication_kill_switch_enabled,
         retrieval_error=ctx.retrieval_error,
     )
-
-
-def _verified_updates(ctx: ToolContext, stored: packet_store.StoredPacket, now: str) -> tuple[VerifiedUpdate, ...]:
-    filing = ctx.filing_events_by_id.get(ctx.scope.seed_document_id)
-    issuer_name = (ctx.resolved_issuer.tracked_company_name if ctx.resolved_issuer else None) or ctx.scope.issuer_id
-    evidence = {e.evidence_id: e for e in stored.evidence}
-    updates = []
-    for claim in stored.proposal.claims:
-        primary = evidence[claim.evidence_ids[0]]
-        label = VERIFIED_COMPANY_ANNOUNCEMENT if primary.source_tier is SourceTier.ISSUER_IR else VERIFIED_FILING_FACT
-        source_label = f"{primary.source_name} {(filing.report_nm or filing.pblntf_ty) if filing is not None else ''}".strip()
-        updates.append(VerifiedUpdate(
-            id="vu-" + hashlib.sha256(f"{stored.packet_id}|{claim.claim_id}".encode("utf-8")).hexdigest()[:16],
-            candidate_id=stored.candidate_id, headline=claim.headline, issuer=issuer_name, entity_id=claim.issuer_id,
-            fact_statement=claim.statement, source_label=source_label, source_date=primary.source_date,
-            source_url=primary.source_url, source_document_id=primary.source_document_id,
-            excerpt_or_locator=primary.excerpt_or_locator, what_this_does_not_establish=claim.what_this_does_not_establish,
-            label=label, published_at=now, published_by=PUBLISHED_BY_AUTONOMOUS_AGENT, evidence_ids=tuple(claim.evidence_ids),
-            audit_session_id=stored.session_id,
-            factual_context=tuple(stored.evidence_text.get(e, "")[:FACTUAL_CONTEXT_MAX_CHARS] for e in claim.factual_context_evidence_ids if stored.evidence_text.get(e)),
-        ))
-    return tuple(updates)
-
-
-def _write_candidate_status(ctx: ToolContext, decision: PublicationDecision, reasons: tuple[str, ...], now: str) -> str:
-    """Returns 'updated' | 'not_found' | 'conflict' | 'error:<name>'. Never raises."""
-    status = DECISION_TO_CANDIDATE_STATUS[decision]
-    try:
-        repo = backend_factory.get_candidate_repository(ctx.settings, ctx.scope.source_name)
-        candidate = repo.get_candidate(ctx.scope.candidate_id)
-        if candidate is None:
-            return "not_found"
-        version = repo.get_candidate_version(ctx.scope.candidate_id)
-        candidate.status = status
-        candidate.reviewed_at = now
-        if status is CandidateStatus.PUBLISHED:
-            candidate.published_by = PUBLISHED_BY_AUTONOMOUS_AGENT
-        candidate.state_history.append(StateTransition(status=status, at=now, detail=f"autonomous_agent:{decision.value}:{reasons[0] if reasons else ''}"))
-        outcome = repo.update_candidate(candidate, expected_version=version)
-        return outcome.status if outcome is not None else "updated"
-    except Exception as exc:  # noqa: BLE001 — audited, never raised
-        return f"error:{type(exc).__name__}"
 
 
 def run(ctx: ToolContext, packet_id: str) -> PublicationDecisionResult:
@@ -129,18 +71,9 @@ def run(ctx: ToolContext, packet_id: str) -> PublicationDecisionResult:
     ctx.audit("publication_decision_made", {"packet_id": packet_id, "rows": decision.as_row_tuples()}, f"{decision.decision.value}: {'; '.join(decision.reasons)}", tool_name=NAME, case_id=packet_id)
     result = PublicationDecisionResult(decision=decision.decision.value, reasons=decision.reasons, row_results=decision.as_row_tuples())
 
-    if decision.decision in DECISION_TO_CANDIDATE_STATUS:
-        write_status = _write_candidate_status(ctx, decision.decision, decision.reasons, now)
-        ctx.audit("candidate_status_written", {"packet_id": packet_id, "decision": decision.decision.value}, write_status, tool_name=NAME, case_id=packet_id)
-        if decision.decision is PublicationDecision.AUTO_PUBLISHED and write_status != "updated":
-            return PublicationDecisionResult(decision=result.decision, reasons=result.reasons, row_results=result.row_results,
-                                             error=reject(ctx, NAME, inputs, ToolErrorKind.VALIDATION_FAILED, f"candidate status write {write_status}; publication withheld"))
-
-    if decision.decision is PublicationDecision.AUTO_PUBLISHED:
-        updates = _verified_updates(ctx, stored, now)
-        inserted, error = guarded(ctx, NAME, inputs, lambda: verified_update_store.append_verified_updates(ctx.settings.cache_dir, updates))
-        if error is not None:
-            return PublicationDecisionResult(decision=result.decision, reasons=result.reasons, row_results=result.row_results, error=error)
-        ctx.audit("verified_updates_published", {"packet_id": packet_id, "ids": list(inserted)}, f"inserted={len(inserted)} of {len(updates)}", tool_name=NAME, case_id=packet_id)
-        return PublicationDecisionResult(decision=result.decision, reasons=result.reasons, row_results=result.row_results, verified_update_id=inserted[0] if inserted else None)
+    # Blocker E3: the tool records the decision and stops there. Every write
+    # that leaves the agent's own tables — the candidate status and the
+    # public store — belongs to the worker, in `publish` mode only, and no
+    # such mode exists in this release. A session can therefore change
+    # nothing a reader sees, whatever the matrix returns.
     return result

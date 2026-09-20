@@ -14,7 +14,7 @@ from __future__ import annotations
 from src.data_access.edgar import edgar_rules
 from src.mcp_agent.budgets import MAX_EXCERPT_CHARS
 from src.mcp_agent.contracts import TableLocatorResult, ToolErrorKind
-from src.mcp_agent.tools._common import SOURCE_ADAPTERS, consume, guarded, register_evidence, reject, require_document
+from src.mcp_agent.tools._common import consume, fetch_stored_excerpt, guarded, register_evidence, reject, require_document
 from src.mcp_agent.tools._context import ToolContext
 from src.models.models import EvidenceLocation, ExtractionState, LocationKind
 
@@ -45,7 +45,7 @@ def run(ctx: ToolContext, document_id: str, locator_hint: str) -> TableLocatorRe
     if error is not None:
         return TableLocatorResult(document_id=document_id, error=error)
 
-    fetched, error = guarded(ctx, NAME, inputs, lambda: SOURCE_ADAPTERS[filing.source_name].fetch(ctx, filing))
+    fetched, error = guarded(ctx, NAME, inputs, lambda: fetch_stored_excerpt(ctx, filing))
     if error is not None:
         return TableLocatorResult(document_id=document_id, error=error)
     if fetched.state is not ExtractionState.EXTRACTED or not fetched.text.strip():

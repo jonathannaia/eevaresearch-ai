@@ -55,7 +55,12 @@ def test_build_options_pins_the_narrow_runtime_contract(tmp_path):
     assert A.SESSION_REPORT_JSON_SCHEMA["properties"]["proposal"]["properties"]["claims"]["items"]["properties"]["claim_type"]["enum"] == ["direct_reported_fact"]
     server = options.mcp_servers[A.SERVER_KEY]
     assert (server["type"], server["command"], server["args"]) == ("stdio", "/usr/bin/python3", ["-m", "src.mcp_agent.server"])
-    assert server["env"]["EEVA_AGENT_PRESENTED_TOKEN"] == "secret" and server["env"]["EEVA_AGENT_CANDIDATE_ID"] == "cand-1"
+    # Blocker E1: the stdio config is serialized into the CLI's argv, so it
+    # carries the session scope and nothing else. The service token reaches
+    # the child through the inherited environment (present_service_token).
+    assert "EEVA_AGENT_PRESENTED_TOKEN" not in server["env"]
+    assert server["env"]["EEVA_AGENT_CANDIDATE_ID"] == "cand-1"
+    assert "secret" not in str(server["env"])
     assert set(options.hooks) == {"PreToolUse", "PostToolUse", "Stop"}
     assert options.setting_sources == [] and options.skills == [] and options.plugins == []
     assert options.can_use_tool is not None
