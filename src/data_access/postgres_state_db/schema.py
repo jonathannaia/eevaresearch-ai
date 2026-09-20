@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -715,6 +715,140 @@ _V23_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Agent Observability and Shadow Mode — the seven durable agent tables
+# (design: the approved Agent Observability & Shadow Mode plan). Additive
+# only: nothing here alters an existing table, so CREATE TABLE takes no
+# lock on candidates, user_accounts or any other live relation. Every
+# agent record the worker writes lands here instead of the ephemeral local
+# JSON files the agent used to write (blocker E5), which are from now on a
+# local/dev convenience only.
+#
+# Conventions follow the rest of this file: ISO-8601 TEXT timestamps,
+# INTEGER 0/1 booleans, *_json TEXT payloads, CHECK constraints for the
+# small closed vocabularies. agent_decisions keeps the policy decision
+# (evaluated with the publication hold excluded) separate from the
+# effective decision, and records the complete blocking context: which
+# hold applied first (blocked_by), the resolved mode, and whether the
+# kill switch was on.
+_V24_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE agent_runs (
+        run_id TEXT PRIMARY KEY,
+        worker_instance TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('off', 'shadow', 'publish')),
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+        considered INTEGER NOT NULL DEFAULT 0,
+        sessions INTEGER NOT NULL DEFAULT 0,
+        decisions INTEGER NOT NULL DEFAULT 0,
+        errors INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        policy_version TEXT NOT NULL,
+        cost_usd TEXT
+    )
+    """,
+    """
+    CREATE TABLE agent_jobs (
+        job_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        candidate_version INTEGER NOT NULL,
+        policy_version TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('off', 'shadow', 'publish')),
+        state TEXT NOT NULL CHECK (state IN ('pending', 'leased', 'done', 'failed', 'dead')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        lease_expires_at TEXT,
+        worker_instance TEXT,
+        last_error_code TEXT,
+        next_attempt_at TEXT,
+        enqueue_reason TEXT NOT NULL CHECK (enqueue_reason IN ('backlog', 'new')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (candidate_id, candidate_version, policy_version, mode)
+    )
+    """,
+    """
+    CREATE TABLE agent_packets (
+        packet_id TEXT PRIMARY KEY,
+        job_id TEXT,
+        run_id TEXT,
+        session_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        issuer_id TEXT,
+        issuer_resolution_json TEXT,
+        seed_document_id TEXT NOT NULL,
+        proposal_json TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE agent_evidence (
+        packet_id TEXT NOT NULL,
+        evidence_id TEXT NOT NULL,
+        source_tier TEXT NOT NULL,
+        source_name TEXT NOT NULL,
+        source_url TEXT,
+        source_document_id TEXT,
+        source_date TEXT,
+        excerpt_or_locator TEXT,
+        excerpt_sha256 TEXT,
+        PRIMARY KEY (packet_id, evidence_id)
+    )
+    """,
+    """
+    CREATE TABLE agent_decisions (
+        packet_id TEXT PRIMARY KEY,
+        policy_decision TEXT NOT NULL,
+        effective_decision TEXT NOT NULL,
+        blocked_by TEXT CHECK (blocked_by IN ('kill_switch', 'shadow_mode')),
+        mode TEXT NOT NULL CHECK (mode IN ('off', 'shadow', 'publish')),
+        kill_switch_on INTEGER NOT NULL DEFAULT 0,
+        quote_verified INTEGER NOT NULL DEFAULT 0,
+        reasons_json TEXT NOT NULL,
+        row_results_json TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        candidate_status_written INTEGER NOT NULL DEFAULT 0,
+        published INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE agent_audit_events (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        run_id TEXT,
+        session_id TEXT NOT NULL,
+        packet_id TEXT,
+        candidate_id TEXT,
+        event_type TEXT NOT NULL,
+        tool_name TEXT,
+        inputs_json TEXT,
+        outcome TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE agent_control (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        mode_override TEXT CHECK (mode_override IN ('off', 'shadow', 'publish')),
+        reason TEXT,
+        updated_by TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_agent_jobs_state ON agent_jobs (state, lease_expires_at)",
+    "CREATE INDEX idx_agent_jobs_candidate ON agent_jobs (candidate_id)",
+    "CREATE INDEX idx_agent_packets_candidate ON agent_packets (candidate_id)",
+    "CREATE INDEX idx_agent_packets_issuer ON agent_packets (issuer_id)",
+    "CREATE INDEX idx_agent_decisions_decided_at ON agent_decisions (decided_at)",
+    "CREATE INDEX idx_agent_decisions_effective ON agent_decisions (effective_decision)",
+    "CREATE INDEX idx_agent_decisions_blocked_by ON agent_decisions (blocked_by)",
+    "CREATE INDEX idx_agent_audit_events_packet ON agent_audit_events (packet_id, created_at)",
+    "CREATE INDEX idx_agent_audit_events_session ON agent_audit_events (session_id)",
+)
+
 # Forward-only migration steps, keyed by the version they move TO.
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
@@ -743,6 +877,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (21, _V21_STATEMENTS),
     (22, _V22_STATEMENTS),
     (23, _V23_STATEMENTS),
+    (24, _V24_STATEMENTS),
 )
 
 
