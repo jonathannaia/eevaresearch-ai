@@ -61,7 +61,7 @@ def test_the_one_eligible_shape_is_needs_review_extracted_with_an_excerpt():
 
 
 @pytest.mark.parametrize("status", [s for s in CandidateStatus if s is not CandidateStatus.NEEDS_REVIEW])
-def test_no_other_candidate_status_is_ever_eligible(status):
+def test_no_other_candidate_status_is_eligible_including_the_superseded_extracted_translated_rule(status):
     """A candidate the reviewers already dispositioned is not the agent's
     business — including the EXTRACTED/TRANSLATED statuses the previous
     worker selected on, which matched nothing real."""
@@ -90,6 +90,25 @@ def test_all_three_conditions_are_required_together():
     assert agent_scheduler.is_eligible(_candidate(status=CandidateStatus.PUBLISHED)) is False
     assert agent_scheduler.is_eligible(_candidate(extraction=ExtractionState.PENDING)) is False
     assert agent_scheduler.is_eligible(_candidate(excerpt=None)) is False
+
+
+def test_the_superseded_extracted_translated_status_rule_is_gone_for_good():
+    """The original worker selected on candidate STATUS in
+    {EXTRACTED, TRANSLATED}. Those are statuses a production candidate
+    never holds — the audit found 0 of 300 rows matching — so the agent
+    would have evaluated nothing. Extraction is now checked on
+    extraction_state, where it actually lives, and status must be
+    NEEDS_REVIEW. This test exists so the old rule cannot creep back."""
+    for superseded in (CandidateStatus.EXTRACTED, CandidateStatus.TRANSLATED):
+        assert agent_scheduler.is_eligible(_candidate(status=superseded)) is False
+
+    # The boundary in full: one status in, every other status out.
+    included = [s for s in CandidateStatus if agent_scheduler.is_eligible(_candidate(status=s))]
+    assert included == [CandidateStatus.NEEDS_REVIEW]
+
+    # And extraction is read from extraction_state, not inferred from status.
+    needs_review_unextracted = _candidate(status=CandidateStatus.NEEDS_REVIEW, extraction=ExtractionState.NOT_FETCHED)
+    assert agent_scheduler.is_eligible(needs_review_unextracted) is False
 
 
 # --- enqueue: new immediately, backlog oldest-first and capped --------------------

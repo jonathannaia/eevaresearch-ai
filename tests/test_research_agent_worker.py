@@ -365,3 +365,58 @@ def test_a_missing_resolver_cache_never_halts_the_tick(settings, monkeypatch):
     monkeypatch.setattr(worker.backend_factory, "get_identifier_repository",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no cache")))
     assert worker.resolved_identifiers_for(settings, "SEC EDGAR", ISSUERS) == {}
+
+
+def test_an_edinet_issuer_resolves_from_the_registry_alone():
+    """The EDINET entries are the only ones whose identifier is known
+    statically, so they need no cache lookup at all."""
+    edinet = _Issuer(issuer_id="edinet:99840", identifiers={"EDINET": "E02778"}, primary_ticker="99840")
+    filing = _filing("acc-1")
+    filing.source_name, filing.corp_code = "EDINET", "E02778"
+    assert worker._issuer_id_for(filing, (edinet,)) == "edinet:99840"
+
+
+def test_a_dart_issuer_resolves_from_the_resolver_cache():
+    """DART corp codes are resolved lazily exactly as EDGAR CIKs are, and
+    are compared as strings rather than integers."""
+    filing = _filing("acc-1")
+    filing.source_name, filing.corp_code = "OpenDART / DART", "00126380"
+    assert worker._issuer_id_for(filing, (_Issuer(issuer_id="dart:005930", identifiers={}),)) is None
+    assert worker._issuer_id_for(filing, (), resolved={"dart:005930": "00126380"}) == "dart:005930"
+
+
+def test_a_dart_corp_code_is_not_matched_by_numeric_coincidence():
+    """00126380 and 126380 are different DART corp codes, unlike CIKs
+    where zero-padding is cosmetic."""
+    filing = _filing("acc-1")
+    filing.source_name, filing.corp_code = "OpenDART / DART", "00126380"
+    assert worker._issuer_id_for(filing, (), resolved={"dart:other": "126380"}) is None
+
+
+def test_the_resolver_cache_is_consulted_for_every_source_not_only_edgar(settings, monkeypatch):
+    asked: list[str] = []
+
+    def fake(_settings, source, _issuers):
+        asked.append(source)
+        return {}
+
+    monkeypatch.setattr(worker, "resolved_identifiers_for", fake)
+    monkeypatch.setattr(worker, "load_candidates", lambda _s: ([], []))
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    store = backend_factory._AgentStoreRepository(conn=conn, module=sqlite_agent)
+    worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert "SEC EDGAR" in asked and any("DART" in s for s in asked)
+
+
+def test_a_truly_unresolved_issuer_is_terminal_and_says_why(settings, store, stub_candidates, stub_packet):
+    """Dead, not retried: no number of attempts will make an unregistered
+    company resolvable, and the outcome names the reason so an operator
+    can act on it rather than guess."""
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    report = worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1",
+                                 issuers=(_Issuer(issuer_id="edgar:UNKNOWN", identifiers={}, primary_ticker=""),))
+    assert report.outcomes == (("cand-1", None, "dead:issuer_unresolved"),)
+    job = store.get_job(agent_scheduler.job_id_for("cand-1", 1, worker.POLICY_VERSION, "shadow"))
+    assert job.state == "dead" and job.last_error_code == "issuer_unresolved"
+    assert job.next_attempt_at is None

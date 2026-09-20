@@ -257,7 +257,9 @@ def run_one_tick(
         )
 
     issuers = get_all_issuers() if issuers is None else issuers
-    resolved_ids = resolved_identifiers_for(settings, "SEC EDGAR", issuers)
+    # Per source: the resolver caches are keyed separately, and DART needs
+    # its own lookup just as much as EDGAR does.
+    resolved_ids = {src: resolved_identifiers_for(settings, src, issuers) for src in sorted(FILING_SOURCE_NAMES)}
     by_id = {c.id: (c, source) for c, source, _ in candidates}
     started: list[str] = []
     outcomes: list[tuple[str, str | None, str | None]] = []
@@ -278,7 +280,7 @@ def run_one_tick(
             outcomes.append((job.candidate_id, None, "dead:candidate_missing"))
             continue
         candidate, source = found
-        scope = _scope_for(candidate, source, issuers=issuers, now=now, resolved=resolved_ids)
+        scope = _scope_for(candidate, source, issuers=issuers, now=now, resolved=resolved_ids.get(source, {}))
         if scope is None:
             store.finish_job(job.job_id, state="dead", now=now.isoformat(),
                              last_error_code="issuer_unresolved", expected_worker=instance)
