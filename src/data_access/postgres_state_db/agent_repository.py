@@ -149,7 +149,11 @@ def claim_job(conn: psycopg.Connection, *, mode: str, now: str, lease_expires_at
     with transaction(conn):
         row = conn.execute(
             "SELECT * FROM agent_jobs WHERE mode = %s AND state = 'pending' "
-            "AND (next_attempt_at IS NULL OR next_attempt_at <= %s) ORDER BY created_at, job_id "
+            # created_at here is the CANDIDATE's creation time (see
+            # agent_scheduler._job), so this drains oldest-candidate-first
+            # across ticks; candidate_id is the same stable tie-break the
+            # scheduler's own order_key uses.
+            "AND (next_attempt_at IS NULL OR next_attempt_at <= %s) ORDER BY created_at, candidate_id "
             "LIMIT 1 FOR UPDATE SKIP LOCKED",
             (mode, now),
         ).fetchone()

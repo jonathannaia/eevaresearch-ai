@@ -153,10 +153,11 @@ def resolved_identifiers_for(settings: Settings, source: str, issuers: Sequence[
     return out
 
 
-def load_candidates(settings: Settings) -> tuple[list[tuple[CandidateSignal, str, int]], list[str]]:
-    """Every candidate the agent could consider, with its source and
-    version. Read-only: no candidate is written, ever."""
-    rows: list[tuple[CandidateSignal, str, int]] = []
+def load_candidates(settings: Settings) -> tuple[list[tuple[CandidateSignal, str, int, str | None]], list[str]]:
+    """Every candidate the agent could consider, with its source, version
+    and the candidates row's own created_at — the scheduler's ordering
+    key. Read-only: no candidate is written, ever."""
+    rows: list[tuple[CandidateSignal, str, int, str | None]] = []
     skipped: list[str] = []
     for source in sorted(FILING_SOURCE_NAMES):
         try:
@@ -165,12 +166,16 @@ def load_candidates(settings: Settings) -> tuple[list[tuple[CandidateSignal, str
         except Exception as exc:  # noqa: BLE001 — a broken store skips the source, never the tick
             skipped.append(f"{source}:load_error:{type(exc).__name__}")
             continue
+        try:
+            created = repo.load_candidate_created_at()
+        except Exception:  # noqa: BLE001 — without timestamps everything sorts as oldest, never as newest
+            created = {}
         for candidate in candidates.values():
             try:
                 version = repo.get_candidate_version(candidate.id) or 1
             except Exception:  # noqa: BLE001
                 version = 1
-            rows.append((candidate, source, version))
+            rows.append((candidate, source, version, created.get(candidate.id)))
     return rows, skipped
 
 
@@ -243,7 +248,9 @@ def run_one_tick(
     candidates, skipped = load_candidates(settings)
     plan = agent_scheduler.plan_enqueue(
         candidates, mode=resolved.mode, now=now.isoformat(),
-        known_after=(now - timedelta(days=2)).strftime("%Y%m%d"),
+        # An ISO instant, matching candidates.created_at: anything the
+        # pipelines created in the last two days counts as new.
+        known_after=(now - timedelta(days=2)).isoformat(),
     )
     enqueued_new = sum(1 for job in plan.new if store.enqueue_job(job))
     enqueued_backlog = sum(1 for job in plan.backlog if store.enqueue_job(job))
@@ -260,7 +267,7 @@ def run_one_tick(
     # Per source: the resolver caches are keyed separately, and DART needs
     # its own lookup just as much as EDGAR does.
     resolved_ids = {src: resolved_identifiers_for(settings, src, issuers) for src in sorted(FILING_SOURCE_NAMES)}
-    by_id = {c.id: (c, source) for c, source, _ in candidates}
+    by_id = {c.id: (c, source) for c, source, _, _ in candidates}
     started: list[str] = []
     outcomes: list[tuple[str, str | None, str | None]] = []
 

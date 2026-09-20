@@ -89,10 +89,13 @@ def settings(tmp_path) -> Settings:
 def stub_candidates(monkeypatch):
     """Stands in for the candidate repositories. The worker only ever
     reads them, so a list is a faithful stand-in."""
-    holder: dict[str, list] = {"rows": [], "skipped": []}
+    holder: dict[str, list] = {"rows": [], "skipped": [], "created": {}}
 
     def fake_load(_settings):
-        return [(c, "SEC EDGAR", 1) for c in holder["rows"]], list(holder["skipped"])
+        created = holder["created"]
+        return ([(c, getattr(c.filing, "source_name", "SEC EDGAR"), 1,
+                  created.get(c.id, f"2026-09-0{i + 1}T00:00:00+00:00"))
+                 for i, c in enumerate(holder["rows"])], list(holder["skipped"]))
 
     monkeypatch.setattr(worker, "load_candidates", fake_load)
     return holder
@@ -269,7 +272,8 @@ def test_an_unreadable_control_row_never_widens_anything(settings, store, stub_c
 def test_a_tick_reclaims_leases_abandoned_by_a_crashed_worker(settings, store, stub_candidates, stub_packet):
     stub_candidates["rows"] = [_candidate("cand-1")]
     job = agent_scheduler.plan_enqueue(
-        [(_candidate("cand-1"), "SEC EDGAR", 1)], mode="shadow", now=NOW.isoformat(), known_after=None,
+        [(_candidate("cand-1"), "SEC EDGAR", 1, "2026-09-01T00:00:00+00:00")],
+        mode="shadow", now=NOW.isoformat(), known_after=None,
     ).jobs[0]
     store.enqueue_job(job)
     store.claim_job(mode="shadow", now=NOW.isoformat(),

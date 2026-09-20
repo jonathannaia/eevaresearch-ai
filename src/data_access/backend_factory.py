@@ -234,6 +234,7 @@ class CandidateRepositoryProtocol(Protocol):
     def load_candidates(self) -> dict[str, CandidateSignal]: ...
     def get_candidate(self, candidate_id: str) -> CandidateSignal | None: ...
     def get_candidate_version(self, candidate_id: str) -> int | None: ...
+    def load_candidate_created_at(self) -> dict[str, str]: ...
     def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]: ...
     def update_candidate(self, candidate: CandidateSignal, expected_version: int | None = None) -> UpdateOutcome: ...
     # Durable-State Phase 4M-2 (Stage 0) — see CandidatePersistence's own
@@ -261,6 +262,12 @@ class JsonCandidateRepository:
 
     def get_candidate(self, candidate_id: str) -> CandidateSignal | None:
         return self.load_candidates().get(candidate_id)
+
+    def load_candidate_created_at(self) -> dict[str, str]:
+        # The JSON store keeps no row-creation timestamp. Empty is the
+        # honest answer; the agent never runs on this backend anyway
+        # (get_agent_store_repository refuses it outright).
+        return {}
 
     def get_candidate_version(self, candidate_id: str) -> int | None:
         # JSON has no version concept at all — always None, honestly,
@@ -310,6 +317,9 @@ class SqliteCandidateRepository:
     def get_candidate_version(self, candidate_id: str) -> int | None:
         return sqlite_candidates.get_candidate_version(self.conn, candidate_id)
 
+    def load_candidate_created_at(self) -> dict[str, str]:
+        return sqlite_candidates.load_candidate_created_at(self.conn, self.source)
+
     def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]:
         return sqlite_candidates.upsert_new_candidates(self.conn, self.source, new_candidates)
 
@@ -344,6 +354,9 @@ class PostgresCandidateRepository:
 
     def get_candidate_version(self, candidate_id: str) -> int | None:
         return postgres_candidates.get_candidate_version(self.conn, candidate_id)
+
+    def load_candidate_created_at(self) -> dict[str, str]:
+        return postgres_candidates.load_candidate_created_at(self.conn, self.source)
 
     def upsert_new_candidates(self, new_candidates: list[CandidateSignal]) -> dict[str, CandidateSignal]:
         return postgres_candidates.upsert_new_candidates(self.conn, self.source, new_candidates)

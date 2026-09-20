@@ -144,6 +144,17 @@ def get_candidate_version(conn: sqlite3.Connection, candidate_id: str) -> int | 
     return row["version"] if row is not None else None
 
 
+def load_candidate_created_at(conn: sqlite3.Connection, source: str) -> dict[str, str]:
+    """candidate_id -> the row's own `created_at`, for one source.
+
+    CandidateSignal deliberately does not carry this column (it is row
+    bookkeeping, not part of the signal), but the agent scheduler orders
+    its backlog by it, so it is exposed here as a cheap bulk read rather
+    than by widening the model."""
+    rows = conn.execute("SELECT id, created_at FROM candidates WHERE source = ?", (source,)).fetchall()
+    return {row["id"]: row["created_at"] for row in rows}
+
+
 def load_candidates(conn: sqlite3.Connection, source: str) -> dict[str, CandidateSignal]:
     rows = conn.execute("SELECT id FROM candidates WHERE source = ?", (source,)).fetchall()
     return {row["id"]: get_candidate(conn, row["id"]) for row in rows}

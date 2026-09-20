@@ -25,6 +25,19 @@ OLDEST FIRST and capped per tick, so a first run against thousands of
 historical candidates drains steadily from the far end rather than
 flooding the queue or starving the old rows forever.
 
+"Oldest" means `candidates.created_at` -- the row's own creation
+timestamp -- and it is the single ordering key used everywhere: the
+backlog sort, the new/backlog watermark, and the priority a job is
+later claimed by. An earlier version ordered by the filing's receipt
+date (`filing.rcept_dt`), which was wrong in two ways: it is a
+YYYYMMDD string with no time component, so every candidate from the
+same day tied and the "oldest first" guarantee collapsed into hash
+order within a day; and it measures when the regulator received the
+document, not when this system learned about it, which is what a
+backlog is actually made of. Ties on created_at break on candidate_id,
+so two rows written in the same millisecond always enqueue in the same
+order on every backend and every replay.
+
 Everything in this module is pure or store-only: no model session, no
 network, no candidate write.
 """
@@ -76,6 +89,15 @@ def ineligibility_reason(candidate: CandidateSignal) -> str | None:
     return None
 
 
+def order_key(created_at: str | None, candidate_id: str) -> tuple[str, str]:
+    """The one ordering key. Chronological by the candidate row's own
+    creation time, then candidate_id so equal timestamps are still
+    deterministic rather than left to insertion or hash order. A missing
+    created_at sorts first: an unknown age is treated as oldest, which
+    keeps such a row from being starved forever."""
+    return ((created_at or ""), candidate_id)
+
+
 def job_id_for(candidate_id: str, version: int, policy_version: str, mode: str) -> str:
     """Derived, not random: the same candidate at the same version under
     the same policy and mode is the same job, so a replayed tick after a
@@ -96,48 +118,56 @@ class EnqueuePlan:
         return self.new + self.backlog
 
 
-def _job(candidate: CandidateSignal, *, source: str, mode: str, now: str, reason: str, version: int) -> AgentJob:
+def _job(candidate: CandidateSignal, *, source: str, mode: str, now: str, reason: str, version: int,
+         created_at: str | None) -> AgentJob:
+    """`AgentJob.created_at` carries the CANDIDATE's created_at, not the
+    tick time, because that column is the queue's priority key and
+    nothing else reads it (claim_job orders by it; count_jobs_by_state
+    filters on updated_at). Storing the tick time there would have made
+    every job enqueued in one tick tie, and the backlog's careful
+    oldest-first ordering would have been discarded at claim time."""
     return AgentJob(
         job_id=job_id_for(candidate.id, version, POLICY_VERSION, mode),
         candidate_id=candidate.id, source=source, candidate_version=version,
         policy_version=POLICY_VERSION, mode=mode, state="pending", attempts=0,
-        enqueue_reason=reason, created_at=now, updated_at=now,
+        enqueue_reason=reason, created_at=(created_at or ""), updated_at=now,
     )
 
 
 def plan_enqueue(
-    candidates: Iterable[tuple[CandidateSignal, str, int]], *, mode: str, now: str, known_after: str | None,
+    candidates: Iterable[tuple], *, mode: str, now: str, known_after: str | None,
     backlog_cap: int = BACKLOG_ENQUEUE_CAP,
 ) -> EnqueuePlan:
-    """`candidates` is (candidate, source, version). `known_after` is the
-    watermark separating "new" from "backlog" — a candidate whose filing
-    is more recent goes in immediately; anything at or before it is
-    backlog and is taken oldest first, up to the cap.
+    """`candidates` is (candidate, source, version, created_at), where
+    created_at is the candidates row's own timestamp. `known_after` is
+    the watermark separating "new" from "backlog": a candidate created
+    strictly after it is new and goes in immediately, anything at or
+    before it is backlog and is taken oldest first up to the cap.
 
-    Age is the filing's own receipt date (`filing.rcept_dt`), not a row
-    timestamp: it is what "oldest" means to a reader, it is stable across
-    a backfill that re-inserts rows, and CandidateSignal carries it."""
+    The two branches partition the input exactly, and both derive the
+    same job_id, so a candidate that crosses the watermark between ticks
+    is neither skipped nor enqueued twice -- the second enqueue is an
+    INSERT ... DO NOTHING against the same idempotency key."""
     new: list[AgentJob] = []
-    backlog: list[CandidateSignal] = []
-    backlog_meta: dict[str, tuple[str, int]] = {}
+    backlog: list[tuple[CandidateSignal, str, int, str | None]] = []
     skipped: list[str] = []
 
-    for candidate, source, version in candidates:
+    for candidate, source, version, created_at in candidates:
         reason = ineligibility_reason(candidate)
         if reason is not None:
             skipped.append(f"{candidate.id}:{reason}")
             continue
-        filed = candidate.filing.rcept_dt or ""
-        if known_after is not None and filed > known_after:
-            new.append(_job(candidate, source=source, mode=mode, now=now, reason="new", version=version))
+        entry = (candidate, source, version, created_at)
+        if known_after is not None and (created_at or "") > known_after:
+            new.append(_job(candidate, source=source, mode=mode, now=now, reason="new", version=version,
+                            created_at=created_at))
         else:
-            backlog.append(candidate)
-            backlog_meta[candidate.id] = (source, version)
+            backlog.append(entry)
 
-    backlog.sort(key=lambda c: (c.filing.rcept_dt or "", c.id))  # oldest first
+    backlog.sort(key=lambda e: order_key(e[3], e[0].id))  # oldest first, then candidate_id
     capped = [
-        _job(c, source=backlog_meta[c.id][0], mode=mode, now=now, reason="backlog", version=backlog_meta[c.id][1])
-        for c in backlog[:max(0, backlog_cap)]
+        _job(c, source=src, mode=mode, now=now, reason="backlog", version=ver, created_at=created)
+        for c, src, ver, created in backlog[:max(0, backlog_cap)]
     ]
     if len(backlog) > len(capped):
         skipped.append(f"backlog_cap:{len(backlog) - len(capped)}_deferred")

@@ -113,13 +113,19 @@ def test_the_superseded_extracted_translated_status_rule_is_gone_for_good():
 
 # --- enqueue: new immediately, backlog oldest-first and capped --------------------
 
-def _rows(*candidates: CandidateSignal):
-    return [(c, "SEC EDGAR", 1) for c in candidates]
+def _rows(*candidates: CandidateSignal, created: dict[str, str] | None = None, source: str = "SEC EDGAR"):
+    """(candidate, source, version, created_at) — created_at defaults to a
+    distinct instant per candidate, derived from its id, so a test that
+    does not care about ordering still gets a deterministic one."""
+    created = created or {}
+    return [(c, source, 1, created.get(c.id, f"2026-01-01T00:00:{i:02d}+00:00"))
+            for i, c in enumerate(candidates)]
 
 
 def test_a_recent_candidate_is_enqueued_as_new():
     plan = agent_scheduler.plan_enqueue(
-        _rows(_candidate("c1", rcept_dt="20260919")), mode="shadow", now=NOW.isoformat(), known_after="20260918",
+        _rows(_candidate("c1"), created={"c1": "2026-09-19T00:00:00+00:00"}),
+        mode="shadow", now=NOW.isoformat(), known_after="2026-09-18T00:00:00+00:00",
     )
     assert [j.candidate_id for j in plan.new] == ["c1"] and plan.backlog == ()
     assert plan.new[0].enqueue_reason == "new"
@@ -127,10 +133,12 @@ def test_a_recent_candidate_is_enqueued_as_new():
 
 def test_older_candidates_are_backlog_and_drain_oldest_first():
     candidates = _rows(
-        _candidate("newest", rcept_dt="20260810"), _candidate("oldest", rcept_dt="20240101"),
-        _candidate("middle", rcept_dt="20250601"),
+        _candidate("newest"), _candidate("oldest"), _candidate("middle"),
+        created={"newest": "2026-08-10T00:00:00+00:00", "oldest": "2024-01-01T00:00:00+00:00",
+                 "middle": "2025-06-01T00:00:00+00:00"},
     )
-    plan = agent_scheduler.plan_enqueue(candidates, mode="shadow", now=NOW.isoformat(), known_after="20260901")
+    plan = agent_scheduler.plan_enqueue(candidates, mode="shadow", now=NOW.isoformat(),
+                                        known_after="2026-09-01T00:00:00+00:00")
     assert [j.candidate_id for j in plan.backlog] == ["oldest", "middle", "newest"]
     assert all(j.enqueue_reason == "backlog" for j in plan.backlog)
 
@@ -138,22 +146,24 @@ def test_older_candidates_are_backlog_and_drain_oldest_first():
 def test_the_backlog_is_capped_per_tick_and_says_how_much_it_deferred():
     """A first run against thousands of historical candidates must drain
     steadily rather than flood the queue in one tick."""
-    candidates = _rows(*[_candidate(f"c{i:03d}", rcept_dt=f"2024{i % 12 + 1:02d}01") for i in range(60)])
+    candidates = _rows(*[_candidate(f"c{i:03d}") for i in range(60)],
+                       created={f"c{i:03d}": f"2024-{i % 12 + 1:02d}-01T00:00:00+00:00" for i in range(60)})
     plan = agent_scheduler.plan_enqueue(
-        candidates, mode="shadow", now=NOW.isoformat(), known_after="20260901", backlog_cap=25,
+        candidates, mode="shadow", now=NOW.isoformat(), known_after="2026-09-01T00:00:00+00:00", backlog_cap=25,
     )
     assert len(plan.backlog) == 25
     assert any(s == "backlog_cap:35_deferred" for s in plan.skipped)
 
 
 def test_the_cap_takes_the_oldest_not_an_arbitrary_25():
-    candidates = _rows(*[_candidate(f"c{i:02d}", rcept_dt=f"2025{i % 12 + 1:02d}01") for i in range(40)])
+    candidates = _rows(*[_candidate(f"c{i:02d}") for i in range(40)],
+                       created={f"c{i:02d}": f"2025-{i % 12 + 1:02d}-01T00:00:00+00:00" for i in range(40)})
     plan = agent_scheduler.plan_enqueue(
-        candidates, mode="shadow", now=NOW.isoformat(), known_after="20260901", backlog_cap=5,
+        candidates, mode="shadow", now=NOW.isoformat(), known_after="2026-09-01T00:00:00+00:00", backlog_cap=5,
     )
     taken = [j.candidate_id for j in plan.backlog]
-    everything = sorted(candidates, key=lambda r: (r[0].filing.rcept_dt, r[0].id))
-    assert taken == [c.id for c, _, _ in everything[:5]]
+    everything = sorted(candidates, key=lambda r: agent_scheduler.order_key(r[3], r[0].id))
+    assert taken == [c.id for c, _, _, _ in everything[:5]]
 
 
 def test_ineligible_candidates_never_reach_the_queue_and_are_reported():
@@ -203,7 +213,8 @@ def store():
 
 def _enqueue(store, candidate_id="cand-1", *, mode="shadow", created="2026-09-20T00:00:00+00:00") -> str:
     job = agent_scheduler.plan_enqueue(
-        _rows(_candidate(candidate_id)), mode=mode, now=created, known_after=None,
+        _rows(_candidate(candidate_id), created={candidate_id: created}),
+        mode=mode, now=created, known_after=None,
     ).jobs[0]
     store.enqueue_job(job)
     return job.job_id
@@ -434,3 +445,193 @@ def test_every_failure_is_reported_at_once_not_one_at_a_time():
     check = _check(_ok_settings(db_backend="json", edgar_user_agent=""), version=20, tables=(),
                    probe=lambda: "no cli")
     assert len(check.problems) >= 5 and check.ok is False
+
+
+# --- ordering is created_at, not the filing date ------------------------------------
+
+def test_same_filing_date_different_created_at_enqueues_in_true_chronological_order():
+    """The defect this ordering replaced: rcept_dt is a YYYYMMDD string,
+    so every candidate filed on the same day tied and 'oldest first'
+    collapsed into hash order within that day. These three share a filing
+    date and differ only by when the pipeline actually created them."""
+    same_day = "20260901"
+    candidates = _rows(
+        _candidate("evening", rcept_dt=same_day), _candidate("morning", rcept_dt=same_day),
+        _candidate("midday", rcept_dt=same_day),
+        created={"evening": "2026-09-01T21:40:00+00:00", "morning": "2026-09-01T06:05:00+00:00",
+                 "midday": "2026-09-01T12:15:00+00:00"},
+    )
+    plan = agent_scheduler.plan_enqueue(candidates, mode="shadow", now=NOW.isoformat(),
+                                        known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in plan.backlog] == ["morning", "midday", "evening"]
+    assert len({c.filing.rcept_dt for c, _, _, _ in candidates}) == 1, "the filing date must not disambiguate them"
+
+
+def test_equal_created_at_values_break_the_tie_on_candidate_id_deterministically():
+    identical = "2026-09-01T00:00:00+00:00"
+    candidates = _rows(
+        _candidate("cand-c"), _candidate("cand-a"), _candidate("cand-b"),
+        created={"cand-c": identical, "cand-a": identical, "cand-b": identical},
+    )
+    first = agent_scheduler.plan_enqueue(candidates, mode="shadow", now=NOW.isoformat(),
+                                         known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in first.backlog] == ["cand-a", "cand-b", "cand-c"]
+
+    # Same set, different input order: the plan must be identical.
+    reshuffled = agent_scheduler.plan_enqueue(list(reversed(candidates)), mode="shadow", now=NOW.isoformat(),
+                                              known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in reshuffled.backlog] == [j.candidate_id for j in first.backlog]
+
+
+def test_a_missing_created_at_sorts_as_oldest_rather_than_being_starved():
+    candidates = _rows(_candidate("known"), _candidate("unknown"),
+                       created={"known": "2020-01-01T00:00:00+00:00", "unknown": None})
+    plan = agent_scheduler.plan_enqueue(candidates, mode="shadow", now=NOW.isoformat(),
+                                        known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in plan.backlog] == ["unknown", "known"]
+
+
+def test_the_order_key_is_chronological_then_stable():
+    assert agent_scheduler.order_key("2026-01-01T00:00:00+00:00", "z") < \
+           agent_scheduler.order_key("2026-01-02T00:00:00+00:00", "a")
+    assert agent_scheduler.order_key("2026-01-01T00:00:00+00:00", "a") < \
+           agent_scheduler.order_key("2026-01-01T00:00:00+00:00", "b")
+    assert agent_scheduler.order_key(None, "a") < agent_scheduler.order_key("2000-01-01T00:00:00+00:00", "a")
+
+
+# --- the new/backlog boundary --------------------------------------------------------
+
+def test_a_candidate_crossing_the_watermark_is_neither_skipped_nor_duplicated(store):
+    """The same candidate is 'new' on one tick and 'backlog' on a later
+    one, once the watermark has moved past it. Both branches derive the
+    same job id, so the second enqueue is a no-op rather than a duplicate
+    — and it is never dropped in between."""
+    candidate = _candidate("crossing")
+    created = "2026-09-19T12:00:00+00:00"
+    rows = _rows(candidate, created={"crossing": created})
+
+    first = agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                         known_after="2026-09-18T00:00:00+00:00")
+    assert [j.candidate_id for j in first.new] == ["crossing"] and first.backlog == ()
+
+    later = agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                         known_after="2026-09-20T00:00:00+00:00")
+    assert [j.candidate_id for j in later.backlog] == ["crossing"] and later.new == ()
+
+    assert first.new[0].job_id == later.backlog[0].job_id
+    assert store.enqueue_job(first.new[0]) is True
+    assert store.enqueue_job(later.backlog[0]) is False   # idempotent across the boundary
+    assert store.count_jobs_by_state() == {"pending": 1}
+
+
+def test_the_watermark_boundary_is_exclusive_and_partitions_every_candidate():
+    """Strictly-after is new; at-or-before is backlog. No candidate may
+    fall into both or neither."""
+    at = "2026-09-19T00:00:00+00:00"
+    rows = _rows(_candidate("before"), _candidate("exactly"), _candidate("after"),
+                 created={"before": "2026-09-18T23:59:59+00:00", "exactly": at,
+                          "after": "2026-09-19T00:00:01+00:00"})
+    plan = agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(), known_after=at)
+    assert [j.candidate_id for j in plan.new] == ["after"]
+    assert sorted(j.candidate_id for j in plan.backlog) == ["before", "exactly"]
+    assert sorted(j.candidate_id for j in plan.jobs) == ["after", "before", "exactly"]
+
+
+# --- every source uses the same semantics ------------------------------------------------
+
+@pytest.mark.parametrize("source", ["SEC EDGAR", "OpenDART / DART", "EDINET"])
+def test_every_source_orders_by_created_at_with_the_same_semantics(source):
+    rows = _rows(_candidate("late"), _candidate("early"), source=source,
+                 created={"late": "2026-05-05T00:00:00+00:00", "early": "2024-02-02T00:00:00+00:00"})
+    plan = agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                        known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in plan.backlog] == ["early", "late"]
+    assert {j.source for j in plan.backlog} == {source}
+    assert [j.created_at for j in plan.backlog] == ["2024-02-02T00:00:00+00:00", "2026-05-05T00:00:00+00:00"]
+
+
+def test_candidates_from_different_sources_interleave_by_age_not_by_source():
+    """A DART candidate older than an EDGAR one must be worked first;
+    source must not act as a hidden sort key."""
+    rows = (
+        _rows(_candidate("edgar-new"), source="SEC EDGAR", created={"edgar-new": "2026-06-01T00:00:00+00:00"})
+        + _rows(_candidate("dart-old"), source="OpenDART / DART", created={"dart-old": "2024-01-01T00:00:00+00:00"})
+        + _rows(_candidate("edinet-mid"), source="EDINET", created={"edinet-mid": "2025-03-01T00:00:00+00:00"})
+    )
+    plan = agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                        known_after="2026-09-30T00:00:00+00:00")
+    assert [j.candidate_id for j in plan.backlog] == ["dart-old", "edinet-mid", "edgar-new"]
+
+
+# --- the ordering survives into claim priority ---------------------------------------------
+
+def test_a_job_is_claimed_oldest_candidate_first_even_when_enqueued_in_one_tick(store):
+    """All three are enqueued in the same tick, so a tick-time job
+    timestamp would have made them tie and claim order would have fallen
+    back to the job-id hash. The queue must drain oldest-candidate-first."""
+    rows = _rows(_candidate("newest"), _candidate("oldest"), _candidate("middle"),
+                 created={"newest": "2026-08-01T00:00:00+00:00", "oldest": "2024-01-01T00:00:00+00:00",
+                          "middle": "2025-01-01T00:00:00+00:00"})
+    for job in agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                            known_after="2026-09-30T00:00:00+00:00").jobs:
+        store.enqueue_job(job)
+
+    claimed = []
+    for _ in range(3):
+        job = store.claim_job(mode="shadow", now=NOW.isoformat(),
+                              lease_expires_at=agent_scheduler.lease_until(NOW), worker_instance="w1")
+        claimed.append(job.candidate_id)
+        store.finish_job(job.job_id, state="done", now=NOW.isoformat(), expected_worker="w1")
+    assert claimed == ["oldest", "middle", "newest"]
+
+
+def test_claim_order_breaks_ties_on_candidate_id_not_on_the_job_id_hash(store):
+    identical = "2026-09-01T00:00:00+00:00"
+    rows = _rows(_candidate("cand-c"), _candidate("cand-a"), _candidate("cand-b"),
+                 created={"cand-c": identical, "cand-a": identical, "cand-b": identical})
+    for job in agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                            known_after="2026-09-30T00:00:00+00:00").jobs:
+        store.enqueue_job(job)
+
+    claimed = []
+    for _ in range(3):
+        job = store.claim_job(mode="shadow", now=NOW.isoformat(),
+                              lease_expires_at=agent_scheduler.lease_until(NOW), worker_instance="w1")
+        claimed.append(job.candidate_id)
+        store.finish_job(job.job_id, state="done", now=NOW.isoformat(), expected_worker="w1")
+    assert claimed == ["cand-a", "cand-b", "cand-c"]
+
+
+def test_the_job_row_stores_the_candidate_created_at_as_its_priority_key(store):
+    job = agent_scheduler.plan_enqueue(
+        _rows(_candidate("cand-1"), created={"cand-1": "2024-07-07T07:07:07+00:00"}),
+        mode="shadow", now=NOW.isoformat(), known_after=None,
+    ).jobs[0]
+    store.enqueue_job(job)
+    assert store.get_job(job.job_id).created_at == "2024-07-07T07:07:07+00:00"
+    # ...and updated_at still records when the tick touched it.
+    assert store.get_job(job.job_id).updated_at == NOW.isoformat()
+
+
+def test_both_backends_claim_in_the_same_order():
+    """The two repository modules are independent implementations, so the
+    ordering that makes the queue fair has to be asserted in both. This
+    is a structural check because the Postgres path needs a live server;
+    the behavioural proof above runs on SQLite."""
+    import re
+    from pathlib import Path
+
+    def claim_order(path: Path) -> str:
+        source = Path(path).read_text(encoding="utf-8")
+        body = source[source.index("def claim_job("):source.index("def finish_job(")]
+        # The SQL is built from adjacent string literals, so join them
+        # back together before reading the clause out.
+        flattened = " ".join(body.replace('"', " ").split())
+        match = re.search(r"ORDER BY ([a-z_, ]+?) LIMIT", flattened)
+        assert match, f"no ORDER BY found in {path}"
+        return " ".join(match.group(1).split())
+
+    root = Path(__file__).parent.parent
+    sqlite_order = claim_order(root / "src" / "data_access" / "state_db" / "agent_repository.py")
+    postgres_order = claim_order(root / "src" / "data_access" / "postgres_state_db" / "agent_repository.py")
+    assert sqlite_order == postgres_order == "created_at, candidate_id"
