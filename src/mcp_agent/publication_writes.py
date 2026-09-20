@@ -7,12 +7,20 @@ limited-autonomous-publishing release introduces together with atomic
 publication (E6), Signal exclusion (E7) and retraction (E8). Keeping them
 here, unwired, makes the boundary explicit: the model-driving session
 holds no path to a candidate row or the public store.
+
+Each write also asks assert_write_allowed for publish authority before
+touching anything, so if a future change does wire one of these up, a
+shadow-mode run raises ShadowWriteViolation rather than quietly writing
+a candidate row. No resolvable mode in this release grants that
+authority (src/logic/agent_mode.py caps at `shadow`), which makes these
+functions unreachable-by-configuration as well as uncalled.
 """
 from __future__ import annotations
 
 import hashlib
 
 from src.data_access import backend_factory, verified_update_store
+from src.logic.agent_write_guard import assert_write_allowed
 from src.logic.publication_policy import DECISION_TO_CANDIDATE_STATUS, PublicationDecision
 from src.mcp_agent import packet_store
 from src.mcp_agent.contracts import SourceTier
@@ -50,8 +58,12 @@ def _verified_updates(ctx: ToolContext, stored: packet_store.StoredPacket, now: 
     return tuple(updates)
 
 
-def _write_candidate_status(ctx: ToolContext, decision: PublicationDecision, reasons: tuple[str, ...], now: str) -> str:
-    """Returns 'updated' | 'not_found' | 'conflict' | 'error:<name>'. Never raises."""
+def _write_candidate_status(ctx: ToolContext, decision: PublicationDecision, reasons: tuple[str, ...], now: str, *, resolved) -> str:
+    """Returns 'updated' | 'not_found' | 'conflict' | 'error:<name>'. Never
+    raises — except through the authority check, which is deliberately
+    outside the try: a mode violation is a bug to surface, not an outcome
+    to record."""
+    assert_write_allowed("candidates", resolved=resolved)
     status = DECISION_TO_CANDIDATE_STATUS[decision]
     try:
         repo = backend_factory.get_candidate_repository(ctx.settings, ctx.scope.source_name)

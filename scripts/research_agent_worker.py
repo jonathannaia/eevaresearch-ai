@@ -34,6 +34,7 @@ from src.config.issuer_registry import get_all_issuers
 from src.config.settings import Settings, get_settings
 from src.data_access import backend_factory
 from src.data_access.agent_audit import AuditEvent, load_all_audit_events
+from src.logic import agent_mode
 from src.mcp_agent import agent_session, packet_store
 from src.mcp_agent.contracts import FILING_SOURCE_NAMES, SessionScope
 from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
@@ -184,6 +185,9 @@ def _validate_live_settings(settings: Settings) -> str | None:
         return (
             f"a live agent run requires EDGE_DB_BACKEND=postgres for durable agent records; found {backend!r}"
         )
+    resolved = agent_mode.resolve_mode(settings)
+    if resolved.is_off:
+        return f"the agent mode resolves to off ({resolved.reason})"
     return None
 
 
@@ -197,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
     if problem:
         print(f"research_agent_worker: refusing to start — {problem}")
         return 2
+    resolved = agent_mode.resolve_mode(ambient)
+    print(
+        f"research_agent_worker: mode={resolved.mode} kill_switch_on={resolved.kill_switch_on} ({resolved.reason})"
+    )
     interval_seconds = max(_MIN_INTERVAL_SECONDS, DEFAULT_INTERVAL_MINUTES * 60)
     while not _shutdown_requested:
         report = run_one_tick(ambient)

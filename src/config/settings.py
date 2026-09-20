@@ -448,6 +448,16 @@ class Settings:
     research_agent_publication_kill_switch_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED")
     )
+    # What the agent may do when it does run: off / shadow / publish.
+    # Stored raw and resolved by src/logic/agent_mode.py, which fails
+    # closed on anything unrecognized, lets the agent_control row narrow
+    # it but never widen it, and caps it at `shadow` for this release —
+    # publishing ships with E6/E7/E8 and the V25 migration. Read as a
+    # string rather than a bool because "off" and "shadow" are both
+    # not-publishing but differ in whether the agent runs at all.
+    research_agent_mode: str = field(
+        default_factory=lambda: os.getenv("EDGE_RESEARCH_AGENT_MODE") or "off"
+    )
     # Gates the hidden, read-only src/ui/pages/verified_updates.py page —
     # the public surface for the agent's AUTO_PUBLISHED records (design
     # §9.2). Separate from research_agent_live_enabled (the worker's own

@@ -161,8 +161,19 @@ def test_a_live_run_refuses_any_backend_other_than_postgres(backend):
 
 def test_a_live_run_accepts_postgres():
     assert worker._validate_live_settings(
-        Settings(db_backend="postgres", research_agent_service_token="t" * 32)
+        Settings(db_backend="postgres", research_agent_service_token="t" * 32, research_agent_mode="shadow")
     ) is None
+
+
+@pytest.mark.parametrize("mode", ["off", "", "on", "enabled"])
+def test_a_live_run_refuses_a_mode_that_resolves_to_off(mode):
+    """Everything else can be configured correctly and the worker still
+    does nothing unless the mode says so — including when the mode is a
+    typo, which resolves to off rather than to something permissive."""
+    problem = worker._validate_live_settings(
+        Settings(db_backend="postgres", research_agent_service_token="t" * 32, research_agent_mode=mode)
+    )
+    assert problem is not None and "resolves to off" in problem
 
 
 def test_a_live_run_still_refuses_without_its_service_credential():
