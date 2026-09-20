@@ -424,3 +424,82 @@ def test_a_truly_unresolved_issuer_is_terminal_and_says_why(settings, store, stu
     job = store.get_job(agent_scheduler.job_id_for("cand-1", 1, worker.POLICY_VERSION, "shadow"))
     assert job.state == "dead" and job.last_error_code == "issuer_unresolved"
     assert job.next_attempt_at is None
+
+
+# --- the JSON backend cannot be scheduled against -----------------------------------------
+
+def test_the_json_backend_refuses_to_supply_the_scheduler_ordering_key(tmp_path):
+    """Returning an empty mapping would be worse than failing: every
+    candidate would sort as equally old, oldest-first would silently
+    become candidate_id order, and nothing would say so."""
+    repo = backend_factory.JsonCandidateRepository(cache_dir=tmp_path, filename="candidates.json")
+    with pytest.raises(backend_factory.AgentSchedulingRequiresDurableBackend) as excinfo:
+        repo.load_candidate_created_at()
+    message = str(excinfo.value)
+    assert "agent scheduling requires the durable PostgreSQL backend" in message
+    assert "cannot use the JSON backend" in message
+    assert "created_at" in message
+
+
+def test_that_failure_is_a_backend_configuration_error():
+    """So existing callers that already handle configuration problems
+    treat it as one, rather than as an unexpected crash."""
+    assert issubclass(backend_factory.AgentSchedulingRequiresDurableBackend,
+                      backend_factory.BackendConfigurationError)
+
+
+def test_the_worker_never_swallows_it_into_an_unordered_backlog(tmp_path, monkeypatch):
+    """load_candidates() tolerates a transient read failure by treating
+    those rows as oldest; it must NOT tolerate this one."""
+    class JsonBacked:
+        def load_candidates(self):
+            return {"cand-1": _candidate("cand-1")}
+
+        def get_candidate_version(self, candidate_id):
+            return 1
+
+        def load_candidate_created_at(self):
+            raise backend_factory.AgentSchedulingRequiresDurableBackend("json backend cannot be scheduled")
+
+    monkeypatch.setattr(worker.backend_factory, "get_candidate_repository", lambda *a, **k: JsonBacked())
+    with pytest.raises(backend_factory.AgentSchedulingRequiresDurableBackend):
+        worker.load_candidates(Settings(cache_dir=tmp_path, db_backend="json"))
+
+
+def test_a_tick_halts_before_enqueuing_anything_when_the_backend_cannot_be_ordered(
+    settings, store, stub_packet, monkeypatch,
+):
+    def explode(_settings):
+        raise backend_factory.AgentSchedulingRequiresDurableBackend(
+            "agent scheduling requires the durable PostgreSQL backend and cannot use the JSON backend"
+        )
+
+    monkeypatch.setattr(worker, "load_candidates", explode)
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1",
+                                 issuers=ISSUERS)
+
+    assert "durable PostgreSQL backend" in report.halted
+    assert report.started == () and runner.calls == []
+    # The whole point: nothing was queued, so no later tick inherits a
+    # backlog that was never correctly ordered.
+    assert store.count_jobs_by_state() == {}
+    assert report.enqueued_new == 0 and report.enqueued_backlog == 0
+
+
+def test_a_transient_read_failure_is_still_tolerated(tmp_path, monkeypatch):
+    """The narrow exception must not have turned every read error into a
+    halt — an unavailable table sorts those rows as oldest, as before."""
+    class Flaky:
+        def load_candidates(self):
+            return {"cand-1": _candidate("cand-1")}
+
+        def get_candidate_version(self, candidate_id):
+            return 1
+
+        def load_candidate_created_at(self):
+            raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(worker.backend_factory, "get_candidate_repository", lambda *a, **k: Flaky())
+    rows, skipped = worker.load_candidates(Settings(cache_dir=tmp_path, db_backend="sqlite"))
+    assert [(c.id, created) for c, _, _, created in rows if c.id == "cand-1"][0] == ("cand-1", None)

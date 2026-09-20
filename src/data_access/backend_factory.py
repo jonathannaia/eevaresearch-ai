@@ -170,6 +170,18 @@ class BackendConfigurationError(Exception):
     silent fallback to JSON. Raised before any database is opened."""
 
 
+class AgentSchedulingRequiresDurableBackend(BackendConfigurationError):
+    """The agent scheduler asked the JSON backend for something only a
+    durable backend can answer.
+
+    The JSON candidate store keeps no row-creation timestamp, which is
+    the scheduler's ordering key. Returning an empty mapping would be
+    worse than failing: every candidate would sort as equally old, the
+    oldest-first guarantee would silently become candidate_id order, and
+    nothing in the logs would say so. A run that cannot order its backlog
+    correctly must stop, not guess."""
+
+
 def _normalized_backend(settings: Settings) -> str:
     return (settings.db_backend or "json").strip().lower()
 
@@ -264,10 +276,10 @@ class JsonCandidateRepository:
         return self.load_candidates().get(candidate_id)
 
     def load_candidate_created_at(self) -> dict[str, str]:
-        # The JSON store keeps no row-creation timestamp. Empty is the
-        # honest answer; the agent never runs on this backend anyway
-        # (get_agent_store_repository refuses it outright).
-        return {}
+        raise AgentSchedulingRequiresDurableBackend(
+            "agent scheduling requires the durable PostgreSQL backend and cannot use the JSON backend: "
+            "the JSON candidate store keeps no candidates.created_at, which is the scheduler's ordering key"
+        )
 
     def get_candidate_version(self, candidate_id: str) -> int | None:
         # JSON has no version concept at all — always None, honestly,

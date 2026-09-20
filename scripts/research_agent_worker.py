@@ -41,6 +41,7 @@ from typing import Any
 from src.config.issuer_registry import get_all_issuers
 from src.config.settings import Settings, get_settings
 from src.data_access import backend_factory
+from src.data_access.backend_factory import AgentSchedulingRequiresDurableBackend
 from src.logic import agent_mode, agent_scheduler
 from src.logic.publication_policy import POLICY_VERSION
 from src.mcp_agent import agent_session, packet_store
@@ -168,7 +169,14 @@ def load_candidates(settings: Settings) -> tuple[list[tuple[CandidateSignal, str
             continue
         try:
             created = repo.load_candidate_created_at()
-        except Exception:  # noqa: BLE001 — without timestamps everything sorts as oldest, never as newest
+        except AgentSchedulingRequiresDurableBackend:
+            # Deliberately NOT swallowed: a backend that cannot supply the
+            # ordering key cannot be scheduled against, and degrading
+            # quietly to "everything is equally old" is the failure this
+            # exception exists to prevent. run_one_tick turns it into a
+            # halted tick before any job is enqueued.
+            raise
+        except Exception:  # noqa: BLE001 — a transient read failure sorts those rows as oldest, never as newest
             created = {}
         for candidate in candidates.values():
             try:
@@ -245,7 +253,13 @@ def run_one_tick(
 
     reclaimed = store.reclaim_expired_leases(now=now.isoformat())
 
-    candidates, skipped = load_candidates(settings)
+    try:
+        candidates, skipped = load_candidates(settings)
+    except AgentSchedulingRequiresDurableBackend as exc:
+        # Fail closed before anything is enqueued: no job, no session, no
+        # partially-ordered queue left behind for the next tick to inherit.
+        return TickReport(reclaimed=reclaimed, mode=resolved.mode, halted=str(exc))
+
     plan = agent_scheduler.plan_enqueue(
         candidates, mode=resolved.mode, now=now.isoformat(),
         # An ISO instant, matching candidates.created_at: anything the

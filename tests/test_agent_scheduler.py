@@ -11,6 +11,7 @@ exists, so the rule is pinned from several directions."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -635,3 +636,34 @@ def test_both_backends_claim_in_the_same_order():
     sqlite_order = claim_order(root / "src" / "data_access" / "state_db" / "agent_repository.py")
     postgres_order = claim_order(root / "src" / "data_access" / "postgres_state_db" / "agent_repository.py")
     assert sqlite_order == postgres_order == "created_at, candidate_id"
+
+
+def test_the_durable_backends_still_order_by_created_at_then_candidate_id(store):
+    """The JSON backend now refuses to be scheduled against; this pins
+    that the two backends that CAN be scheduled against are unaffected by
+    that hardening and still drain oldest-candidate-first with a stable
+    tie-break. SQLite is exercised behaviourally here; Postgres shares the
+    assertion structurally via test_both_backends_claim_in_the_same_order
+    above, and behaviourally in the disposable-Postgres battery."""
+    from src.data_access import backend_factory
+
+    # JSON cannot supply the ordering key at all.
+    json_repo = backend_factory.JsonCandidateRepository(cache_dir=Path("/nonexistent"), filename="c.json")
+    with pytest.raises(backend_factory.AgentSchedulingRequiresDurableBackend):
+        json_repo.load_candidate_created_at()
+
+    # SQLite does, and the order it produces is (created_at, candidate_id).
+    identical = "2025-01-01T00:00:00+00:00"
+    rows = _rows(_candidate("b-same"), _candidate("a-same"), _candidate("c-older"),
+                 created={"b-same": identical, "a-same": identical, "c-older": "2024-01-01T00:00:00+00:00"})
+    for job in agent_scheduler.plan_enqueue(rows, mode="shadow", now=NOW.isoformat(),
+                                            known_after="2026-01-01T00:00:00+00:00").jobs:
+        store.enqueue_job(job)
+
+    drained = []
+    for _ in range(3):
+        job = store.claim_job(mode="shadow", now=NOW.isoformat(),
+                              lease_expires_at=agent_scheduler.lease_until(NOW), worker_instance="w1")
+        drained.append(job.candidate_id)
+        store.finish_job(job.job_id, state="done", now=NOW.isoformat(), expected_worker="w1")
+    assert drained == ["c-older", "a-same", "b-same"]
