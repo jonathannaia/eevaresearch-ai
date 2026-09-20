@@ -101,6 +101,10 @@ def _context(**overrides) -> PublicationContext:
         evidence_by_id={"ev-1": _evidence()},
         prior_comparison=PriorFilingComparison(),
         relationship_context=_UNAVAILABLE,
+        # Row 11 fails closed, so every context that expects to reach a
+        # would-publish outcome states its claims are excerpt-verified.
+        # The row's own behavior is tested directly further down.
+        quote_support={"c1": True, "c2": True, "c3": True},
     )
     defaults.update(overrides)
     return PublicationContext(**defaults)
@@ -118,7 +122,7 @@ NEVER_PUBLIC = {PublicationDecision.AUTO_PUBLISHED, PublicationDecision.VERIFIED
 def test_fully_verified_direct_fact_auto_publishes_with_every_row_passing():
     decision = evaluate_publication_eligibility(_proposal(), _context())
     assert decision.decision is PublicationDecision.AUTO_PUBLISHED
-    assert [r.row for r in decision.row_results] == list(range(11))
+    assert [r.row for r in decision.row_results] == list(range(12))
     assert all(r.passed for r in decision.row_results)
     assert decision.surviving_claim_ids == ("c1",)
     assert decision.content_hash
@@ -285,8 +289,24 @@ def test_row10_is_the_only_path_to_verified_draft():
         relationship_context=_available(_edge("coherent", "supplier", "active", "issuer_to_counterparty")),
     )
     decision = evaluate_publication_eligibility(_proposal(claim), ctx)
-    assert decision.decision is PublicationDecision.VERIFIED_DRAFT and _last_row(decision) == 10
-    assert all(r.passed for r in decision.row_results[:-1])
+    assert decision.decision is PublicationDecision.VERIFIED_DRAFT and _last_row(decision) == 11
+    assert all(r.passed for r in decision.row_results if r.row != 10)
+
+
+def test_row11_gates_the_draft_path_too_not_only_auto_publication():
+    """A draft is a proposed public claim awaiting a human yes, so an
+    unverifiable quote must stop it before it is ever offered for approval."""
+    claim = _claim(statement="Fabrinet supplies Coherent with optical assemblies.", issuer_id="fabrinet", counterparty_issuer_id="coherent")
+    ctx = _context(
+        issuer_resolution=IssuerResolution(ResolutionConfidence.EXACT, issuer_id="fabrinet", tracked_company_name="Fabrinet"),
+        evidence_by_id={"ev-1": _evidence(issuer_id="fabrinet")},
+        relationship_context=_available(_edge("coherent", "supplier", "active", "issuer_to_counterparty")),
+        quote_support={"c1": False},
+        quote_support_detail={"c1": "wording not in the excerpt: optical"},
+    )
+    decision = evaluate_publication_eligibility(_proposal(claim), ctx)
+    assert decision.decision is PublicationDecision.REVIEW_REQUIRED
+    assert _last_row(decision) == 11 and "optical" in decision.reasons[0]
 
 
 # --- fail closed --------------------------------------------------------------

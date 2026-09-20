@@ -10,7 +10,9 @@ decision is reproducible without re-running the agent.
 
 Fail closed (§8.1): an unexpected error inside evaluation is itself a
 REVIEW_REQUIRED decision, never an exception and never a publication.
-The publication kill switch (§11) is checked before row 1.
+The publication kill switch (§11) is checked before row 1, and row 11
+verifies every claim against the stored excerpt before any
+would-publish outcome is returned.
 
 Row 5 / row 10 use a rule-based classifier over the claim's own text
 (classify_claim). It can only DEMOTE a declared category, never promote
@@ -24,7 +26,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from src.mcp_agent.contracts import (
@@ -112,6 +114,11 @@ class PublicationContext:
     previously_published_evidence_sets: frozenset[frozenset[str]] = frozenset()
     kill_switch_enabled: bool = False
     retrieval_error: bool = False
+    # Row 11 (exact-quote verification). Empty means "not verified", which
+    # fails closed: a would-publish decision needs positive support for
+    # every claim, never the absence of a negative.
+    quote_support: Mapping[str, bool] = field(default_factory=dict)
+    quote_support_detail: Mapping[str, str] = field(default_factory=dict)
 
 
 # --- row 5 / row 10 classifier ----------------------------------------------
@@ -306,10 +313,30 @@ def _evaluate(proposal: ClaimProposal, context: PublicationContext) -> PolicyDec
     # Row 10 — category within the auto-publish allowlist.
     outside = sorted(f"{cid}={cat.value}" for cid, cat in categories.items() if cat not in AUTO_PUBLISHABLE_CLAIM_CATEGORIES)
     surviving = tuple(c.claim_id for c in proposal.claims)
+    draft_reason = "category_requires_review:" + ",".join(outside) if outside else ""
     if outside:
-        rows.append(RowResult(10, "category within the auto-publish allowlist", False, "category_requires_review:" + ",".join(outside)))
-        return PolicyDecision(PublicationDecision.VERIFIED_DRAFT, ("row10:category_requires_review:" + ",".join(outside),), tuple(rows), digest, surviving)
-    ok(10, "category within the auto-publish allowlist")
+        rows.append(RowResult(10, "category within the auto-publish allowlist", False, draft_reason))
+    else:
+        ok(10, "category within the auto-publish allowlist")
+
+    # Row 11 — exact-quote verification. Gates BOTH would-publish outcomes:
+    # a verified draft is a proposed public claim awaiting approval, so it
+    # needs the same support as an auto-publication. Unverified claims are
+    # not a content judgment, they are an unproven quote, so they route to
+    # REVIEW_REQUIRED rather than INSUFFICIENT_EVIDENCE.
+    unsupported = sorted(
+        claim.claim_id for claim in proposal.claims if not context.quote_support.get(claim.claim_id, False)
+    )
+    if unsupported:
+        detail = "; ".join(
+            f"{cid}: {context.quote_support_detail.get(cid, 'claim not verified against the stored excerpt')}"
+            for cid in unsupported
+        )
+        return fail(PublicationDecision.REVIEW_REQUIRED, 11, "every claim is supported by the stored excerpt", detail)
+    ok(11, "every claim is supported by the stored excerpt")
+
+    if outside:
+        return PolicyDecision(PublicationDecision.VERIFIED_DRAFT, ("row10:" + draft_reason,), tuple(rows), digest, surviving)
     return PolicyDecision(PublicationDecision.AUTO_PUBLISHED, ("all_rows_passed",), tuple(rows), digest, surviving)
 
 

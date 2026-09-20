@@ -371,7 +371,7 @@ def test_golden_path_decides_auto_published_and_writes_nothing_outside_the_packe
 
     decision = request_publication_decision.run(ctx, packet_id)
     assert decision.error is None and decision.decision == "AUTO_PUBLISHED"
-    assert all(passed for _, _, passed, _ in decision.row_results) and len(decision.row_results) == 11
+    assert all(passed for _, _, passed, _ in decision.row_results) and len(decision.row_results) == 12
     assert decision.verified_update_id is None
 
     assert verified_update_store.load_verified_updates(tmp_path) == ()

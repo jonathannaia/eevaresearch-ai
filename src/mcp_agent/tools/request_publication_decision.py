@@ -16,6 +16,7 @@ and public-store writes, which only a future publish-mode worker calls.
 1 call per session."""
 from __future__ import annotations
 
+from src.logic import quote_verification
 from src.logic.publication_policy import PublicationContext, evaluate_publication_eligibility
 from src.mcp_agent import packet_store
 from src.mcp_agent.contracts import (
@@ -34,9 +35,25 @@ from src.mcp_agent.tools._context import ToolContext
 NAME = "request_publication_decision"
 
 
+def _quote_support(ctx: ToolContext, stored: packet_store.StoredPacket) -> tuple[dict[str, bool], dict[str, str]]:
+    """Row 11's input: every claim checked against the excerpt its own
+    evidence carried, using the issuer's resolved name so attribution is
+    not mistaken for an unsupported word."""
+    issuer_names = [n for n in (
+        ctx.resolved_issuer.tracked_company_name if ctx.resolved_issuer else None,
+        ctx.scope.issuer_id,
+    ) if n]
+    support = quote_verification.verify_proposal(
+        stored.proposal, {e.evidence_id: e for e in stored.evidence}, issuer_names=issuer_names,
+        evidence_text=stored.evidence_text,
+    )
+    return ({cid: r.verified for cid, r in support.items()}, {cid: r.detail for cid, r in support.items()})
+
+
 def _build_context(ctx: ToolContext, stored: packet_store.StoredPacket) -> PublicationContext:
     seed_row = ctx.metadata_rows_by_id.get(ctx.scope.seed_document_id)
     hashes, evidence_sets = packet_store.previously_published(ctx.settings.cache_dir, exclude_packet_id=stored.packet_id)
+    quote_support, quote_detail = _quote_support(ctx, stored)
     return PublicationContext(
         issuer_resolution=ctx.resolved_issuer or IssuerResolution(ResolutionConfidence.UNRESOLVED, error=ToolError(ToolErrorKind.INVALID_INPUT, "issuer was never resolved this session")),
         suppression=seed_row.suppression if seed_row is not None else Suppression.NONE,
@@ -47,6 +64,7 @@ def _build_context(ctx: ToolContext, stored: packet_store.StoredPacket) -> Publi
         previously_published_hashes=hashes, previously_published_evidence_sets=evidence_sets,
         kill_switch_enabled=ctx.settings.research_agent_publication_kill_switch_enabled,
         retrieval_error=ctx.retrieval_error,
+        quote_support=quote_support, quote_support_detail=quote_detail,
     )
 
 
