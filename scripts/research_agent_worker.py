@@ -174,10 +174,16 @@ def run_one_tick(
 
 
 def _validate_live_settings(settings: Settings) -> str | None:
+    """Live means durable: agent records have to outlive the container and
+    be visible to the dashboard, so a live run requires Postgres. JSON is
+    refused outright and SQLite is a local-development backend only."""
     if not settings.research_agent_service_token:
         return "EDGE_RESEARCH_AGENT_SERVICE_TOKEN is not configured"
-    if settings.db_backend not in ("json", "sqlite", "postgres"):
-        return f"unsupported EDGE_DB_BACKEND {settings.db_backend!r}"
+    backend = (settings.db_backend or "").strip().lower()
+    if backend != "postgres":
+        return (
+            f"a live agent run requires EDGE_DB_BACKEND=postgres for durable agent records; found {backend!r}"
+        )
     return None
 
 

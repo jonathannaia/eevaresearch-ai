@@ -46,6 +46,13 @@ from src.mcp_agent.contracts import (
 from src.models.models import CandidateStatus
 
 
+# Identifies the evaluation contract a stored decision was produced under:
+# the matrix rows, their order, and the claim classifier. Bump it whenever
+# a change would make an older stored decision non-comparable — agent jobs
+# are keyed by it, so a bump re-evaluates every candidate exactly once.
+POLICY_VERSION = "2026-09-20.1"
+
+
 class PublicationDecision(str, Enum):
     AUTO_PUBLISHED = "AUTO_PUBLISHED"
     VERIFIED_DRAFT = "VERIFIED_DRAFT"
