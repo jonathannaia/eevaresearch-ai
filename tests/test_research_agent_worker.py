@@ -1,160 +1,367 @@
-"""Autonomous Research Agent, Phase 4 — the dormant orchestrator
-(scripts/research_agent_worker.py, design §8.3/§11/§12). Selection,
-idempotency, retry rules, and the tick loop against a seeded JSON
-candidate store and an injected session runner. No SDK, no network."""
+"""The worker loop itself: one tick against a durable queue.
+
+This file replaces the selection tests written for the worker's original
+design, which chose candidates in EXTRACTED/TRANSLATED status and ran
+them immediately. That filter matched zero of 300 production candidates,
+and it had no queue, so a crash lost the work. The eligibility rule and
+the queue both changed in the Agent Observability and Shadow Mode
+release, and these tests pin the new behaviour.
+
+The session runner is always a stub returning a recorded outcome: no
+model session, no credential, no network call, no CLI process."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import scripts.research_agent_worker as worker
 from src.config.settings import Settings
 from src.data_access import backend_factory
-from src.data_access.agent_audit import build_audit_event
-from src.data_access.dart import candidate_store
-from src.mcp_agent import packet_store
-from src.mcp_agent.agent_session import SessionOutcome
-from src.mcp_agent.contracts import Claim, ClaimCategory, ClaimProposal, ClaimType, EvidenceRecord, FreshnessStatus, SourceTier
-from src.models.issuer import CoverageState, Issuer
-from src.models.models import CandidateSignal, CandidateStatus, FilingEvent, StateTransition
+from src.data_access.state_db import agent_repository as sqlite_agent
+from src.data_access.state_db import connection, schema
+from src.logic import agent_scheduler
+from src.models.agent_records import AgentControl
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    ExcerptQuality,
+    ExtractionState,
+    FilingEvent,
+    TranslationState,
+)
 
-NOW = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
-AT = NOW.isoformat()
-CIK = "1769628"
-ISSUERS = (Issuer(issuer_id="coreweave", legal_name="CoreWeave, Inc.", country_or_jurisdiction="US", coverage_state=CoverageState.SEED, identifiers={"SEC EDGAR": CIK}),)
+import scripts.research_agent_worker as worker
 
-
-def _settings(tmp_path) -> Settings:
-    return Settings(cache_dir=tmp_path, db_backend="json", research_agent_service_token="secret")
-
-
-def _filing(rcept_no: str, corp_code: str = CIK, rcept_dt: str = "2026-09-10") -> FilingEvent:
-    return FilingEvent(rcept_no=rcept_no, corp_code=corp_code, corp_name="CoreWeave, Inc.", stock_code="CRWV", report_nm="10-Q", rcept_dt=rcept_dt,
-                       flr_nm="CoreWeave, Inc.", pblntf_ty="10-Q", source_name="SEC EDGAR", original_language="English", primary_document="crwv-10q.htm",
-                       source_url=f"https://www.sec.gov/Archives/edgar/data/{corp_code}/{rcept_no}/", retrieved_at=AT)
+NOW = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+CIK = "0001045810"  # NVIDIA
 
 
-def _candidate(candidate_id: str, rcept_no: str, status: CandidateStatus = CandidateStatus.EXTRACTED, **filing_overrides) -> CandidateSignal:
-    return CandidateSignal(id=candidate_id, filing=_filing(rcept_no, **filing_overrides), matched_rules=["periodic_report:10-Q"], confidence="Moderate",
-                           status=status, state_history=[StateTransition(status, AT)])
+class _Issuer:
+    """The registry only carries identifiers for the EDINET entries; EDGAR
+    and DART are resolved lazily. Both paths are exercised below."""
+    def __init__(self, issuer_id="edgar:NVDA", identifiers=None, primary_ticker="NVDA"):
+        self.issuer_id = issuer_id
+        self.identifiers = identifiers or {}
+        self.primary_ticker = primary_ticker
 
 
-def _seed(tmp_path, *candidates: CandidateSignal) -> None:
-    candidate_store.save_candidates(tmp_path, {c.id: c for c in candidates}, "edgar_candidates.json")
+ISSUERS = (_Issuer(identifiers={"SEC EDGAR": CIK}),)
 
 
-def _started(candidate_id: str, at: datetime):
-    return build_audit_event(session_id=f"s-{at.isoformat()}", candidate_id=candidate_id, event_type="session_started", inputs={}, output_summary="", at=at.isoformat())
+@dataclass
+class _Outcome:
+    packet_id: str | None
+    error: str | None = None
 
 
-def _decided_packet(tmp_path, candidate_id: str, decision: str) -> str:
-    evidence = EvidenceRecord("ev-1", "s", "coreweave", SourceTier.SEC_EDGAR, "SEC EDGAR", "https://www.sec.gov/x", "0001", "2026-09-10", "Item 2", "abc", AT, "high", FreshnessStatus.CURRENT)
-    claim = Claim("c1", ClaimType.DIRECT_REPORTED_FACT, ClaimCategory.DIRECT_FACT, "h", "coreweave", "s", ("ev-1",), "w")
-    packet = packet_store.build_packet(packet_id=f"pk-{candidate_id}-{decision}", session_id="s", candidate_id=candidate_id, issuer_id="coreweave", source_name="SEC EDGAR",
-                                       saved_at=AT, proposal=ClaimProposal("s", candidate_id, (claim,), ("ev-1",)), evidence=(evidence,), evidence_text={"ev-1": "t"})
-    packet_store.save_packet(tmp_path, packet)
-    packet_store.record_decision(tmp_path, packet.packet_id, decision, ("r",), AT)
-    return packet.packet_id
+def _filing(rcept_no: str, rcept_dt: str = "20260901") -> FilingEvent:
+    return FilingEvent(
+        source_name="SEC EDGAR", corp_code=CIK, corp_name="NVIDIA", stock_code="NVDA", report_nm="10-Q",
+        rcept_no=rcept_no, rcept_dt=rcept_dt, flr_nm="NVIDIA", pblntf_ty="A",
+        retrieved_at="2026-09-01T00:00:00+00:00",
+    )
 
 
-# --- is_eligible ---------------------------------------------------------------------------
-
-@pytest.mark.parametrize("status", [CandidateStatus.NEW_FILING_EVENT, CandidateStatus.QUEUED_FOR_PROCESSING, CandidateStatus.RETRIEVAL_IN_PROGRESS, CandidateStatus.PUBLISHED, CandidateStatus.NOT_MATERIAL])
-def test_only_already_retrieved_candidates_are_eligible(tmp_path, status):
-    ok, reason = worker.is_eligible(_settings(tmp_path), _candidate("c", "0001", status), now=NOW, events=())
-    assert not ok and reason.startswith("status:")
-    assert worker.is_eligible(_settings(tmp_path), _candidate("c", "0001", CandidateStatus.EXTRACTED), now=NOW, events=()) == (True, "eligible")
-
-
-@pytest.mark.parametrize("decision", ["AUTO_PUBLISHED", "VERIFIED_DRAFT", "REVIEW_REQUIRED", "INSUFFICIENT_EVIDENCE", "NOT_MATERIAL", "DUPLICATE"])
-def test_a_decided_candidate_is_never_run_again(tmp_path, decision):
-    _decided_packet(tmp_path, "c", decision)
-    assert worker.is_eligible(_settings(tmp_path), _candidate("c", "0001"), now=NOW, events=()) == (False, "already_decided")
+def _candidate(candidate_id="cand-1", *, status=CandidateStatus.NEEDS_REVIEW,
+               extraction=ExtractionState.EXTRACTED, excerpt="Revenue rose.", rcept_dt="20260901") -> CandidateSignal:
+    return CandidateSignal(
+        id=candidate_id, filing=_filing(f"acc-{candidate_id}", rcept_dt), matched_rules=["r"], confidence="High",
+        status=status, extraction_state=extraction, translation_state=TranslationState.NOT_REQUESTED,
+        excerpt_quality=ExcerptQuality.USABLE_TEXT, excerpt_original=excerpt,
+    )
 
 
-def test_only_failed_retrieval_is_retryable_and_only_within_attempt_and_backoff_limits(tmp_path):
-    _decided_packet(tmp_path, "c", "FAILED_RETRIEVAL")
-    settings, candidate = _settings(tmp_path), _candidate("c", "0001")
-    assert worker.is_eligible(settings, candidate, now=NOW, events=()) == (True, "eligible")
-    assert worker.is_eligible(settings, candidate, now=NOW, events=(_started("c", NOW - timedelta(minutes=10)),)) == (False, "backoff")
-    assert worker.is_eligible(settings, candidate, now=NOW, events=(_started("c", NOW - timedelta(minutes=61)),)) == (True, "eligible")
-    exhausted = tuple(_started("c", NOW - timedelta(days=d)) for d in (3, 2, 1))
-    assert worker.is_eligible(settings, candidate, now=NOW, events=exhausted) == (False, "max_attempts")
+@pytest.fixture
+def store():
+    conn = connection.connect_in_memory()
+    schema.migrate(conn)
+    return backend_factory._AgentStoreRepository(conn=conn, module=sqlite_agent)
 
 
-# --- select_candidates ----------------------------------------------------------------------
-
-def test_select_caps_sessions_per_tick_newest_first_and_builds_a_fixed_scope(tmp_path):
-    _seed(tmp_path, _candidate("c-old", "0001", rcept_dt="2026-09-01"), _candidate("c-mid", "0002", rcept_dt="2026-09-05"), _candidate("c-new", "0003", rcept_dt="2026-09-10"))
-    selected, skipped = worker.select_candidates(_settings(tmp_path), now=NOW, issuers=ISSUERS, events=())
-    assert [c.id for c, _ in selected] == ["c-new", "c-mid"] and skipped == []
-    scope = selected[0][1]
-    assert (scope.candidate_id, scope.issuer_id, scope.source_name, scope.seed_document_id) == ("c-new", "coreweave", "SEC EDGAR", "0003")
-    assert scope.session_id.startswith("agent-") and scope.started_at == AT
+@pytest.fixture
+def settings(tmp_path) -> Settings:
+    return Settings(cache_dir=tmp_path, db_backend="sqlite", research_agent_mode="shadow",
+                    research_agent_service_token="t" * 32)
 
 
-def test_select_skips_unresolvable_issuers_and_decided_candidates(tmp_path):
-    _seed(tmp_path, _candidate("c-unknown", "0001", corp_code="9999999"), _candidate("c-done", "0002"), _candidate("c-ok", "0003"))
-    _decided_packet(tmp_path, "c-done", "REVIEW_REQUIRED")
-    selected, skipped = worker.select_candidates(_settings(tmp_path), now=NOW, issuers=ISSUERS, events=())
-    assert [c.id for c, _ in selected] == ["c-ok"]
-    assert set(skipped) == {"c-unknown:issuer_unresolved", "c-done:already_decided"}
+@pytest.fixture
+def stub_candidates(monkeypatch):
+    """Stands in for the candidate repositories. The worker only ever
+    reads them, so a list is a faithful stand-in."""
+    holder: dict[str, list] = {"rows": [], "skipped": []}
+
+    def fake_load(_settings):
+        return [(c, "SEC EDGAR", 1) for c in holder["rows"]], list(holder["skipped"])
+
+    monkeypatch.setattr(worker, "load_candidates", fake_load)
+    return holder
 
 
-def test_select_survives_a_broken_source_store(tmp_path, monkeypatch):
-    _seed(tmp_path, _candidate("c-ok", "0001"))
-    original = backend_factory.get_candidate_repository
+def _runner(packet_id="pkt-1", *, decision="AUTO_PUBLISHED", raises=None):
+    calls: list[str] = []
 
-    def flaky(settings, source):
-        if source == "EDINET":
-            raise RuntimeError("store unavailable")
-        return original(settings, source)
+    async def run(_settings, scope, **_kwargs):
+        calls.append(scope.candidate_id)
+        if raises is not None:
+            raise raises
+        return _Outcome(packet_id=packet_id)
 
-    monkeypatch.setattr(backend_factory, "get_candidate_repository", flaky)
-    selected, skipped = worker.select_candidates(_settings(tmp_path), now=NOW, issuers=ISSUERS, events=())
-    assert [c.id for c, _ in selected] == ["c-ok"] and skipped == ["EDINET:load_error:RuntimeError"]
-
-
-# --- run_one_tick ------------------------------------------------------------------------------
-
-def _outcome(candidate_id: str, packet_id: str | None, reported: str | None) -> SessionOutcome:
-    return SessionOutcome("s", candidate_id, {"packet_id": packet_id}, None, (), (), packet_id, reported, {}, None)
+    run.calls = calls  # type: ignore[attr-defined]
+    return run
 
 
-def test_tick_reports_the_authoritative_decision_from_the_packet_store_not_the_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(worker, "get_all_issuers", lambda: ISSUERS)
-    _seed(tmp_path, _candidate("c-1", "0001"))
-    settings = _settings(tmp_path)
-    # Seed the packet AFTER selection would see the candidate as undecided
-    # is not possible here, so simulate the session having saved+decided
-    # REVIEW_REQUIRED while the model's own report claims AUTO_PUBLISHED.
-    calls = []
+@pytest.fixture
+def stub_packet(monkeypatch):
+    state = {"decision": "AUTO_PUBLISHED"}
 
-    async def runner(settings_, scope, *, seed_title=None):
-        calls.append((scope.candidate_id, seed_title))
-        packet_id = _decided_packet(tmp_path, scope.candidate_id, "REVIEW_REQUIRED")
-        return _outcome(scope.candidate_id, packet_id, "AUTO_PUBLISHED")
+    @dataclass
+    class _Stored:
+        decision: str | None
 
-    report = worker.run_one_tick(settings, session_runner=runner, now=NOW)
-    assert calls == [("c-1", "10-Q")] and report.started == ("c-1",)
-    assert report.outcomes == (("c-1", "pk-c-1-REVIEW_REQUIRED", "REVIEW_REQUIRED"),)
+    monkeypatch.setattr(worker.packet_store, "load_packet",
+                        lambda _cache, packet_id: _Stored(decision=state["decision"]))
+    return state
 
 
-def test_tick_survives_a_raising_session_runner_and_is_idempotent_afterwards(tmp_path, monkeypatch):
-    monkeypatch.setattr(worker, "get_all_issuers", lambda: ISSUERS)
-    _seed(tmp_path, _candidate("c-1", "0001"), _candidate("c-2", "0002"))
-    settings = _settings(tmp_path)
+# --- the tick enqueues, then works the queue -------------------------------------
 
-    async def runner(settings_, scope, *, seed_title=None):
-        if scope.candidate_id == "c-2":
-            raise RuntimeError("cli unavailable")
-        _decided_packet(tmp_path, scope.candidate_id, "NOT_MATERIAL")
-        return _outcome(scope.candidate_id, f"pk-{scope.candidate_id}-NOT_MATERIAL", "NOT_MATERIAL")
+def test_a_tick_enqueues_eligible_candidates_and_runs_one(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.mode == "shadow" and report.halted == ""
+    assert report.enqueued_new + report.enqueued_backlog == 1
+    assert report.started == ("cand-1",) and runner.calls == ["cand-1"]
+    assert store.count_jobs_by_state() == {"done": 1}
 
-    report = worker.run_one_tick(settings, session_runner=runner, now=NOW)
-    assert set(report.started) == {"c-1", "c-2"}
-    assert ("c-2", None, "error:RuntimeError") in report.outcomes and ("c-1", "pk-c-1-NOT_MATERIAL", "NOT_MATERIAL") in report.outcomes
-    # c-1 is now decided; nothing is re-run for it.
-    selected, skipped = worker.select_candidates(settings, now=NOW, issuers=ISSUERS, events=())
-    assert [c.id for c, _ in selected] == ["c-2"] and "c-1:already_decided" in skipped
+
+def test_ineligible_candidates_are_never_enqueued_or_run(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [
+        _candidate("published", status=CandidateStatus.PUBLISHED),
+        _candidate("unextracted", extraction=ExtractionState.PENDING),
+        _candidate("no-excerpt", excerpt=None),
+    ]
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.started == () and runner.calls == []
+    assert store.count_jobs_by_state() == {}
+
+
+def test_a_second_tick_over_the_same_candidate_does_not_duplicate_the_job(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    second = worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW + timedelta(hours=1),
+                                 instance="w1", issuers=ISSUERS)
+    assert second.enqueued_new + second.enqueued_backlog == 0
+    assert sum(store.count_jobs_by_state().values()) == 1
+
+
+def test_only_max_sessions_per_tick_run_however_long_the_queue_is(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate(f"cand-{i}") for i in range(10)]
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert len(report.started) == agent_scheduler.MAX_SESSIONS_PER_TICK
+    assert len(runner.calls) == agent_scheduler.MAX_SESSIONS_PER_TICK
+
+
+# --- outcomes -----------------------------------------------------------------------
+
+def test_a_retryable_decision_goes_back_to_pending_behind_a_backoff(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    stub_packet["decision"] = "FAILED_RETRIEVAL"
+    worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert store.count_jobs_by_state() == {"pending": 1}
+    job_id = agent_scheduler.job_id_for("cand-1", 1, worker.POLICY_VERSION, "shadow")
+    job = store.get_job(job_id)
+    assert job.last_error_code == "FAILED_RETRIEVAL" and job.next_attempt_at > NOW.isoformat()
+
+
+def test_a_session_that_raises_never_stops_the_tick_and_records_only_the_type(
+    settings, store, stub_candidates, stub_packet, capsys,
+):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    runner = _runner(raises=RuntimeError("connection to sk-secret-value failed"))
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.outcomes[0][2] == "error:RuntimeError"
+    job = store.get_job(agent_scheduler.job_id_for("cand-1", 1, worker.POLICY_VERSION, "shadow"))
+    assert job.last_error_code == "RuntimeError"
+    assert "sk-secret-value" not in capsys.readouterr().out
+
+
+def test_a_session_that_saved_no_packet_is_retried(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    runner = _runner(packet_id=None)
+    worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    job = store.get_job(agent_scheduler.job_id_for("cand-1", 1, worker.POLICY_VERSION, "shadow"))
+    assert job.state == "pending" and job.last_error_code == "no_packet"
+
+
+def test_an_unresolvable_issuer_kills_the_job_rather_than_retrying_forever(
+    settings, store, stub_candidates, stub_packet,
+):
+    unknown = _candidate("cand-1")
+    unknown.filing.corp_code = "9999999999"
+    stub_candidates["rows"] = [unknown]
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert runner.calls == []
+    assert store.count_jobs_by_state() == {"dead": 1}
+    assert report.outcomes[0][2] == "dead:issuer_unresolved"
+
+
+# --- caps and holds --------------------------------------------------------------------
+
+def test_the_daily_cap_halts_the_tick_before_any_session(settings, store, stub_candidates, stub_packet, monkeypatch):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    monkeypatch.setattr(agent_scheduler, "sessions_remaining_today", lambda *a, **k: 0)
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert "daily session cap" in report.halted and runner.calls == []
+    # ...but the queue was still filled, so the work is not lost.
+    assert store.count_jobs_by_state() == {"pending": 1}
+
+
+def test_an_emergency_override_stops_the_next_tick(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    store.set_mode_override(mode="off", reason="paging", updated_by="oncall", now=NOW.isoformat())
+    runner = _runner()
+    report = worker.run_one_tick(settings, store=store, session_runner=runner, now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.mode == "off" and "mode is off" in report.halted
+    assert runner.calls == [] and store.count_jobs_by_state() == {}
+
+
+def test_an_override_can_never_elevate_the_mode(settings, store, stub_candidates, stub_packet):
+    """Nothing in the database can raise the agent's authority, including
+    a row that names a higher mode."""
+    store.set_mode_override(mode="publish", reason="please", updated_by="someone", now=NOW.isoformat())
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    report = worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.mode == "shadow"
+
+
+def test_a_configured_publish_mode_runs_as_shadow_and_never_publishes(store, stub_candidates, stub_packet, tmp_path):
+    settings = Settings(cache_dir=tmp_path, db_backend="sqlite", research_agent_mode="publish",
+                        research_agent_service_token="t" * 32)
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    report = worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.mode == "shadow"
+    resolved = worker.resolve_effective_mode(settings, store)
+    assert resolved.may_write_outside_agent_tables is False
+    assert resolved.status_lines()[:2] == (
+        "Configured: publish", "Effective: shadow (publishing unavailable in this release)",
+    )
+
+
+def test_an_unreadable_control_row_never_widens_anything(settings, store, stub_candidates, stub_packet):
+    class Broken:
+        def __getattr__(self, name):
+            return getattr(store, name)
+
+        def get_control(self):
+            raise RuntimeError("control table unavailable")
+
+    assert worker.resolve_effective_mode(settings, Broken()).mode == "shadow"
+
+
+# --- leases ------------------------------------------------------------------------------
+
+def test_a_tick_reclaims_leases_abandoned_by_a_crashed_worker(settings, store, stub_candidates, stub_packet):
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    job = agent_scheduler.plan_enqueue(
+        [(_candidate("cand-1"), "SEC EDGAR", 1)], mode="shadow", now=NOW.isoformat(), known_after=None,
+    ).jobs[0]
+    store.enqueue_job(job)
+    store.claim_job(mode="shadow", now=NOW.isoformat(),
+                    lease_expires_at=(NOW - timedelta(minutes=1)).isoformat(), worker_instance="crashed")
+    report = worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert report.reclaimed == 1 and report.started == ("cand-1",)
+
+
+# --- startup self-check --------------------------------------------------------------------
+
+def test_the_runtime_probe_only_looks_for_the_cli_and_never_runs_it(monkeypatch):
+    monkeypatch.setattr(worker.shutil, "which", lambda name: "/usr/local/bin/claude")
+    assert worker.probe_agent_runtime() == ""
+    monkeypatch.setattr(worker.shutil, "which", lambda name: None)
+    assert "not on PATH" in worker.probe_agent_runtime()
+
+
+def test_the_self_check_reads_the_real_schema_version_and_tables(settings, store):
+    from src.logic import agent_mode
+    resolved = agent_mode.resolve_mode(settings)
+    check = worker.run_self_check(settings, resolved, store=store, probe=lambda: "")
+    # SQLite is refused for a shadow run, but the tables and version are
+    # genuinely read from the database rather than assumed.
+    assert any("postgres" in p for p in check.problems)
+    assert not any("missing agent tables" in p for p in check.problems)
+    version, tables = store.describe_database()
+    assert version >= 22 and "agent_decisions" in tables
+
+
+def test_an_off_worker_passes_the_self_check_without_touching_a_database(tmp_path):
+    from src.logic import agent_mode
+    settings = Settings(cache_dir=tmp_path, db_backend="json", research_agent_mode="off")
+    check = worker.run_self_check(settings, agent_mode.resolve_mode(settings), probe=lambda: "no cli")
+    assert check.ok is True
+
+
+# --- secret hygiene ---------------------------------------------------------------------------
+
+SECRET = "sk-live-0123456789abcdef-super-secret"
+
+
+def test_the_worker_instance_identifier_is_derived_only_from_host_and_pid():
+    assert SECRET not in worker.worker_instance()
+    assert worker.worker_instance().count(":") == 1
+
+
+def test_no_tick_output_or_stored_row_can_contain_a_credential(store, stub_candidates, stub_packet, tmp_path, capsys):
+    settings = Settings(cache_dir=tmp_path, db_backend="sqlite", research_agent_mode="shadow",
+                        research_agent_service_token=SECRET, dart_api_key=SECRET,
+                        state_db_url=f"postgresql://u:{SECRET}@host/db")
+    stub_candidates["rows"] = [_candidate("cand-1")]
+    worker.run_one_tick(settings, store=store, session_runner=_runner(), now=NOW, instance="w1", issuers=ISSUERS)
+    assert SECRET not in capsys.readouterr().out
+
+    rows = store.conn.execute("SELECT * FROM agent_jobs").fetchall()
+    assert rows and all(SECRET not in str(tuple(r)) for r in rows)
+    for table in ("agent_runs", "agent_audit_events", "agent_packets", "agent_decisions"):
+        stored = store.conn.execute(f"SELECT * FROM {table}").fetchall()
+        assert all(SECRET not in str(tuple(r)) for r in stored), table
+
+
+def test_a_heartbeat_row_stores_the_instance_but_no_payload(store):
+    claim = agent_scheduler.acquire_single_runner(store, worker_instance="host:42", mode="shadow", now=NOW)
+    rows = store.conn.execute("SELECT * FROM agent_audit_events WHERE run_id = ?", (claim.run_id,)).fetchall()
+    assert [r["inputs_json"] for r in rows] == [None]
+    assert rows[0]["outcome"] == "host:42"
+
+
+# --- issuer resolution ---------------------------------------------------------------------
+
+def test_an_issuer_resolves_from_the_registry_when_it_carries_an_identifier():
+    assert worker._issuer_id_for(_filing("acc-1"), ISSUERS) == "edgar:NVDA"
+
+
+def test_an_issuer_also_resolves_from_the_lazily_populated_resolver_cache():
+    """EDGAR and DART identifiers are not in the registry — they are
+    resolved at runtime and cached. Consulting only the registry would
+    leave every EDGAR candidate unresolvable and kill every job."""
+    registry_only = (_Issuer(identifiers={}),)
+    assert worker._issuer_id_for(_filing("acc-1"), registry_only) is None
+    assert worker._issuer_id_for(_filing("acc-1"), registry_only, resolved={"edgar:NVDA": CIK}) == "edgar:NVDA"
+
+
+def test_a_cik_matches_regardless_of_leading_zero_padding():
+    assert worker._issuer_id_for(_filing("acc-1"), (), resolved={"edgar:NVDA": "1045810"}) == "edgar:NVDA"
+
+
+def test_an_unknown_corp_code_resolves_to_nothing_rather_than_a_wrong_issuer():
+    assert worker._issuer_id_for(_filing("acc-1"), (), resolved={"edgar:OTHER": "9999999"}) is None
+
+
+def test_a_missing_resolver_cache_never_halts_the_tick(settings, monkeypatch):
+    monkeypatch.setattr(worker.backend_factory, "get_identifier_repository",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no cache")))
+    assert worker.resolved_identifiers_for(settings, "SEC EDGAR", ISSUERS) == {}

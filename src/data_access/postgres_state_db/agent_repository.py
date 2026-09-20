@@ -16,6 +16,7 @@ from collections.abc import Sequence
 
 from src.data_access.postgres_state_db.connection import transaction
 from src.models.agent_records import (
+    HEARTBEAT_EVENT,
     AgentAuditRow,
     AgentControl,
     AgentDecisionRow,
@@ -79,16 +80,52 @@ def complete_run(conn: psycopg.Connection, run_id: str, *, status: str, complete
         )
 
 
-def latest_run(conn: psycopg.Connection) -> AgentRun | None:
-    row = _fetchone(conn, "SELECT * FROM agent_runs ORDER BY started_at DESC, run_id DESC LIMIT 1")
-    if row is None:
-        return None
+def _run(row) -> AgentRun:
     return AgentRun(
         run_id=row["run_id"], worker_instance=row["worker_instance"], mode=row["mode"], started_at=row["started_at"],
         policy_version=row["policy_version"], status=row["status"], completed_at=row["completed_at"],
         considered=row["considered"], sessions=row["sessions"], decisions=row["decisions"], errors=row["errors"],
         model=row["model"], cost_usd=row["cost_usd"],
     )
+
+
+def latest_run(conn: psycopg.Connection) -> AgentRun | None:
+    row = _fetchone(conn, "SELECT * FROM agent_runs ORDER BY started_at DESC, run_id DESC LIMIT 1")
+    return _run(row) if row is not None else None
+
+
+def active_runs(conn: psycopg.Connection) -> tuple[AgentRun, ...]:
+    """Every run still claiming to be alive. The single-runner guard reads
+    this, then asks each one's heartbeat whether it really is."""
+    rows = _fetchall(conn, "SELECT * FROM agent_runs WHERE status = 'running' ORDER BY started_at, run_id")
+    return tuple(_run(row) for row in rows)
+
+
+def latest_heartbeat_at(conn: psycopg.Connection, run_id: str) -> str | None:
+    """The heartbeat lives in the append-only audit stream rather than in a
+    column, so liveness carries its own history and needs no migration."""
+    row = _fetchone(
+        conn,
+        "SELECT created_at FROM agent_audit_events WHERE run_id = %s AND event_type = %s "
+        "ORDER BY created_at DESC, id DESC LIMIT 1",
+        (run_id, HEARTBEAT_EVENT),
+    )
+    return row["created_at"] if row is not None else None
+
+
+def try_acquire_runner_lock(conn: psycopg.Connection, key: int) -> bool:
+    """Postgres-only hard guard on top of the portable heartbeat check: the
+    session holds the advisory lock until it disconnects, so a worker that
+    is killed without cleanup releases it automatically."""
+    with transaction(conn):
+        row = conn.execute("SELECT pg_try_advisory_lock(%s) AS locked", (key,)).fetchone()
+    return bool(row["locked"])
+
+
+def release_runner_lock(conn: psycopg.Connection, key: int) -> bool:
+    with transaction(conn):
+        row = conn.execute("SELECT pg_advisory_unlock(%s) AS released", (key,)).fetchone()
+    return bool(row["released"])
 
 
 # --- jobs -------------------------------------------------------------------
@@ -128,13 +165,27 @@ def claim_job(conn: psycopg.Connection, *, mode: str, now: str, lease_expires_at
 
 
 def finish_job(conn: psycopg.Connection, job_id: str, *, state: str, now: str,
-               last_error_code: str | None = None, next_attempt_at: str | None = None) -> None:
+               last_error_code: str | None = None, next_attempt_at: str | None = None,
+               expected_worker: str | None = None) -> bool:
+    """Fencing: pass `expected_worker` and the update applies only while
+    this worker still holds the lease. A worker whose lease expired and
+    was reclaimed by another therefore cannot overwrite the new holder's
+    result when it finally finishes. Returns whether the row changed."""
     with transaction(conn):
-        conn.execute(
-            "UPDATE agent_jobs SET state = %s, lease_expires_at = NULL, worker_instance = NULL, "
-            "last_error_code = %s, next_attempt_at = %s, updated_at = %s WHERE job_id = %s",
-            (state, last_error_code, next_attempt_at, now, job_id),
-        )
+        if expected_worker is None:
+            cursor = conn.execute(
+                "UPDATE agent_jobs SET state = %s, lease_expires_at = NULL, worker_instance = NULL, "
+                "last_error_code = %s, next_attempt_at = %s, updated_at = %s WHERE job_id = %s",
+                (state, last_error_code, next_attempt_at, now, job_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE agent_jobs SET state = %s, lease_expires_at = NULL, worker_instance = NULL, "
+                "last_error_code = %s, next_attempt_at = %s, updated_at = %s "
+                "WHERE job_id = %s AND state = 'leased' AND worker_instance = %s",
+                (state, last_error_code, next_attempt_at, now, job_id, expected_worker),
+            )
+        return cursor.rowcount > 0
 
 
 def reclaim_expired_leases(conn: psycopg.Connection, *, now: str) -> int:
@@ -345,3 +396,15 @@ def set_mode_override(conn: psycopg.Connection, *, mode: str | None, reason: str
 
 def json_dumps(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def describe_database(conn: psycopg.Connection) -> tuple[int | None, tuple[str, ...]]:
+    """What the database actually is, for the worker's startup self-check —
+    asked of the database rather than inferred from configuration."""
+    row = _fetchone(conn, "SELECT MAX(version) AS v FROM schema_version")
+    version = row["v"] if row is not None else None
+    tables = _fetchall(
+        conn,
+        "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name",
+    )
+    return (int(version) if version is not None else None, tuple(r["name"] for r in tables))

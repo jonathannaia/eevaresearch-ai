@@ -14,6 +14,21 @@ Three inputs, each able only to restrict:
     retraction and the V25 / SQLite V23 migration), so `publish` is
     unreachable here however the environment is configured.
 
+The ceiling is deliberately a code constant, not a setting. There is no
+environment variable, database row, UI control or script in this release
+that can raise the effective mode to `publish`; every input is
+restrictive by construction, and the only way to enable publishing is to
+ship the release that raises RELEASE_MAX_MODE. An operator who sets
+EDGE_RESEARCH_AGENT_MODE=publish therefore gets a working shadow run,
+not a failure and not a publishing one — and `configured` keeps their
+setting so the health output can say so plainly:
+
+    Configured: publish
+    Effective: shadow (publishing unavailable in this release)
+
+Losing that distinction would be the dangerous outcome: an operator who
+believes publishing is live has to be able to see that it is not.
+
 The kill switch is deliberately NOT folded into the mode. It is a
 separate hold, recorded separately, because a decision blocked by the
 kill switch inside shadow mode has to retain both facts: which hold
@@ -51,6 +66,32 @@ class ResolvedMode:
         this release can produce, and false whenever the kill switch is on
         regardless of mode."""
         return self.mode == "publish" and not self.kill_switch_on
+
+    @property
+    def was_downgraded(self) -> bool:
+        """True when the operator asked for more than this release grants,
+        so the status surface can say why rather than silently differ."""
+        requested, _ = parse_mode(self.configured)
+        return requested != self.mode
+
+    @property
+    def effective_label(self) -> str:
+        if self.was_downgraded and parse_mode(self.configured)[0] == "publish":
+            return f"{self.mode} (publishing unavailable in this release)"
+        if self.was_downgraded:
+            return f"{self.mode} (restricted from {parse_mode(self.configured)[0]})"
+        return self.mode
+
+    def status_lines(self) -> tuple[str, ...]:
+        """What the health panel and the worker's startup banner print.
+        Configured and effective are always shown separately, even when
+        they agree, so a reader never has to infer which one they see."""
+        return (
+            f"Configured: {parse_mode(self.configured)[0]}",
+            f"Effective: {self.effective_label}",
+            f"Kill switch: {'on' if self.kill_switch_on else 'off'}",
+            f"Publishing: unavailable in this release (ceiling {RELEASE_MAX_MODE})",
+        )
 
 
 def parse_mode(value: object) -> tuple[AgentMode, str]:

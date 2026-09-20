@@ -42,6 +42,10 @@ EFFECTIVE_NO_ACTION = "NO_ACTION"
 
 RunStatus = Literal["running", "completed", "failed"]
 
+# Liveness is an append-only audit event rather than a column, so a run's
+# heartbeat history survives and the agent tables need no new migration.
+HEARTBEAT_EVENT = "run_heartbeat"
+
 
 def is_agent_mode(value: object) -> bool:
     return value in AGENT_MODES

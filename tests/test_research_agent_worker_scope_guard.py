@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.models.models import CandidateStatus
+from src.models.models import CandidateSignal, CandidateStatus, FilingEvent
 
 REPO_ROOT = Path(__file__).parent.parent
 AGENT_SESSION = REPO_ROOT / "src" / "mcp_agent" / "agent_session.py"
@@ -91,13 +91,37 @@ def test_worker_refuses_to_run_live_without_its_service_credential(monkeypatch):
 
 
 def test_worker_can_never_become_an_ingestion_path():
-    import scripts.research_agent_worker as worker
+    """Eligibility moved into src/logic/agent_scheduler.py and narrowed to
+    a single status, so this guard now asks the rule directly. It is a
+    stronger guarantee than the original EXTRACTED/TRANSLATED filter: a
+    candidate is only eligible once the pipelines have already retrieved
+    its text AND stored the excerpt, which is what makes the agent
+    incapable of being a retrieval path."""
+    from src.logic import agent_scheduler
+    from src.models.models import ExcerptQuality, ExtractionState, TranslationState
 
-    for status in (CandidateStatus.NEW_FILING_EVENT, CandidateStatus.CANDIDATE_DETECTED, CandidateStatus.QUEUED_FOR_PROCESSING,
-                   CandidateStatus.RETRIEVAL_IN_PROGRESS, CandidateStatus.EXTRACTION_PENDING):
-        assert status not in worker.ELIGIBLE_STATUSES, status
-    assert worker.ELIGIBLE_STATUSES <= {CandidateStatus.EXTRACTED, CandidateStatus.TRANSLATED}
-    assert worker.MAX_SESSIONS_PER_TICK <= 2 and worker.MAX_ATTEMPTS_PER_CANDIDATE <= 3
+    filing = FilingEvent(
+        source_name="SEC EDGAR", corp_code="0001045810", corp_name="NVIDIA", stock_code="NVDA",
+        report_nm="10-Q", rcept_no="acc-1", rcept_dt="20260901", flr_nm="NVIDIA", pblntf_ty="A",
+        retrieved_at="2026-09-01T00:00:00+00:00",
+    )
+
+    def _with(status):
+        return CandidateSignal(
+            id="c", filing=filing, matched_rules=["r"], confidence="High", status=status,
+            extraction_state=ExtractionState.EXTRACTED, translation_state=TranslationState.NOT_REQUESTED,
+            excerpt_quality=ExcerptQuality.USABLE_TEXT, excerpt_original="text",
+        )
+
+    for status in (CandidateStatus.NEW_FILING_EVENT, CandidateStatus.CANDIDATE_DETECTED,
+                   CandidateStatus.QUEUED_FOR_PROCESSING, CandidateStatus.RETRIEVAL_IN_PROGRESS,
+                   CandidateStatus.EXTRACTION_PENDING):
+        assert agent_scheduler.is_eligible(_with(status)) is False, status
+
+    eligible = [s for s in CandidateStatus if agent_scheduler.is_eligible(_with(s))]
+    assert eligible == [CandidateStatus.NEEDS_REVIEW]
+    assert agent_scheduler.MAX_SESSIONS_PER_TICK <= 2 and agent_scheduler.MAX_ATTEMPTS_PER_JOB <= 3
+    assert agent_scheduler.MAX_SESSIONS_PER_DAY <= 50
 
 
 @pytest.mark.parametrize("module_path", [AGENT_SESSION, SERVER, WORKER])
