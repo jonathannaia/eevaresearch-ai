@@ -26,6 +26,7 @@ Run with:  python -m scripts.research_agent_worker
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import shutil
@@ -55,6 +56,19 @@ _MIN_INTERVAL_SECONDS = 300
 # The agent SDK's CLI. Probed for presence only — never executed here, and
 # never passed a credential on its command line (blocker E1).
 AGENT_CLI_EXECUTABLE = "claude"
+
+# The nine indexes Postgres V24 creates by name (the other eight of the
+# seventeen are implicit primary-key/unique constraints). Kept in step
+# with src/data_access/postgres_state_db/schema.py's own _V24_STATEMENTS
+# by tests/test_research_agent_worker_self_check.py, which re-derives
+# them from that migration rather than trusting this list.
+REQUIRED_AGENT_INDEXES: tuple[str, ...] = (
+    "idx_agent_jobs_state", "idx_agent_jobs_candidate",
+    "idx_agent_packets_candidate", "idx_agent_packets_issuer",
+    "idx_agent_decisions_decided_at", "idx_agent_decisions_effective",
+    "idx_agent_decisions_blocked_by",
+    "idx_agent_audit_events_packet", "idx_agent_audit_events_session",
+)
 
 _shutdown_requested = False
 
@@ -226,6 +240,118 @@ def run_self_check(settings: Settings, resolved, *, store=None, probe=probe_agen
     )
 
 
+def inspect_database_readonly(settings: Settings) -> tuple[int | None, tuple[str, ...], tuple[str, ...]]:
+    """Schema version, agent tables and agent indexes, read over a plain
+    connection that is explicitly READ ONLY for its whole session.
+
+    Deliberately NOT backend_factory.get_agent_store_repository(): that
+    path calls postgres_schema.migrate() on connect. At V24 with V24 code
+    the migration is a no-op, but a readiness check has no business
+    reaching a write path at all — the point of a dry run is that it
+    cannot change anything even if the assumption behind "no-op" is
+    wrong. Uses the release's own connection helper so the dict row
+    factory the queries rely on is preserved."""
+    from src.data_access.postgres_state_db import connection as pg_connection
+
+    conn = pg_connection.connect(settings.state_db_url or "")
+    try:
+        conn.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
+        conn.commit()
+        row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
+        version = row["v"] if row is not None else None
+        tables = tuple(
+            r["name"] for r in conn.execute(
+                "SELECT table_name AS name FROM information_schema.tables "
+                "WHERE table_schema = current_schema() ORDER BY table_name"
+            ).fetchall()
+        )
+        indexes = tuple(
+            r["name"] for r in conn.execute(
+                "SELECT indexname AS name FROM pg_indexes "
+                "WHERE schemaname = current_schema() AND tablename LIKE 'agent%' ORDER BY indexname"
+            ).fetchall()
+        )
+    finally:
+        conn.close()
+    return (int(version) if version is not None else None, tables, indexes)
+
+
+def run_self_check_only(settings: Settings, *, probe=probe_agent_runtime, inspect=inspect_database_readonly) -> int:
+    """`--self-check`: prove a future shadow run would start, and change
+    nothing proving it.
+
+    Stops before the single-runner lock, the scheduler, any agent_* write
+    and any model session. The prerequisites are evaluated against a
+    SHADOW target regardless of the configured mode, because the whole
+    point is to answer "would shadow mode start?" while the worker is
+    still off — agent_scheduler.run_self_check() short-circuits on an
+    off mode, which would make this vacuous."""
+    actual = agent_mode.resolve_mode(settings)
+    for line in actual.status_lines():
+        print(f"research_agent_worker: {line}")
+
+    target = agent_mode.ResolvedMode(
+        mode="shadow", kill_switch_on=actual.kill_switch_on,
+        configured=actual.configured, reason="self-check target",
+    )
+
+    schema_version: int | None = None
+    tables: tuple[str, ...] = ()
+    indexes: tuple[str, ...] = ()
+    backend = (settings.db_backend or "").strip().lower()
+    if backend == "postgres":
+        try:
+            schema_version, tables, indexes = inspect(settings)
+        except Exception as exc:  # noqa: BLE001 — type only: driver text can carry connection settings
+            print(f"research_agent_worker: self-check FAILED — cannot read the database ({type(exc).__name__})")
+            return 2
+
+    check = agent_scheduler.run_self_check(
+        settings, target, schema_version=schema_version, tables=tables, runtime_probe=probe,
+    )
+    problems = list(check.problems)
+
+    # A deliberate `off` is a valid state to run this check from, so it is
+    # reported but never a failure. A value that is not a mode at all is a
+    # misconfiguration: it silently resolves to off, and shadow mode would
+    # never start no matter what else is set.
+    configured = (actual.configured or "").strip()
+    if configured and configured.lower() not in agent_mode.AGENT_MODES:
+        problems.append(
+            f"{agent_mode.ENV_VAR}={configured!r} is not one of {', '.join(agent_mode.AGENT_MODES)}"
+        )
+
+    if backend == "postgres":
+        missing = [name for name in REQUIRED_AGENT_INDEXES if name not in indexes]
+        if missing:
+            problems.append("missing agent indexes: " + ", ".join(missing))
+
+    print(f"research_agent_worker: schema_version={schema_version} "
+          f"agent_tables={sum(1 for t in tables if t.startswith('agent_'))} agent_indexes={len(indexes)}")
+    if problems:
+        for problem in problems:
+            print(f"research_agent_worker:   - {problem}")
+        print(f"research_agent_worker: self-check FAILED ({len(problems)} problem(s)); shadow mode would not start")
+        return 2
+    print("research_agent_worker: self-check PASSED; shadow mode prerequisites are satisfied")
+    print("research_agent_worker: nothing was written — no run, job, packet, decision, audit row or session")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Exactly one flag. There is deliberately no way to start, enable,
+    widen or schedule anything from the command line."""
+    parser = argparse.ArgumentParser(
+        prog="research_agent_worker",
+        description="Autonomous Research Agent worker. Without arguments it runs the normal loop.",
+    )
+    parser.add_argument(
+        "--self-check", action="store_true",
+        help="Verify shadow-mode prerequisites and exit. Writes nothing, starts no session, calls no model.",
+    )
+    return parser
+
+
 def resolve_effective_mode(settings: Settings, store=None):
     """The mode this tick actually runs in: the environment, narrowed by
     the emergency override if one is stored, then capped by the release.
@@ -367,8 +493,14 @@ def _validate_live_settings(settings: Settings) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _install_signal_handlers()
+    args = build_parser().parse_args(argv)
     ambient = get_settings()
+    if args.self_check:
+        # Deliberately before the live-enabled gate: the point is to prove
+        # readiness while the worker is still disabled.
+        return run_self_check_only(ambient)
+
+    _install_signal_handlers()
     if not ambient.research_agent_live_enabled:
         print("research_agent_worker: EDGE_RESEARCH_AGENT_LIVE_ENABLED is not enabled — nothing to do. Exiting.")
         return 0
