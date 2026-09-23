@@ -99,7 +99,12 @@ def test_brand_block_renders_first_at_the_sidebar_top():
     assert sidebar_markdown[0].value == '<div class="er-rail-brand">'
     brand_block_values = " ".join(m.value for m in sidebar_markdown[:4])
     assert "er-rail-logo" in brand_block_values
-    assert "EevaResearch" in brand_block_values or "er-rail-word" in brand_block_values
+    # The wordmark renders as a real st.page_link when its target page is
+    # registered (it points at Dashboard now that Home is a redirect), and
+    # falls back to inert `er-rail-word` markdown when it is not. Either
+    # is a correct brand block; what matters is that one of them is there.
+    wordmark_links = [link for link in at.sidebar.get("page_link") if link.label == "EevaResearch"]
+    assert wordmark_links or "er-rail-word" in brand_block_values
 
 
 def test_search_trigger_is_compact_with_an_accessible_tooltip_and_reaches_the_real_search():

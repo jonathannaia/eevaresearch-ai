@@ -120,16 +120,26 @@ _HIDDEN_KEYS = {key for key, _ in HIDDEN_FROM_NAV}
 # ones every time — the officially-recommended fix for exactly this class
 # of `st.navigation` instability.
 @st.cache_resource(show_spinner=False)
-def _build_pages(dashboard_is_default: bool) -> dict[str, st.Page]:
+def _build_pages() -> dict[str, st.Page]:
+    # Home is a compatibility route only. It used to take the root path on
+    # a session's first visit and show a hero, a CTA into Dashboard and a
+    # capability list that duplicated About; the root now belongs to
+    # Dashboard unconditionally. The route stays registered at an explicit
+    # url_path so an existing /home link redirects instead of 404ing --
+    # see src/ui/pages/home.py, which renders nothing and switches page.
+    # It is hidden: nothing in the sidebar or any CTA points at it.
     pages = {
-        "home": st.Page(with_chrome(home.render, "home", show_sidebar=False), title="Home", default=not dashboard_is_default),
+        "home": st.Page(
+            with_chrome(home.render, "home", show_sidebar=False),
+            title="Home", url_path="home", visibility="hidden",
+        ),
     }
     for key, _label in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV:
         pages[key] = st.Page(
             with_chrome(_RENDER_FNS[key], key),
             title=_label,
             url_path=_URL_PATHS.get(key),
-            default=(key == "dashboard" and dashboard_is_default),
+            default=(key == "dashboard"),
             visibility="hidden" if key in _HIDDEN_KEYS else "visible",
         )
     # Disclaimer is no longer a primary sidebar item, but stays a real
@@ -273,8 +283,9 @@ if not _beta_allowed:
 
 # Admin Users v1 (design/DECISIONS.md) — records this authenticated,
 # allowed visitor's sign-in at most once per Streamlit browser session
-# (the same "_has_visited"-style session_state guard app.py already uses
-# below), never on every rerun. Runs only after both the mandatory
+# (the same one-shot session_state guard pattern used for
+# "_user_account_recorded" just below), never on every rerun. Runs only
+# after both the mandatory
 # sign-in gate and the optional allowlist gate above have already
 # passed, and before any protected page/nav content builds. Calls
 # backend_factory.get_user_account_repository(...) directly — not via
@@ -300,20 +311,14 @@ if not st.session_state.get("_user_account_recorded", False):
         print("[app] User-account session recording failed.")
     st.session_state["_user_account_recorded"] = True
 
-# Home renders on first visit only; Dashboard is the default thereafter
-# (brief §4) — a page keeps the root path "/" via default=True regardless
-# of its own url_path, so Dashboard stays reachable at both "/" and
-# "/dashboard" once it takes over as default. This per-session flip is
-# unchanged by the cache-stability fix above: `_build_pages` has exactly
-# two possible cache entries (dashboard_is_default True/False), each built
-# once and then reused — so within one session, every rerun after the
-# first consistently gets the SAME "dashboard is default" page set, and a
-# brand-new session's first rerun consistently gets the SAME "home is
-# default" page set, instead of a fresh, unstable set every single time.
-_first_visit = "_has_visited" not in st.session_state
-st.session_state["_has_visited"] = True
-
-pages = _build_pages(dashboard_is_default=not _first_visit)
+# Dashboard is the root, unconditionally and from the very first request:
+# a page keeps "/" via default=True regardless of its own url_path, so
+# Dashboard answers both "/" and "/dashboard". The per-session first-visit
+# flip that used to show Home once is gone, which also makes the
+# cache-stability fix above stronger rather than weaker: `_build_pages`
+# now has exactly ONE cache entry instead of two, so every rerun in every
+# session reuses the same singleton page set.
+pages = _build_pages()
 st.session_state["_pages"] = pages
 
 if LAST_SEEN_KEY not in st.session_state:

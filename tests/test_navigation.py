@@ -102,21 +102,23 @@ def _sign_in_as(monkeypatch, email: str = "tester@example.test") -> None:
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
 
 
-def test_app_lands_on_home_on_first_visit_then_dashboard_thereafter(monkeypatch):
-    # `st.Page` doesn't expose `default` publicly on this Streamlit version
-    # (only the private `_default`) — used here only to assert this app's
-    # own registration behavior, not as a documented public API.
+def test_dashboard_is_the_root_on_the_first_visit_and_every_visit_after(monkeypatch):
+    """Replaces the retired first-visit-Home behaviour. `st.Page` doesn't
+    expose `default` publicly on this Streamlit version (only the private
+    `_default`) — used here only to assert this app's own registration,
+    not as a documented public API."""
     _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
-    at.run()  # first-ever run of this session: home is default
-    pages = at.session_state["_pages"]
-    assert pages["home"]._default is True
-    assert pages["dashboard"]._default is False
 
-    at.run()  # every rerun after the first: dashboard takes over as default
+    at.run()  # first-ever run of this session
     pages = at.session_state["_pages"]
-    assert pages["home"]._default is False
     assert pages["dashboard"]._default is True
+    assert pages["home"]._default is False
+
+    at.run()  # and every rerun after it — no per-session flip any more
+    pages = at.session_state["_pages"]
+    assert pages["dashboard"]._default is True
+    assert pages["home"]._default is False
 
 
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order(monkeypatch):
