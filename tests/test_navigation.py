@@ -42,7 +42,7 @@ from src.ui.ui import HIDDEN_FROM_NAV, PRIMARY_NAV, SYSTEM_NAV
 
 APP_PATH = Path(__file__).parent.parent / "app.py"
 
-_ALL_REGISTERED_KEYS = ["home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + [
+_ALL_REGISTERED_KEYS = ["root", "home"] + [k for k, _ in PRIMARY_NAV + SYSTEM_NAV + HIDDEN_FROM_NAV] + [
     "disclaimer", "daily_news_admin", "research_cases", "theme_workspace", "company_discovery_admin",
     # Admin Users v1 (design/DECISIONS.md) — same hidden-but-reachable
     # pattern as the other admin pages above.
@@ -102,23 +102,35 @@ def _sign_in_as(monkeypatch, email: str = "tester@example.test") -> None:
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
 
 
-def test_dashboard_is_the_root_on_the_first_visit_and_every_visit_after(monkeypatch):
-    """Replaces the retired first-visit-Home behaviour. `st.Page` doesn't
-    expose `default` publicly on this Streamlit version (only the private
-    `_default`) — used here only to assert this app's own registration,
-    not as a documented public API."""
+def test_the_hidden_root_page_owns_the_root_on_every_visit(monkeypatch):
+    """Replaces the retired first-visit-Home behaviour, and then the
+    short-lived Dashboard-as-default that replaced it. Dashboard must NOT
+    be the default page: Streamlit reports url_path "" for whichever page
+    is, which cost Dashboard both its own route and every link aimed at
+    it. The hidden root redirect carries default instead — see
+    tests/test_root_route_redirect.py for the full contract.
+
+    `st.Page` doesn't expose `default` publicly on this Streamlit version
+    (only the private `_default`) — used here only to assert this app's
+    own registration, not as a documented public API. The user-visible
+    consequences are asserted through the public url_path and the
+    rendered page_link protos in the routing test file."""
     _sign_in_as(monkeypatch)
     at = AppTest.from_file(str(APP_PATH), default_timeout=15)
 
     at.run()  # first-ever run of this session
     pages = at.session_state["_pages"]
-    assert pages["dashboard"]._default is True
+    assert pages["root"]._default is True
+    assert pages["dashboard"]._default is False
     assert pages["home"]._default is False
+    assert pages["dashboard"].url_path == "dashboard"
 
     at.run()  # and every rerun after it — no per-session flip any more
     pages = at.session_state["_pages"]
-    assert pages["dashboard"]._default is True
+    assert pages["root"]._default is True
+    assert pages["dashboard"]._default is False
     assert pages["home"]._default is False
+    assert pages["dashboard"].url_path == "dashboard"
 
 
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order(monkeypatch):
