@@ -52,6 +52,7 @@ from src.ui.pages import (
     methodology,
     radar_inbox,
     research_cases,
+    root,
     signals,
     theme_workspace,
     themes_research,
@@ -121,14 +122,29 @@ _HIDDEN_KEYS = {key for key, _ in HIDDEN_FROM_NAV}
 # of `st.navigation` instability.
 @st.cache_resource(show_spinner=False)
 def _build_pages() -> dict[str, st.Page]:
-    # Home is a compatibility route only. It used to take the root path on
-    # a session's first visit and show a hero, a CTA into Dashboard and a
-    # capability list that duplicated About; the root now belongs to
-    # Dashboard unconditionally. The route stays registered at an explicit
-    # url_path so an existing /home link redirects instead of 404ing --
-    # see src/ui/pages/home.py, which renders nothing and switches page.
-    # It is hidden: nothing in the sidebar or any CTA points at it.
+    # Two hidden redirect-only routes, neither of them linked from
+    # anywhere. Both render nothing and switch straight to Dashboard --
+    # see src/ui/pages/root.py and src/ui/pages/home.py.
+    #
+    # "root" is the one page carrying default=True, and it exists
+    # precisely so that Dashboard does not have to. Streamlit's
+    # Page.url_path returns "" for whichever page is the default, and an
+    # empty url_path costs that page its route (no /dashboard) and turns
+    # every st.page_link aimed at it into href="" -- an inert link that
+    # resolves to whatever page the reader is already on. Dashboard held
+    # default=True briefly and paid exactly that: a "Page not found"
+    # toast on /dashboard, plus a dead sidebar item and wordmark. So the
+    # empty url_path belongs to a page nothing links to. url_path="" is
+    # legal here only because this page is the default; Streamlit rejects
+    # it on any other page.
+    #
+    # "home" is the older compatibility route, kept so an existing /home
+    # bookmark redirects instead of 404ing.
     pages = {
+        "root": st.Page(
+            with_chrome(root.render, "root", show_sidebar=False),
+            title="Root", url_path="", default=True, visibility="hidden",
+        ),
         "home": st.Page(
             with_chrome(home.render, "home", show_sidebar=False),
             title="Home", url_path="home", visibility="hidden",
@@ -139,7 +155,6 @@ def _build_pages() -> dict[str, st.Page]:
             with_chrome(_RENDER_FNS[key], key),
             title=_label,
             url_path=_URL_PATHS.get(key),
-            default=(key == "dashboard"),
             visibility="hidden" if key in _HIDDEN_KEYS else "visible",
         )
     # Disclaimer is no longer a primary sidebar item, but stays a real
@@ -311,13 +326,16 @@ if not st.session_state.get("_user_account_recorded", False):
         print("[app] User-account session recording failed.")
     st.session_state["_user_account_recorded"] = True
 
-# Dashboard is the root, unconditionally and from the very first request:
-# a page keeps "/" via default=True regardless of its own url_path, so
-# Dashboard answers both "/" and "/dashboard". The per-session first-visit
-# flip that used to show Home once is gone, which also makes the
-# cache-stability fix above stronger rather than weaker: `_build_pages`
-# now has exactly ONE cache entry instead of two, so every rerun in every
-# session reuses the same singleton page set.
+# Every request reaches the research app, from the very first one: "/" is
+# the hidden root redirect, which renders nothing and switches to
+# Dashboard, so the address bar settles on "/dashboard". Dashboard itself
+# is an ordinary page and keeps its own url_path -- a page marked
+# default=True reports url_path "" and loses both its route and its
+# links, which is why the default is root's job and not Dashboard's.
+# The per-session first-visit flip that used to show Home once is gone,
+# which also makes the cache-stability fix above stronger rather than
+# weaker: `_build_pages` now has exactly ONE cache entry instead of two,
+# so every rerun in every session reuses the same singleton page set.
 pages = _build_pages()
 st.session_state["_pages"] = pages
 
