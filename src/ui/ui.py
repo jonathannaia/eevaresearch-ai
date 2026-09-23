@@ -379,7 +379,11 @@ def render_sidebar(current_key: str) -> None:
     badges = _nav_badge_counts()
 
     pages = st.session_state.get("_pages", {})
-    home_page = pages.get("home")
+    # The wordmark goes to Dashboard, not Home. Home is a redirect-only
+    # compatibility route now (src/ui/pages/home.py); pointing the brand
+    # link at it would send every click through an extra rerun for no
+    # reason, and is the shape a redirect loop would take.
+    brand_page = pages.get("dashboard")
 
     with st.sidebar:
         # Application-shell dark/dim pass (Perplexity-inspired sidebar
@@ -400,8 +404,8 @@ def render_sidebar(current_key: str) -> None:
         with brand_cols[0]:
             st.markdown(f'<span class="er-rail-logo">{brand_mark_html()}</span>', unsafe_allow_html=True)
         with brand_cols[1]:
-            if home_page is not None:
-                st.page_link(home_page, label="EevaResearch")
+            if brand_page is not None:
+                st.page_link(brand_page, label="EevaResearch")
             else:
                 st.markdown('<span class="er-rail-word">EevaResearch</span>', unsafe_allow_html=True)
         with brand_cols[2]:

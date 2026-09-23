@@ -63,15 +63,16 @@ def test_dead_pages_are_not_referenced_anywhere_in_src_or_app():
 # underlying claim-type model, evidence_chip component, and Methodology's
 # own "The four labels" section are unaffected; this is Home-copy-only.)
 
-def test_home_page_shows_capability_list():
+def test_home_page_no_longer_shows_a_capability_list():
+    """Home is a redirect now, not a landing page — the capability list it
+    used to carry duplicated About, which is where the surviving copy
+    lives. See tests/test_root_route_redirect.py for the redirect itself."""
     at = AppTest.from_file(str(HARNESS_DIR / "home_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    assert "What Eeva does today" in all_text
-    assert "Cross-market primary sources" in all_text
-    assert "Signals" in all_text
-    assert "Step 1" not in all_text
+    assert "What Eeva does today" not in all_text
+    assert "Cross-market primary sources" not in all_text
 
 
 def test_home_page_does_not_show_claim_labels():
@@ -86,17 +87,16 @@ def test_home_page_does_not_show_claim_labels():
     assert "Uncertainty" not in all_text
 
 
-def test_home_page_has_exactly_one_primary_cta():
-    # get_page() returns None in this isolated per-page AppTest harness
-    # (st.session_state["_pages"] is only populated by app.py's own
-    # _build_pages(), which this harness deliberately doesn't run — same
-    # limitation every other page_link-using page in this app already
-    # has in isolation), so the actual st.page_link call never renders
-    # here regardless of this fix. Checked at the source level instead:
-    # exactly one "Explore the research →" page_link call site exists.
+def test_home_page_has_no_cta_at_all():
+    """The "Explore the research →" CTA is gone with the landing page: the
+    root now opens the research app directly, so there is nothing to
+    invite the reader into."""
     source = (REPO_ROOT / "src" / "ui" / "pages" / "home.py").read_text(encoding="utf-8")
-    assert source.count('label="Explore the research →"') == 1
-    assert 'label="Open Dashboard"' not in source
+    # The module docstring names the retired CTA to explain what went and
+    # why; the assertion is about code.
+    code = source.split('"""', 2)[2] if source.count('"""') >= 2 else source
+    assert "Explore the research" not in code
+    assert "page_link" not in code
 
 
 def test_home_page_no_longer_duplicates_evidence_legend_theme_grid_or_limits():
@@ -110,18 +110,15 @@ def test_home_page_no_longer_duplicates_evidence_legend_theme_grid_or_limits():
     assert "It does not give financial advice." not in all_text
 
 
-def test_home_page_links_directly_to_disclaimer_instead_of_an_in_page_anchor():
+def test_home_page_carries_no_disclaimer_link_or_in_page_anchor():
+    """Disclaimer stays reachable from Methodology's cross-link and the
+    page footer, unchanged; it simply no longer has a second entry point
+    on a page that renders nothing."""
     at = AppTest.from_file(str(HARNESS_DIR / "home_page.py"), default_timeout=10)
     at.run()
     assert not at.exception
     all_text = " ".join(m.value for m in at.markdown)
-    # The old in-page anchor target no longer exists on this page.
     assert 'id="what-this-tool-wont-do"' not in all_text
     assert "#what-this-tool-wont-do" not in all_text
-    # Same page_link-in-isolation limitation as the Dashboard-link test
-    # above — checked at the source level: a real st.page_link call to
-    # the "disclaimer" page (not a raw <a href="#..."> anchor) exists
-    # exactly once.
     source = (REPO_ROOT / "src" / "ui" / "pages" / "home.py").read_text(encoding="utf-8")
-    assert 'get_page("disclaimer")' in source
-    assert source.count('label="What this tool won\'t do"') == 1
+    assert 'get_page("disclaimer")' not in source

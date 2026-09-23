@@ -24,6 +24,15 @@ def render() -> None:
         "figuring out which layer benefits, where the bottleneck actually sits, and who has direct "
         "versus second-order exposure."
     )
+    # Retained from the retired in-app landing page (src/ui/pages/home.py),
+    # which is now a redirect. These three lines were the only copy on it
+    # not already said better elsewhere; the rest duplicated this section
+    # and "Data sources" below.
+    st.write(
+        "Evidence-first research across AI infrastructure, industrial automation, space, defense, "
+        "and supply chains — grounded in what was actually filed and said. Coverage includes "
+        "SEC EDGAR, DART, and EDINET, and claims link to their original sources."
+    )
 
     section_header("Five themes")
     theme_cols = st.columns(min(len(themes), 5) or 1)
