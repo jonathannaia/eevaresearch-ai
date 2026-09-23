@@ -54,8 +54,12 @@ def _scan_status_repo(worker_settings):
     return backend_factory.get_scan_status_repository(worker_settings)
 
 
-def _fake_report(candidates_detected=1, candidates_processed=1, end_date="2026-08-20"):
+def _fake_report(candidates_detected=1, candidates_processed=1, end_date="2026-08-20", filings_discovered=7):
+    """filings_discovered defaults well clear of the other counts so an
+    assertion on the persisted status can only pass for the stage it
+    names -- items_discovered now carries this, never candidates_detected."""
     return types.SimpleNamespace(
+        filings_discovered=filings_discovered, new_filing_events=filings_discovered, already_seen_count=0,
         candidates_detected=candidates_detected, candidates_processed=candidates_processed,
         warnings=(), end_date=end_date,
     )
@@ -133,7 +137,7 @@ def test_proof2_dart_and_edinet_now_create_research_cases_via_the_shared_pipelin
     monkeypatch.setitem(
         radar_worker._SERVICE_MODULES, provider_key,
         types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: types.SimpleNamespace(
-            candidates_detected=1, candidates_processed=1, warnings=(), end_de="20260820",
+            filings_discovered=0, new_filing_events=0, already_seen_count=0, candidates_detected=1, candidates_processed=1, warnings=(), end_de="20260820",
         )),
     )
     scan_status_repo = _scan_status_repo(worker_settings)
@@ -221,8 +225,10 @@ def test_proof5_scan_status_fields_unchanged_with_research_step_active(tmp_path,
     radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
 
     status = scan_status_repo.get_scan_status("SEC EDGAR")
-    assert status.items_discovered == 3
-    assert status.candidates_created == 2
+    # items_discovered carries filings_discovered (7); candidates_created
+    # carries candidates_detected (3). Neither takes candidates_processed (2).
+    assert status.items_discovered == 7
+    assert status.candidates_created == 3
     assert status.cursor_value == "2026-08-21"
     assert status.failure_code is None
 
@@ -487,8 +493,8 @@ def test_proof12_research_step_exception_does_not_alter_scan_status_fields(tmp_p
     radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
 
     status = scan_status_repo.get_scan_status("SEC EDGAR")
-    assert status.items_discovered == 4
-    assert status.candidates_created == 3
+    assert status.items_discovered == 7
+    assert status.candidates_created == 4
     assert status.cursor_value == "2026-08-22"
     assert status.failure_code is None
 
@@ -523,7 +529,7 @@ def test_proof14_edgar_research_step_exception_does_not_prevent_dart_or_edinet(t
     monkeypatch.setitem(
         radar_worker._SERVICE_MODULES, "dart",
         types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: dart_called.append(1) or types.SimpleNamespace(
-            candidates_detected=1, candidates_processed=1, warnings=(), end_de="20260820",
+            filings_discovered=0, new_filing_events=0, already_seen_count=0, candidates_detected=1, candidates_processed=1, warnings=(), end_de="20260820",
         )),
     )
     monkeypatch.setitem(

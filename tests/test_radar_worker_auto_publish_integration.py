@@ -293,7 +293,12 @@ def _set_all_providers_no_op(monkeypatch):
     for provider_key in ("edgar", "dart", "edinet"):
         monkeypatch.setitem(
             radar_worker._SERVICE_MODULES, provider_key,
+            # A quiet tick: nothing discovered, so nothing downstream.
+            # filings_discovered/new_filing_events/already_seen_count are
+            # the funnel stages the worker now records and logs
+            # separately -- see tests/test_radar_throughput_observability.py.
             types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: types.SimpleNamespace(
+                filings_discovered=0, new_filing_events=0, already_seen_count=0,
                 candidates_detected=0, candidates_processed=0, warnings=(), end_date="2026-08-20",
             )),
         )

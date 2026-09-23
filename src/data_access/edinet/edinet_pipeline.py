@@ -127,6 +127,31 @@ class ScanReport:
     # affecting the other.
     filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
     filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+    # Radar throughput observability — additive, default 0 so every
+    # existing construction of this dataclass is unaffected. Both are
+    # EDINET-only and deliberately absent from EDGAR's and DART's own
+    # ScanReport: EDINET queries a whole day's document list and matches
+    # tracked companies afterwards, so it alone has a stage upstream of
+    # the matcher to count. EDGAR and DART query per tracked company, so
+    # for them filings_discovered IS the earliest truthful count, and a
+    # "whole-market rows" number there would be fabricated comparability.
+    #
+    # normalized_rows_fetched: rows EDINET returned across the queried
+    # days, before matching, dedupe, the status gate, rules or candidate
+    # creation. It is the only number separating "EDINET returned
+    # nothing" from "EDINET returned rows, none of them ours" — every
+    # count below those stages reads zero in both cases.
+    #
+    # deferred_status_count: matched rows held back by the unconfirmed-
+    # status gate (scan_service._status_fields_are_default). Already
+    # computed on ScanResult; carried here so it stops being invisible.
+    #
+    # Both are log-only; provider_scan_status has no column for either
+    # and adding one would be a migration. normalized_rows_fetched >=
+    # filings_discovered always, since every counted filing came from
+    # one of these rows.
+    normalized_rows_fetched: int = 0
+    deferred_status_count: int = 0
 
 
 def _build_edinet_filing_candidate_shadow_report(
@@ -571,4 +596,6 @@ def run_pipeline(
         shadow_material_event_matches=shadow_matches,
         filing_candidate_shadow_matches=filing_candidate_shadow_matches,
         filing_candidate_shadow_diagnostics=filing_candidate_shadow_diagnostics,
+        normalized_rows_fetched=scan_result.normalized_rows_fetched,
+        deferred_status_count=scan_result.deferred_status_count,
     )

@@ -924,14 +924,53 @@ def _run_provider_tick(
             started_at=started_at,
             completed_at=completed_at,
             last_successful_at=completed_at,
-            items_discovered=report.candidates_detected,
-            candidates_created=report.candidates_processed,
+            # Both of these used to hold a value its column name denied.
+            #
+            # items_discovered held candidates_detected -- a count taken
+            # AFTER matching, dedupe and rules, under a name that reads
+            # as raw discovery. It made a quiet source and a source whose
+            # rows we discarded look identical, which is exactly the
+            # question a throughput investigation needs answered.
+            # filings_discovered is the earliest truthful count all three
+            # providers share: in-window filings for tracked companies,
+            # before dedupe, rules and candidate creation.
+            #
+            # candidates_created held candidates_processed, which counts
+            # retrieval/extraction/translation work done this tick, not
+            # candidates created. It sits at 0 on a healthy tick with
+            # nothing left to process, and has already been misread as
+            # "no writes happened". candidates_detected is the number of
+            # candidate signals newly created this run -- see the field's
+            # own comment in dart/radar_pipeline.py.
+            items_discovered=report.filings_discovered,
+            candidates_created=report.candidates_detected,
             skipped_unresolved_count=skipped_unresolved,
             failure_code=None,
             updated_at=completed_at,
         ))
+        # One line per provider carrying each funnel stage separately, so
+        # a drop can be located rather than guessed at. already_seen
+        # comes from the on-disk dedupe cache, which is ephemeral on a
+        # container with no disk attached -- a cold container reports 0
+        # and re-detects, so read it alongside container age, not alone.
+        stages = (
+            f"filings_discovered={report.filings_discovered} "
+            f"new_filing_events={report.new_filing_events} "
+            f"already_seen={report.already_seen_count} "
+        )
+        # EDINET alone queries a whole day's document list and matches
+        # tracked companies afterwards, so it alone has counts upstream
+        # of the matcher. getattr keeps EDGAR and DART honest: they have
+        # no equivalent stage, so they print no equivalent number.
+        normalized_rows = getattr(report, "normalized_rows_fetched", None)
+        if normalized_rows is not None:
+            stages = f"normalized_rows_fetched={normalized_rows} " + stages
+        deferred_status = getattr(report, "deferred_status_count", None)
+        if deferred_status is not None:
+            stages += f"deferred_status={deferred_status} "
         print(
-            f"{provider_key.upper()}: ok — candidates_detected={report.candidates_detected} "
+            f"{provider_key.upper()}: ok — {stages}"
+            f"candidates_detected={report.candidates_detected} "
             f"candidates_processed={report.candidates_processed} skipped_unresolved={skipped_unresolved}"
         )
 
