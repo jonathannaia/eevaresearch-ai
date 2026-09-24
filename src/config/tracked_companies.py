@@ -1661,6 +1661,108 @@ TRACKED_COMPANIES: tuple[TrackedCompany, ...] = (
             "Rockwell/Symbotic/Mitsubishi Electric usage)."
         ),
     ),
+    # --- Japan Batch 1 (2026-09-24) ---------------------------------
+    # Issuer and securities codes resolved against the official EDINET
+    # code list; English filer names preserved verbatim from it.
+    # native_name is unset throughout: native legal names were not part
+    # of that validation.
+    TrackedCompany(
+        name="Lasertec corporation",
+        exchange="TSE",
+        krx_code="69200",
+        source="EDINET",
+        themes=("ai-buildout",),
+        subthemes=(),
+        corp_code="E01991",
+        notes=(
+            "EUV photomask and blank inspection. EDINET code and "
+            "securities code validated against the official EDINET "
+            "code list (2026-09-24); English filer name verbatim from "
+            "that list. No subtheme: inspection/metrology is distinct "
+            "from `semiconductor-test`, which denotes ATE."
+        ),
+    ),
+    TrackedCompany(
+        name="Fujikura Ltd.",
+        exchange="TSE",
+        krx_code="58030",
+        source="EDINET",
+        themes=("photonics",),
+        subthemes=("lasers-optical-components",),
+        corp_code="E01334",
+        notes=(
+            "Optical fibre, cable and connectors; data-centre "
+            "interconnect exposure. EDINET code and securities code "
+            "validated against the official EDINET code list "
+            "(2026-09-24); English filer name verbatim from that list."
+        ),
+    ),
+    TrackedCompany(
+        name="HAMAMATSU PHOTONICS K.K.",
+        exchange="TSE",
+        krx_code="69650",
+        source="EDINET",
+        themes=("photonics",),
+        subthemes=("lasers-optical-components",),
+        corp_code="E01955",
+        notes=(
+            "Photodetectors, light sources and sensing components. "
+            "EDINET code and securities code validated against the "
+            "official EDINET code list (2026-09-24); English filer "
+            "name verbatim from that list."
+        ),
+    ),
+    TrackedCompany(
+        name="TOKYO OHKA KOGYO CO., LTD.",
+        exchange="TSE",
+        krx_code="41860",
+        source="EDINET",
+        themes=("ai-buildout",),
+        subthemes=(),
+        corp_code="E00854",
+        notes=(
+            "Photoresist and EUV process materials. Distinct from Tokyo "
+            "Electron Limited (E02652). EDINET code and securities code "
+            "validated against the official EDINET code list "
+            "(2026-09-24); English filer name verbatim from that list. "
+            "No subtheme: ai-buildout has no semiconductor-materials "
+            "subtheme."
+        ),
+    ),
+    TrackedCompany(
+        name="KOKUSAI ELECTRIC CORPORATION",
+        exchange="TSE",
+        krx_code="65250",
+        source="EDINET",
+        themes=("memory",),
+        subthemes=(),
+        corp_code="E37488",
+        notes=(
+            "Batch deposition equipment for DRAM and 3D NAND. EDINET "
+            "code and securities code validated against the official "
+            "EDINET code list (2026-09-24); English filer name verbatim "
+            "from that list. No subtheme: an equipment supplier to "
+            "memory makers, so `dram`/`nand-flash` would mis-type it as "
+            "a memory producer."
+        ),
+    ),
+    TrackedCompany(
+        name="THK CO., LTD.",
+        exchange="TSE",
+        krx_code="64810",
+        source="EDINET",
+        themes=("humanoids",),
+        subthemes=(),
+        corp_code="E01678",
+        notes=(
+            "Linear-motion guides and bearings; precision-motion layer "
+            "alongside Nabtesco and Harmonic Drive. EDINET code and "
+            "securities code validated against the official EDINET code "
+            "list (2026-09-24); English filer name verbatim from that "
+            "list. No subtheme: `actuators-motors` denotes actuation, "
+            "not guides and bearings."
+        ),
+    ),
     TrackedCompany(
         name="GE Vernova Inc.",
         exchange="NYSE",
