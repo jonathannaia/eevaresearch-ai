@@ -1,6 +1,8 @@
 """Tracked-company registry (Korea DART + SEC EDGAR + EDINET pilots) —
 presence, correct identifiers/theme mapping, source filtering, and the
 corp_code/CIK-merge helpers."""
+import pytest
+
 from src.config.tracked_companies import (
     TrackedCompany,
     get_tracked_companies,
@@ -132,17 +134,21 @@ def test_get_tracked_companies_for_source_filters_edinet_only():
         "Murata Manufacturing Co., Ltd.", "TOWA Corporation",
         # Tier 1 Cohort 1 batch (2026-09-15)
         "Nabtesco Corporation", "Harmonic Drive Systems Inc.", "YASKAWA Electric Corporation",
+        # Japan Batch 1 (2026-09-24)
+        "Lasertec corporation", "Fujikura Ltd.", "HAMAMATSU PHOTONICS K.K.",
+        "TOKYO OHKA KOGYO CO., LTD.", "KOKUSAI ELECTRIC CORPORATION", "THK CO., LTD.",
     }
 
 
-def test_edinet_cohort_has_exactly_twenty_one_entries():
+def test_edinet_cohort_has_exactly_twenty_seven_entries():
     # Was "exactly five" through Gate 7; the Core Issuer Expansion batch
     # (2026-09-04) added 8 more (5 + 8 = 13) — renamed rather than left
     # stale, same discipline Gate 7.1 already established for this file.
     # The EDINET Filings Radar issuer-expansion batch (2026-09-04) then
     # added 5 more still (13 + 5 = 18). The Tier 1 Cohort 1 batch
-    # (2026-09-15) added 3 more still (18 + 3 = 21).
-    assert len(get_tracked_companies_for_source("EDINET")) == 21
+    # (2026-09-15) added 3 more still (18 + 3 = 21). Japan Batch 1
+    # (2026-09-24) added 6 more still (21 + 6 = 27).
+    assert len(get_tracked_companies_for_source("EDINET")) == 27
 
 
 def test_edinet_cohort_direct_edinet_code_mapping():
@@ -266,7 +272,7 @@ def test_indi_aip_ceva_corp_code_not_hardcoded():
         assert by_ticker[ticker].corp_code is None
 
 
-def test_active_tracked_company_count_is_exactly_123():
+def test_active_tracked_company_count_is_exactly_129():
     # Was "exactly 32" before the Core Issuer Expansion batch
     # (2026-09-04), which added 30 net-new active issuers
     # (14 EDGAR + 8 DART + 8 EDINET; 32 + 30 = 62). The Filings Radar
@@ -277,8 +283,9 @@ def test_active_tracked_company_count_is_exactly_123():
     # EDINET issuers (100 + 5 = 105). The Tier 1 Cohort 1 batch
     # (2026-09-15) then added 10 more (5 EDGAR + 2 DART + 3 EDINET;
     # 105 + 10 = 115), and the Tier 1 Cohort 2 batch (2026-09-16) added
-    # 8 more SEC EDGAR issuers still (115 + 8 = 123).
-    assert len(get_tracked_companies(active_only=True)) == 123
+    # 8 more SEC EDGAR issuers still (115 + 8 = 123). Japan Batch 1
+    # (2026-09-24) then added 6 more EDINET issuers (123 + 6 = 129).
+    assert len(get_tracked_companies(active_only=True)) == 129
 
 
 def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
@@ -820,3 +827,125 @@ def test_pre_existing_and_cohort1_companies_retain_expected_behavior_after_cohor
     assert companies["Nabtesco Corporation"].themes == ("humanoids",)
     assert companies["L3Harris Technologies, Inc."].krx_code == "LHX"
     assert companies["L3Harris Technologies, Inc."].themes == ("space",)
+
+
+# --- Japan Batch 1 (2026-09-24) -------------------------------------
+#
+# The EDINET codes are the whole point: a wrong one fails silently --
+# the issuer never matches a filing and looks like a quiet company --
+# so each is pinned explicitly rather than covered by a count.
+
+_JAPAN_BATCH_1 = (
+    # (name, securities code, EDINET code, primary theme, subthemes)
+    ("Lasertec corporation",         "69200", "E01991", "ai-buildout", ()),
+    ("Fujikura Ltd.",                "58030", "E01334", "photonics",
+     ("lasers-optical-components",)),
+    ("HAMAMATSU PHOTONICS K.K.",     "69650", "E01955", "photonics",
+     ("lasers-optical-components",)),
+    ("TOKYO OHKA KOGYO CO., LTD.",   "41860", "E00854", "ai-buildout", ()),
+    ("KOKUSAI ELECTRIC CORPORATION", "65250", "E37488", "memory", ()),
+    ("THK CO., LTD.",                "64810", "E01678", "humanoids", ()),
+)
+
+
+@pytest.mark.parametrize("name,krx_code,corp_code,theme,subthemes", _JAPAN_BATCH_1)
+def test_japan_batch_1_entry_shape(name, krx_code, corp_code, theme, subthemes):
+    companies = {c.name: c for c in get_tracked_companies_for_source("EDINET")}
+    assert name in companies, name
+    company = companies[name]
+
+    assert company.source == "EDINET"
+    assert company.exchange == "TSE"
+    assert company.krx_code == krx_code
+    assert company.corp_code == corp_code
+    assert company.themes[0] == theme
+    assert company.subthemes == subthemes
+    assert company.active is True
+
+
+@pytest.mark.parametrize("name,krx_code,corp_code,theme,subthemes", _JAPAN_BATCH_1)
+def test_japan_batch_1_securities_code_is_the_normalized_tse_code(
+    name, krx_code, corp_code, theme, subthemes
+):
+    """The registry stores EDINET's own 5-character code, not the bare
+    4-character TSE ticker -- the same transform the resolver applies
+    when it looks a company up, so a mismatch here means the issuer
+    would never resolve."""
+    from src.data_access.edinet import edinet_code_resolver
+
+    assert len(krx_code) == 5
+    assert edinet_code_resolver._normalize_lookup_code(krx_code[:-1]) == krx_code
+
+
+@pytest.mark.parametrize("name,krx_code,corp_code,theme,subthemes", _JAPAN_BATCH_1)
+def test_japan_batch_1_entry_is_eligible_for_the_edinet_scan_path(
+    name, krx_code, corp_code, theme, subthemes
+):
+    """Asserts the real predicate, not a proxy: scan_service builds its
+    matcher as {c.corp_code: c for c in companies if c.corp_code}, so an
+    entry is scan-eligible exactly when it is returned for the EDINET
+    source and carries a non-empty corp_code."""
+    companies = get_tracked_companies_for_source("EDINET")
+    matcher = {c.corp_code: c for c in companies if c.corp_code}
+
+    assert corp_code in matcher
+    assert matcher[corp_code].name == name
+
+
+def test_japan_batch_1_introduces_no_duplicate_identifier():
+    companies = get_tracked_companies(active_only=False)
+    corp_codes = [c.corp_code for c in companies if c.corp_code]
+    source_tickers = [(c.source, c.krx_code) for c in companies]
+
+    assert len(corp_codes) == len(set(corp_codes))
+    assert len(source_tickers) == len(set(source_tickers))
+
+
+def test_japan_batch_1_leaves_native_name_unset():
+    """Native legal names were not part of the code-list validation, so
+    none is recorded. Deliberately falsy rather than equal to "": the
+    assertion should not depend on whether an omitted optional is
+    represented as None or an empty string."""
+    companies = {c.name: c for c in get_tracked_companies_for_source("EDINET")}
+    for name, *_ in _JAPAN_BATCH_1:
+        assert not companies[name].native_name
+
+
+def test_japan_batch_1_uses_only_canonical_theme_vocabulary():
+    """Shape-safe: themes.json is currently a top-level list, but the
+    normalization below also accepts a {"themes": [...]} wrapper so the
+    test pins the vocabulary rather than the file's envelope."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads(
+        (Path(__file__).parent.parent / "data" / "seed" / "themes.json").read_text()
+    )
+    themes = raw["themes"] if isinstance(raw, dict) and "themes" in raw else raw
+    assert isinstance(themes, (list, tuple)) and themes
+
+    valid = {
+        theme["slug"]: {
+            subtheme["slug"] for subtheme in theme.get("subthemes", ())
+        }
+        for theme in themes
+    }
+
+    for name, _krx, _corp, theme, subthemes in _JAPAN_BATCH_1:
+        assert theme in valid, (name, theme)
+        for subtheme in subthemes:
+            assert subtheme in valid[theme], (name, subtheme)
+
+
+def test_japan_batch_1_leaves_the_existing_twenty_one_untouched():
+    companies = {c.name: c for c in get_tracked_companies_for_source("EDINET")}
+    added = {name for name, *_ in _JAPAN_BATCH_1}
+
+    assert len(companies) == 27
+    assert len(added) == 6
+    # The pre-existing cohort, spot-checked across all five themes.
+    assert companies["SoftBank Group Corp."].corp_code == "E02778"
+    assert companies["Kioxia Holdings Corporation"].corp_code == "E35948"
+    assert companies["Furukawa Electric Co., Ltd."].corp_code == "E01332"
+    assert companies["FANUC CORPORATION"].corp_code == "E01946"
+    assert companies["ispace, inc."].corp_code == "E37584"

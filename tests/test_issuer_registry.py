@@ -83,7 +83,7 @@ def test_edinet_identifiers_survive_migration_exactly():
     assert edinet_issuers["Nabtesco Corporation"].identifiers["EDINET"] == "E01726"
     assert edinet_issuers["Harmonic Drive Systems Inc."].identifiers["EDINET"] == "E01712"
     assert edinet_issuers["YASKAWA Electric Corporation"].identifiers["EDINET"] == "E01741"
-    assert len(edinet_issuers) == 21
+    assert len(edinet_issuers) == 27
 
 
 def test_dart_and_edgar_seed_issuers_have_no_invented_identifiers():
@@ -243,7 +243,7 @@ def test_seed_issuer_count_is_123_after_the_tier1_cohort2_batch():
     # added 5 more EDINET issuers (100 + 5 = 105), again after the Tier 1
     # Cohort 1 batch (2026-09-15) added 10 more (105 + 10 = 115), and
     # again after the Tier 1 Cohort 2 batch added 8 more (115 + 8 = 123).
-    assert len(SEED_ISSUERS) == 123
+    assert len(SEED_ISSUERS) == 129
 
 
 def test_indi_aip_ceva_appear_exactly_once_each_in_seed_issuers():
@@ -312,8 +312,8 @@ def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_quanta():
     # added 8 more still (115 + 8 = 123) — see
     # test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch
     # below for Quanta's own, now-changed status specifically.
-    assert len(get_tracked_companies(active_only=False)) == 123
-    assert len(SEED_ISSUERS) == 123
+    assert len(get_tracked_companies(active_only=False)) == 129
+    assert len(SEED_ISSUERS) == 129
 
 
 def test_quanta_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -358,8 +358,8 @@ def test_discovery_stubs_grew_by_exactly_one_for_nvent_electric():
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_nvent():
     # True as of the nVent-only addition — see the matching Quanta test
     # above for why this now asserts 123, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 123
-    assert len(SEED_ISSUERS) == 123
+    assert len(get_tracked_companies(active_only=False)) == 129
+    assert len(SEED_ISSUERS) == 129
 
 
 def test_nvent_is_now_also_a_real_tracked_company_via_the_core_expansion_batch():
@@ -405,8 +405,8 @@ def test_discovery_stubs_grew_by_exactly_two_for_arista_and_cisco():
 def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_arista_and_cisco():
     # True as of the Arista/Cisco-only addition — see the matching Quanta
     # test above for why this now asserts 123, not 32.
-    assert len(get_tracked_companies(active_only=False)) == 123
-    assert len(SEED_ISSUERS) == 123
+    assert len(get_tracked_companies(active_only=False)) == 129
+    assert len(SEED_ISSUERS) == 129
 
 
 def test_arista_and_cisco_are_now_also_real_tracked_companies_via_the_core_expansion_batch():
@@ -454,8 +454,8 @@ def test_tracked_company_and_seed_issuer_counts_are_unaffected_by_hpe():
     # graduating to a real tracked company (115 + 8 = 123) — see
     # test_hpe_is_now_also_a_real_tracked_company_via_the_tier1_cohort2_batch
     # below for HPE's own, now-changed status specifically.
-    assert len(get_tracked_companies(active_only=False)) == 123
-    assert len(SEED_ISSUERS) == 123
+    assert len(get_tracked_companies(active_only=False)) == 129
+    assert len(SEED_ISSUERS) == 129
 
 
 def test_hpe_is_now_also_a_real_tracked_company_via_the_tier1_cohort2_batch():
