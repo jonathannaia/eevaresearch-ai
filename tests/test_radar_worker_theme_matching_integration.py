@@ -48,6 +48,7 @@ def _worker_settings(tmp_path) -> Settings:
 
 def _fake_report(candidates_detected=0, candidates_processed=0, end_date="2026-08-20"):
     return types.SimpleNamespace(
+        filings_discovered=0, new_filing_events=0, already_seen_count=0,
         candidates_detected=candidates_detected, candidates_processed=candidates_processed,
         warnings=(), end_date=end_date,
     )

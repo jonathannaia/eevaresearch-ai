@@ -123,6 +123,22 @@ class ScanResult:
     # _status_fields_are_default. Additive (Gate 5): a visibility seam,
     # never populated before this gate.
     deferred_status_count: int = 0
+    # Every normalized row EDINET returned across the queried days,
+    # counted BEFORE tracked-company matching, dedupe, the status gate,
+    # rule evaluation and candidate creation — see scan()'s own loop for
+    # each of those stages in order.
+    #
+    # This is the only count in this pipeline taken upstream of the
+    # matcher, and EDINET is the only provider that can have one: it
+    # queries a whole day's document list and matches afterwards, while
+    # EDGAR and DART query per tracked company, so "rows that matched no
+    # tracked company" is a stage those two do not have. Without this,
+    # "EDINET returned nothing" and "EDINET returned rows, none of them
+    # ours" are the same observation — both leave every downstream count
+    # at zero.
+    #
+    # Observability only. Nothing reads it to make a decision.
+    normalized_rows_fetched: int = 0
 
 
 def normalize_document_list(payload: object) -> tuple[list[dict], tuple[str, ...]]:
@@ -469,6 +485,11 @@ def scan(
     companies_with_data: set[str] = set()
 
     fetched = fetch_normalized_rows_for_dates(client, query_dates)
+    # Counted here, at the top of the loop, so it stays upstream of every
+    # gate below (matcher, dedupe, status, rules) no matter how those
+    # later change. A day that failed to fetch contributes 0 rows and is
+    # already reported through day_result.warnings.
+    normalized_rows_fetched = sum(len(fetched[day.isoformat()].rows) for day in query_dates)
     for day in query_dates:
         day_result = fetched[day.isoformat()]
         for warning in day_result.warnings:
@@ -521,6 +542,7 @@ def scan(
         scope=scope, new_filing_events=tuple(new_filing_events), new_candidate_signals=tuple(new_candidate_signals),
         already_seen_count=already_seen_count, errors=tuple(errors), no_data_companies=no_data_companies,
         deferred_status_count=deferred_status_count,
+        normalized_rows_fetched=normalized_rows_fetched,
     )
 
 

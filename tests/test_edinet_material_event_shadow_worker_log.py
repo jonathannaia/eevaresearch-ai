@@ -42,6 +42,7 @@ def _scan_status_repo(worker_settings):
 
 def _fake_edinet_report(shadow_matches=()):
     return types.SimpleNamespace(
+        filings_discovered=0, new_filing_events=0, already_seen_count=0,
         candidates_detected=0, candidates_processed=0, warnings=(), end_date="2026-09-03",
         shadow_material_event_matches=shadow_matches,
     )
@@ -138,7 +139,8 @@ def test_flag_true_for_edgar_or_dart_provider_key_never_prints_the_edinet_shadow
     monkeypatch.setitem(
         radar_worker._SERVICE_MODULES, "edgar",
         types.SimpleNamespace(run_scan=lambda settings, candidate_repository=None: types.SimpleNamespace(
-            candidates_detected=0, candidates_processed=0, warnings=(), end_de="2026-09-03",
+            filings_discovered=0, new_filing_events=0, already_seen_count=0,
+        candidates_detected=0, candidates_processed=0, warnings=(), end_de="2026-09-03",
         )),
     )
     scan_status_repo = _scan_status_repo(worker_settings)

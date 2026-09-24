@@ -185,6 +185,14 @@ def test_provider_lock_keys_are_independent_across_providers(tmp_path, monkeypat
 
 @dataclass
 class _FakeReport:
+    """Every count deliberately distinct, so an assertion can only pass
+    for the field it names. The two that matter most are
+    filings_discovered (7) and candidates_detected (2): the worker used
+    to store the latter under items_discovered, and a fake sharing one
+    value between them would have let that bug through."""
+    filings_discovered: int = 7
+    new_filing_events: int = 5
+    already_seen_count: int = 2
     candidates_detected: int = 2
     candidates_processed: int = 1
     warnings: tuple = ()
@@ -196,6 +204,9 @@ class _FakeDartReport:
     """DART's real ScanReport uses end_de, not end_date — a separate
     fake class proves _run_provider_tick's cursor derivation handles
     both naming conventions."""
+    filings_discovered: int = 4
+    new_filing_events: int = 3
+    already_seen_count: int = 1
     candidates_detected: int = 1
     candidates_processed: int = 1
     warnings: tuple = ()
@@ -223,8 +234,10 @@ def test_run_provider_tick_success_persists_expected_status(tmp_path, monkeypatc
 
     status = scan_status_repo.get_scan_status("SEC EDGAR")
     assert status is not None
-    assert status.items_discovered == 2
-    assert status.candidates_created == 1
+    # filings_discovered (7), never candidates_detected (2).
+    assert status.items_discovered == 7
+    # candidates_detected (2), never candidates_processed (1).
+    assert status.candidates_created == 2
     assert status.cursor_value == "2026-08-20"
     assert status.failure_code is None
     assert status.skipped_unresolved_count == 0

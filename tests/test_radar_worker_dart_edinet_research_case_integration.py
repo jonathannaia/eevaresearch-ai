@@ -53,6 +53,7 @@ def _scan_status_repo(worker_settings):
 
 def _fake_report(candidates_detected=1, candidates_processed=1, end_date="2026-08-20"):
     return types.SimpleNamespace(
+        filings_discovered=0, new_filing_events=0, already_seen_count=0,
         candidates_detected=candidates_detected, candidates_processed=candidates_processed,
         warnings=(), end_date=end_date,
     )
