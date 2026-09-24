@@ -17,6 +17,7 @@ five representative rows, never the full ~11,382-row production list."""
 from __future__ import annotations
 
 import io
+import pathlib
 import zipfile
 from unittest.mock import MagicMock
 
@@ -37,6 +38,19 @@ _ISSUERS = [
     ("E01332", "58010", "古河電気工業株式会社", "Furukawa Electric Co., Ltd."),
     ("E01946", "69540", "ファナック株式会社", "FANUC CORPORATION"),
     ("E37584", "93480", "株式会社ｉｓｐａｃｅ", ""),
+]
+
+# Unlisted filers: synthetic, but the shape is the real file's majority
+# case — roughly two thirds of the official code list is funds, unlisted
+# subsidiaries that file, and foreign filers, none of which carry a
+# 証券コード. They are counted by the summary row's own 件数 and must
+# therefore be counted by the parser's data-row total, while being
+# correctly excluded from the securities-code -> EDINET-code map this
+# resolver returns. Fictional codes/names, not real entities.
+_UNLISTED_FILERS = [
+    ("E90001", "", "テスト投資法人", ""),
+    ("E90002", "", "テスト非上場株式会社", "Test Unlisted Co."),
+    ("E90003", "", "テスト外国法人", ""),
 ]
 
 
@@ -184,7 +198,7 @@ def test_parse_code_list_csv_count_mismatch_fails_safely():
     csv_text = _sample_csv(declared_count=99)
     rows, warnings = edinet_code_resolver.parse_code_list_csv(csv_text)
     assert rows == []
-    assert "declared 99" in warnings[0] and "5 were parsed" in warnings[0]
+    assert "declared 99" in warnings[0] and "5 data rows were read" in warnings[0]
 
 
 def test_parse_code_list_csv_count_match_succeeds_with_no_warnings():
@@ -414,3 +428,91 @@ def test_load_cached_discovery_codes_empty_when_no_cache(tmp_path):
 def test_load_cached_discovery_codes_tolerates_corrupt_cache_file(tmp_path):
     (tmp_path / "edinet_discovery_codes.json").write_text("{not valid json", encoding="utf-8")
     assert edinet_code_resolver.load_cached_discovery_codes(tmp_path) == {}
+
+
+# --- the all-filer vs resolver-eligible distinction -------------------------------
+#
+# The official summary row counts EVERY filer; the resolver returns only
+# those with a securities code. Validating the first against the second
+# compares unlike populations, and on the real file (~11.4k filers,
+# ~3.8k listed) it failed closed on every single call — silently, since
+# nothing calls the resolver on a schedule. The fixture above could not
+# catch it while it contained listed issuers only, so these tests exist
+# to make the two populations impossible to conflate again.
+
+def _mixed_csv(declared_count: int | None = None) -> str:
+    """Listed issuers AND unlisted filers, with the summary row
+    declaring every data row — the real file's actual shape."""
+    all_rows = _ISSUERS + _UNLISTED_FILERS
+    count = len(all_rows) if declared_count is None else declared_count
+    lines = [_summary_row(count), _REAL_HEADER] + [_data_row(*r) for r in all_rows]
+    return "\n".join(lines)
+
+
+def test_declared_count_covering_listed_and_unlisted_filers_parses_without_warning():
+    """declared = listed + unlisted, and the parse succeeds."""
+    rows, warnings = edinet_code_resolver.parse_code_list_csv(_mixed_csv())
+
+    assert warnings == ()
+    assert len(rows) == len(_ISSUERS)
+    assert {r["edinet_code"] for r in rows} == {i[0] for i in _ISSUERS}
+
+
+def test_returned_rows_are_the_listed_subset_not_every_filer():
+    rows, _ = edinet_code_resolver.parse_code_list_csv(_mixed_csv())
+
+    returned = {r["edinet_code"] for r in rows}
+    for edinet_code, *_ in _UNLISTED_FILERS:
+        assert edinet_code not in returned
+    assert all(r["securities_code"] for r in rows)
+
+
+def test_fewer_rows_than_declared_is_normal_when_unlisted_filers_exist():
+    """len(rows) < declared_count is the healthy steady state, not an
+    error — the exact condition the old guard treated as corruption."""
+    declared = len(_ISSUERS) + len(_UNLISTED_FILERS)
+    rows, warnings = edinet_code_resolver.parse_code_list_csv(_mixed_csv())
+
+    assert len(rows) < declared
+    assert warnings == ()
+    assert rows != []
+
+
+def test_unlisted_filers_alone_never_empty_the_result():
+    """Regression guard for the shipped bug: adding unlisted filers to a
+    file whose listed rows are unchanged must not change what resolves."""
+    listed_only, warn_listed = edinet_code_resolver.parse_code_list_csv(_sample_csv())
+    mixed, warn_mixed = edinet_code_resolver.parse_code_list_csv(_mixed_csv())
+
+    assert warn_listed == () and warn_mixed == ()
+    assert [r["edinet_code"] for r in mixed] == [r["edinet_code"] for r in listed_only]
+
+
+def test_genuine_truncation_still_fails_closed_with_unlisted_filers_present():
+    """The guard keeps its teeth: a declared count that matches neither
+    population returns no rows."""
+    rows, warnings = edinet_code_resolver.parse_code_list_csv(_mixed_csv(declared_count=999))
+
+    assert rows == []
+    assert len(warnings) == 1
+    assert "declared 999" in warnings[0]
+    # Reports data rows read (8), never the resolver-eligible subset (5).
+    assert "8 data rows were read" in warnings[0]
+
+
+def test_declared_count_is_never_compared_against_the_resolver_eligible_subset():
+    """Source-level guard. The behavioural tests above would also catch a
+    revert, but this names the exact mistake so it cannot reappear via a
+    refactor that happens to keep the fixtures passing."""
+    source = pathlib.Path(edinet_code_resolver.__file__).read_text(encoding="utf-8")
+    code = "\n".join(l for l in source.splitlines() if not l.lstrip().startswith("#"))
+    compact = code.replace(" ", "")
+
+    assert "summary.declared_count!=len(rows)" not in compact
+    assert "summary.declared_count!=data_rows_seen" in compact
+
+
+def test_resolver_eligible_subset_is_defined_by_the_required_fields():
+    """Pins why unlisted filers are excluded: the securities code is
+    required, which is what makes the two populations differ."""
+    assert "securities_code" in edinet_code_resolver._REQUIRED_MAPPED_FIELDS

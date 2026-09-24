@@ -76,6 +76,14 @@ DEFAULT_CODE_LIST_COLUMN_MAP: dict[str, str] = {
 # filer_name_en and filer_corporate_number are allowed to be blank in a
 # real row (confirmed live — ispace's real row has an empty English-name
 # field) and are therefore NOT required for a row to resolve.
+#
+# securities_code IS required, which means this tuple selects LISTED
+# issuers only: an unlisted filer has a blank 証券コード and cannot be
+# looked up by securities code, so it has no place in a securities-code
+# -> EDINET-code map. That is correct, and it is also why the returned
+# row count is far smaller than the file's own record count — see
+# parse_code_list_csv's "TWO DISTINCT POPULATIONS" note before assuming
+# the two are comparable.
 _REQUIRED_MAPPED_FIELDS = ("edinet_code", "securities_code", "filer_name")
 
 
@@ -217,13 +225,35 @@ def parse_code_list_csv(
         be validated (the header/data structure is positionally fixed
         regardless of the summary row's own content).
       - Summary row parseable but its declared count does NOT match the
-        number of parsed data rows: ([], one warning) — a real
+        number of data rows actually read: ([], one warning) — a real
         structural surprise this significant is treated the same as any
         other malformed input elsewhere in this codebase (e.g.
         edgar_rules.normalize_recent_filings's mismatched-length case):
         fail closed rather than trust a partially-understood parse.
       - Rows missing a required field (_REQUIRED_MAPPED_FIELDS) are
         silently dropped, not guessed — same rule as before Gate 3.
+
+    TWO DISTINCT POPULATIONS, and the difference is the whole point:
+
+      `data_rows_seen` — every valid data row in the file, i.e. every
+        EDINET filer. This is what the summary row's 件数 counts, so it
+        is the ONLY figure declared_count may be validated against.
+
+      `rows` (returned)  — the resolver-eligible subset: filers that
+        carry all of _REQUIRED_MAPPED_FIELDS, which includes a
+        securities code. Unlisted filers (funds, unlisted subsidiaries
+        that file, foreign filers) legitimately have a blank 証券コード
+        and are dropped here — correctly, since this resolver exists to
+        map a TSE securities code to an EDINET code and an issuer with
+        no securities code can never be looked up by one.
+
+    On the real file the second set is roughly a third of the first
+    (~3.8k listed issuers out of ~11.4k filers). Validating the declared
+    all-filer count against the eligible subset therefore compares
+    unlike populations and fails closed on a perfectly normal official
+    list — which is exactly what it did, for every call, until this was
+    corrected. The guard itself is unchanged in strength: a genuinely
+    truncated or malformed file still returns no rows.
     """
     lines = csv_text.splitlines()
     if len(lines) < 2:
@@ -236,9 +266,14 @@ def parse_code_list_csv(
     col_index = {field: header_row.index(source_col) for field, source_col in column_map.items() if source_col in header_row}
 
     rows: list[dict[str, str]] = []
+    data_rows_seen = 0
     for raw_row in csv.reader(lines[2:]):
         if not raw_row:
             continue
+        # Counted before any resolver-specific filtering below, so it
+        # stays comparable to the summary row's own all-filer count no
+        # matter how _REQUIRED_MAPPED_FIELDS later changes.
+        data_rows_seen += 1
         entry = {
             field: (raw_row[idx].strip() if idx < len(raw_row) else "")
             for field, idx in col_index.items()
@@ -248,8 +283,8 @@ def parse_code_list_csv(
 
     if summary.declared_count is None:
         return rows, ("EDINET code-list summary row was missing or unparseable; record count was not validated.",)
-    if summary.declared_count != len(rows):
-        return [], (f"EDINET code-list declared {summary.declared_count} records but {len(rows)} were parsed — refusing to trust a mismatched parse.",)
+    if summary.declared_count != data_rows_seen:
+        return [], (f"EDINET code-list declared {summary.declared_count} records but {data_rows_seen} data rows were read — refusing to trust a mismatched parse.",)
     return rows, ()
 
 
