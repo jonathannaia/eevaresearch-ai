@@ -339,7 +339,12 @@ def test_the_module_performs_no_io_beyond_logging():
     assert imported == {"__future__", "logging", "sys", "threading", "time", "contextlib", "dataclasses"}
     for forbidden in ("requests", "urllib", "psycopg", "sqlite3", "socket", "streamlit", "st"):
         assert forbidden not in imported, forbidden
-    for forbidden in ("rerun", "fragment", "cache_data", "cache_resource", "execute", "connect", "get", "post"):
+    # Note: bare "get"/"post" are deliberately NOT forbidden here. They
+    # matched ordinary dict.get() calls, never a network call — the
+    # import assertion above is what actually guarantees no network or
+    # database capability exists, since requests.get cannot be reached
+    # without importing requests.
+    for forbidden in ("rerun", "fragment", "cache_data", "cache_resource", "execute", "connect"):
         assert forbidden not in called, forbidden
 
 
