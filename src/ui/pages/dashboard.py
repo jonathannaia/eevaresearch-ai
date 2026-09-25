@@ -36,6 +36,7 @@ The Dashboard never surfaces a suppressed / NOT_MATERIAL filing.
 from __future__ import annotations
 
 import html
+from dataclasses import dataclass
 from collections import Counter
 
 import streamlit as st
@@ -57,6 +58,7 @@ from src.ui.components.primitives import (
     summary_tile,
     theme_dot_html,
 )
+from src.ui.components.recent_theme_activity import MAX_ROWS as THEME_ACTIVITY_MAX_ROWS
 from src.ui.components.recent_theme_activity import load_theme_activity_rows, render_recent_theme_activity
 from src.ui.components.recently_updated import render_recently_updated
 from src.ui.components.regional_brief import render_regional_brief
@@ -277,8 +279,71 @@ def _render_priority_signals(ctx) -> None:
             st.page_link(signals_page, label="View all signals →")
 
 
-def _render_regional_brief(settings) -> None:
-    render_regional_brief(settings)
+def _render_regional_brief(settings, preloaded_by_source=None) -> None:
+    render_regional_brief(settings, preloaded_by_source)
+
+
+@dataclass(frozen=True)
+class SourceRead:
+    """One source's whole Dashboard-relevant read, performed once."""
+
+    filings: list
+    candidates: list
+    not_material_ids: frozenset
+
+
+def _load_source_reads(settings) -> "dict[str, SourceRead]":
+    """Phase 2B — read each source's filing events and candidates ONCE
+    per Dashboard render, and derive every exclusion set from that one
+    read.
+
+    Before this, the page loaded filing events 6 times and candidates 9
+    times across the same three sources: Regional Brief and Theme
+    Activity each loaded filings per source and each called
+    not_material_rcept_nos() (which loads candidates again), while
+    Recently Updated loaded candidates per source for itself. Every one
+    of those opened its own repository connection, and none of it was
+    declared as data loading, so it was all attributed to ui_build_ms.
+
+    Returns, per source name, a SourceRead carrying everything this
+    page's sections need: the filings, the candidates themselves
+    (Recently Updated renders from candidate objects, not just ids), and
+    the derived NOT_MATERIAL id set. Fail-closed per source exactly as
+    each call site already was: a source whose read fails yields empty
+    collections, and one source's failure never affects another.
+    Filtering results are unchanged — the exclusion set is the same
+    expression over the same candidates, only computed once."""
+    from src.data_access import backend_factory
+    from src.logic.filing_visibility import not_material_rcept_nos_from_candidates
+    from src.logic.market_map import REGION_SOURCE
+
+    reads: dict[str, SourceRead] = {}
+    for source in REGION_SOURCE.values():
+        try:
+            filings = list(backend_factory.get_filing_event_repository(settings, source).load_filing_events())
+        except Exception:  # noqa: BLE001 — fail closed per source, as every call site already did
+            filings = []
+        try:
+            candidates = list(backend_factory.get_candidate_repository(settings, source).load_candidates().values())
+        except Exception:  # noqa: BLE001 — a read failure never hides or promotes anything
+            candidates = []
+        reads[source] = SourceRead(
+            filings=filings,
+            candidates=candidates,
+            not_material_ids=not_material_rcept_nos_from_candidates(candidates),
+        )
+    return reads
+
+
+def _regional_inputs(reads: "dict[str, SourceRead]") -> dict:
+    """(filings, excluded ids) per source — what Regional Brief and
+    Theme Activity consume."""
+    return {source: (read.filings, read.not_material_ids) for source, read in reads.items()}
+
+
+def _candidate_inputs(reads: "dict[str, SourceRead]") -> dict:
+    """Candidate objects per source — what Recently Updated consumes."""
+    return {source: read.candidates for source, read in reads.items()}
 
 
 def render() -> None:
@@ -295,7 +360,19 @@ def render() -> None:
     except Exception:  # noqa: BLE001 — a Signals-backend problem must never take down the dashboard
         feed = None
     high_signal_total = len(feed.high_signal) if feed is not None else 0
-    theme_rows = load_theme_activity_rows(ctx, settings, max_rows=1000)
+
+    # One read per source for the whole page (see _load_source_reads).
+    # Declared as data loading so it is attributed to data_load_ms rather
+    # than silently inflating the ui_build_ms residual.
+    with render_timing.data_load():
+        source_reads = _load_source_reads(settings)
+
+    # Only the rows actually displayed: render_recent_theme_activity()
+    # slices to MAX_ROWS (4), so requesting 1000 built and discarded 996.
+    theme_rows = load_theme_activity_rows(
+        ctx, settings, max_rows=THEME_ACTIVITY_MAX_ROWS,
+        preloaded_by_source=_regional_inputs(source_reads),
+    )
     themes, theme_details = _published_theme_stats(settings)
 
     _render_summary_tiles(settings, high_signal_total, theme_rows, themes, theme_details)
@@ -308,8 +385,8 @@ def render() -> None:
         render_recent_theme_activity(ctx, settings, rows=theme_rows)
         _render_theme_health(settings, themes, theme_details)
 
-    _render_regional_brief(settings)
-    render_recently_updated(settings)
+    _render_regional_brief(settings, _regional_inputs(source_reads))
+    render_recently_updated(settings, preloaded_by_source=_candidate_inputs(source_reads))
     _render_priority_signals(ctx)
 
     # Federal Register Policy Monitor Pilot (design/DECISIONS.md) — a
