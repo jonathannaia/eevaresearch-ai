@@ -29,8 +29,10 @@ import tempfile
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
@@ -39,6 +41,7 @@ from src.data_access.daily_news import daily_news_backend
 from src.logic.recent_theme_activity import ThemeActivityItem, build_recent_theme_activity
 from src.models.daily_news_models import NewsSourceReference, NewsStateTransition, NewsStory, NewsStoryStatus, SourceClass
 from src.models.models import FilingEvent
+from src.ui.components import recent_theme_activity
 
 REPO_ROOT = Path(__file__).parent.parent
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
@@ -439,3 +442,106 @@ def test_dashboard_recent_theme_activity_edgar_row_shows_no_edinet_enrichment(tm
     rta_start = all_text.index("Theme activity")
     chunk = all_text[rta_start:rta_start + 600]
     assert "NVIDIA (" not in chunk  # no appended securities code for a non-EDINET row
+
+
+# --- Phase 2D: the shared raw-story preload seam -------------------------
+#
+# Offline only: the Daily News repository factory is replaced with a
+# counting fake, so no database, connection, credential, or network is
+# involved. Theme Activity consumes RAW stories — every persisted story,
+# exactly what load_stories() returns. Recently Updated's canonical
+# (reconciled) subset is a different representation and must never be
+# passed here; test_dashboard_source_reads.py holds the cross-section
+# proof.
+
+
+# Anchored to the current time, not a fixed calendar date — see the
+# same note in test_dashboard_source_reads.py.
+_PHASE2D_NOW = datetime.now(timezone.utc)
+_PHASE2D_PUBLISHED_AT = (_PHASE2D_NOW - timedelta(hours=1)).isoformat()
+
+
+class _StoryLoadCounter:
+    def __init__(self) -> None:
+        self.repository_constructions = 0
+        self.story_loads = 0
+
+
+@pytest.fixture
+def counting_daily_news_repository(monkeypatch):
+    counter = _StoryLoadCounter()
+    stored = [_news_story("Loaded Co", "ai-buildout", "Loaded from the repository",
+                          _PHASE2D_PUBLISHED_AT, "https://example.test/loaded")]
+
+    class _Repo:
+        def load_stories(self):
+            counter.story_loads += 1
+            return {s.id: s for s in stored}
+
+    def _get_repo(settings):
+        counter.repository_constructions += 1
+        return _Repo()
+
+    monkeypatch.setattr(daily_news_backend, "get_daily_news_repository", _get_repo)
+    monkeypatch.setattr(recent_theme_activity.daily_news_backend, "get_daily_news_repository", _get_repo)
+    return counter
+
+
+def _preloaded_raw() -> dict:
+    story = _news_story("Preloaded Co", "ai-buildout", "Preloaded headline",
+                        _PHASE2D_PUBLISHED_AT, "https://example.test/pre")
+    return {story.id: story}
+
+
+def test_preloaded_raw_stories_construct_no_daily_news_repository(tmp_path, counting_daily_news_repository):
+    items = recent_theme_activity._load_daily_news_items(_settings(tmp_path), _preloaded_raw())
+
+    assert counting_daily_news_repository.repository_constructions == 0
+    assert counting_daily_news_repository.story_loads == 0
+    assert [i.company_name for i in items] == ["Preloaded Co"]
+
+
+def test_without_preloaded_raw_stories_it_loads_exactly_as_before(tmp_path, counting_daily_news_repository):
+    items = recent_theme_activity._load_daily_news_items(_settings(tmp_path))
+
+    assert counting_daily_news_repository.repository_constructions == 1
+    assert counting_daily_news_repository.story_loads == 1
+    assert [i.company_name for i in items] == ["Loaded Co"]
+
+
+def test_an_empty_preloaded_mapping_is_honored_not_treated_as_absent(tmp_path, counting_daily_news_repository):
+    """{} is a real answer ("no stories"), distinct from None ("load them
+    yourself") — conflating them would silently restore the load."""
+    items = recent_theme_activity._load_daily_news_items(_settings(tmp_path), {})
+
+    assert items == []
+    assert counting_daily_news_repository.repository_constructions == 0
+    assert counting_daily_news_repository.story_loads == 0
+
+
+def test_preloaded_and_unpreloaded_paths_build_identical_items(tmp_path, counting_daily_news_repository):
+    settings = _settings(tmp_path)
+    loaded = recent_theme_activity._load_daily_news_items(settings)
+
+    same_input = {s.id: s for s in [_news_story(
+        "Loaded Co", "ai-buildout", "Loaded from the repository",
+        _PHASE2D_PUBLISHED_AT, "https://example.test/loaded")]}
+    preloaded = recent_theme_activity._load_daily_news_items(settings, same_input)
+
+    assert loaded == preloaded
+
+
+def test_the_rollup_loader_forwards_its_preloaded_raw_stories(tmp_path, counting_daily_news_repository):
+    class _Ctx:
+        class theme_repository:
+            @staticmethod
+            def get_all_themes():
+                return [SimpleNamespace(slug="ai-buildout", name="AI Buildout")]
+
+    rows = recent_theme_activity.load_theme_activity_rows(
+        _Ctx(), _settings(tmp_path), preloaded_daily_news_stories=_preloaded_raw(),
+    )
+
+    assert counting_daily_news_repository.repository_constructions == 0
+    assert counting_daily_news_repository.story_loads == 0
+    assert [r.most_recent.company_name for r in rows] == ["Preloaded Co"]
