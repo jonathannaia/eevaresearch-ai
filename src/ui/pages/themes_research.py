@@ -66,6 +66,7 @@ from src.logic.formatting import fmt_datetime_local
 from src.logic.market_map import jurisdiction_for_source
 from src.logic.source_link import public_source_url
 from src.models.theme_research import CompanyRole, EvidenceDirection, ResearchTheme, ThemeCategory, ThemeStatus
+from src.ui import render_timing
 from src.ui.components.empty_state import empty_state
 from src.ui.components.primitives import EVIDENCE_DIRECTIONS, chip_html, evidence_bar_html, page_header
 from src.ui.components.section import section_header
@@ -159,7 +160,8 @@ def render() -> None:
     theme_id = st.query_params.get("theme_id", "").strip()
 
     try:
-        repository = backend_factory.get_theme_repository(settings)
+        with render_timing.data_load():
+            repository = backend_factory.get_theme_repository(settings)
     except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
         st.markdown(f'<div class="er-page-title">{_esc(_PAGE_TITLE)}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="er-muted">{_esc(_UNAVAILABLE_MESSAGE)}</div>', unsafe_allow_html=True)

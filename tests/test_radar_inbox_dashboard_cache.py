@@ -11,6 +11,8 @@ internal clock is fragile/version-dependent; `.clear()` is Streamlit's
 own supported mechanism for invalidating a cache_data-backed function)."""
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -209,37 +211,69 @@ def test_dashboard_snapshot_path_never_calls_a_live_scan_or_process_function(tmp
 
 # --- Durable-State Phase 4M-3 — timing/instrumentation proves cache hit vs miss, and cache-key stability ---
 
-def test_cache_miss_log_line_appears_once_for_two_calls_within_ttl(tmp_path, capsys):
-    """The instrumentation's own diagnostic contract: the 'cache MISS'
-    line (and every per-step timing line) must print on the first call
-    and must NOT print again on a second call served from cache — its
-    mere absence on the second call is the proof a cache hit occurred."""
+
+@pytest.fixture
+def snapshot_records(caplog):
+    """Observes radar_inbox's own snapshot records.
+
+    Phase 2A moved these from print()/stdout to the structured logger,
+    so they are no longer visible to `capsys`. The logger also sets
+    propagate=False, so `caplog` alone cannot see them either —
+    attaching caplog's handler directly to that logger observes the real
+    records while keeping propagate=False under test."""
+    logger = radar_inbox._LOGGER
+    previous_level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(caplog.handler)
+
+    class _Records:
+        def text(self) -> str:
+            return "\n".join(r.getMessage() for r in caplog.records if "radar_snapshot" in r.getMessage())
+
+        def clear(self) -> None:
+            caplog.clear()
+
+    try:
+        yield _Records()
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(previous_level)
+
+
+def test_cache_miss_log_line_appears_once_for_two_calls_within_ttl(tmp_path, snapshot_records):
+    """The instrumentation's own diagnostic contract, unchanged by Phase
+    2A's move from print() to the structured logger: the 'cache_miss'
+    record (and every per-step timing record) must be emitted on the
+    first call and must NOT be emitted again on a second call served
+    from cache — its mere absence on the second call is the proof a
+    cache hit occurred."""
     settings = _settings(cache_dir=tmp_path)
     fingerprint = radar_inbox._dashboard_config_fingerprint(settings)
 
     radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
-    first_output = capsys.readouterr().out
-    assert "dashboard snapshot cache MISS" in first_output
-    assert "dashboard snapshot TOTAL" in first_output
+    first_output = snapshot_records.text()
+    assert 'phase="cache_miss"' in first_output
+    assert 'phase="total"' in first_output
 
+    snapshot_records.clear()
     radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
-    second_output = capsys.readouterr().out
-    assert second_output == ""  # nothing printed at all — proves the function body did not run
+    assert snapshot_records.text() == ""  # nothing emitted — proves the function body did not run
 
 
-def test_timing_logs_never_contain_a_dsn_or_credential(tmp_path, capsys):
+def test_timing_logs_never_contain_a_dsn_or_credential(tmp_path, snapshot_records):
     settings = _settings(cache_dir=tmp_path, db_backend="postgres", state_db_url="postgres://user:pw@example.invalid/db")
     fingerprint = radar_inbox._dashboard_config_fingerprint(settings)
 
     radar_inbox._load_dashboard_snapshot(settings.cache_dir, fingerprint, settings)
-    output = capsys.readouterr().out
+    output = snapshot_records.text()
 
     assert "postgres://" not in output
     assert "example.invalid" not in output
-    assert "pw" not in output
-    # The fingerprint IS expected in the logs — but only its safe, already-
-    # non-secret shape (backend name + presence boolean), confirmed here.
-    assert str(fingerprint) in output
+    assert "pw@" not in output
+    # The fingerprint IS expected in the records — but only its safe,
+    # already-non-secret rendering (backend name + presence boolean),
+    # never the tuple's raw repr and never the URL.
+    assert radar_inbox._fingerprint_label(fingerprint) in output
     assert fingerprint == ("postgres", True)
 
 

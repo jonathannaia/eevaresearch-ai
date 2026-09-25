@@ -24,6 +24,7 @@ from src.logic.issuer_coverage import (
     get_jurisdiction_gaps,
 )
 from src.models.issuer import Issuer
+from src.ui import render_timing
 from src.ui.components.cards import metric_tile
 from src.ui.components.empty_state import empty_state
 from src.ui.components.section import section_header
@@ -75,7 +76,8 @@ def _discovery_row(issuer: Issuer) -> dict:
 
 
 def _render_summary() -> None:
-    summary = get_coverage_summary()
+    with render_timing.data_load():
+        summary = get_coverage_summary()
     cols = st.columns(4)
     with cols[0]:
         metric_tile("Active seed issuers", str(summary.active_seed_count))

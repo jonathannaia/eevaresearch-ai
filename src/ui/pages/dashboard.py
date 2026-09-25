@@ -45,6 +45,7 @@ from src.data_access import backend_factory
 from src.data_access.container import get_repositories
 from src.logic.formatting import fmt_datetime_local, fmt_long_date, fmt_time_local, today_local
 from src.logic.unread import is_unread
+from src.ui import render_timing
 from src.ui.components.cards import priority_signal_row
 from src.ui.components.policy_developments import render_policy_developments
 from src.ui.components.primitives import (
@@ -289,7 +290,8 @@ def render() -> None:
     _render_header()
 
     try:
-        feed = build_signals_feed(settings, _ALL_COMPANIES_OPTION)
+        with render_timing.data_load():
+            feed = build_signals_feed(settings, _ALL_COMPANIES_OPTION)
     except Exception:  # noqa: BLE001 — a Signals-backend problem must never take down the dashboard
         feed = None
     high_signal_total = len(feed.high_signal) if feed is not None else 0

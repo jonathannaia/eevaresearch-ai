@@ -115,6 +115,7 @@ from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.formatting import fmt_datetime_local, fmt_day_label, fmt_time_local, local_date, today_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
+from src.ui import render_timing
 from src.ui.components.editorial_coverage import (
     get_editorial_stories_for_company,
     get_visible_editorial_stories,
@@ -594,7 +595,8 @@ def render() -> None:
     # Redesign v2: the selection composition lives in build_signals_feed()
     # (same rules, same order, same tier partition — see its docstring);
     # render() only consumes the already-decided feed.
-    feed = build_signals_feed(settings, selected_company)
+    with render_timing.data_load():
+        feed = build_signals_feed(settings, selected_company)
     issuer_items_are_historical = feed.issuer_items_are_historical
 
     if not feed.high_signal and not feed.watchlist and not feed.background:
