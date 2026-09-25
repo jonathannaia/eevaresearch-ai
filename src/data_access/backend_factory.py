@@ -64,12 +64,17 @@ local SQLite file-path error."""
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 from src.config.settings import Settings
 from src.data_access import comparison_store
@@ -182,6 +187,138 @@ class AgentSchedulingRequiresDurableBackend(BackendConfigurationError):
     correctly must stop, not guess."""
 
 
+# --- Postgres schema-migration guard (performance Phase 1) -----------------
+#
+# Before this guard, `_require_postgres_connection` ran
+# `postgres_schema.migrate(conn)` on EVERY call, and every repository
+# factory in this module calls that helper. A single cold Radar Inbox
+# render constructs roughly a dozen repositories, so it paid roughly a
+# dozen migration checks — each one a `CREATE TABLE IF NOT EXISTS` DDL
+# plus two queries (see postgres_state_db/schema.py's migrate()), i.e.
+# three extra network round trips per connection against a database
+# holding a few hundred rows. A read-only production diagnosis measured
+# ~196-270ms per repository construction with CPU idle at ~20%, which is
+# the signature of per-connection round-trip overhead rather than query
+# work.
+#
+# This guard runs the migration at most once per process per database
+# identity. It deliberately does NOT reduce the number of connections
+# opened — connection creation, close semantics, query behavior and
+# every public API are untouched. It removes repeated migration checks
+# only.
+#
+# Scope note: SQLite is deliberately left unchanged. Its migrate() costs
+# no network round trip, so there is nothing to win, and tests routinely
+# delete and recreate a SQLite database at the same tmp path within one
+# process — a path-keyed guard there could skip a migration a recreated
+# file genuinely needs.
+_MIGRATION_LOCK = threading.Lock()
+_MIGRATED_POSTGRES_IDENTITIES: set[tuple] = set()
+_MIGRATION_ORDINALS: dict[tuple, int] = {}
+
+# The ONLY libpq connection parameters that take part in a database
+# identity. `user` and `password` — and every other field — are
+# deliberately excluded, so the identity tuple can never carry
+# credential material. `options` IS included because it is where a
+# libpq `-c search_path=...` lives: the Postgres test harness gives each
+# isolated test schema its own uuid-named search_path, and without this
+# key one isolated schema could wrongly skip a migration another schema
+# already performed.
+_NONSECRET_CONNINFO_KEYS = ("host", "hostaddr", "port", "dbname", "options")
+
+_LOGGER_HANDLER_MARKER = "_eeva_backend_factory_owned"
+_LOGGER = logging.getLogger("eeva.backend_factory")
+
+
+def _ensure_logger_configured() -> None:
+    """Idempotently attach exactly one handler this module owns.
+
+    The project configures no logging anywhere (no `logging.basicConfig`,
+    no handlers on the root logger), so an INFO record emitted here would
+    otherwise be dropped entirely. This deliberately does NOT call
+    `logging.basicConfig` and never touches the root logger — it
+    configures only this module's own named logger, with
+    `propagate=False` so nothing is duplicated into a root handler a host
+    application may add later.
+
+    Ownership is tracked with a private attribute marker rather than a
+    bare `if not _LOGGER.handlers`, so a handler attached by someone else
+    never suppresses ours and repeated calls (module reload, repeated
+    initialization) never stack duplicates.
+
+    The handler writes to `sys.stderr`, which is line-buffered, so each
+    record reaches the hosting platform's log stream as it is emitted.
+    That is the specific reason a logger is used here rather than
+    `print()`: stdout is block-buffered when it is not a TTY, so printed
+    diagnostics are held until the process exits."""
+    for handler in _LOGGER.handlers:
+        if getattr(handler, _LOGGER_HANDLER_MARKER, False):
+            return
+    handler = logging.StreamHandler(sys.stderr)
+    setattr(handler, _LOGGER_HANDLER_MARKER, True)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    _LOGGER.addHandler(handler)
+    _LOGGER.setLevel(logging.INFO)
+    _LOGGER.propagate = False
+
+
+def _postgres_identity(dsn: str) -> tuple | None:
+    """A non-secret, in-memory-only identity for the database a DSN
+    points at. Returns None when the DSN cannot be parsed, which the
+    caller treats as "identity unknown — migrate unconditionally", so a
+    malformed DSN keeps exactly its pre-guard behavior instead of raising
+    a new kind of error here.
+
+    Missing keys are preserved as explicit `None` tuple entries rather
+    than dropped or normalized, so two DSNs that genuinely differ in
+    which parameters they set never collapse to the same identity.
+
+    The returned tuple is used only as an in-process dictionary/set key.
+    It is never logged, serialized, persisted, returned to a caller, or
+    included in an exception message."""
+    try:
+        parsed = conninfo_to_dict(dsn)
+    except Exception:  # noqa: BLE001 — unparseable DSN: fall back to always migrating
+        return None
+    return tuple((key, parsed.get(key)) for key in _NONSECRET_CONNINFO_KEYS)
+
+
+def _migrate_postgres_once(conn: psycopg.Connection, identity: tuple | None) -> None:
+    """Runs `postgres_schema.migrate(conn)` at most once per process per
+    identity. Never swallows or caches a failure: the identity is
+    recorded ONLY after migrate() returns normally, so a migration that
+    raises propagates unchanged and the next call retries from scratch.
+
+    An unknown identity (None) always migrates — the safe direction.
+
+    The fast path is an unsynchronized set membership test; the lock is
+    taken only on a miss and is held across migrate() so concurrent first
+    use performs exactly one migration rather than one per thread."""
+    if identity is None:
+        postgres_schema.migrate(conn)
+        return
+
+    if identity in _MIGRATED_POSTGRES_IDENTITIES:
+        return
+
+    with _MIGRATION_LOCK:
+        if identity in _MIGRATED_POSTGRES_IDENTITIES:
+            return
+        ordinal = _MIGRATION_ORDINALS.setdefault(identity, len(_MIGRATION_ORDINALS) + 1)
+        _ensure_logger_configured()
+        _LOGGER.info("schema_migration outcome=attempted db_ordinal=%d", ordinal)
+        started_at = time.monotonic()
+        postgres_schema.migrate(conn)
+        _MIGRATED_POSTGRES_IDENTITIES.add(identity)
+        _LOGGER.info(
+            "schema_migration outcome=completed db_ordinal=%d elapsed_ms=%.1f "
+            "identities_migrated_this_process=%d",
+            ordinal,
+            (time.monotonic() - started_at) * 1000,
+            len(_MIGRATED_POSTGRES_IDENTITIES),
+        )
+
+
 def _normalized_backend(settings: Settings) -> str:
     return (settings.db_backend or "json").strip().lower()
 
@@ -205,7 +342,16 @@ def _require_postgres_connection(settings: Settings) -> psycopg.Connection:
     connection is attempted. A genuine connection-establishment failure
     is caught and re-raised with only the exception's class name (see
     this module's own docstring for why) — never str(exc), which for a
-    real network driver can embed host/port/dbname/user."""
+    real network driver can embed host/port/dbname/user.
+
+    Performance Phase 1: the schema migration is now run at most once per
+    process per database identity (see _migrate_postgres_once above). A
+    connection is still opened on every call, exactly as before — nothing
+    about connection creation, close semantics, or the returned object
+    changes. The identity is derived only AFTER a successful connect, so
+    every error path above is reached in the same order and raises the
+    same exception type with the same sanitized message as it did before
+    this guard existed."""
     dsn = settings.state_db_url
     if not dsn or not str(dsn).strip():
         raise BackendConfigurationError(
@@ -219,7 +365,7 @@ def _require_postgres_connection(settings: Settings) -> psycopg.Connection:
             f"EDGE_DB_BACKEND=postgres connection attempt failed ({type(exc).__name__}). "
             "No connection information is included in this message."
         ) from None
-    postgres_schema.migrate(conn)
+    _migrate_postgres_once(conn, _postgres_identity(dsn))
     return conn
 
 
