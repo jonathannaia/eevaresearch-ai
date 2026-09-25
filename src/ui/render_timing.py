@@ -24,6 +24,12 @@ into three phases that reconcile to the total by construction:
                plus the footer. Derived, never measured separately, so
                the three always add up.
 
+Phase 2C adds an optional second record. A page that wraps sections in
+stage() gets one `<route>_stage_timing` line alongside its page record,
+decomposing the ui_build_ms residual into named sections with an
+`unaccounted_ms` remainder. Pages that declare no stages are unaffected
+and emit nothing extra.
+
 Instrumentation only. This module performs no I/O beyond writing a log
 record: no network call, database query, cache read or write, background
 job, telemetry vendor, analytics beacon, browser timing code, or
@@ -137,7 +143,12 @@ class _RenderRecord:
     setup_ms: float | None = None
     data_load_ms: float = 0.0
     cache_status: str | None = None
+    # Phase 2C — ordered {stage name: accumulated ms}. Empty for every
+    # page that declares no stages, which is how _emit knows whether a
+    # stage record is warranted at all.
+    stages: dict = field(default_factory=dict)
     _data_load_depth: int = field(default=0, repr=False)
+    _stage_depth: int = field(default=0, repr=False)
 
 
 def _current() -> _RenderRecord | None:
@@ -192,6 +203,41 @@ def data_load(cache_status: str | None = None):
 
 
 @contextmanager
+def stage(name: str):
+    """Times one named section of a page render (Phase 2C).
+
+    Accumulates into the in-flight record under `name`; repeated entries
+    with the same name sum. A nested stage is attributed entirely to its
+    outermost enclosing stage and contributes no separate key, so the
+    recorded stages never overlap and `total_staged_ms` cannot double
+    count — the same discipline data_load() already uses.
+
+    A no-op outside a page_render() block, and it never suppresses an
+    exception: a section that raises still contributes the time it spent
+    before raising, so a failed render's stage record shows how far it
+    got. Adds no I/O of any kind — it only reads a monotonic clock."""
+    record = _current()
+    if record is None:
+        yield
+        return
+    if record._stage_depth > 0:  # nested: attributed to the outer stage
+        record._stage_depth += 1
+        try:
+            yield
+        finally:
+            record._stage_depth -= 1
+        return
+    record._stage_depth = 1
+    started_at = time.monotonic()
+    try:
+        yield
+    finally:
+        elapsed_ms = (time.monotonic() - started_at) * 1000
+        record.stages[name] = record.stages.get(name, 0.0) + elapsed_ms
+        record._stage_depth = 0
+
+
+@contextmanager
 def page_render(route: str):
     """Times one page render and emits exactly one structured record.
 
@@ -236,6 +282,38 @@ def _emit(record: _RenderRecord, outcome: str, failure_kind: str | None) -> None
         f"total_python_ms={total_ms:.1f} setup_ms={setup_ms:.1f} "
         f"data_load_ms={data_load_ms:.1f} ui_build_ms={ui_build_ms:.1f} "
         f'cache_status="{record.cache_status or "unknown"}" outcome="{outcome}"'
+    )
+    if failure_kind is not None:
+        message += f' failure_kind="{failure_kind}"'
+    _LOGGER.info(message)
+
+    if record.stages:
+        _emit_stages(record, outcome, failure_kind, ui_build_ms)
+
+
+def _emit_stages(
+    record: _RenderRecord, outcome: str, failure_kind: str | None, ui_build_ms: float,
+) -> None:
+    """One bounded stage record per page render, emitted only for a page
+    that declared stages (Phase 2C).
+
+    `unaccounted_ms` is the page's own ui_build_ms minus everything the
+    stages accounted for. It is computed here rather than inside the page
+    body because ui_build_ms is not known until the render finishes —
+    it is derived from the total, so no page can read it mid-render.
+
+    Stage names are fixed internal identifiers chosen in code, never
+    user, company, or document text, so the rendered mapping carries
+    nothing sensitive. On failure only the exception's class name is
+    included, never its message or traceback."""
+    total_staged_ms = sum(record.stages.values())
+    rendered = ",".join(f"{name}={value:.1f}" for name, value in record.stages.items())
+    message = (
+        f'event="{record.route}_stage_timing" route="{record.route}" '
+        f"render_ordinal={record.ordinal} outcome=\"{outcome}\" "
+        f"total_staged_ms={total_staged_ms:.1f} "
+        f"unaccounted_ms={ui_build_ms - total_staged_ms:.1f} "
+        f'stages="{rendered}"'
     )
     if failure_kind is not None:
         message += f' failure_kind="{failure_kind}"'

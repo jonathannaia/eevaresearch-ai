@@ -352,7 +352,18 @@ def render() -> None:
     ctx = get_repositories()
     settings = get_settings()
 
-    _render_header()
+    # Phase 2C stage timing (src/ui/render_timing.py). Instrumentation
+    # only: every stage() below wraps a call this function already made,
+    # in the order it already made it. No call was added, moved, or
+    # reordered to create an observable region, and the stages do not
+    # overlap, so their sum cannot double count.
+    #
+    # The two render_timing.data_load() blocks are deliberately NOT
+    # staged: they are already reported as data_load_ms, and staging them
+    # would make unaccounted_ms (ui_build_ms minus the staged sum)
+    # meaningless.
+    with render_timing.stage("dashboard.header"):
+        _render_header()
 
     try:
         with render_timing.data_load():
@@ -369,35 +380,50 @@ def render() -> None:
 
     # Only the rows actually displayed: render_recent_theme_activity()
     # slices to MAX_ROWS (4), so requesting 1000 built and discarded 996.
-    theme_rows = load_theme_activity_rows(
-        ctx, settings, max_rows=THEME_ACTIVITY_MAX_ROWS,
-        preloaded_by_source=_regional_inputs(source_reads),
-    )
-    themes, theme_details = _published_theme_stats(settings)
+    with render_timing.stage("dashboard.theme_activity_rows"):
+        theme_rows = load_theme_activity_rows(
+            ctx, settings, max_rows=THEME_ACTIVITY_MAX_ROWS,
+            preloaded_by_source=_regional_inputs(source_reads),
+        )
+    with render_timing.stage("dashboard.published_theme_stats"):
+        themes, theme_details = _published_theme_stats(settings)
 
-    _render_summary_tiles(settings, high_signal_total, theme_rows, themes, theme_details)
+    with render_timing.stage("dashboard.summary_tiles"):
+        _render_summary_tiles(settings, high_signal_total, theme_rows, themes, theme_details)
 
     main_col, side_col = st.columns([1.55, 1], gap="medium")
     with main_col:
         if feed is not None:
-            _render_latest_signals(feed)
+            with render_timing.stage("dashboard.latest_signals"):
+                _render_latest_signals(feed)
     with side_col:
-        render_recent_theme_activity(ctx, settings, rows=theme_rows)
-        _render_theme_health(settings, themes, theme_details)
+        with render_timing.stage("dashboard.recent_theme_activity"):
+            render_recent_theme_activity(ctx, settings, rows=theme_rows)
+        with render_timing.stage("dashboard.theme_health"):
+            _render_theme_health(settings, themes, theme_details)
 
-    _render_regional_brief(settings, _regional_inputs(source_reads))
-    render_recently_updated(settings, preloaded_by_source=_candidate_inputs(source_reads))
-    _render_priority_signals(ctx)
+    # Per-region sub-stages (us/japan/korea/other) are NOT timed here:
+    # those regions live inside src/ui/components/regional_brief.py,
+    # which Phase 2C does not authorize changing. This measures the
+    # section as a whole; splitting it needs that file.
+    with render_timing.stage("dashboard.regional_brief.total"):
+        _render_regional_brief(settings, _regional_inputs(source_reads))
+    with render_timing.stage("dashboard.recently_updated"):
+        render_recently_updated(settings, preloaded_by_source=_candidate_inputs(source_reads))
+    with render_timing.stage("dashboard.priority_signals"):
+        _render_priority_signals(ctx)
 
     # Federal Register Policy Monitor Pilot (design/DECISIONS.md) — a
     # self-contained, source-specific pilot, deliberately not a Daily
     # News expansion; live, read-time, in-memory Federal Register fetch.
-    render_policy_developments()
+    with render_timing.stage("dashboard.policy_developments"):
+        render_policy_developments()
 
     # Open-beta feedback (design/DECISIONS.md) — one small, secondary
     # entry-point link to the hidden feedback page, placed last.
-    feedback_page = get_page("feedback")
-    if feedback_page is not None:
-        st.divider()
-        with st.container(key="cta-tertiary-dashboard-feedback"):
-            st.page_link(feedback_page, label="Share feedback")
+    with render_timing.stage("dashboard.footer"):
+        feedback_page = get_page("feedback")
+        if feedback_page is not None:
+            st.divider()
+            with st.container(key="cta-tertiary-dashboard-feedback"):
+                st.page_link(feedback_page, label="Share feedback")
