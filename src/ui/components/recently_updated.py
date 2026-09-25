@@ -301,7 +301,9 @@ def _load_filing_rows(
     return rows
 
 
-def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
+def _load_daily_news_rows(
+    settings: Settings, now: datetime, preloaded_stories: dict | None = None,
+) -> list[_Row]:
     """Real, currently-PUBLISHED Daily News issuer stories only (beta-
     blocker fix, design/DECISIONS.md) — a DISCOVERED/SUMMARIZED story
     (still in progress) or a SUPPRESSED one (no valid canonical URL) was
@@ -311,23 +313,30 @@ def _load_daily_news_rows(settings: Settings, now: datetime) -> list[_Row]:
     published_at is unparseable or materially future is excluded, never
     clamped — same reasoning as _load_filing_rows above."""
     rows: list[_Row] = []
-    try:
-        stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
-        # Dashboard/Signals quality fix (design/
-        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): read-time
-        # reconciliation — collapses a cross-language localized-
-        # duplicate pair (e.g. an English/French pair for the same
-        # company event) down to its one preferred (English/global)
-        # row, the same call src.ui.pages.daily_news._published_stories
-        # already makes. Every story this excludes stays fully intact
-        # in the underlying store; only what this row list shows
-        # changes. A no-op whenever no such pair exists.
-        # select_canonical_stories() takes no TranslationProvider — it
-        # only ever reads an already-cached translation, never triggers
-        # a live translation request during render.
-        stories = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
-    except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
-        return rows
+    if preloaded_stories is not None:
+        # Phase 2D: the caller supplies stories that are ALREADY
+        # canonical — reconciliation happened once, upstream. Running
+        # select_canonical_stories() again here would be a redundant
+        # O(N^2) pass over an already-reconciled set.
+        stories = preloaded_stories
+    else:
+        try:
+            stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+            # Dashboard/Signals quality fix (design/
+            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): read-time
+            # reconciliation — collapses a cross-language localized-
+            # duplicate pair (e.g. an English/French pair for the same
+            # company event) down to its one preferred (English/global)
+            # row, the same call src.ui.pages.daily_news._published_stories
+            # already makes. Every story this excludes stays fully intact
+            # in the underlying store; only what this row list shows
+            # changes. A no-op whenever no such pair exists.
+            # select_canonical_stories() takes no TranslationProvider — it
+            # only ever reads an already-cached translation, never triggers
+            # a live translation request during render.
+            stories = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
+        except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
+            return rows
     for story in stories.values():
         if story.status != NewsStoryStatus.PUBLISHED:
             continue
@@ -371,7 +380,9 @@ def _effective_editorial_tier(story: EditorialStory) -> NewsMaterialityTier:
     return editorial_pipeline.effective_editorial_tier(story)
 
 
-def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
+def _load_editorial_rows(
+    settings: Settings, now: datetime, preloaded_editorial: tuple | None = None,
+) -> list[_Row]:
     """Real Daily News editorial stories that already passed the
     existing high-signal eligibility rules (beta-blocker fix, design/
     DECISIONS.md) — get_visible_editorial_stories() is the exact same,
@@ -399,10 +410,15 @@ def _load_editorial_rows(settings: Settings, now: datetime) -> list[_Row]:
     "Show Background (N)" expander (src/ui/pages/daily_news.py) is a
     completely separate code path and is untouched by this filter."""
     rows: list[_Row] = []
-    try:
-        stories = get_visible_editorial_stories(settings)
-    except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
-        return rows
+    if preloaded_editorial is not None:
+        # Phase 2D: already the visible display list — freshness and
+        # per-source/total caps applied once upstream, never re-applied.
+        stories = preloaded_editorial
+    else:
+        try:
+            stories = get_visible_editorial_stories(settings)
+        except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
+            return rows
     for story in stories:
         if _effective_editorial_tier(story) == NewsMaterialityTier.BACKGROUND:
             continue
@@ -580,6 +596,8 @@ def _render_row(row: _Row, settings: Settings) -> None:
 
 def _select_recently_updated_rows(
     settings: Settings, now: datetime | None = None, preloaded_by_source: dict | None = None,
+    preloaded_daily_news_stories: dict | None = None,
+    preloaded_editorial_stories: tuple | None = None,
 ) -> list[_Row]:
     """Pure selection logic (beta-blocker fix, design/DECISIONS.md) —
     load, exclude, deduplicate, and deterministically sort every eligible
@@ -590,8 +608,8 @@ def _select_recently_updated_rows(
     now = now or datetime.now(timezone.utc)
     rows = (
         _load_filing_rows(settings, now, preloaded_by_source)
-        + _load_daily_news_rows(settings, now)
-        + _load_editorial_rows(settings, now)
+        + _load_daily_news_rows(settings, now, preloaded_daily_news_stories)
+        + _load_editorial_rows(settings, now, preloaded_editorial_stories)
     )
 
     # Duplicate-row safety net (beta-blocker fix, design/DECISIONS.md):
@@ -646,7 +664,11 @@ def _merge_same_headline_signal_rows(rows: list[_Row]) -> list[_Row]:
     return merged
 
 
-def render_recently_updated(settings: Settings, preloaded_by_source: dict | None = None) -> None:
+def render_recently_updated(
+    settings: Settings, preloaded_by_source: dict | None = None,
+    preloaded_daily_news_stories: dict | None = None,
+    preloaded_editorial_stories: tuple | None = None,
+) -> None:
     """`preloaded_by_source` (Phase 2B, additive and optional) carries the
     per-source candidate objects the caller already read; supplied, this
     component constructs no repository of its own. The Daily News and
@@ -654,7 +676,11 @@ def render_recently_updated(settings: Settings, preloaded_by_source: dict | None
     sources, and both still load exactly as before."""
     st.markdown('<div class="er-section-label">Recently Updated</div>', unsafe_allow_html=True)
 
-    shown = _select_recently_updated_rows(settings, preloaded_by_source=preloaded_by_source)[:PREVIEW_COUNT]
+    shown = _select_recently_updated_rows(
+        settings, preloaded_by_source=preloaded_by_source,
+        preloaded_daily_news_stories=preloaded_daily_news_stories,
+        preloaded_editorial_stories=preloaded_editorial_stories,
+    )[:PREVIEW_COUNT]
 
     with st.container(border=True, key="card-recently-updated-feed"):
         if not shown:

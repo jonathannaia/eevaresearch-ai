@@ -346,6 +346,74 @@ def _candidate_inputs(reads: "dict[str, SourceRead]") -> dict:
     return {source: read.candidates for source, read in reads.items()}
 
 
+@dataclass(frozen=True)
+class DailyNewsSnapshot:
+    """One per-render, in-memory read of the Daily News and editorial
+    stores (Phase 2D).
+
+    Before this, Recently Updated and Theme Activity each loaded the
+    Daily News store for themselves: two repository constructions, two
+    Postgres connections and two full 1+2N load sequences per render for
+    identical data. Production stage timing put those sections at 4,382ms
+    and 2,445ms respectively.
+
+    The two representations are deliberately kept APART, never collapsed
+    into one another:
+
+      raw_stories        exactly what the repository returned. Theme
+                         Activity aggregates 14-day per-theme counts from
+                         this, so a reconciled (collapsed) set would
+                         silently change those counts.
+      canonical_stories  the same stories after read-time cross-language
+                         reconciliation. Recently Updated renders from
+                         this, so the raw set would reintroduce the
+                         localized duplicates that reconciliation exists
+                         to hide.
+      editorial_stories  the already-decided visible editorial display
+                         list — the exact value get_visible_editorial_
+                         stories() returns, with its freshness and
+                         per-source/total caps already applied, so no
+                         consumer re-applies them.
+
+    This is a per-render value passed down as an argument, exactly like
+    _load_source_reads above. It is NOT a module-level or global cache:
+    nothing survives the render that built it."""
+
+    raw_stories: dict
+    canonical_stories: dict
+    editorial_stories: tuple
+
+
+def _load_daily_news_snapshot(settings) -> DailyNewsSnapshot:
+    """Reads each store once. Fail-closed per store exactly as each
+    call site already was: an unreachable store yields empty collections
+    for that store only, and one store's failure never affects the
+    other. No filter, ordering, limit or selection rule moves here — the
+    canonicalization and editorial-visibility calls are the same ones
+    the consuming sections already made, performed once instead of
+    once each."""
+    from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
+    from src.ui.components.editorial_coverage import get_visible_editorial_stories
+
+    try:
+        raw_stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+    except Exception:  # noqa: BLE001 — fail closed, as both call sites already did
+        raw_stories = {}
+    try:
+        canonical_stories = daily_news_pipeline.select_canonical_stories(raw_stories, settings.cache_dir)
+    except Exception:  # noqa: BLE001 — reconciliation failure never hides the section
+        canonical_stories = {}
+    try:
+        editorial_stories = get_visible_editorial_stories(settings)
+    except Exception:  # noqa: BLE001 — fail closed, as _load_editorial_rows already did
+        editorial_stories = ()
+    return DailyNewsSnapshot(
+        raw_stories=raw_stories,
+        canonical_stories=canonical_stories,
+        editorial_stories=editorial_stories,
+    )
+
+
 def render() -> None:
     from src.ui.pages.daily_news import _ALL_COMPANIES_OPTION, build_signals_feed
 
@@ -377,6 +445,9 @@ def render() -> None:
     # than silently inflating the ui_build_ms residual.
     with render_timing.data_load():
         source_reads = _load_source_reads(settings)
+        # One Daily News / editorial read for the whole page, in the same
+        # declared data-load boundary (see DailyNewsSnapshot).
+        daily_news_snapshot = _load_daily_news_snapshot(settings)
 
     # Only the rows actually displayed: render_recent_theme_activity()
     # slices to MAX_ROWS (4), so requesting 1000 built and discarded 996.
@@ -384,6 +455,7 @@ def render() -> None:
         theme_rows = load_theme_activity_rows(
             ctx, settings, max_rows=THEME_ACTIVITY_MAX_ROWS,
             preloaded_by_source=_regional_inputs(source_reads),
+            preloaded_daily_news_stories=daily_news_snapshot.raw_stories,
         )
     with render_timing.stage("dashboard.published_theme_stats"):
         themes, theme_details = _published_theme_stats(settings)
@@ -409,7 +481,12 @@ def render() -> None:
     with render_timing.stage("dashboard.regional_brief.total"):
         _render_regional_brief(settings, _regional_inputs(source_reads))
     with render_timing.stage("dashboard.recently_updated"):
-        render_recently_updated(settings, preloaded_by_source=_candidate_inputs(source_reads))
+        render_recently_updated(
+            settings,
+            preloaded_by_source=_candidate_inputs(source_reads),
+            preloaded_daily_news_stories=daily_news_snapshot.canonical_stories,
+            preloaded_editorial_stories=daily_news_snapshot.editorial_stories,
+        )
     with render_timing.stage("dashboard.priority_signals"):
         _render_priority_signals(ctx)
 

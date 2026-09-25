@@ -178,12 +178,20 @@ def _load_filing_items(settings: Settings, preloaded_by_source: dict | None = No
     return items
 
 
-def _load_daily_news_items(settings: Settings) -> list[ThemeActivityItem]:
+def _load_daily_news_items(
+    settings: Settings, preloaded_stories: dict | None = None,
+) -> list[ThemeActivityItem]:
     items: list[ThemeActivityItem] = []
-    try:
-        stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
-    except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the rollup
-        return items
+    if preloaded_stories is not None:
+        # Phase 2D: raw stories, exactly what load_stories() returns —
+        # this rollup has always counted every story, never the
+        # canonical/reconciled subset Recently Updated shows.
+        stories = preloaded_stories
+    else:
+        try:
+            stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+        except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the rollup
+            return items
     for story in stories.values():
         if not story.theme_slug or not story.sources:
             continue
@@ -252,6 +260,7 @@ def _render_row(row: ThemeActivityRow) -> None:
 
 def load_theme_activity_rows(
     ctx, settings: Settings, max_rows: int = MAX_ROWS, preloaded_by_source: dict | None = None,
+    preloaded_daily_news_stories: dict | None = None,
 ) -> list[ThemeActivityRow]:
     """The real 14-day rollup — exposed (redesign v2) so the Dashboard's
     "Theme items · 14d" tile can total every theme's count while the list
@@ -260,18 +269,32 @@ def load_theme_activity_rows(
 
     `preloaded_by_source` (Phase 2B, additive and optional) is forwarded
     to _load_filing_items; see its docstring. The Daily News item path
-    below is a different data source and is untouched by it."""
+    below is a different data source and is untouched by it.
+
+    `preloaded_daily_news_stories` (Phase 2D, additive and optional) is
+    the RAW story mapping — the Dashboard loads it once and shares it
+    with this rollup, so one render no longer pays for the same
+    load_stories() twice. Raw, not canonical: Recently Updated's
+    reconciled set is a different representation and must not be passed
+    here."""
     theme_names_by_slug = {t.slug: t.name for t in ctx.theme_repository.get_all_themes()}
-    items = _load_filing_items(settings, preloaded_by_source) + _load_daily_news_items(settings)
+    items = (
+        _load_filing_items(settings, preloaded_by_source)
+        + _load_daily_news_items(settings, preloaded_daily_news_stories)
+    )
     return build_recent_theme_activity(items, theme_names_by_slug, window_days=WINDOW_DAYS, max_rows=max_rows)
 
 
 def render_recent_theme_activity(
     ctx, settings: Settings, rows: list[ThemeActivityRow] | None = None,
     preloaded_by_source: dict | None = None,
+    preloaded_daily_news_stories: dict | None = None,
 ) -> None:
     if rows is None:
-        rows = load_theme_activity_rows(ctx, settings, preloaded_by_source=preloaded_by_source)
+        rows = load_theme_activity_rows(
+            ctx, settings, preloaded_by_source=preloaded_by_source,
+            preloaded_daily_news_stories=preloaded_daily_news_stories,
+        )
     if not rows:
         return
 
