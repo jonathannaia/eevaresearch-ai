@@ -319,7 +319,18 @@ def test_edinet_translation_failure_is_non_fatal_original_retained(tmp_path, mon
     assert processed.translation_state == TranslationState.UNAVAILABLE
     assert processed.excerpt_translation is None
     assert processed.excerpt_original == "日本語の抜粋。"  # retained regardless of translation failure
-    assert processed.status == CandidateStatus.NEEDS_REVIEW  # candidate is not failed by a translation failure
+    # The terminal status here is decided by the annual-report evidence
+    # gate, NOT by the translation failure. This fixture's matched rule is
+    # `annual_securities_report:010:030000:120`, and its stubbed excerpt
+    # carries no preferred issuer-specific section, so the gate terminates
+    # the candidate NOT_MATERIAL. The gate reads excerpt_original only, so a
+    # failed translation can neither rescue no-section/boilerplate evidence
+    # nor push the candidate into a failure/error state — both properties
+    # asserted immediately below.
+    assert processed.status == CandidateStatus.NOT_MATERIAL
+    assert processed.materiality_assessment.strip()  # suppression is never silent
+    assert processed.extraction_state == ExtractionState.EXTRACTED  # translation failure is non-fatal
+    assert processed.status not in (CandidateStatus.RETRIEVAL_FAILED, CandidateStatus.PARSE_FAILED)
     assert processed.translation_failure_category == category
     assert processed.translation_failure_reason == "simulated failure"
     if retryable:

@@ -196,7 +196,7 @@ def test_pdf_raw_bytes_are_never_written_to_the_cache_file(tmp_path):
     assert "endobj" not in raw_cache_text  # no raw PDF syntax persisted
     import json
     cached = json.loads(raw_cache_text)["S100PDF"]
-    assert set(cached.keys()) == {"state", "excerpt_original", "detail", "retrieved_at", "evidence_source_member"}
+    assert set(cached.keys()) == {"state", "excerpt_original", "detail", "retrieved_at", "evidence_source_member", "location_section"}
     assert isinstance(cached["excerpt_original"], str)
     assert cached["evidence_source_member"] is None  # bare PDF, no ZIP container to name a member from
 
@@ -230,3 +230,171 @@ def test_zip_sourced_evidence_source_member_survives_cache_round_trip(tmp_path):
 
     assert cached_result.from_cache is True
     assert cached_result.evidence_source_member == "PublicDoc/0101.pdf"
+
+
+# ============================================================
+# Category-aware annual-report cache namespacing (C-a .. C-e). Every
+# archive is synthetic and built in-test; the EdinetClient is a MagicMock
+# and no network, EDINET, database, or external call occurs. No live
+# filing content is copied or committed.
+# ============================================================
+
+_ANNUAL = "annual_securities_report"
+_ANNUAL_KEY_SUFFIX = "#v2-annual-section-anchored"
+_CACHE_FILE = "edinet_document_excerpts.json"
+
+_ISSUER_SPECIFIC_ZIP_BODY = (
+    "第2【事業の状況】 【生産、受注及び販売の状況】 "
+    "当連結会計年度の受注高は前期比32.4%増の1,284億円となりました。"
+)
+_BOILERPLATE_ZIP_BODY = (
+    "第5【経理の状況】 1. 連結財務諸表及び財務諸表の作成方法について 規則に基づき作成しております。"
+)
+
+
+def _zip_with_honbun(body: str, name: str = "XBRL/PublicDoc/0102010_honbun_a.htm") -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(name, f"<html><body><p>{body}</p></body></html>")
+    return buffer.getvalue()
+
+
+def _raw_cache(tmp_path) -> dict:
+    import json
+
+    return json.loads((tmp_path / _CACHE_FILE).read_text(encoding="utf-8"))
+
+
+# --- C-a: annual namespaced miss then hit -------------------------------
+
+def test_c_a1_annual_fetch_writes_under_the_namespaced_key(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+
+    result = document_service.get_or_fetch_excerpt(client, "S100ANN", tmp_path, category=_ANNUAL)
+
+    assert result.from_cache is False
+    assert result.location_section == "【生産、受注及び販売の状況】"
+    assert set(_raw_cache(tmp_path)) == {f"S100ANN{_ANNUAL_KEY_SUFFIX}"}
+
+
+def test_c_a2_second_annual_call_is_a_cache_hit_with_no_second_fetch(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+
+    document_service.get_or_fetch_excerpt(client, "S100ANN", tmp_path, category=_ANNUAL)
+    second = document_service.get_or_fetch_excerpt(client, "S100ANN", tmp_path, category=_ANNUAL)
+
+    assert second.from_cache is True
+    assert client.fetch_document.call_count == 1
+
+
+# --- C-b: a legacy bare entry is not reused and is left byte-identical ---
+
+def test_c_b_legacy_bare_annual_entry_is_not_reused_and_is_left_byte_identical(tmp_path):
+    legacy_client = _client(_zip_with_honbun(_BOILERPLATE_ZIP_BODY, "XBRL/PublicDoc/0105010_honbun_b.htm"))
+    document_service.get_or_fetch_excerpt(legacy_client, "S100ANN", tmp_path)  # category=None, bare key
+    legacy_bytes = (tmp_path / _CACHE_FILE).read_bytes()
+    legacy_record = _raw_cache(tmp_path)["S100ANN"]
+
+    annual_client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+    result = document_service.get_or_fetch_excerpt(annual_client, "S100ANN", tmp_path, category=_ANNUAL)
+
+    # The legacy entry was a MISS for the annual category: a real fetch happened.
+    assert result.from_cache is False
+    assert annual_client.fetch_document.call_count == 1
+    assert result.location_section == "【生産、受注及び販売の状況】"
+    # ...and the legacy record itself is untouched, still present, unmutated.
+    after = _raw_cache(tmp_path)
+    assert after["S100ANN"] == legacy_record
+    assert "連結財務諸表及び財務諸表の作成方法について" in after["S100ANN"]["excerpt_original"]
+    assert set(after) == {"S100ANN", f"S100ANN{_ANNUAL_KEY_SUFFIX}"}
+    assert legacy_bytes != (tmp_path / _CACHE_FILE).read_bytes()  # appended, not rewritten in place
+
+
+def test_c_b_legacy_bare_entry_still_serves_a_category_none_call_unchanged(tmp_path):
+    legacy_client = _client(_zip_with_honbun(_BOILERPLATE_ZIP_BODY, "XBRL/PublicDoc/0105010_honbun_b.htm"))
+    document_service.get_or_fetch_excerpt(legacy_client, "S100ANN", tmp_path)
+    document_service.get_or_fetch_excerpt(_client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY)), "S100ANN", tmp_path, category=_ANNUAL)
+
+    replay = document_service.get_or_fetch_excerpt(legacy_client, "S100ANN", tmp_path)
+
+    assert replay.from_cache is True
+    assert legacy_client.fetch_document.call_count == 1
+    assert "連結財務諸表及び財務諸表の作成方法について" in replay.excerpt_original
+
+
+# --- C-c / C-d: non-annual and category=None keep the bare key ----------
+
+def test_c_c_non_annual_category_uses_the_bare_key_and_is_unchanged(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+
+    result = document_service.get_or_fetch_excerpt(client, "S100BUY", tmp_path, category="share_buyback_status")
+
+    assert set(_raw_cache(tmp_path)) == {"S100BUY"}
+    assert result.location_section is None
+
+
+def test_c_c_non_annual_and_category_none_share_one_cache_entry(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+
+    document_service.get_or_fetch_excerpt(client, "S100BUY", tmp_path, category="share_buyback_status")
+    hit = document_service.get_or_fetch_excerpt(client, "S100BUY", tmp_path)
+
+    assert hit.from_cache is True
+    assert client.fetch_document.call_count == 1
+    assert set(_raw_cache(tmp_path)) == {"S100BUY"}
+
+
+def test_c_d_category_none_behavior_is_unchanged(tmp_path):
+    client = _client(b"<html><body><p>Disclosure summary text.</p></body></html>")
+
+    first = document_service.get_or_fetch_excerpt(client, "S100TEST1", tmp_path)
+    second = document_service.get_or_fetch_excerpt(client, "S100TEST1", tmp_path)
+
+    assert first.state == ExtractionState.EXTRACTED
+    assert second.from_cache is True
+    assert client.fetch_document.call_count == 1
+    assert set(_raw_cache(tmp_path)) == {"S100TEST1"}
+    assert first.location_section is None
+
+
+def test_cache_key_helper_is_the_single_construction_point(tmp_path):
+    assert document_service._cache_key("S100X", _ANNUAL) == f"S100X{_ANNUAL_KEY_SUFFIX}"
+    assert document_service._cache_key("S100X", None) == "S100X"
+    assert document_service._cache_key("S100X", "share_buyback_status") == "S100X"
+    assert document_service._cache_key("S100X", "extraordinary_report") == "S100X"
+
+
+# --- C-e: location_section round-trips ----------------------------------
+
+def test_c_e_location_section_survives_the_cache_round_trip(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+
+    document_service.get_or_fetch_excerpt(client, "S100ANN", tmp_path, category=_ANNUAL)
+    cached = document_service.get_or_fetch_excerpt(client, "S100ANN", tmp_path, category=_ANNUAL)
+
+    assert cached.from_cache is True
+    assert cached.location_section == "【生産、受注及び販売の状況】"
+    assert cached.evidence_source_member == "XBRL/PublicDoc/0102010_honbun_a.htm"
+
+
+def test_annual_failure_result_is_also_namespaced_and_not_retried(tmp_path):
+    client = _client(EdinetNotFoundError(404, "not found"))
+
+    document_service.get_or_fetch_excerpt(client, "S100GONE", tmp_path, category=_ANNUAL)
+    second = document_service.get_or_fetch_excerpt(client, "S100GONE", tmp_path, category=_ANNUAL)
+
+    assert second.state == ExtractionState.RETRIEVAL_FAILED
+    assert second.from_cache is True
+    assert client.fetch_document.call_count == 1
+    assert set(_raw_cache(tmp_path)) == {f"S100GONE{_ANNUAL_KEY_SUFFIX}"}
+
+
+def test_no_cache_file_is_ever_deleted_or_emptied(tmp_path):
+    client = _client(_zip_with_honbun(_ISSUER_SPECIFIC_ZIP_BODY))
+    for category in (None, "share_buyback_status", _ANNUAL, "extraordinary_report"):
+        document_service.get_or_fetch_excerpt(client, "S100MULTI", tmp_path, category=category)
+
+    assert set(_raw_cache(tmp_path)) == {"S100MULTI", f"S100MULTI{_ANNUAL_KEY_SUFFIX}"}
