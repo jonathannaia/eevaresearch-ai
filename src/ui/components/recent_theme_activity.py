@@ -128,16 +128,30 @@ def _filing_display_date(filing: FilingEvent) -> str:
     return ""
 
 
-def _load_filing_items(settings: Settings) -> list[ThemeActivityItem]:
+def _load_filing_items(settings: Settings, preloaded_by_source: dict | None = None) -> list[ThemeActivityItem]:
+    """Phase 2B: `preloaded_by_source` maps a source name to the
+    (filings, NOT_MATERIAL ids) pair the Dashboard already read for that
+    source. Supplied, NO repository is constructed here and neither
+    load_filing_events() nor not_material_rcept_nos() is called — the
+    same data arrives from the page's single shared read. Omitted, every
+    load happens exactly as before, so any caller outside the Dashboard
+    is unaffected. Selection, ordering and output are identical either
+    way: only where the two inputs come from changes."""
     items: list[ThemeActivityItem] = []
     for source in REGION_SOURCE.values():
-        try:
-            filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
-        except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the rollup
-            continue
-        # Redesign v2 materiality policy: a NOT_MATERIAL candidate's filing
-        # never counts toward, or becomes the latest item of, a theme here.
-        suppressed = not_material_rcept_nos(settings, source)
+        if preloaded_by_source is not None:
+            preloaded = preloaded_by_source.get(source)
+            if preloaded is None:
+                continue
+            filings, suppressed = preloaded
+        else:
+            try:
+                filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
+            except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the rollup
+                continue
+            # Redesign v2 materiality policy: a NOT_MATERIAL candidate's filing
+            # never counts toward, or becomes the latest item of, a theme here.
+            suppressed = not_material_rcept_nos(settings, source)
         for filing in filings:
             if not filing.theme_slug or filing.rcept_no in suppressed:
                 continue
@@ -236,19 +250,28 @@ def _render_row(row: ThemeActivityRow) -> None:
                     st.link_button("View →", row.most_recent.source_url)
 
 
-def load_theme_activity_rows(ctx, settings: Settings, max_rows: int = MAX_ROWS) -> list[ThemeActivityRow]:
+def load_theme_activity_rows(
+    ctx, settings: Settings, max_rows: int = MAX_ROWS, preloaded_by_source: dict | None = None,
+) -> list[ThemeActivityRow]:
     """The real 14-day rollup — exposed (redesign v2) so the Dashboard's
     "Theme items · 14d" tile can total every theme's count while the list
     below still shows only the top MAX_ROWS. Same inputs, same pure
-    builder, no new data source."""
+    builder, no new data source.
+
+    `preloaded_by_source` (Phase 2B, additive and optional) is forwarded
+    to _load_filing_items; see its docstring. The Daily News item path
+    below is a different data source and is untouched by it."""
     theme_names_by_slug = {t.slug: t.name for t in ctx.theme_repository.get_all_themes()}
-    items = _load_filing_items(settings) + _load_daily_news_items(settings)
+    items = _load_filing_items(settings, preloaded_by_source) + _load_daily_news_items(settings)
     return build_recent_theme_activity(items, theme_names_by_slug, window_days=WINDOW_DAYS, max_rows=max_rows)
 
 
-def render_recent_theme_activity(ctx, settings: Settings, rows: list[ThemeActivityRow] | None = None) -> None:
+def render_recent_theme_activity(
+    ctx, settings: Settings, rows: list[ThemeActivityRow] | None = None,
+    preloaded_by_source: dict | None = None,
+) -> None:
     if rows is None:
-        rows = load_theme_activity_rows(ctx, settings)
+        rows = load_theme_activity_rows(ctx, settings, preloaded_by_source=preloaded_by_source)
     if not rows:
         return
 

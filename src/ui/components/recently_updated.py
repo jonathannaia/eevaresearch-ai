@@ -239,7 +239,9 @@ def _filing_display_date(filing: FilingEvent) -> str:
     return ""
 
 
-def _load_filing_rows(settings: Settings, now: datetime) -> list[_Row]:
+def _load_filing_rows(
+    settings: Settings, now: datetime, preloaded_by_source: dict | None = None,
+) -> list[_Row]:
     """Real Radar CandidateSignals only (design/DECISIONS.md beta-blocker
     fix) — never a raw FilingEvent, which may never have qualified as a
     candidate at all (routine/non-matching filings are never promoted;
@@ -247,14 +249,28 @@ def _load_filing_rows(settings: Settings, now: datetime) -> list[_Row]:
     own status means "archived"/"rejected" (_ARCHIVED_OR_REJECTED_
     CANDIDATE_STATUSES), a stale seed/demo filing (filing.is_demo), or a
     filing whose own sort key is unparseable or materially future is
-    never eligible to appear here — excluded, never clamped."""
+    never eligible to appear here — excluded, never clamped.
+
+    Phase 2B: `preloaded_by_source` maps a source name to the candidate
+    objects the Dashboard already read for that source. Supplied, NO
+    repository is constructed here and load_candidates() is never
+    called. Omitted, every load happens exactly as before. The
+    eligibility rules, ordering and rendered rows below are identical
+    either way."""
     rows: list[_Row] = []
     for source in REGION_SOURCE.values():
-        try:
-            candidates = backend_factory.get_candidate_repository(settings, source).load_candidates()
-        except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the feed
-            continue
-        for candidate in candidates.values():
+        if preloaded_by_source is not None:
+            source_candidates = preloaded_by_source.get(source)
+            if source_candidates is None:
+                continue
+        else:
+            try:
+                source_candidates = list(
+                    backend_factory.get_candidate_repository(settings, source).load_candidates().values()
+                )
+            except Exception:  # noqa: BLE001 — fail closed; one source's error must never take down the feed
+                continue
+        for candidate in source_candidates:
             if candidate.status in _ARCHIVED_OR_REJECTED_CANDIDATE_STATUSES:
                 continue
             filing = candidate.filing
@@ -562,7 +578,9 @@ def _render_row(row: _Row, settings: Settings) -> None:
             )
 
 
-def _select_recently_updated_rows(settings: Settings, now: datetime | None = None) -> list[_Row]:
+def _select_recently_updated_rows(
+    settings: Settings, now: datetime | None = None, preloaded_by_source: dict | None = None,
+) -> list[_Row]:
     """Pure selection logic (beta-blocker fix, design/DECISIONS.md) —
     load, exclude, deduplicate, and deterministically sort every eligible
     row across all three real sources, with no Streamlit rendering. Kept
@@ -570,7 +588,11 @@ def _select_recently_updated_rows(settings: Settings, now: datetime | None = Non
     outcome (what wins "Latest", and why) is directly testable without
     driving a full page render."""
     now = now or datetime.now(timezone.utc)
-    rows = _load_filing_rows(settings, now) + _load_daily_news_rows(settings, now) + _load_editorial_rows(settings, now)
+    rows = (
+        _load_filing_rows(settings, now, preloaded_by_source)
+        + _load_daily_news_rows(settings, now)
+        + _load_editorial_rows(settings, now)
+    )
 
     # Duplicate-row safety net (beta-blocker fix, design/DECISIONS.md):
     # keeps the first occurrence of each content-derived identity key
@@ -624,10 +646,15 @@ def _merge_same_headline_signal_rows(rows: list[_Row]) -> list[_Row]:
     return merged
 
 
-def render_recently_updated(settings: Settings) -> None:
+def render_recently_updated(settings: Settings, preloaded_by_source: dict | None = None) -> None:
+    """`preloaded_by_source` (Phase 2B, additive and optional) carries the
+    per-source candidate objects the caller already read; supplied, this
+    component constructs no repository of its own. The Daily News and
+    editorial-story paths are untouched by it — they are different data
+    sources, and both still load exactly as before."""
     st.markdown('<div class="er-section-label">Recently Updated</div>', unsafe_allow_html=True)
 
-    shown = _select_recently_updated_rows(settings)[:PREVIEW_COUNT]
+    shown = _select_recently_updated_rows(settings, preloaded_by_source=preloaded_by_source)[:PREVIEW_COUNT]
 
     with st.container(border=True, key="card-recently-updated-feed"):
         if not shown:

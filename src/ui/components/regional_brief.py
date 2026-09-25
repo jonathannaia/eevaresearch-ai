@@ -36,10 +36,14 @@ from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.logic import filing_display
 from src.logic.filing_visibility import not_material_rcept_nos
+
 from src.logic.formatting import fmt_date
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
 from src.models.models import FilingEvent
+
+# (filings for a source, that source's NOT_MATERIAL receipt ids)
+SourceReads = tuple[list[FilingEvent], frozenset[str]]
 from src.ui.components.primitives import cjk_html, esc, lang_attr, venue_badge_html
 from src.ui.ui import get_page
 
@@ -58,16 +62,28 @@ def _parse_rcept_date(raw: str) -> date | None:
         return None
 
 
-def _load_recent_filings(source: str, settings: Settings) -> list[FilingEvent]:
+def _load_recent_filings(
+    source: str, settings: Settings, preloaded: "SourceReads | None" = None,
+) -> list[FilingEvent]:
     """Read-only, fail-closed exactly like radar_inbox.py's own repository
     reads — a misconfigured/unreachable backend degrades to an empty list
     for this region only, never a raw exception surfaced to the page.
-    NOT_MATERIAL candidates' filings are subtracted before the top-N cut."""
-    try:
-        filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
-    except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
-        return []
-    suppressed = not_material_rcept_nos(settings, source)
+    NOT_MATERIAL candidates' filings are subtracted before the top-N cut.
+
+    Phase 2B: `preloaded` lets the Dashboard supply the (filings,
+    suppressed) pair it already read for this source, so the same
+    source-wide data is not loaded once per region. When it is omitted —
+    every other caller — this function loads exactly as it always has.
+    The filtering, ordering and top-N cut below are identical either
+    way."""
+    if preloaded is not None:
+        filings, suppressed = preloaded
+    else:
+        try:
+            filings = backend_factory.get_filing_event_repository(settings, source).load_filing_events()
+        except Exception:  # noqa: BLE001 — fail closed; never leak a raw connection/config error into the UI
+            return []
+        suppressed = not_material_rcept_nos(settings, source)
     dated = [(f, _parse_rcept_date(f.rcept_dt)) for f in filings if f.rcept_no not in suppressed]
     dated = [(f, d) for f, d in dated if d is not None]
     dated.sort(key=lambda pair: pair[1], reverse=True)
@@ -112,9 +128,12 @@ def _row_html(filing: FilingEvent) -> str:
     )
 
 
-def _render_region_tab(region: str, settings: Settings) -> None:
+def _render_region_tab(
+    region: str, settings: Settings, preloaded_by_source: "dict[str, SourceReads] | None" = None,
+) -> None:
     source = REGION_SOURCE[region]
-    filings = _load_recent_filings(source, settings)
+    preloaded = (preloaded_by_source or {}).get(source)
+    filings = _load_recent_filings(source, settings, preloaded)
     if not filings:
         st.markdown(
             '<div class="er-muted" style="margin-top:0.3rem;">No recent tracked-issuer disclosures available.</div>',
@@ -143,7 +162,14 @@ def _render_china_tab() -> None:
     )
 
 
-def render_regional_brief(settings: Settings) -> None:
+def render_regional_brief(
+    settings: Settings, preloaded_by_source: "dict[str, SourceReads] | None" = None,
+) -> None:
+    """`preloaded_by_source` (Phase 2B, additive and optional) maps a
+    source name to the (filings, not-material ids) pair the caller
+    already read. Supplied, no repository is constructed here at all;
+    omitted, behavior is exactly as before. Rendered rows, ordering,
+    links, headings and the empty state are identical either way."""
     with st.container(key="card-regional-brief"):
         st.markdown(
             '<div class="er-section-label" style="margin-top:0;">Regional Brief</div>'
@@ -152,10 +178,10 @@ def render_regional_brief(settings: Settings) -> None:
         )
         tabs = st.tabs(["United States", "South Korea", "Japan", "China"])
         with tabs[0]:
-            _render_region_tab("United States", settings)
+            _render_region_tab("United States", settings, preloaded_by_source)
         with tabs[1]:
-            _render_region_tab("South Korea", settings)
+            _render_region_tab("South Korea", settings, preloaded_by_source)
         with tabs[2]:
-            _render_region_tab("Japan", settings)
+            _render_region_tab("Japan", settings, preloaded_by_source)
         with tabs[3]:
             _render_china_tab()

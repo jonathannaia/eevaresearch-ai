@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 from src.data_access.policy_monitor import federal_register_client
@@ -19,6 +20,17 @@ _RAW_DOCUMENT = {
     "publication_date": "2026-09-04",
     "agencies": [{"name": "Bureau of Industry and Security", "id": 1, "slug": "bureau-of-industry-and-security"}],
 }
+
+
+@pytest.fixture(autouse=True)
+def _reset_federal_register_cache():
+    """Phase 2B: fetch_candidate_documents() is now cached per process
+    for FEDERAL_REGISTER_CACHE_TTL_SECONDS. Every test here exercises a
+    real fetch path, so the cache is cleared before and after each one —
+    otherwise one test's mocked response would be served to the next."""
+    federal_register_client.reset_cache_for_tests()
+    yield
+    federal_register_client.reset_cache_for_tests()
 
 
 def _mock_response(payload: object | None = None, status_code: int = 200, raw_content: bytes | None = None) -> MagicMock:
