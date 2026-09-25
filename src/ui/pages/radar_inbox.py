@@ -45,6 +45,7 @@ from src.logic.filing_visibility import is_not_material
 from src.logic.formatting import today_local
 from src.logic.radar_freshness import compute_radar_freshness
 from src.models.models import CandidateStatus
+from src.ui import render_timing
 from src.ui.components.empty_state import empty_state
 from src.ui.components.primitives import page_header
 from src.ui.components.radar_card import candidate_row
@@ -438,6 +439,20 @@ class _DashboardSnapshot:
     items: list[RadarItem]
 
 
+# Via render_timing.get_logger so the records actually reach the
+# platform log stream: the project configures no logging globally, so a
+# bare getLogger() would propagate to a handler-less root and be dropped.
+_LOGGER = render_timing.get_logger("eeva.radar_inbox")
+
+
+def _fingerprint_label(config_fingerprint: tuple[str, bool]) -> str:
+    """Renders the already-non-secret cache fingerprint for a log record:
+    the backend name plus whether a state DB URL is configured at all.
+    Never the URL, a DSN, a credential, or any part of one."""
+    backend, has_state_db_url = config_fingerprint
+    return f"{backend}/state_db_url_configured={has_state_db_url}"
+
+
 def _dashboard_config_fingerprint(settings: Settings) -> tuple[str, bool]:
     """The only input that determines `_load_dashboard_snapshot`'s cache
     identity below — deliberately never the `Settings` object itself,
@@ -480,48 +495,60 @@ def _load_dashboard_snapshot(cache_dir, config_fingerprint: tuple[str, bool], _s
     changes *how often* those existing reads run, not *what* they do.
 
     Durable-State Phase 4M-3 — minimal, non-sensitive timing
-    instrumentation: every `print()` below only ever includes elapsed
-    milliseconds, an item count, and `config_fingerprint` (already a
-    non-secret two-tuple of the backend name and a presence boolean —
-    never a DSN, credential, SQL statement, query parameter, or filing
-    content). The mere presence of the first "cache MISS" line in a
-    given request's logs is itself the diagnostic signal this phase
-    needs: on an `st.cache_data` cache HIT, this function body — and
-    every print() in it — never executes at all for that rerun; seeing
-    no lines for a request proves the cache was reused, seeing them
-    proves this was a genuine miss."""
+    instrumentation, converted to the structured application logger in
+    Phase 2A (src/ui/render_timing.py). Each record below carries only
+    elapsed milliseconds, an item count, and `config_fingerprint`
+    (already a non-secret two-tuple of the backend name and a presence
+    boolean — never a DSN, credential, SQL statement, query parameter,
+    or filing content). These were `print()` calls, which Python
+    block-buffers on a non-TTY stdout: in production they reached the
+    log stream only when the process exited, which is why they were
+    effectively invisible. The logger writes to line-buffered stderr and
+    appears promptly.
+
+    The mere presence of the first "cache MISS" record is itself the
+    diagnostic signal: on an `st.cache_data` cache HIT this function
+    body never executes at all for that rerun, so seeing no records
+    proves the cache was reused and seeing them proves a genuine miss.
+    That same fact is what lets render() report `cache_status` for free
+    — see _SNAPSHOT_MISS_SENTINEL below."""
     _snapshot_started_at = time.monotonic()
-    print(f"[radar_inbox] dashboard snapshot cache MISS — executing (config={config_fingerprint})")
+    # Observed by render() to report cache_status without doing any
+    # extra work: only a genuine miss runs this function body at all.
+    render_timing.set_cache_status("miss")
+    _LOGGER.info(
+        'event="radar_snapshot" phase="cache_miss" config="%s"', _fingerprint_label(config_fingerprint)
+    )
 
     _step_started_at = time.monotonic()
     dart_readiness = _dart_readiness_or_unavailable(_settings)
-    print(f"[radar_inbox]   dart_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+    _LOGGER.info('event="radar_snapshot" step="dart_readiness" elapsed_ms=%.1f', (time.monotonic() - _step_started_at) * 1000)
 
     _step_started_at = time.monotonic()
     edgar_readiness = _edgar_readiness_or_unavailable(_settings)
-    print(f"[radar_inbox]   edgar_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+    _LOGGER.info('event="radar_snapshot" step="edgar_readiness" elapsed_ms=%.1f', (time.monotonic() - _step_started_at) * 1000)
 
     _step_started_at = time.monotonic()
     edinet_readiness = edinet_service.edinet_readiness(_settings)
-    print(f"[radar_inbox]   edinet_readiness: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+    _LOGGER.info('event="radar_snapshot" step="edinet_readiness" elapsed_ms=%.1f', (time.monotonic() - _step_started_at) * 1000)
 
     _step_started_at = time.monotonic()
     # Matches render()'s own pre-existing condition exactly (line below,
     # in render() itself) — only computed when EDINET is ready, so an
     # unconfigured/not-ready EDINET costs nothing extra here either.
     edinet_scope_line = _edinet_scope_line(cache_dir, _settings) if edinet_readiness.ready else ""
-    print(f"[radar_inbox]   edinet_scope_line: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+    _LOGGER.info('event="radar_snapshot" step="edinet_scope_line" elapsed_ms=%.1f', (time.monotonic() - _step_started_at) * 1000)
 
     _step_started_at = time.monotonic()
     worker_status_state, worker_status_statuses = _worker_scan_status_snapshot(_settings)
-    print(f"[radar_inbox]   worker_status: {(time.monotonic() - _step_started_at) * 1000:.1f}ms")
+    _LOGGER.info('event="radar_snapshot" step="worker_status" elapsed_ms=%.1f', (time.monotonic() - _step_started_at) * 1000)
 
     _step_started_at = time.monotonic()
     items = _build_items(cache_dir, _settings)
-    print(f"[radar_inbox]   build_items: {(time.monotonic() - _step_started_at) * 1000:.1f}ms ({len(items)} items)")
+    _LOGGER.info('event="radar_snapshot" step="build_items" elapsed_ms=%.1f items=%d', (time.monotonic() - _step_started_at) * 1000, len(items))
 
     total_ms = (time.monotonic() - _snapshot_started_at) * 1000
-    print(f"[radar_inbox] dashboard snapshot TOTAL: {total_ms:.1f}ms (config={config_fingerprint})")
+    _LOGGER.info('event="radar_snapshot" phase="total" elapsed_ms=%.1f config="%s"', total_ms, _fingerprint_label(config_fingerprint))
 
     return _DashboardSnapshot(
         dart_readiness=dart_readiness,
@@ -537,7 +564,12 @@ def _load_dashboard_snapshot(cache_dir, config_fingerprint: tuple[str, bool], _s
 def render() -> None:
     settings = get_settings()
     config_fingerprint = _dashboard_config_fingerprint(settings)
-    snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
+    # Phase 2A: the page's whole data-load phase is this one cached
+    # snapshot call. A cache HIT never runs the cached body, so
+    # cache_status stays "hit" unless that body sets it to "miss" —
+    # known for free, with no probe or extra read.
+    with render_timing.data_load(cache_status="hit"):
+        snapshot = _load_dashboard_snapshot(settings.cache_dir, config_fingerprint, settings)
     dart_readiness = snapshot.dart_readiness
     edgar_readiness = snapshot.edgar_readiness
     edinet_readiness = snapshot.edinet_readiness

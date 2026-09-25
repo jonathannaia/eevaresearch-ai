@@ -17,7 +17,7 @@ import streamlit as st
 from src.config.settings import APP_NAME, APP_VERSION, Settings, get_settings
 from src.data_access import backend_factory
 from src.logic.formatting import fmt_time_local, today_local
-from src.ui import theme
+from src.ui import render_timing, theme
 from src.ui.theme_tokens import ThemePreference, render_token_css
 
 METHODOLOGY_STATEMENT = (
@@ -589,16 +589,25 @@ def _render_sidebar_account(nav_key: str) -> None:
 
 def with_chrome(page_fn: Callable[[], None], nav_key: str, show_sidebar: bool = True) -> Callable[[], None]:
     def _wrapped() -> None:
-        preference = theme.current_preference()
-        load_css(preference)
-        theme.render_bridge(preference)
-        if show_sidebar:
-            render_sidebar(nav_key)
-            _render_topbar(nav_key)
+        # Phase 2A instrumentation (src/ui/render_timing.py). This is the
+        # one wrapper every routed page already passes through, so timing
+        # it here covers the whole navigation without touching routing,
+        # state, caching, or any page's own behavior. The helpers below
+        # only read a clock and, once per render, write a log record.
+        with render_timing.page_render(nav_key):
+            preference = theme.current_preference()
+            load_css(preference)
+            theme.render_bridge(preference)
+            if show_sidebar:
+                render_sidebar(nav_key)
+                _render_topbar(nav_key)
+            # Everything above is chrome: theme, CSS, sidebar, topbar.
+            # Everything below is the page's own body plus the footer.
+            render_timing.mark_setup_complete()
 
-        with st.container(key="page-content"):
-            page_fn()
-        render_footer(nav_key)
+            with st.container(key="page-content"):
+                page_fn()
+            render_footer(nav_key)
 
     _wrapped.__name__ = getattr(page_fn, "__name__", "page")
     return _wrapped
