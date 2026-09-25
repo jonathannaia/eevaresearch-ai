@@ -718,3 +718,350 @@ def test_run_pipeline_flag_true_now_promoted_extraordinary_report_is_translated(
     assert len(report.shadow_material_event_matches) == 1
     assert report.candidates_detected == 1
     assert provider.calls != []  # the now-promoted candidate was processed and translated
+
+
+# ============================================================
+# First-pass annual-report evidence gate (P-F1 .. P-FR). Uses the same
+# fictional 010:030:120 triplet key the rest of this module uses, mapped
+# to the real `annual_securities_report` category name so the pipeline's
+# own category-scoped branch is exercised — DEFAULT_CODE_CATEGORY_MAP is
+# never read or modified. Every document is a synthetic ZIP built
+# in-test; the EdinetClient is a MagicMock and nothing leaves the
+# process. No live filing content is copied or committed.
+# ============================================================
+
+_ANNUAL_TEST_MAP = {"010:030:120": "annual_securities_report"}
+
+_ANNUAL_ISSUER_SPECIFIC = (
+    "第2【事業の状況】 【生産、受注及び販売の状況】 "
+    "当連結会計年度の受注高は前期比32.4%増の1,284億円となりました。"
+    "主要顧客からの検査装置需要が増加しております。"
+)
+_ANNUAL_BOILERPLATE = (
+    "第5【経理の状況】 1. 連結財務諸表及び財務諸表の作成方法について "
+    "当社の連結財務諸表は、「連結財務諸表の用語、様式及び作成方法に関する規則」に基づき作成しております。"
+)
+
+
+def _annual_zip(body: str, member: str = "XBRL/PublicDoc/0102010_honbun_a.htm") -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member, f"<html><body><p>{body}</p></body></html>")
+    return buffer.getvalue()
+
+
+def _run_annual(client, cache_dir, code_category_map=None):
+    from src.data_access.edinet import scan_service
+
+    scan_result = scan_service.scan(
+        client, [_ACME], cache_dir, code_category_map=code_category_map or _ANNUAL_TEST_MAP,
+    )
+    candidate_store.upsert_new_candidates(
+        cache_dir, list(scan_result.new_candidate_signals), edinet_pipeline.CANDIDATE_STORE_FILENAME,
+    )
+    return next(iter(candidate_store.load_candidates(cache_dir, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+
+
+def _failing_provider():
+    provider = MagicMock()
+    provider.translate.side_effect = TranslationApiError("network", "simulated failure")
+    return provider
+
+
+# --- P-F1: issuer-specific section reaches NEEDS_REVIEW -----------------
+
+def test_p_f1_issuer_specific_annual_section_reaches_needs_review_with_provenance(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_ISSUER_SPECIFIC)},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.status == CandidateStatus.NEEDS_REVIEW
+    assert result.extraction_state == ExtractionState.EXTRACTED
+    assert result.materiality_assessment == "Preferred annual-report section selected: 【生産、受注及び販売の状況】."
+    assert result.evidence_location is not None
+    assert result.evidence_location.kind.value == "Section"
+    assert result.evidence_location.section == "【生産、受注及び販売の状況】"
+    assert result.evidence_source_member == "XBRL/PublicDoc/0102010_honbun_a.htm"
+    assert "受注高は前期比32.4%増" in result.excerpt_original
+
+
+# --- P-F2: boilerplate-only annual report is suppressed -----------------
+
+def test_p_f2_boilerplate_only_annual_report_finishes_not_material(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.status == CandidateStatus.NOT_MATERIAL
+    assert result.status != CandidateStatus.NEEDS_REVIEW
+    # Extraction still succeeded and raw evidence/provenance is retained
+    # for audit — the gate, not the extractor, is what suppressed this.
+    assert result.extraction_state == ExtractionState.EXTRACTED
+    assert result.excerpt_original
+    assert result.evidence_source_member == "XBRL/PublicDoc/0105010_honbun_b.htm"
+    assert result.evidence_location.kind.value == "Unavailable"
+    assert result.evidence_location.section is None
+    assert result.materiality_assessment.strip()
+    assert "boilerplate marker" in result.materiality_assessment
+
+
+def test_p_f2_suppression_reason_is_recorded_on_the_state_transition(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    final = result.state_history[-1]
+    assert final.status == CandidateStatus.NOT_MATERIAL
+    assert final.detail == result.materiality_assessment
+
+
+def test_p_f2_annual_report_with_no_preferred_section_finishes_not_material(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip("第4【提出会社の状況】 記載事項はありません。")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.status == CandidateStatus.NOT_MATERIAL
+    assert "No preferred issuer-specific annual-report section" in result.materiality_assessment
+
+
+def test_p_f2_an_extracted_annual_candidate_never_keeps_the_default_assessment(tmp_path):
+    for body in (_ANNUAL_ISSUER_SPECIFIC, _ANNUAL_BOILERPLATE, "第4【提出会社の状況】 なし。"):
+        cache_dir = tmp_path / f"case{abs(hash(body))}"
+        cache_dir.mkdir()
+        client = _make_client(
+            {_today(): _envelope([_result("S100ANN", "E00001", "1234")])}, {"S100ANN": _annual_zip(body)},
+        )
+        candidate_id = _run_annual(client, cache_dir)
+        result = edinet_pipeline.process_single_candidate(client, candidate_id, cache_dir)
+
+        assert result.materiality_assessment != "Not assessed"
+        assert result.materiality_assessment.strip()
+
+
+# --- F5 / F6: translation never determines materiality ------------------
+
+def test_f5_translation_failure_does_not_downgrade_an_issuer_specific_section(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_ISSUER_SPECIFIC)},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(
+        client, candidate_id, tmp_path, translation_provider=_failing_provider(),
+    )
+
+    assert result.status == CandidateStatus.NEEDS_REVIEW
+    assert result.translation_state == TranslationState.UNAVAILABLE
+    assert result.excerpt_translation is None
+    assert result.materiality_assessment.startswith("Preferred annual-report section selected:")
+
+
+def test_f6_translation_failure_does_not_rescue_boilerplate(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(
+        client, candidate_id, tmp_path, translation_provider=_failing_provider(),
+    )
+
+    assert result.status == CandidateStatus.NOT_MATERIAL
+    assert result.translation_state == TranslationState.UNAVAILABLE
+
+
+def test_the_gate_is_invoked_with_the_japanese_original_never_a_translation(tmp_path):
+    from unittest.mock import patch
+
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_ISSUER_SPECIFIC)},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    with patch.object(
+        edinet_pipeline, "assess_annual_report_materiality",
+        wraps=edinet_pipeline.assess_annual_report_materiality,
+    ) as spy:
+        edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    (excerpt_arg, section_arg), _kwargs = spy.call_args
+    assert "受注高は前期比32.4%増" in excerpt_arg  # the Japanese original
+    assert section_arg == "【生産、受注及び販売の状況】"
+
+
+# --- P-Q: descriptive excerpt quality -----------------------------------
+
+def test_p_q_excerpt_quality_is_set_after_a_successful_extraction(tmp_path):
+    from src.models.models import ExcerptQuality
+
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_ISSUER_SPECIFIC)},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.excerpt_quality != ExcerptQuality.UNKNOWN
+
+
+def test_p_q_excerpt_quality_is_also_set_for_a_non_annual_category(tmp_path):
+    from src.models.models import ExcerptQuality
+
+    client = _make_client(
+        {_today(): _envelope([_result("S100A", "E00001", "1234")])},
+        {"S100A": b"<html><body><p>Disclosure content that is comfortably long enough.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.excerpt_quality != ExcerptQuality.UNKNOWN
+
+
+# --- P-S: the gate is scoped to annual reports only ---------------------
+
+def test_p_s_non_annual_category_keeps_needs_review_and_the_default_assessment(tmp_path):
+    from unittest.mock import patch
+
+    client = _make_client(
+        {_today(): _envelope([_result("S100A", "E00001", "1234")])},
+        {"S100A": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)  # fictional_category_alpha
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+
+    with patch.object(
+        edinet_pipeline, "assess_annual_report_materiality",
+        side_effect=AssertionError("the annual gate must never run for another category"),
+    ):
+        result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.status == CandidateStatus.NEEDS_REVIEW
+    assert result.materiality_assessment == "Not assessed"
+
+
+def test_p_s_non_annual_category_gets_an_unavailable_evidence_location(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100A", "E00001", "1234")])},
+        {"S100A": b"<html><body><p>Disclosure content.</p></body></html>"},
+    )
+    _run_pipeline_with_map(client, [_ACME], tmp_path)
+    candidate_id = next(iter(candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)))
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.evidence_location.kind.value == "Unavailable"
+
+
+# --- P-T: NOT_MATERIAL is terminal --------------------------------------
+
+def test_p_t_a_not_material_candidate_is_never_reprocessed(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+    suppressed = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+    assert suppressed.status == CandidateStatus.NOT_MATERIAL
+
+    assert suppressed.status not in edinet_pipeline._ELIGIBLE_STATUSES
+    before = len(suppressed.state_history)
+    reloaded = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate_id]
+    assert reloaded.status == CandidateStatus.NOT_MATERIAL
+    assert len(reloaded.state_history) == before
+
+
+# --- P-FR: scan-time classification provenance survives -----------------
+
+def test_p_fr_flag_reason_still_carries_the_scan_time_triplet_unmodified(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+    before = candidate_store.load_candidates(tmp_path, edinet_pipeline.CANDIDATE_STORE_FILENAME)[candidate_id]
+    before_reason = before.flag_reason
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.flag_reason == before_reason
+    assert "ordinanceCode=010" in result.flag_reason.source_detail
+    assert "docTypeCode=120" in result.flag_reason.source_detail
+    assert result.materiality_assessment not in result.flag_reason.source_detail
+
+
+def test_confidence_and_matched_rules_are_unchanged_by_the_gate(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": _annual_zip(_ANNUAL_BOILERPLATE, "XBRL/PublicDoc/0105010_honbun_b.htm")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.confidence == "Moderate"
+    assert result.matched_rules == ["annual_securities_report:010:030:120"]
+
+
+def test_category_helper_reads_the_existing_matched_rule_representation():
+    assert edinet_pipeline._category_from_matched_rules(
+        ["annual_securities_report:010:030000:120"]
+    ) == "annual_securities_report"
+    assert edinet_pipeline._category_from_matched_rules(["share_buyback_status:010:170000:220"]) == "share_buyback_status"
+    assert edinet_pipeline._category_from_matched_rules([]) is None
+    assert edinet_pipeline._category_from_matched_rules(()) is None
+
+
+def test_the_default_code_category_map_is_untouched_by_this_module():
+    from src.data_access.edinet import edinet_rules
+
+    assert edinet_rules.DEFAULT_CODE_CATEGORY_MAP == {
+        "010:030000:120": "annual_securities_report",
+        "010:170000:220": "share_buyback_status",
+        "010:053000:180": "extraordinary_report",
+    }
+
+
+def test_retrieval_and_parse_failures_are_unaffected_by_the_annual_gate(tmp_path):
+    client = _make_client(
+        {_today(): _envelope([_result("S100ANN", "E00001", "1234")])},
+        {"S100ANN": EdinetNotFoundError(404, "not found")},
+    )
+    candidate_id = _run_annual(client, tmp_path)
+
+    result = edinet_pipeline.process_single_candidate(client, candidate_id, tmp_path)
+
+    assert result.status == CandidateStatus.RETRIEVAL_FAILED
+    assert result.materiality_assessment == "Not assessed"
+
+
+def test_no_live_edinet_content_is_present_in_this_module():
+    from pathlib import Path
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    for needle in ("Laser" + "tec", "E0" + "1991", "S100" + "Z32V"):
+        assert needle not in source, needle

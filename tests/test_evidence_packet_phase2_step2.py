@@ -29,6 +29,7 @@ from src.models.models import (
     CandidateStatus,
     ExtractionState,
     FilingEvent,
+    LocationKind,
     TranslationState,
     record_excerpt,
 )
@@ -165,8 +166,11 @@ def test_edinet_pipeline_never_overwrites_member_reference_on_reprocess(tmp_path
 
 def test_edinet_pipeline_member_provenance_does_not_disturb_other_evidence_fields(tmp_path, monkeypatch):
     """Confirms evidence_source_member threading is additive only — every
-    other evidence-packet field (translation state, evidence location,
-    filing id/source URL, review state) is untouched by this change."""
+    other evidence-packet field (translation state, filing id/source URL,
+    review state) is untouched by this change. evidence_location is now
+    populated by EDINET's own location contract: having selected no
+    preferred issuer-specific annual-report section, this fixture yields an
+    EXPLICIT UNAVAILABLE location rather than absent provenance."""
     filing = _edinet_filing("S100ZIP3")
     filing.source_url = "https://api.edinet-fsa.go.jp/api/v2/documents/S100ZIP3"
     candidate = CandidateSignal(
@@ -188,7 +192,13 @@ def test_edinet_pipeline_member_provenance_does_not_disturb_other_evidence_field
     assert candidate.filing.source_url == "https://api.edinet-fsa.go.jp/api/v2/documents/S100ZIP3"
     assert candidate.reviewed_note == "pre-existing note"
     assert candidate.translation_state == TranslationState.PENDING  # unaffected, no provider given
-    assert candidate.evidence_location is None  # EDINET never sets this (Phase 1 behavior, unchanged)
+    # EDINET now records an explicit location contract on every successful
+    # extraction. No preferred section was selected here, so the honest
+    # value is an explicit UNAVAILABLE location — never absent provenance,
+    # and never a fabricated section or page.
+    assert candidate.evidence_location is not None
+    assert candidate.evidence_location.kind == LocationKind.UNAVAILABLE
+    assert candidate.evidence_location.section is None
 
 
 # ============================================================

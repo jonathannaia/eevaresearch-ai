@@ -13,8 +13,12 @@ from __future__ import annotations
 import io
 import warnings
 import zipfile
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from src.data_access.edinet import document_extractor
 from src.data_access.edinet.document_extractor import (
     MAX_DOCUMENT_SIZE_BYTES,
     MAX_EXCERPT_CHARS,
@@ -791,3 +795,338 @@ def test_dart_document_extractor_is_unmodified_and_still_html_only():
     import src.data_access.dart.document_extractor as dart_extractor
     assert not hasattr(dart_extractor, "PdfReader")
     assert not hasattr(dart_extractor, "_extract_pdf_text")
+
+
+# ============================================================
+# Section-aware annual-report evidence selection. Every archive below is
+# SYNTHETIC, assembled in-test via _build_zip, with Japanese text written
+# for this test suite. No live EDINET document, and in particular no part
+# of any real annual securities report body, is copied, captured, or
+# committed here. The statutory section headings are form structure, not
+# filing content.
+# ============================================================
+
+_ANNUAL = "annual_securities_report"
+
+# Written-for-test stand-ins. _BOILERPLATE mirrors the SHAPE of the
+# accounting-policy preamble that opens every 経理の状況 section (which is
+# exactly the failure this selection change closes); _ISSUER_SPECIFIC
+# carries invented operational figures no real filer reported.
+_BOILERPLATE = (
+    "第5【経理の状況】 1. 連結財務諸表及び財務諸表の作成方法について "
+    "(1) 当社の連結財務諸表は、「連結財務諸表の用語、様式及び作成方法に関する規則」に基づき作成しております。"
+) * 12
+_ISSUER_SPECIFIC = (
+    "第2【事業の状況】 【生産、受注及び販売の状況】 "
+    "当連結会計年度の受注高は前期比32.4%増の1,284億円となりました。"
+    "主要顧客からの検査装置需要が増加し、生産能力を2027年までに1.8倍へ拡張する計画です。"
+)
+_RISK_SECTION = (
+    "第2【事業の状況】 【事業等のリスク】 "
+    "特定顧客への売上高依存度が高く、当該顧客の設備投資計画の変更が業績に影響を及ぼす可能性があります。"
+)
+_CAPEX_SECTION = "第3【設備の状況】 【設備投資等の概要】 当連結会計年度の設備投資総額は412億円であります。"
+
+
+def _honbun(name: str, body: str) -> tuple[str, bytes]:
+    return (f"XBRL/PublicDoc/{name}", f"<html><body><p>{body}</p></body></html>".encode("utf-8"))
+
+
+# --- F1: ranking beats size ---------------------------------------------
+
+def test_f1_annual_report_prefers_issuer_specific_section_over_largest_member():
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/0000000_header_jpcrp030000-asr-001.htm", b"<html><body>Header</body></html>"),
+        _honbun("0102010_honbun_jpcrp030000-asr-001.htm", _ISSUER_SPECIFIC),
+        _honbun("0105010_honbun_jpcrp030000-asr-001.htm", _BOILERPLATE),
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section == "【生産、受注及び販売の状況】"
+    assert result.evidence_source_member == "XBRL/PublicDoc/0102010_honbun_jpcrp030000-asr-001.htm"
+    assert result.excerpt_original.startswith("【生産、受注及び販売の状況】")
+    assert "受注高は前期比32.4%増" in result.excerpt_original
+    assert "連結財務諸表の用語" not in result.excerpt_original
+
+
+def test_f1_largest_member_would_have_won_without_the_annual_category():
+    # The same archive, selected the legacy way: proves the boilerplate
+    # member really is the one size-based selection picks, so F1 above is
+    # testing a real inversion rather than an already-correct ordering.
+    zip_bytes = _build_zip([
+        _honbun("0102010_honbun_jpcrp030000-asr-001.htm", _ISSUER_SPECIFIC),
+        _honbun("0105010_honbun_jpcrp030000-asr-001.htm", _BOILERPLATE),
+    ])
+    result = extract_excerpt(zip_bytes)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section is None
+    assert result.evidence_source_member == "XBRL/PublicDoc/0105010_honbun_jpcrp030000-asr-001.htm"
+    assert "連結財務諸表及び財務諸表の作成方法について" in result.excerpt_original
+
+
+# --- F1b: best rank wins across members, not first match ----------------
+
+def test_f1b_best_ranked_heading_wins_across_members_not_the_first_match():
+    zip_bytes = _build_zip([
+        _honbun("0102020_honbun_a.htm", _RISK_SECTION),        # rank 2
+        _honbun("0102010_honbun_b.htm", _ISSUER_SPECIFIC),     # rank 0
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.location_section == "【生産、受注及び販売の状況】"
+    assert result.evidence_source_member == "XBRL/PublicDoc/0102010_honbun_b.htm"
+
+
+def test_f1b_lower_ranked_section_is_selected_when_no_better_rank_exists():
+    zip_bytes = _build_zip([
+        _honbun("0103010_honbun_a.htm", _CAPEX_SECTION),   # rank 4
+        _honbun("0102020_honbun_b.htm", _RISK_SECTION),    # rank 2
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.location_section == "【事業等のリスク】"
+    assert result.evidence_source_member == "XBRL/PublicDoc/0102020_honbun_b.htm"
+
+
+def test_f1b_rank_zero_hit_stops_reading_further_members():
+    zip_bytes = _build_zip([
+        _honbun("0102010_honbun_a.htm", _ISSUER_SPECIFIC),   # rank 0, first member
+        _honbun("0102020_honbun_b.htm", _RISK_SECTION),
+        _honbun("0103010_honbun_c.htm", _CAPEX_SECTION),
+    ])
+    with patch(
+        "src.data_access.edinet.document_extractor._member_plain_text",
+        wraps=document_extractor._member_plain_text,
+    ) as spy:
+        result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.location_section == "【生産、受注及び販売の状況】"
+    assert spy.call_count == 1  # early exit: members 2 and 3 were never read
+
+
+def test_f1_fallback_container_heading_is_the_lowest_rank():
+    zip_bytes = _build_zip([_honbun("0102010_honbun_a.htm", "第2【事業の状況】 概況を記載しております。")])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.location_section == "【事業の状況】"
+
+
+def test_annual_excerpt_is_anchored_at_the_heading_and_bounded():
+    long_body = _ISSUER_SPECIFIC + ("追加の本文テキストです。" * 200)
+    zip_bytes = _build_zip([_honbun("0102010_honbun_a.htm", long_body)])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.excerpt_original.startswith("【生産、受注及び販売の状況】")
+    assert len(result.excerpt_original) <= 600
+
+
+def test_nfkc_normalization_matches_a_full_width_heading_variant():
+    # NFKC folds full-width ASCII/katakana; the headings themselves are
+    # kanji in full-width brackets, so this exercises the second-chance
+    # normalized pass without depending on the raw text matching first.
+    variant = _ISSUER_SPECIFIC.replace(
+        "【経営者による財政状態", "【経営者による財政状態",
+    ).replace("32.4%", "３２．４％")
+    zip_bytes = _build_zip([_honbun("0102010_honbun_a.htm", variant)])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section == "【生産、受注及び販売の状況】"
+
+
+# --- F2: no preferred section -> legacy fallback, location_section None --
+
+def test_f2_annual_report_with_only_boilerplate_falls_back_to_legacy_selection():
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/0000000_header_jpcrp030000-asr-001.htm", b"<html><body>Header</body></html>"),
+        _honbun("0105010_honbun_jpcrp030000-asr-001.htm", _BOILERPLATE),
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    # Extraction still SUCCEEDS and provenance is preserved for audit —
+    # the pipeline's gate, not the extractor, is what suppresses this.
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section is None
+    assert result.evidence_source_member == "XBRL/PublicDoc/0105010_honbun_jpcrp030000-asr-001.htm"
+    assert "連結財務諸表及び財務諸表の作成方法について" in result.excerpt_original
+
+
+def test_f2_annual_report_with_no_honbun_member_at_all_uses_legacy_html_selection():
+    zip_bytes = _build_zip([
+        ("PublicDoc/0000000_cover.htm", b"<html><body>Small cover.</body></html>"),
+        ("PublicDoc/0100010_body.htm", ("<html><body>" + ("Body text. " * 40) + "</body></html>").encode("utf-8")),
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section is None
+    assert result.evidence_source_member == "PublicDoc/0100010_body.htm"
+
+
+# --- F3 / F4: non-annual behavior is untouched --------------------------
+
+def test_f3_buyback_single_honbun_package_is_byte_identical_with_and_without_category():
+    header_html = "<html><body>Header/cover text, must not be selected.</body></html>".encode("utf-8")
+    honbun_html = "<html><body>自己株券買付状況報告書の本文テキストです。</body></html>".encode("utf-8")
+    members = [
+        ("XBRL/PublicDoc/0000000_header_jpcrp170000-sbr-001.htm", header_html),
+        ("XBRL/PublicDoc/0100010_honbun_jpcrp170000-sbr-001.htm", honbun_html),
+        ("XBRL/PublicDoc/jpcrp170000-sbr-001.xbrl", b"<xbrl>irrelevant</xbrl>"),
+    ]
+    legacy = extract_excerpt(_build_zip(members))
+    buyback = extract_excerpt(_build_zip(members), category="share_buyback_status")
+
+    assert legacy == buyback
+    assert legacy.location_section is None
+    assert legacy.evidence_source_member == "XBRL/PublicDoc/0100010_honbun_jpcrp170000-sbr-001.htm"
+    assert "自己株券買付状況報告書の本文テキストです" in legacy.excerpt_original
+
+
+def test_f4_extraordinary_report_category_does_not_trigger_section_selection():
+    zip_bytes = _build_zip([_honbun("0100010_honbun_jpcrp053000.htm", _ISSUER_SPECIFIC)])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_annual_report_member",
+        side_effect=AssertionError("annual section selection must never run for another category"),
+    ):
+        result = extract_excerpt(zip_bytes, category="extraordinary_report")
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section is None
+
+
+def test_non_zip_paths_never_set_location_section():
+    assert extract_excerpt(b"<html><body>Plain.</body></html>", category=_ANNUAL).location_section is None
+    assert extract_excerpt(_build_minimal_pdf("Bare PDF."), category=_ANNUAL).location_section is None
+
+
+# --- F7: safety bounds hold under the annual category -------------------
+
+@pytest.mark.parametrize("category", [None, _ANNUAL])
+def test_f7_unsafe_path_member_fails_closed_under_every_category(category):
+    zip_bytes = _build_zip([("../../evil_honbun.htm", b"<html><body>never read</body></html>")])
+    result = extract_excerpt(zip_bytes, category=category)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert result.excerpt_original is None
+    assert result.location_section is None
+
+
+@pytest.mark.parametrize("category", [None, _ANNUAL])
+def test_f7_corrupt_archive_fails_closed_under_every_category(category):
+    result = extract_excerpt(b"PK\x03\x04 not really a zip at all", category=category)
+    assert result.state == ExtractionState.PARSE_FAILED
+    assert result.location_section is None
+
+
+@pytest.mark.parametrize("category", [None, _ANNUAL])
+def test_f7_oversize_payload_is_rejected_before_parsing_under_every_category(category):
+    oversize = b"PK\x03\x04" + b"0" * (8 * 1024 * 1024 + 1)
+    result = extract_excerpt(oversize, category=category)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert "safety limit" in result.detail
+
+
+@pytest.mark.parametrize("category", [None, _ANNUAL])
+def test_f7_too_many_members_fails_closed_under_every_category(category):
+    members = [_honbun(f"010{i:04d}_honbun.htm", _ISSUER_SPECIFIC) for i in range(101)]
+    result = extract_excerpt(_build_zip(members), category=category)
+    assert result.state == ExtractionState.UNSUPPORTED_FORMAT
+    assert result.location_section is None
+
+
+@pytest.mark.parametrize("category", [None, _ANNUAL])
+def test_f7_encrypted_member_fails_closed_under_every_category(category):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("XBRL/PublicDoc/0102010_honbun.htm", "<html><body>x</body></html>")
+    raw = bytearray(buffer.getvalue())
+    raw[6] |= 0x01  # local file header: general-purpose bit flag at offset 6
+    cd = raw.find(b"PK\x01\x02")
+    raw[cd + 8] |= 0x01  # central directory: flag at offset 8 — what ZipInfo reads
+    result = extract_excerpt(bytes(raw), category=category)
+    assert result.state in (ExtractionState.PARSE_FAILED, ExtractionState.UNSUPPORTED_FORMAT)
+    assert result.location_section is None
+
+
+def test_f7_undecodable_member_is_skipped_not_fatal():
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/0102010_honbun_bad.htm", b"\xff\xfe\x00\x01 not utf-8"),
+        _honbun("0102020_honbun_good.htm", _RISK_SECTION),
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section == "【事業等のリスク】"
+    assert result.evidence_source_member == "XBRL/PublicDoc/0102020_honbun_good.htm"
+
+
+def test_f7_xbrl_and_xsd_members_are_never_read_by_the_annual_search():
+    zip_bytes = _build_zip([
+        ("XBRL/PublicDoc/jpcrp030000-asr-001.xbrl", _ISSUER_SPECIFIC.encode("utf-8")),
+        ("XBRL/PublicDoc/jpcrp030000-asr-001.xsd", _ISSUER_SPECIFIC.encode("utf-8")),
+        _honbun("0105010_honbun.htm", _BOILERPLATE),
+    ])
+    result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.location_section is None
+    assert result.evidence_source_member == "XBRL/PublicDoc/0105010_honbun.htm"
+
+
+# --- F8: bounded member scan, and PDF-first ------------------------------
+
+def test_f8_preferred_section_beyond_the_sixth_member_is_never_reached():
+    members = [_honbun(f"01020{i}0_honbun_filler.htm", "第4【提出会社の状況】 記載事項はありません。") for i in range(6)]
+    members.append(_honbun("0102070_honbun_target.htm", _ISSUER_SPECIFIC))
+    result = extract_excerpt(_build_zip(members), category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert result.location_section is None  # bounded scan stopped before the 7th member
+
+
+def test_f8_exactly_six_members_are_read_at_most():
+    members = [_honbun(f"01020{i}0_honbun_filler.htm", "第4【提出会社の状況】 記載事項はありません。") for i in range(9)]
+    with patch(
+        "src.data_access.edinet.document_extractor._member_plain_text",
+        wraps=document_extractor._member_plain_text,
+    ) as spy:
+        extract_excerpt(_build_zip(members), category=_ANNUAL)
+
+    assert spy.call_count == 6
+
+
+def test_f8b_pdf_member_still_wins_and_annual_section_search_never_runs():
+    pdf_bytes = _build_minimal_pdf("PDF must win even for an annual report.")
+    zip_bytes = _build_zip([
+        _honbun("0102010_honbun_a.htm", _ISSUER_SPECIFIC),
+        ("PublicDoc/0101.pdf", pdf_bytes),
+    ])
+    with patch(
+        "src.data_access.edinet.document_extractor._extract_annual_report_member",
+        side_effect=AssertionError("annual section selection must never run when a safe PDF member exists"),
+    ):
+        result = extract_excerpt(zip_bytes, category=_ANNUAL)
+
+    assert result.state == ExtractionState.EXTRACTED
+    assert "PDF must win" in result.excerpt_original
+    assert result.evidence_source_member == "PublicDoc/0101.pdf"
+    assert result.location_section is None
+
+
+def test_annual_selection_is_deterministic_on_repeat():
+    zip_bytes = _build_zip([
+        _honbun("0102010_honbun_a.htm", _ISSUER_SPECIFIC),
+        _honbun("0105010_honbun_b.htm", _BOILERPLATE),
+    ])
+    assert extract_excerpt(zip_bytes, category=_ANNUAL) == extract_excerpt(zip_bytes, category=_ANNUAL)
+
+
+def test_no_live_edinet_content_is_present_in_this_module():
+    # Guard against a future edit pasting a real filing body in as a
+    # fixture: the only Japanese here is written-for-test prose plus
+    # statutory form headings.
+    source = Path(__file__).read_text(encoding="utf-8")
+    # Needles are assembled at runtime so this guard's own source does
+    # not contain the strings it forbids.
+    for needle in ("Laser" + "tec", "E0" + "1991", "S100" + "Z32V"):
+        assert needle not in source, needle

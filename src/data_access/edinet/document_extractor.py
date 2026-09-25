@@ -71,11 +71,48 @@ unconditional first choice whenever a safe `.pdf` member exists; no
 `.xbrl`, `.xsd`, or `.xml` member is ever read by either selector; no
 nested archive is followed. This remains a pure function over
 already-fetched bytes — no document fetching, translation, candidate
-creation, or persistence of any kind is added here."""
+creation, or persistence of any kind is added here.
+
+Section-aware annual-report selection (category-scoped, later addition) —
+the HTML-in-ZIP fallback above breaks ties among `honbun` members by
+LARGEST declared size, which is correct for a single-body package (the
+live-verified S100Z0ID buyback report has exactly one honbun member) but
+demonstrably wrong for a 有価証券報告書: an annual securities report's
+package carries several honbun members, and the largest is reliably the
+financial-statements section, whose first 600 characters are the
+statutory accounting-policy preamble — identical for every issuer, every
+year, and worthless as research evidence.
+
+So, for `category="annual_securities_report"` ONLY, and ONLY after the
+genuine no-safe-PDF branch has already been taken (PDF remains the
+unconditional first choice), this module now runs a bounded, content-
+based section search BEFORE falling back to largest-member selection: at
+most MAX_ANNUAL_REPORT_MEMBERS_SCANNED safe honbun members, in
+`infolist()` order, each parsed with the same _LenientHtmlTextExtractor
+the fallback already uses, looking for one of
+PREFERRED_ANNUAL_REPORT_SECTIONS' statutory headings in the extracted
+TEXT. Section identity is never inferred from a filename prefix — real
+EDINET member-naming semantics beyond the "honbun" body convention
+remain unconfirmed in this repository, and guessing them would be exactly
+the premature assumption edinet_rules.py's own discipline forbids.
+
+The search takes the BEST-RANKED heading across the members it inspects
+(not merely the first member that matches), early-exiting only on a
+rank-0 hit since no better rank exists. On a hit the excerpt is anchored
+AT the heading, capped at the same MAX_EXCERPT_CHARS, and the matched
+heading is returned as `location_section`. On no hit — or on any member
+that fails to decode or parse — control falls through to the pre-existing
+largest-member fallback UNCHANGED, with `location_section=None`, so this
+addition can only ever improve the selection and never lose an extraction
+that previously succeeded. Every archive-safety bound (member count,
+per-member and total uncompressed size, compression ratio, encryption,
+unsafe paths, nested archives, extension allowlist) applies exactly as
+before; nothing about non-annual extraction behavior changes."""
 from __future__ import annotations
 
 import io
 import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 
@@ -149,6 +186,45 @@ _ZIP_HTML_UNDECODABLE_DETAIL = "ZIP package's selected HTML member is not valid 
 _ZIP_HTML_PARSE_FAILED_DETAIL = "ZIP package's selected HTML member could not be parsed."
 _ZIP_HTML_NO_TEXT_DETAIL = "ZIP package's selected HTML member contained no extractable text."
 
+# Section-aware annual-report selection (see module docstring). Scoped
+# strictly to this one category string, which edinet_pipeline derives
+# from the candidate's own already-recorded matched_rules — this module
+# never routes, classifies, or re-evaluates a document itself.
+ANNUAL_SECURITIES_REPORT_CATEGORY = "annual_securities_report"
+
+# Hard ceiling on how many safe honbun members the annual-report search
+# will READ (not merely scan metadata for). A real 有価証券報告書 package
+# carries roughly one body member per statutory section, so six is
+# generous for reaching the business/operational sections while staying a
+# named, bounded limit rather than an open loop over an adversarial
+# archive. Members beyond this bound are never read.
+MAX_ANNUAL_REPORT_MEMBERS_SCANNED = 6
+
+# Preferred issuer-specific section headings, in descending rank order
+# (index 0 = best). These are the STANDARD statutory section headings of
+# a Japanese annual securities report — the same "standard, documented
+# terms, not independently live-verified in this repository" convention
+# dart/ownership_materiality.MATERIAL_OWNERSHIP_MARKERS already uses, and
+# the distinction is kept explicit here for the same reason: none of
+# these strings was taken from, or verified against, a checked-in copy of
+# a real filing body. A tuple per rank allows real heading variants to
+# share one rank without implying one is a different-quality signal.
+#
+# The ordering is a research-evidence judgment, not a statutory one:
+# production/orders/backlog and management's own analysis of results
+# carry the most issuer-specific operational content; risk, strategy and
+# capex follow; the bare 【事業の状況】 container heading sits last as a
+# fallback, since matching it means we reached the business-situation
+# body member but not a named sub-section within it.
+PREFERRED_ANNUAL_REPORT_SECTIONS: tuple[tuple[str, ...], ...] = (
+    ("【生産、受注及び販売の状況】",),
+    ("【経営者による財政状態、経営成績及びキャッシュ・フローの状況の分析】",),
+    ("【事業等のリスク】",),
+    ("【経営方針、経営環境及び対処すべき課題等】",),
+    ("【設備投資等の概要】", "【設備の状況】"),
+    ("【事業の状況】",),
+)
+
 # Failure reasons meaning the archive itself could not be safely opened or
 # trusted at all (corrupt structure at open time, or an encrypted member
 # found during the metadata scan) map to PARSE_FAILED, matching this
@@ -172,6 +248,15 @@ class ExtractionResult:
     # every other path: bare PDF, plain-text/HTML, any non-EXTRACTED ZIP
     # outcome (unsupported/malformed/no-PDF/invalid-PDF/parse-failed).
     evidence_source_member: str | None = None
+    # Section-aware annual-report selection — the statutory heading the
+    # excerpt was actually anchored on, set ONLY by the bounded
+    # annual-report section search (see _extract_annual_report_member).
+    # None for every other path, including an annual-report package whose
+    # search found no preferred section and fell back to largest-member
+    # selection. Never a fabricated or inferred section: if this is set,
+    # the heading was found verbatim in the selected member's own
+    # extracted text.
+    location_section: str | None = None
 
 
 def _decode_if_plain_text(raw: bytes) -> str | None:
@@ -353,7 +438,148 @@ def _extract_zip_html_text(member_bytes: bytes) -> ExtractionResult:
     return ExtractionResult(state=ExtractionState.EXTRACTED, excerpt_original=excerpt[:MAX_EXCERPT_CHARS])
 
 
-def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
+def _normalize_heading_text(text: str) -> str:
+    """NFKC only — the project's existing CJK normalization convention,
+    already used by material_event_shadow._normalize and
+    src.logic.theme_matching.normalize_text, reused rather than invented
+    here. Applied ONLY as a second-chance matching pass (see
+    _first_preferred_heading's caller): the statutory headings below are
+    kanji inside full-width 【】 brackets, which NFKC leaves untouched, so
+    the raw text virtually always matches first and the excerpt returned
+    is the extractor's own unmodified text."""
+    return unicodedata.normalize("NFKC", text)
+
+
+def _member_plain_text(member_bytes: bytes) -> str | None:
+    """Decode + tag-strip one already-safety-checked HTML member with the
+    same _LenientHtmlTextExtractor every other HTML path in this module
+    uses. Returns None — never raises — for a member that isn't valid
+    UTF-8, can't be parsed, or yields no text, so one unusable member in
+    an annual-report package never fails the whole search."""
+    try:
+        text = member_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    parser = _LenientHtmlTextExtractor()
+    try:
+        parser.feed(text)
+    except Exception:
+        return None
+    return re.sub(r"\s+", " ", " ".join(parser.text_parts)).strip() or None
+
+
+def _first_preferred_heading(text: str) -> tuple[int, str, int] | None:
+    """Best-ranked preferred heading present in `text`, as
+    (rank, heading, character_index), or None. Ranks are iterated
+    outermost so the return is always the BEST rank available in this
+    text, never merely the earliest occurrence; within one rank, the
+    first variant found wins."""
+    for rank, variants in enumerate(PREFERRED_ANNUAL_REPORT_SECTIONS):
+        for heading in variants:
+            index = text.find(heading)
+            if index >= 0:
+                return rank, heading, index
+    return None
+
+
+def _safe_honbun_members(archive: "zipfile.ZipFile") -> tuple[list["zipfile.ZipInfo"] | None, str | None]:
+    """Metadata-only scan (no member content read), identical in every
+    check to _select_safe_html_member's own — deliberately duplicated
+    rather than shared, on the same reasoning that function documents:
+    this narrow addition never has to touch the pre-existing, tested
+    selector's code path, and its safety is independently verifiable.
+
+    Returns `(members, None)` with the safe `honbun`-marked HTML members
+    in `infolist()` order, or `(None, detail)` on any safety rejection.
+    A rejection here is never turned into an extraction result by this
+    module: _extract_from_zip falls through to _select_safe_html_member,
+    which repeats the same checks and fails closed with the same detail,
+    so the annual path can never weaken or bypass a safety bound."""
+    infos = archive.infolist()
+    if len(infos) > MAX_ZIP_MEMBERS:
+        return None, _ZIP_TOO_MANY_MEMBERS_DETAIL
+
+    total_uncompressed = 0
+    for info in infos:
+        if info.flag_bits & 0x1:
+            return None, _ZIP_ENCRYPTED_DETAIL
+        if info.file_size > MAX_ZIP_MEMBER_UNCOMPRESSED_BYTES:
+            return None, _ZIP_MEMBER_SIZE_DETAIL
+        if info.file_size > 0 and (info.file_size / max(info.compress_size, 1)) > MAX_ZIP_COMPRESSION_RATIO:
+            return None, _ZIP_RATIO_DETAIL
+        total_uncompressed += info.file_size
+    if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES:
+        return None, _ZIP_TOTAL_SIZE_DETAIL
+
+    members: list["zipfile.ZipInfo"] = []
+    for info in infos:
+        if not info.filename.lower().endswith(_HTML_EXTENSIONS):
+            continue
+        if not _is_safe_member_name(info.filename):
+            return None, _ZIP_UNSAFE_PATH_DETAIL
+        if _HONBUN_MARKER in info.filename.rsplit("/", 1)[-1].lower():
+            members.append(info)
+    return members, None
+
+
+def _extract_annual_report_member(archive: "zipfile.ZipFile") -> ExtractionResult | None:
+    """Bounded, content-based preferred-section search across at most
+    MAX_ANNUAL_REPORT_MEMBERS_SCANNED safe honbun members, in
+    `infolist()` order. Returns an EXTRACTED result anchored at the
+    best-ranked heading found, or None meaning "no preferred section —
+    caller should use the pre-existing fallback unchanged". Never raises,
+    and never returns a non-EXTRACTED result: every failure mode here is
+    a fall-through, so the legacy path decides the final outcome and this
+    addition can only improve a selection, never break one."""
+    members, _failure_detail = _safe_honbun_members(archive)
+    if members is None:
+        return None
+
+    best_rank: int | None = None
+    best_heading: str | None = None
+    best_info: "zipfile.ZipInfo | None" = None
+    best_text: str | None = None
+    best_index = 0
+
+    for info in members[:MAX_ANNUAL_REPORT_MEMBERS_SCANNED]:
+        try:
+            member_bytes = archive.read(info)
+        except (zipfile.BadZipFile, RuntimeError, KeyError):
+            continue
+        if member_bytes.startswith(_ZIP_MAGIC):
+            continue  # nested archive — never processed, same as the fallback path
+        text = _member_plain_text(member_bytes)
+        if text is None:
+            continue
+        hit = _first_preferred_heading(text)
+        if hit is None:
+            normalized = _normalize_heading_text(text)
+            hit = _first_preferred_heading(normalized)
+            if hit is not None:
+                text = normalized  # anchor in the exact string the heading matched in
+        if hit is None:
+            continue
+        rank, heading, index = hit
+        if best_rank is None or rank < best_rank:
+            best_rank, best_heading, best_info, best_text, best_index = rank, heading, info, text, index
+            if rank == 0:
+                break  # no better rank exists; stop reading further members
+
+    if best_info is None or best_text is None:
+        return None
+
+    excerpt = best_text[best_index:best_index + MAX_EXCERPT_CHARS].strip()
+    if not excerpt:
+        return None
+    return ExtractionResult(
+        state=ExtractionState.EXTRACTED,
+        excerpt_original=excerpt,
+        evidence_source_member=best_info.filename,
+        location_section=best_heading,
+    )
+
+
+def _extract_from_zip(document_bytes: bytes, category: str | None = None) -> ExtractionResult:
     """Bounded ZIP-package extraction (Phase 2, Step 1; provenance added
     Step 2; HTML fallback added as a narrow, later extension). Opens the
     archive in memory only (`io.BytesIO` — never written to disk),
@@ -386,6 +612,18 @@ def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
         selected, failure_detail = _select_safe_pdf_member(archive)
         member_kind = "pdf"
         if selected is None and failure_detail == _ZIP_NO_PDF_DETAIL:
+            # Section-aware annual-report selection runs here and ONLY
+            # here — strictly after the genuine "no safe .pdf member"
+            # result, so PDF remains the unconditional first choice and
+            # every other PDF-selection outcome (safety-limit breach,
+            # unsafe path) still fails the whole extraction closed below
+            # without this path ever being consulted. A None return means
+            # "no preferred section found"; control then falls through to
+            # the pre-existing largest-member fallback, unchanged.
+            if category == ANNUAL_SECURITIES_REPORT_CATEGORY:
+                annual_result = _extract_annual_report_member(archive)
+                if annual_result is not None:
+                    return annual_result
             selected, failure_detail = _select_safe_html_member(archive)
             member_kind = "html"
         if selected is None:
@@ -417,10 +655,18 @@ def _extract_from_zip(document_bytes: bytes) -> ExtractionResult:
     )
 
 
-def extract_excerpt(document_bytes: bytes) -> ExtractionResult:
+def extract_excerpt(document_bytes: bytes, category: str | None = None) -> ExtractionResult:
     """Pure function over already-fetched bytes — network I/O and the
     per-docID cache/dedup live in document_service.py, one layer up
-    (same separation DART/EDGAR's own document_service.py modules use)."""
+    (same separation DART/EDGAR's own document_service.py modules use).
+
+    `category` is the routing category edinet_pipeline already derived
+    from the candidate's own matched_rules — additive, defaulting to
+    None, and consulted ONLY to enable the bounded annual-report section
+    search inside _extract_from_zip (see module docstring). Every other
+    value, None included, reproduces this module's prior behavior
+    exactly, on every path: bare PDF, plain text/HTML, and non-annual ZIP
+    packages are untouched by its presence."""
     if len(document_bytes) > MAX_DOCUMENT_SIZE_BYTES:
         return ExtractionResult(
             state=ExtractionState.UNSUPPORTED_FORMAT,
@@ -428,7 +674,7 @@ def extract_excerpt(document_bytes: bytes) -> ExtractionResult:
         )
 
     if document_bytes.startswith(_ZIP_MAGIC):
-        return _extract_from_zip(document_bytes)
+        return _extract_from_zip(document_bytes, category)
 
     if document_bytes.startswith(_PDF_MAGIC):
         return _extract_pdf_text(document_bytes)

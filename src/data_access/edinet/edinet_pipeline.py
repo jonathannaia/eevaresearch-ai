@@ -18,7 +18,26 @@ with the deliberate differences the approved plan calls for:
 2. No ownership/large-shareholding materiality gate — explicitly
    forbidden for this pilot (unlike DART's ownership_materiality.py,
    which is specific to the two Korean DART document shapes it was
-   calibrated against).
+   calibrated against). That remains true and unchanged: no EDINET
+   candidate is ever assessed for ownership or large-shareholding
+   materiality, and no such threshold is encoded anywhere in this
+   package.
+
+   Point 2 must not be read as "EDINET has no gate at all", which was
+   true when this docstring was first written and is no longer. A
+   DIFFERENT, narrower gate now exists for exactly one category:
+   annual_report_materiality.assess_annual_report_materiality, applied
+   only to `annual_securities_report` candidates, only after retrieval,
+   and only to the Japanese excerpt the extractor actually selected. It
+   judges whether the selected EVIDENCE is issuer-specific enough to be
+   worth a reviewer's time — it makes no economic-materiality claim and
+   shares no thresholds, markers, or logic with DART's ownership gate.
+   Without it, document type alone was sufficient to manufacture a
+   `Needs review` signal out of the statutory accounting-policy preamble
+   that opens every 有価証券報告書's financial-statements section. Every
+   other EDINET category keeps its prior behavior exactly: a successful
+   extraction reaches NEEDS_REVIEW with materiality_assessment left at
+   its "Not assessed" default.
 
 Uses its own separate persisted candidate store (edinet_candidates.json,
 via candidate_store.py's existing additive `filename` parameter) so DART,
@@ -36,12 +55,27 @@ from src.data_access.dart import candidate_store
 from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.daily_news.edinet_filing_candidate_adapter import map_edinet_filing_to_candidate
 from src.data_access.daily_news.filing_event_models import FilingDerivedNewsCandidate
+from src.data_access.dart.document_extractor import assess_excerpt_quality
 from src.data_access.edinet import document_service, edinet_rules, material_event_shadow, scan_service
+from src.data_access.edinet.annual_report_materiality import (
+    OUTCOME_NOT_MATERIAL,
+    assess_annual_report_materiality,
+)
 from src.data_access.edinet.client import EdinetClient
+from src.data_access.edinet.document_extractor import ANNUAL_SECURITIES_REPORT_CATEGORY
 from src.data_access.translation import translation_service
 from src.data_access.translation.interfaces import TranslationProvider
 from src.data_access.translation.translation_service import translate_cached_with_outcome
-from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, StateTransition, TranslationState, record_excerpt
+from src.models.models import (
+    CandidateSignal,
+    CandidateStatus,
+    EvidenceLocation,
+    ExtractionState,
+    LocationKind,
+    StateTransition,
+    TranslationState,
+    record_excerpt,
+)
 
 _PROCESSABLE_CONFIDENCE_LEVELS = frozenset({"Moderate", "High"})
 
@@ -194,6 +228,20 @@ def _build_edinet_filing_candidate_shadow_report(
     return tuple(candidates), tuple(diagnostics)
 
 
+def _category_from_matched_rules(matched_rules: list[str] | tuple[str, ...]) -> str | None:
+    """The routing category scan_service already encoded before the first
+    ':' of each matched rule (e.g. "annual_securities_report:010:030000:
+    120"). Reads that existing representation only — this never
+    re-evaluates a document, never consults DEFAULT_CODE_CATEGORY_MAP,
+    and never changes eligibility or confidence. Deliberately kept
+    private here rather than added to edinet_rules.py: the
+    category-before-colon convention is already shared and parsed by
+    models.build_flag_reason and edinet_rules._confidence_for, so no new
+    public helper is warranted."""
+    rules = tuple(matched_rules)
+    return rules[0].split(":", 1)[0] if rules else None
+
+
 def _transition(candidate: CandidateSignal, status: CandidateStatus, detail: str = "") -> CandidateSignal:
     candidate.status = status
     candidate.state_history.append(StateTransition(status=status, at=datetime.now(timezone.utc).isoformat(), detail=detail))
@@ -241,8 +289,11 @@ def process_candidate(
     candidate = _transition(candidate, CandidateStatus.RETRIEVAL_IN_PROGRESS)
 
     doc_id = candidate.filing.rcept_no
+    # Read from the candidate's own already-recorded matched_rules — no
+    # re-routing, no map lookup, no eligibility or confidence change.
+    category = _category_from_matched_rules(candidate.matched_rules)
 
-    doc_result = document_service.get_or_fetch_excerpt(client, doc_id, cache_dir)
+    doc_result = document_service.get_or_fetch_excerpt(client, doc_id, cache_dir, category=category)
     candidate.extraction_state = doc_result.state
     if doc_result.from_cache:
         counters["cache_hits"] += 1
@@ -263,6 +314,24 @@ def process_candidate(
         record_excerpt(
             candidate, doc_result.excerpt_original, doc_result.retrieved_at,
             evidence_source_member=doc_result.evidence_source_member,
+        )
+        # Descriptive shape metadata only — length, digit density, cover-
+        # page markers. Reuses DART's assessor rather than forking a
+        # parallel one; its own marker list is Korean and simply never
+        # matches Japanese text, which is correct and intended here:
+        # ExcerptQuality is documented as "never a materiality signal"
+        # (models.ExcerptQuality), and Japanese boilerplate detection
+        # belongs to annual_report_materiality.py, not to this field.
+        candidate.excerpt_quality = assess_excerpt_quality(doc_result.excerpt_original)
+        # Source-aware location contract: the statutory heading the
+        # excerpt was actually anchored on, already computed while
+        # building the excerpt — never a new parse, and never a
+        # fabricated section. UNAVAILABLE is the honest value for every
+        # non-annual category and for an annual report whose bounded
+        # section search found nothing.
+        candidate.evidence_location = (
+            EvidenceLocation(kind=LocationKind.SECTION, section=doc_result.location_section)
+            if doc_result.location_section else EvidenceLocation(kind=LocationKind.UNAVAILABLE)
         )
         if translation_provider is not None and candidate.excerpt_original:
             # Stage A (design/DECISIONS.md) — mirrors DART's own title-
@@ -304,13 +373,36 @@ def process_candidate(
         error_counts["parse_failed"] = error_counts.get("parse_failed", 0) + 1
         candidate = _transition(candidate, CandidateStatus.PARSE_FAILED, doc_result.detail)
 
+    transition_detail = ""
     if candidate.extraction_state == ExtractionState.EXTRACTED:
-        final_status = CandidateStatus.NEEDS_REVIEW
+        if category == ANNUAL_SECURITIES_REPORT_CATEGORY:
+            # First-pass annual-report evidence gate (see module
+            # docstring point 2). Judges the Japanese excerpt only; the
+            # translation performed above, successful or not, is never
+            # consulted and cannot change this outcome. An extracted
+            # annual-report candidate always ends with a non-empty
+            # materiality_assessment, so a suppression is never silent.
+            gate_result = assess_annual_report_materiality(
+                candidate.excerpt_original, doc_result.location_section,
+            )
+            candidate.materiality_assessment = gate_result.detail
+            transition_detail = gate_result.detail
+            final_status = (
+                CandidateStatus.NOT_MATERIAL if gate_result.outcome == OUTCOME_NOT_MATERIAL
+                else CandidateStatus.NEEDS_REVIEW
+            )
+            # flag_reason is deliberately NOT refreshed here (DART's own
+            # gates do refresh theirs): EDINET's scan-time source_detail
+            # carries the ordinanceCode/formCode/docTypeCode triplet,
+            # which is the official document-classification provenance
+            # and must survive post-fetch assessment intact.
+        else:
+            final_status = CandidateStatus.NEEDS_REVIEW
     elif candidate.extraction_state == ExtractionState.RETRIEVAL_FAILED:
         final_status = CandidateStatus.RETRIEVAL_FAILED
     else:
         final_status = CandidateStatus.PARSE_FAILED
-    candidate = _transition(candidate, final_status)
+    candidate = _transition(candidate, final_status, transition_detail)
 
     return candidate
 
