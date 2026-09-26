@@ -53,13 +53,33 @@ class UpdateOutcome:
     current: NewsStory | None
 
 
+_SOURCE_COLUMNS = (
+    "publisher, source_class, url, title, published_at, retrieved_at, original_language, "
+    "excerpt_original, image_url, image_alt, first_discovered_at"
+)
+_TRANSITION_COLUMNS = "status, at, detail"
+
+
 def _row_to_story(conn: sqlite3.Connection, row: sqlite3.Row) -> NewsStory:
+    """One story, two extra queries — unchanged, and still what
+    get_story() uses. load_stories() below does NOT call this: it reads
+    the same three tables in three queries instead of 1+3N (see its own
+    docstring) and assembles via _build_story()."""
     source_rows = conn.execute(
-        "SELECT publisher, source_class, url, title, published_at, retrieved_at, original_language, "
-        "excerpt_original, image_url, image_alt, first_discovered_at FROM daily_news_sources "
-        "WHERE story_id = ? ORDER BY id ASC",
+        f"SELECT {_SOURCE_COLUMNS} FROM daily_news_sources WHERE story_id = ? ORDER BY id ASC",
         (row["id"],),
     ).fetchall()
+    history_rows = conn.execute(
+        f"SELECT {_TRANSITION_COLUMNS} FROM daily_news_state_transitions WHERE story_id = ? ORDER BY id ASC",
+        (row["id"],),
+    ).fetchall()
+    return _build_story(row, source_rows, history_rows)
+
+
+def _build_story(row, source_rows, history_rows) -> NewsStory:
+    """Pure assembly from rows already fetched — byte-for-byte the
+    construction _row_to_story always performed, with the two per-story
+    queries lifted out so a batched caller can supply the same rows."""
     sources = tuple(
         NewsSourceReference(
             publisher=s["publisher"], source_class=SourceClass(s["source_class"]), url=s["url"],
@@ -70,10 +90,6 @@ def _row_to_story(conn: sqlite3.Connection, row: sqlite3.Row) -> NewsStory:
         )
         for s in source_rows
     )
-    history_rows = conn.execute(
-        "SELECT status, at, detail FROM daily_news_state_transitions WHERE story_id = ? ORDER BY id ASC",
-        (row["id"],),
-    ).fetchall()
     state_history = [
         NewsStateTransition(status=NewsStoryStatus(h["status"]), at=h["at"], detail=h["detail"])
         for h in history_rows
@@ -106,8 +122,34 @@ def get_story_version(conn: sqlite3.Connection, story_id: str) -> int | None:
 
 
 def load_stories(conn: sqlite3.Connection) -> dict[str, NewsStory]:
-    rows = conn.execute("SELECT id FROM daily_news_stories").fetchall()
-    return {row["id"]: get_story(conn, row["id"]) for row in rows}
+    """Every persisted story, in four queries regardless of how many
+    stories there are — the SQLite mirror of postgres_state_db/
+    daily_news_repository.load_stories(); see that function's docstring
+    for why the 1+3N pattern it replaces was so costly against a
+    networked database, and for the three properties (key order, source
+    order, missing-row handling) deliberately preserved here too."""
+    id_rows = conn.execute("SELECT id FROM daily_news_stories").fetchall()
+    if not id_rows:
+        return {}
+    rows_by_id = {row["id"]: row for row in conn.execute("SELECT * FROM daily_news_stories").fetchall()}
+    sources_by_story: dict[str, list] = {}
+    for source_row in conn.execute(
+        f"SELECT story_id, {_SOURCE_COLUMNS} FROM daily_news_sources ORDER BY id ASC"
+    ).fetchall():
+        sources_by_story.setdefault(source_row["story_id"], []).append(source_row)
+    history_by_story: dict[str, list] = {}
+    for history_row in conn.execute(
+        f"SELECT story_id, {_TRANSITION_COLUMNS} FROM daily_news_state_transitions ORDER BY id ASC"
+    ).fetchall():
+        history_by_story.setdefault(history_row["story_id"], []).append(history_row)
+    stories: dict[str, NewsStory] = {}
+    for id_row in id_rows:
+        story_id = id_row["id"]
+        row = rows_by_id.get(story_id)
+        stories[story_id] = None if row is None else _build_story(
+            row, sources_by_story.get(story_id, ()), history_by_story.get(story_id, ()),
+        )
+    return stories
 
 
 def _insert_source(conn: sqlite3.Connection, story_id: str, source: NewsSourceReference) -> None:
