@@ -391,40 +391,64 @@ def _news_row_sources(
             stories = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
         except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
             return sources
-    for story in stories.values():
-        if story.status != NewsStoryStatus.PUBLISHED:
-            continue
-        if not story.sources:
-            continue
-        # Signals quality pass: a Background issuer story never reaches
-        # this default preview — the same rule _load_editorial_rows()
-        # below already applies to the editorial lane. A legacy story
-        # (no stored tier) is tiered at read time, never written back.
-        if daily_news_pipeline.effective_issuer_tier(story) == NewsMaterialityTier.BACKGROUND:
-            continue
-        source_ref = story.sources[0]
-        sort_key = _parse_iso(source_ref.published_at)
-        if sort_key is None or _is_materially_future(sort_key, now):
-            continue
-        # Dashboard/Signals quality fix (design/
-        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): wires Daily News
-        # issuer rows into this component's existing, already-tested
-        # on-demand translate control (previously deliberately None for
-        # every Daily News row — see this module's own docstring) — the
-        # same shared, non-filing translation component filing rows
-        # above already use, now safely reused here too.
-        document_id = f"recently-updated-signals:{story.id}"
-        sources.append(_RowSource(
-            kind="news",
-            payload=story,
-            sort_key=sort_key,
-            identity_key=document_id,
-            company_name=story.company_name,
-            title=story.headline,
-            source_label="Signals",
-            original_language=source_ref.original_language,
-            translation_document_id=document_id,
-        ))
+    # Instrumentation only (see render_timing.count): production measures
+    # this loop at ~2.0s, and a local reproduction shows the cost is
+    # entirely read-time tiering of stories whose materiality_tier was
+    # never stored — ~1.84ms each against ~1.8us for a story that
+    # short-circuits. What the timing cannot say is HOW MANY such
+    # stories production holds. These two aggregate integers answer
+    # that, and nothing else: they are read and accumulated locally,
+    # affect no branch below, and are flushed once per render.
+    news_stories_total = 0
+    news_stories_untiered = 0
+    try:
+        for story in stories.values():
+            news_stories_total += 1
+            # Deliberately the STORED field, read before
+            # effective_issuer_tier() runs: the fallback classifier
+            # returns a real tier for an untiered story, so inferring
+            # this from its result would count nothing.
+            if story.materiality_tier is None:
+                news_stories_untiered += 1
+            if story.status != NewsStoryStatus.PUBLISHED:
+                continue
+            if not story.sources:
+                continue
+            # Signals quality pass: a Background issuer story never reaches
+            # this default preview — the same rule _load_editorial_rows()
+            # below already applies to the editorial lane. A legacy story
+            # (no stored tier) is tiered at read time, never written back.
+            if daily_news_pipeline.effective_issuer_tier(story) == NewsMaterialityTier.BACKGROUND:
+                continue
+            source_ref = story.sources[0]
+            sort_key = _parse_iso(source_ref.published_at)
+            if sort_key is None or _is_materially_future(sort_key, now):
+                continue
+            # Dashboard/Signals quality fix (design/
+            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): wires Daily News
+            # issuer rows into this component's existing, already-tested
+            # on-demand translate control (previously deliberately None for
+            # every Daily News row — see this module's own docstring) — the
+            # same shared, non-filing translation component filing rows
+            # above already use, now safely reused here too.
+            document_id = f"recently-updated-signals:{story.id}"
+            sources.append(_RowSource(
+                kind="news",
+                payload=story,
+                sort_key=sort_key,
+                identity_key=document_id,
+                company_name=story.company_name,
+                title=story.headline,
+                source_label="Signals",
+                original_language=source_ref.original_language,
+                translation_document_id=document_id,
+            ))
+    finally:
+        # In a finally so a story that raises mid-loop still reports the
+        # population seen before it, matching how step() reports the
+        # time a failing section spent.
+        render_timing.count("recently_updated.news_stories_total", news_stories_total)
+        render_timing.count("recently_updated.news_stories_untiered", news_stories_untiered)
     return sources
 
 
