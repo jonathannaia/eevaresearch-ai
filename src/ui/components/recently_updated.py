@@ -179,6 +179,44 @@ class _Row:
     edinet_instruction: str | None = None
 
 
+@dataclass(frozen=True)
+class _RowSource:
+    """A row before its display-only fields exist (Phase 2E).
+
+    Only the newest PREVIEW_COUNT rows are ever shown, but filtering,
+    identity/deduplication, ordering and same-headline merging all have
+    to run over every eligible candidate and story to decide which those
+    are. Formatting a display date, rewriting a source URL and composing
+    an EDINET instruction for all of them — and then discarding all but
+    five — was the bulk of this component's cost: local profiling put
+    fmt_datetime_local alone at 45% of selection, called ~3,060 times
+    per render to produce 5 visible dates.
+
+    This type carries exactly what the pipeline reads, plus the original
+    object to materialize from. It deliberately does NOT carry
+    display_date, source_url or edinet_instruction: none of them
+    participates in filtering, identity, ordering or merging, so
+    deferring them cannot change which rows appear or in what order.
+
+    identity_key is resolved here rather than lazily because the sort
+    reads it for every row. It matches _row_identity_key() on the
+    materialized _Row by construction — filing and Daily News rows
+    always carry a translation_document_id, editorial rows fall back to
+    their own source_url, and only the last-resort fallback (no id and
+    no URL) needs a display date, which is computed in that branch
+    alone. tests assert the two agree."""
+
+    kind: str  # "filing" | "news" | "editorial"
+    payload: object  # CandidateSignal | NewsStory | EditorialStory
+    sort_key: datetime
+    identity_key: str
+    company_name: str
+    title: str
+    source_label: str
+    original_language: str | None = None
+    translation_document_id: str | None = None
+
+
 def _esc(value: object) -> str:
     if value is None:
         return ""
@@ -257,7 +295,18 @@ def _load_filing_rows(
     called. Omitted, every load happens exactly as before. The
     eligibility rules, ordering and rendered rows below are identical
     either way."""
-    rows: list[_Row] = []
+    return [_materialize_row(source) for source in _filing_row_sources(settings, now, preloaded_by_source)]
+
+
+def _filing_row_sources(
+    settings: Settings, now: datetime, preloaded_by_source: dict | None = None,
+) -> list[_RowSource]:
+    """_load_filing_rows' loading and eligibility rules, unchanged, but
+    stopping short of the display-only fields (Phase 2E — see
+    _RowSource). Every gate, every skip and the emitted order are
+    identical; _load_filing_rows above is now this plus materialization,
+    so the two paths cannot diverge."""
+    sources: list[_RowSource] = []
     for source in REGION_SOURCE.values():
         if preloaded_by_source is not None:
             source_candidates = preloaded_by_source.get(source)
@@ -279,26 +328,19 @@ def _load_filing_rows(
             sort_key = _filing_sort_key(filing)
             if sort_key is None or _is_materially_future(sort_key, now):
                 continue
-            rows.append(_Row(
+            document_id = f"recently-updated:{filing.source_name}:{filing.corp_code}:{filing.rcept_no}"
+            sources.append(_RowSource(
+                kind="filing",
+                payload=candidate,
                 sort_key=sort_key,
+                identity_key=document_id,
                 company_name=filing.corp_name,
                 title=filing.report_nm,
                 source_label=_FILING_SOURCE_LABEL.get(filing.source_name, filing.source_name),
-                display_date=_filing_display_date(filing),
-                # EDINET-safety fix (design/DECISIONS.md): filing.source_url
-                # is always the raw, key-required EDINET API endpoint for an
-                # EDINET filing — public_source_url() rewrites it to the
-                # public disclosure portal root; every other source's URL
-                # passes through unchanged.
-                source_url=public_source_url(filing.source_url) or None,
                 original_language=filing.original_language,
-                translation_document_id=f"recently-updated:{filing.source_name}:{filing.corp_code}:{filing.rcept_no}",
-                edinet_instruction=(
-                    filing_display.edinet_source_instruction(filing, candidate, _filing_display_date(filing))
-                    if filing.source_name == filing_display.EDINET_SOURCE_NAME else None
-                ),
+                translation_document_id=document_id,
             ))
-    return rows
+    return sources
 
 
 def _load_daily_news_rows(
@@ -312,7 +354,18 @@ def _load_daily_news_rows(
     already applies to the Daily News page itself. A story whose own
     published_at is unparseable or materially future is excluded, never
     clamped — same reasoning as _load_filing_rows above."""
-    rows: list[_Row] = []
+    return [
+        _materialize_row(source)
+        for source in _news_row_sources(settings, now, preloaded_stories)
+    ]
+
+
+def _news_row_sources(
+    settings: Settings, now: datetime, preloaded_stories: dict | None = None,
+) -> list[_RowSource]:
+    """_load_daily_news_rows' loading and eligibility rules, unchanged,
+    stopping short of the display-only fields (Phase 2E)."""
+    sources: list[_RowSource] = []
     if preloaded_stories is not None:
         # Phase 2D: the caller supplies stories that are ALREADY
         # canonical — reconciliation happened once, upstream. Running
@@ -336,7 +389,7 @@ def _load_daily_news_rows(
             # a live translation request during render.
             stories = daily_news_pipeline.select_canonical_stories(stories, settings.cache_dir)
         except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
-            return rows
+            return sources
     for story in stories.values():
         if story.status != NewsStoryStatus.PUBLISHED:
             continue
@@ -352,25 +405,26 @@ def _load_daily_news_rows(
         sort_key = _parse_iso(source_ref.published_at)
         if sort_key is None or _is_materially_future(sort_key, now):
             continue
-        rows.append(_Row(
+        # Dashboard/Signals quality fix (design/
+        # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): wires Daily News
+        # issuer rows into this component's existing, already-tested
+        # on-demand translate control (previously deliberately None for
+        # every Daily News row — see this module's own docstring) — the
+        # same shared, non-filing translation component filing rows
+        # above already use, now safely reused here too.
+        document_id = f"recently-updated-signals:{story.id}"
+        sources.append(_RowSource(
+            kind="news",
+            payload=story,
             sort_key=sort_key,
+            identity_key=document_id,
             company_name=story.company_name,
             title=story.headline,
             source_label="Signals",
-            display_date=fmt_datetime_local(source_ref.published_at),
-            source_url=source_ref.url or None,
-            # Dashboard/Signals quality fix (design/
-            # DASHBOARD_SIGNAL_QUALITY_FIX_DESIGN.md): wires Daily News
-            # issuer rows into this component's existing, already-
-            # tested on-demand translate control (previously
-            # deliberately None for every Daily News row — see this
-            # module's own docstring) — the same shared, non-filing
-            # translation component filing rows above already use, now
-            # safely reused here too.
             original_language=source_ref.original_language,
-            translation_document_id=f"recently-updated-signals:{story.id}",
+            translation_document_id=document_id,
         ))
-    return rows
+    return sources
 
 
 def _effective_editorial_tier(story: EditorialStory) -> NewsMaterialityTier:
@@ -409,7 +463,18 @@ def _load_editorial_rows(
     Signal and Watchlist stories are unaffected. The Signals page's own
     "Show Background (N)" expander (src/ui/pages/daily_news.py) is a
     completely separate code path and is untouched by this filter."""
-    rows: list[_Row] = []
+    return [
+        _materialize_row(source)
+        for source in _editorial_row_sources(settings, now, preloaded_editorial)
+    ]
+
+
+def _editorial_row_sources(
+    settings: Settings, now: datetime, preloaded_editorial: tuple | None = None,
+) -> list[_RowSource]:
+    """_load_editorial_rows' loading and eligibility rules, unchanged,
+    stopping short of the display-only fields (Phase 2E)."""
+    sources: list[_RowSource] = []
     if preloaded_editorial is not None:
         # Phase 2D: already the visible display list — freshness and
         # per-source/total caps applied once upstream, never re-applied.
@@ -418,22 +483,91 @@ def _load_editorial_rows(
         try:
             stories = get_visible_editorial_stories(settings)
         except Exception:  # noqa: BLE001 — fail closed; Daily News unavailability must never take down the feed
-            return rows
+            return sources
     for story in stories:
         if _effective_editorial_tier(story) == NewsMaterialityTier.BACKGROUND:
             continue
         sort_key = _parse_iso(story.published_at)
         if sort_key is None or _is_materially_future(sort_key, now):
             continue
-        rows.append(_Row(
+        company_name = ", ".join(story.matched_companies)
+        # An editorial row carries no translation_document_id, so its
+        # identity comes from its own source_url — and only when even
+        # that is absent is a display date formatted here, matching
+        # _row_identity_key's last-resort fallback exactly.
+        identity_key = story.source_url or (
+            f"{company_name}|{story.headline}|{fmt_datetime_local(story.published_at)}"
+        )
+        sources.append(_RowSource(
+            kind="editorial",
+            payload=story,
             sort_key=sort_key,
-            company_name=", ".join(story.matched_companies),
+            identity_key=identity_key,
+            company_name=company_name,
             title=story.headline,
             source_label="Signals",
-            display_date=fmt_datetime_local(story.published_at),
-            source_url=story.source_url or None,
         ))
-    return rows
+    return sources
+
+
+def _materialize_row(source: _RowSource) -> _Row:
+    """The display-only half of building a row (Phase 2E) — the exact
+    fields the eager builders used to compute inline, for one row that
+    is actually going to be rendered.
+
+    `source.company_name` is read rather than re-derived from the
+    payload: _merge_same_headline_signal_rows may have replaced it with
+    the merged multi-issuer label, and that label must survive
+    materialization."""
+    if source.kind == "filing":
+        candidate = source.payload
+        filing = candidate.filing
+        # Computed once and reused below. The eager path called
+        # _filing_display_date() a second time to build the EDINET
+        # instruction's filed-date clause, formatting the same date
+        # twice for every EDINET candidate.
+        display_date = _filing_display_date(filing)
+        return _Row(
+            sort_key=source.sort_key,
+            company_name=source.company_name,
+            title=source.title,
+            source_label=source.source_label,
+            display_date=display_date,
+            # EDINET-safety fix (design/DECISIONS.md): filing.source_url
+            # is always the raw, key-required EDINET API endpoint for an
+            # EDINET filing — public_source_url() rewrites it to the
+            # public disclosure portal root; every other source's URL
+            # passes through unchanged.
+            source_url=public_source_url(filing.source_url) or None,
+            original_language=source.original_language,
+            translation_document_id=source.translation_document_id,
+            edinet_instruction=(
+                filing_display.edinet_source_instruction(filing, candidate, display_date)
+                if filing.source_name == filing_display.EDINET_SOURCE_NAME else None
+            ),
+        )
+    if source.kind == "news":
+        story = source.payload
+        source_ref = story.sources[0]
+        return _Row(
+            sort_key=source.sort_key,
+            company_name=source.company_name,
+            title=source.title,
+            source_label=source.source_label,
+            display_date=fmt_datetime_local(source_ref.published_at),
+            source_url=source_ref.url or None,
+            original_language=source.original_language,
+            translation_document_id=source.translation_document_id,
+        )
+    story = source.payload
+    return _Row(
+        sort_key=source.sort_key,
+        company_name=source.company_name,
+        title=source.title,
+        source_label=source.source_label,
+        display_date=fmt_datetime_local(story.published_at),
+        source_url=story.source_url or None,
+    )
 
 
 def _row_identity_key(row: _Row) -> str:
@@ -605,11 +739,35 @@ def _select_recently_updated_rows(
     separate from render_recently_updated() so the actual selection
     outcome (what wins "Latest", and why) is directly testable without
     driving a full page render."""
+    return [
+        _materialize_row(source)
+        for source in _select_row_sources(
+            settings, now, preloaded_by_source,
+            preloaded_daily_news_stories, preloaded_editorial_stories,
+        )
+    ]
+
+
+def _select_row_sources(
+    settings: Settings, now: datetime | None = None, preloaded_by_source: dict | None = None,
+    preloaded_daily_news_stories: dict | None = None,
+    preloaded_editorial_stories: tuple | None = None,
+) -> list[_RowSource]:
+    """The same selection _select_recently_updated_rows has always
+    performed — same gates, same dedup, same sort, same tie-break, same
+    same-headline merge — over lightweight _RowSource values instead of
+    fully-formatted _Row ones (Phase 2E).
+
+    Nothing deferred participates in any decision here, so the sequence
+    this returns is identical to the sequence of rows the eager path
+    returned; _select_recently_updated_rows above is now literally this
+    plus materialization. render_recently_updated() calls this directly
+    and materializes only the PREVIEW_COUNT rows it shows."""
     now = now or datetime.now(timezone.utc)
-    rows = (
-        _load_filing_rows(settings, now, preloaded_by_source)
-        + _load_daily_news_rows(settings, now, preloaded_daily_news_stories)
-        + _load_editorial_rows(settings, now, preloaded_editorial_stories)
+    sources = (
+        _filing_row_sources(settings, now, preloaded_by_source)
+        + _news_row_sources(settings, now, preloaded_daily_news_stories)
+        + _editorial_row_sources(settings, now, preloaded_editorial_stories)
     )
 
     # Duplicate-row safety net (beta-blocker fix, design/DECISIONS.md):
@@ -619,23 +777,22 @@ def _select_recently_updated_rows(
     # only ever guards against the same record loading twice within one
     # render, never against two genuinely different real items.
     seen_keys: set[str] = set()
-    deduped: list[_Row] = []
-    for row in rows:
-        key = _row_identity_key(row)
-        if key in seen_keys:
+    deduped: list[_RowSource] = []
+    for source in sources:
+        if source.identity_key in seen_keys:
             continue
-        seen_keys.add(key)
-        deduped.append(row)
+        seen_keys.add(source.identity_key)
+        deduped.append(source)
 
     # Deterministic sort: newest sort_key first; a content-derived
     # identity key (never list-build/source order) breaks an exact-
     # timestamp tie, so the shown order never depends on which source
     # happened to be loaded first.
-    deduped.sort(key=lambda r: (r.sort_key.timestamp(), _row_identity_key(r)), reverse=True)
+    deduped.sort(key=lambda r: (r.sort_key.timestamp(), r.identity_key), reverse=True)
     return _merge_same_headline_signal_rows(deduped)
 
 
-def _merge_same_headline_signal_rows(rows: list[_Row]) -> list[_Row]:
+def _merge_same_headline_signal_rows(rows: list) -> list:
     """Signals quality pass: one joint announcement published by several
     tracked issuers ("AMD, Cisco and HUMAIN Expand...") arrives as one
     story per issuer, each with its own URL — the identity-key dedup
@@ -676,11 +833,21 @@ def render_recently_updated(
     sources, and both still load exactly as before."""
     st.markdown('<div class="er-section-label">Recently Updated</div>', unsafe_allow_html=True)
 
-    shown = _select_recently_updated_rows(
-        settings, preloaded_by_source=preloaded_by_source,
-        preloaded_daily_news_stories=preloaded_daily_news_stories,
-        preloaded_editorial_stories=preloaded_editorial_stories,
-    )[:PREVIEW_COUNT]
+    # Phase 2E: select over lightweight _RowSource values, slice to the
+    # rows that will actually render, and only then pay for their
+    # display-only fields. The selection is the same one
+    # _select_recently_updated_rows performs (it is _select_row_sources
+    # plus materialization), so `shown` is identical to the first
+    # PREVIEW_COUNT rows that call would have returned — it is simply
+    # not formatting the ones nobody sees.
+    shown = [
+        _materialize_row(source)
+        for source in _select_row_sources(
+            settings, preloaded_by_source=preloaded_by_source,
+            preloaded_daily_news_stories=preloaded_daily_news_stories,
+            preloaded_editorial_stories=preloaded_editorial_stories,
+        )[:PREVIEW_COUNT]
+    ]
 
     with st.container(border=True, key="card-recently-updated-feed"):
         if not shown:
