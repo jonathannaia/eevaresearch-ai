@@ -30,6 +30,22 @@ decomposing the ui_build_ms residual into named sections with an
 `unaccounted_ms` remainder. Pages that declare no stages are unaffected
 and emit nothing extra.
 
+Phase 2F adds an optional third record, `<route>_step_timing`, for
+measuring INSIDE a phase or a stage. stage() cannot do this: a nested
+stage is deliberately attributed to its enclosing one, and a data_load
+block has no named parts at all, so neither the substeps of data_load_ms
+nor the internals of a single expensive stage were observable. step()
+keeps its own independent depth, so it nests freely inside data_load()
+and stage() while remaining non-overlapping among itself. Its record
+carries per-group subtotals and remainders so each group reconciles
+against the phase or stage that contains it.
+
+This module exists because two rounds of optimization were chosen from
+LOCAL profiling and both mispredicted production: PR #79 projected
+~1,100ms of data_load and delivered ~1,950ms, and PR #80 projected
+~500ms for Recently Updated and delivered ~1,856ms. Measuring in
+production first is the whole point.
+
 Instrumentation only. This module performs no I/O beyond writing a log
 record: no network call, database query, cache read or write, background
 job, telemetry vendor, analytics beacon, browser timing code, or
@@ -147,8 +163,13 @@ class _RenderRecord:
     # page that declares no stages, which is how _emit knows whether a
     # stage record is warranted at all.
     stages: dict = field(default_factory=dict)
+    # Phase 2F — ordered {step name: accumulated ms}. Independent of
+    # `stages`: a step may sit inside a data_load block, inside a stage,
+    # or neither. Empty for every page that declares no steps.
+    steps: dict = field(default_factory=dict)
     _data_load_depth: int = field(default=0, repr=False)
     _stage_depth: int = field(default=0, repr=False)
+    _step_depth: int = field(default=0, repr=False)
 
 
 def _current() -> _RenderRecord | None:
@@ -238,6 +259,49 @@ def stage(name: str):
 
 
 @contextmanager
+def step(name: str):
+    """Times one fine-grained substep of a render (Phase 2F).
+
+    Deliberately a separate dimension from stage(), not a nesting level
+    of it. A step is meant to sit INSIDE a data_load() block or a
+    stage() section and measure part of it, so it keeps its own depth
+    counter and is unaffected by how deep the enclosing stage or
+    data_load nesting happens to be. Among themselves steps follow the
+    same outermost-wins rule stage() uses: a nested step is attributed
+    entirely to its enclosing step and contributes no separate key, so
+    the recorded steps never overlap and their sum cannot double count.
+
+    Repeated entries with the same name sum. A no-op outside a
+    page_render() block, and it never suppresses an exception — a
+    substep that raises still contributes the time it spent before
+    raising, so a failed render's step record shows how far it got.
+
+    Adds no I/O of any kind: it reads a monotonic clock and writes to an
+    in-memory dict. It performs no database, cache, network or
+    filesystem access, calls no Streamlit API, and changes no page
+    result, ordering, control, route, state, cache key or TTL."""
+    record = _current()
+    if record is None:
+        yield
+        return
+    if record._step_depth > 0:  # nested: attributed to the outer step
+        record._step_depth += 1
+        try:
+            yield
+        finally:
+            record._step_depth -= 1
+        return
+    record._step_depth = 1
+    started_at = time.monotonic()
+    try:
+        yield
+    finally:
+        elapsed_ms = (time.monotonic() - started_at) * 1000
+        record.steps[name] = record.steps.get(name, 0.0) + elapsed_ms
+        record._step_depth = 0
+
+
+@contextmanager
 def page_render(route: str):
     """Times one page render and emits exactly one structured record.
 
@@ -290,6 +354,9 @@ def _emit(record: _RenderRecord, outcome: str, failure_kind: str | None) -> None
     if record.stages:
         _emit_stages(record, outcome, failure_kind, ui_build_ms)
 
+    if record.steps:
+        _emit_steps(record, outcome, failure_kind, data_load_ms)
+
 
 def _emit_stages(
     record: _RenderRecord, outcome: str, failure_kind: str | None, ui_build_ms: float,
@@ -314,6 +381,61 @@ def _emit_stages(
         f"total_staged_ms={total_staged_ms:.1f} "
         f"unaccounted_ms={ui_build_ms - total_staged_ms:.1f} "
         f'stages="{rendered}"'
+    )
+    if failure_kind is not None:
+        message += f' failure_kind="{failure_kind}"'
+    _LOGGER.info(message)
+
+
+# Phase 2F — the two groups a step name may belong to, and the phase or
+# stage each one reconciles against. A group exists purely so the record
+# can state "these steps accounted for X of the Y that contains them",
+# which is what makes the remainder meaningful.
+STEP_GROUP_DATA_LOAD = "data_load"
+STEP_GROUP_RECENTLY_UPDATED = "recently_updated"
+_RECENTLY_UPDATED_STAGE = "dashboard.recently_updated"
+
+
+def _group_total(steps: dict, prefix: str) -> float:
+    return sum(value for name, value in steps.items() if name.startswith(f"{prefix}."))
+
+
+def _emit_steps(
+    record: _RenderRecord, outcome: str, failure_kind: str | None, data_load_ms: float,
+) -> None:
+    """One bounded step record per page render, emitted only for a page
+    that declared steps (Phase 2F).
+
+    Two reconciliations are published rather than one total, because the
+    steps do not all live in the same phase: the `data_load.*` steps sit
+    inside data_load_ms, and the `recently_updated.*` steps sit inside
+    the dashboard.recently_updated stage, which is part of ui_build_ms.
+    Each group's `*_unaccounted_ms` is its container minus what its
+    steps accounted for, so a large remainder is itself a finding — it
+    says the cost is somewhere the timers are not yet placed.
+
+    Step names are fixed internal identifiers chosen in code, never
+    user, company, or document text, so the rendered mapping carries
+    nothing sensitive. On failure only the exception's class name is
+    included, never its message or traceback. Volume stays at one record
+    per render: steps accumulate into a dict keyed by a name from a
+    fixed set, never per row or per item."""
+    total_step_ms = sum(record.steps.values())
+    data_load_step_ms = _group_total(record.steps, STEP_GROUP_DATA_LOAD)
+    recently_updated_step_ms = _group_total(record.steps, STEP_GROUP_RECENTLY_UPDATED)
+    recently_updated_ms = record.stages.get(_RECENTLY_UPDATED_STAGE, 0.0)
+    rendered = ",".join(f"{name}={value:.1f}" for name, value in record.steps.items())
+    message = (
+        f'event="{record.route}_step_timing" route="{record.route}" '
+        f"render_ordinal={record.ordinal} outcome=\"{outcome}\" "
+        f"total_step_ms={total_step_ms:.1f} "
+        f"data_load_ms={data_load_ms:.1f} "
+        f"data_load_step_ms={data_load_step_ms:.1f} "
+        f"data_load_unaccounted_ms={data_load_ms - data_load_step_ms:.1f} "
+        f"recently_updated_ms={recently_updated_ms:.1f} "
+        f"recently_updated_step_ms={recently_updated_step_ms:.1f} "
+        f"recently_updated_unaccounted_ms={recently_updated_ms - recently_updated_step_ms:.1f} "
+        f'steps="{rendered}"'
     )
     if failure_kind is not None:
         message += f' failure_kind="{failure_kind}"'
