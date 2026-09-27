@@ -1563,3 +1563,34 @@ def test_two_distinct_meta_releases_remain_independently_visible_via_select_cano
     canonical = daily_news_pipeline.select_canonical_stories(stories, tmp_path)
 
     assert len(canonical) == 2
+
+
+def test_run_discovery_always_persists_a_materiality_tier(tmp_path, monkeypatch):
+    """Regression guard for the legacy-tier remediation (see
+    scripts/backfill_daily_news_materiality_tiers.py): every issuer
+    story run_discovery creates must carry a stored tier, so the
+    untiered cohort the manual backfill exists to clear stays CLOSED and
+    cannot start growing again. A story persisted with None would be
+    re-classified on every Dashboard render, which is precisely the cost
+    that remediation removes."""
+    _mock_fetch({
+        _NVDA_SOURCE.feed_url: FeedFetchResult(
+            entries=(_entry(
+                "NVIDIA Announces Definitive Agreement to Acquire a Photonics Supplier",
+                "https://nvidianews.nvidia.com/news/definitive-agreement",
+                summary="<p>NVIDIA today announced a definitive agreement to acquire a supplier.</p>",
+            ),),
+            failure_code=None,
+        ),
+    }, monkeypatch)
+
+    report = daily_news_pipeline.run_discovery(tmp_path, feed_sources=(_NVDA_SOURCE,))
+
+    assert report.stories_published == 1
+    stories = list(daily_news_store.load_stories(tmp_path).values())
+    assert stories
+    for story in stories:
+        assert story.materiality_tier is not None
+        assert isinstance(story.materiality_tier, NewsMaterialityTier)
+        # and the stored value is exactly what a read would compute
+        assert story.materiality_tier == daily_news_pipeline.effective_issuer_tier(story)

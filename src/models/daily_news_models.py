@@ -59,7 +59,10 @@ class NewsMaterialityTier(str, Enum):
     None (the field's own default on NewsStory/EditorialStory, not a
     member of this enum) means "not yet classified" — every record
     persisted before this field existed. Never reclassified automatically
-    (see materiality_classification.py's own module docstring); such a
+    (see materiality_classification.py's own module docstring); a manual,
+    one-shot backfill is available through
+    scripts/backfill_daily_news_materiality_tiers.py, which an operator
+    runs deliberately and which never overwrites a stored tier. Such a
     record must still render safely wherever a tier is displayed."""
 
     HIGH_SIGNAL = "High Signal"
@@ -130,8 +133,10 @@ class NewsStory:
     # Materiality classification (design/DECISIONS.md) — additive, safe-
     # default fields. None for every record persisted before this field
     # existed (never backfilled automatically — see
-    # materiality_classification.py's own docstring); set once, at
-    # construction, for every story discovered from this point forward.
+    # materiality_classification.py's own docstring; a manual backfill is
+    # available through scripts/backfill_daily_news_materiality_tiers.py);
+    # set once, at construction, for every story discovered from this
+    # point forward.
     materiality_tier: NewsMaterialityTier | None = None
     materiality_reasons: tuple[str, ...] = ()
 
