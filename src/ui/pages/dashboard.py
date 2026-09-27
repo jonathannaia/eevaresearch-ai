@@ -395,18 +395,25 @@ def _load_daily_news_snapshot(settings) -> DailyNewsSnapshot:
     from src.data_access.daily_news import daily_news_backend, daily_news_pipeline
     from src.ui.components.editorial_coverage import get_visible_editorial_stories
 
-    try:
-        raw_stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
-    except Exception:  # noqa: BLE001 — fail closed, as both call sites already did
-        raw_stories = {}
-    try:
-        canonical_stories = daily_news_pipeline.select_canonical_stories(raw_stories, settings.cache_dir)
-    except Exception:  # noqa: BLE001 — reconciliation failure never hides the section
-        canonical_stories = {}
-    try:
-        editorial_stories = get_visible_editorial_stories(settings)
-    except Exception:  # noqa: BLE001 — fail closed, as _load_editorial_rows already did
-        editorial_stories = ()
+    # Phase 2F: timers only. Each step() wraps a call this function
+    # already made, in the order it already made it; no call was added,
+    # moved, merged or reordered to create a measurable region, and the
+    # three regions do not overlap, so their sum cannot double count.
+    with render_timing.step("data_load.daily_news_raw"):
+        try:
+            raw_stories = daily_news_backend.get_daily_news_repository(settings).load_stories()
+        except Exception:  # noqa: BLE001 — fail closed, as both call sites already did
+            raw_stories = {}
+    with render_timing.step("data_load.daily_news_canonical"):
+        try:
+            canonical_stories = daily_news_pipeline.select_canonical_stories(raw_stories, settings.cache_dir)
+        except Exception:  # noqa: BLE001 — reconciliation failure never hides the section
+            canonical_stories = {}
+    with render_timing.step("data_load.editorial_stories"):
+        try:
+            editorial_stories = get_visible_editorial_stories(settings)
+        except Exception:  # noqa: BLE001 — fail closed, as _load_editorial_rows already did
+            editorial_stories = ()
     return DailyNewsSnapshot(
         raw_stories=raw_stories,
         canonical_stories=canonical_stories,
@@ -434,7 +441,7 @@ def render() -> None:
         _render_header()
 
     try:
-        with render_timing.data_load():
+        with render_timing.data_load(), render_timing.step("data_load.signals_feed"):
             feed = build_signals_feed(settings, _ALL_COMPANIES_OPTION)
     except Exception:  # noqa: BLE001 — a Signals-backend problem must never take down the dashboard
         feed = None
@@ -444,9 +451,12 @@ def render() -> None:
     # Declared as data loading so it is attributed to data_load_ms rather
     # than silently inflating the ui_build_ms residual.
     with render_timing.data_load():
-        source_reads = _load_source_reads(settings)
+        with render_timing.step("data_load.source_reads"):
+            source_reads = _load_source_reads(settings)
         # One Daily News / editorial read for the whole page, in the same
-        # declared data-load boundary (see DailyNewsSnapshot).
+        # declared data-load boundary (see DailyNewsSnapshot). Its own
+        # three substeps are timed inside it, so it is deliberately NOT
+        # wrapped in a step() of its own — that would swallow them.
         daily_news_snapshot = _load_daily_news_snapshot(settings)
 
     # Only the rows actually displayed: render_recent_theme_activity()

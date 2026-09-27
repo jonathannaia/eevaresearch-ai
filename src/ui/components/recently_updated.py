@@ -105,6 +105,7 @@ from src.logic.source_link import public_source_url
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStoryStatus
 from src.models.models import CandidateStatus, FilingEvent
 from src.ui.components.editorial_coverage import get_visible_editorial_stories
+from src.ui import render_timing
 from src.ui.components.primitives import cjk_html
 from src.ui.ui import get_page
 
@@ -764,11 +765,19 @@ def _select_row_sources(
     plus materialization. render_recently_updated() calls this directly
     and materializes only the PREVIEW_COUNT rows it shows."""
     now = now or datetime.now(timezone.utc)
-    sources = (
-        _filing_row_sources(settings, now, preloaded_by_source)
-        + _news_row_sources(settings, now, preloaded_daily_news_stories)
-        + _editorial_row_sources(settings, now, preloaded_editorial_stories)
-    )
+    # Phase 2F: timers only. Each step() wraps work this function already
+    # performed, in the order it already performed it — nothing was
+    # added, moved, merged or reordered to create a measurable region,
+    # and the regions do not overlap, so their sum cannot double count.
+    # The steps are no-ops outside a page render, so the standalone
+    # callers of this function are unaffected.
+    with render_timing.step("recently_updated.filing_sources"):
+        filing_sources = _filing_row_sources(settings, now, preloaded_by_source)
+    with render_timing.step("recently_updated.news_sources"):
+        news_sources = _news_row_sources(settings, now, preloaded_daily_news_stories)
+    with render_timing.step("recently_updated.editorial_sources"):
+        editorial_sources = _editorial_row_sources(settings, now, preloaded_editorial_stories)
+    sources = filing_sources + news_sources + editorial_sources
 
     # Duplicate-row safety net (beta-blocker fix, design/DECISIONS.md):
     # keeps the first occurrence of each content-derived identity key
@@ -776,20 +785,23 @@ def _select_row_sources(
     # — each real source is already deduplicated at ingestion, so this
     # only ever guards against the same record loading twice within one
     # render, never against two genuinely different real items.
-    seen_keys: set[str] = set()
-    deduped: list[_RowSource] = []
-    for source in sources:
-        if source.identity_key in seen_keys:
-            continue
-        seen_keys.add(source.identity_key)
-        deduped.append(source)
+    with render_timing.step("recently_updated.dedup"):
+        seen_keys: set[str] = set()
+        deduped: list[_RowSource] = []
+        for source in sources:
+            if source.identity_key in seen_keys:
+                continue
+            seen_keys.add(source.identity_key)
+            deduped.append(source)
 
     # Deterministic sort: newest sort_key first; a content-derived
     # identity key (never list-build/source order) breaks an exact-
     # timestamp tie, so the shown order never depends on which source
     # happened to be loaded first.
-    deduped.sort(key=lambda r: (r.sort_key.timestamp(), r.identity_key), reverse=True)
-    return _merge_same_headline_signal_rows(deduped)
+    with render_timing.step("recently_updated.sort"):
+        deduped.sort(key=lambda r: (r.sort_key.timestamp(), r.identity_key), reverse=True)
+    with render_timing.step("recently_updated.merge"):
+        return _merge_same_headline_signal_rows(deduped)
 
 
 def _merge_same_headline_signal_rows(rows: list) -> list:
@@ -840,14 +852,13 @@ def render_recently_updated(
     # plus materialization), so `shown` is identical to the first
     # PREVIEW_COUNT rows that call would have returned — it is simply
     # not formatting the ones nobody sees.
-    shown = [
-        _materialize_row(source)
-        for source in _select_row_sources(
-            settings, preloaded_by_source=preloaded_by_source,
-            preloaded_daily_news_stories=preloaded_daily_news_stories,
-            preloaded_editorial_stories=preloaded_editorial_stories,
-        )[:PREVIEW_COUNT]
-    ]
+    selected = _select_row_sources(
+        settings, preloaded_by_source=preloaded_by_source,
+        preloaded_daily_news_stories=preloaded_daily_news_stories,
+        preloaded_editorial_stories=preloaded_editorial_stories,
+    )[:PREVIEW_COUNT]
+    with render_timing.step("recently_updated.materialize"):
+        shown = [_materialize_row(source) for source in selected]
 
     with st.container(border=True, key="card-recently-updated-feed"):
         if not shown:
@@ -867,9 +878,10 @@ def render_recently_updated(
             # list position — so a row keeps the same container identity
             # across reruns even if `shown`'s order/membership shifts
             # (e.g. a new filing/story is discovered between reruns).
-            for row in shown:
-                with st.container(key=f"card-recently-updated-row-{_row_identity_key(row)}"):
-                    _render_row(row, settings)
+            with render_timing.step("recently_updated.render_rows"):
+                for row in shown:
+                    with st.container(key=f"card-recently-updated-row-{_row_identity_key(row)}"):
+                        _render_row(row, settings)
 
     link_cols = st.columns(2)
     with link_cols[0]:
