@@ -682,3 +682,220 @@ def test_render_recently_updated_constructs_no_repository(tmp_path):
             )
         finally:
             recently_updated.backend_factory.get_candidate_repository = original
+
+
+# === Daily News population counters (instrumentation only) ===============
+#
+# Production measures recently_updated.news_sources at ~2.0s, and a local
+# reproduction attributes essentially all of it to read-time tiering of
+# stories whose materiality_tier was never stored (~1.84ms each, against
+# ~1.8us for a story that short-circuits on a stored tier). The durations
+# cannot say how many such stories production holds. These two aggregate
+# integers answer that, and must not influence anything else.
+
+from src.ui import render_timing  # noqa: E402
+
+_COUNTER_TOTAL = "recently_updated.news_stories_total"
+_COUNTER_UNTIERED = "recently_updated.news_stories_untiered"
+
+
+def _counters_for(settings, stories) -> dict:
+    """Runs the loop inside a render so the counters have somewhere to
+    go, and returns what it recorded."""
+    captured = {}
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        recently_updated._news_row_sources(settings, NOW, stories)
+        captured.update(render_timing._current().counters)
+    return captured
+
+
+def _tiered(story_id: str, tier) -> object:
+    return replace(_story(story_id, "Fictional Co", "Fictional Co announces a supplier agreement",
+                          f"https://example.test/{story_id}"), materiality_tier=tier)
+
+
+# --- population shapes ---------------------------------------------------
+
+def test_an_empty_population_counts_zero(tmp_path):
+    counters = _counters_for(_settings(tmp_path), {})
+
+    assert counters.get(_COUNTER_TOTAL, 0) == 0
+    assert counters.get(_COUNTER_UNTIERED, 0) == 0
+
+
+def test_an_all_untiered_population_counts_every_story_as_untiered(tmp_path):
+    stories = {f"s{i}": _tiered(f"s{i}", None) for i in range(9)}
+
+    counters = _counters_for(_settings(tmp_path), stories)
+
+    assert counters[_COUNTER_TOTAL] == 9
+    assert counters[_COUNTER_UNTIERED] == 9
+
+
+def test_a_fully_tiered_population_counts_no_untiered_stories(tmp_path):
+    stories = {f"s{i}": _tiered(f"s{i}", NewsMaterialityTier.HIGH_SIGNAL) for i in range(6)}
+
+    counters = _counters_for(_settings(tmp_path), stories)
+
+    assert counters[_COUNTER_TOTAL] == 6
+    assert counters[_COUNTER_UNTIERED] == 0
+
+
+def test_a_mixed_population_counts_exactly_the_untiered_stories(tmp_path):
+    stories = {}
+    for i in range(10):
+        tier = None if i % 3 == 0 else NewsMaterialityTier.WATCHLIST
+        stories[f"s{i}"] = _tiered(f"s{i}", tier)
+
+    counters = _counters_for(_settings(tmp_path), stories)
+
+    assert counters[_COUNTER_TOTAL] == 10
+    assert counters[_COUNTER_UNTIERED] == 4  # i = 0, 3, 6, 9
+    assert counters[_COUNTER_UNTIERED] == sum(
+        1 for s in stories.values() if s.materiality_tier is None
+    )
+
+
+# --- total counts stories ENTERING the loop, before any filter -----------
+
+def test_total_counts_stories_that_every_gate_excludes(tmp_path):
+    """The counter measures the population the loop must walk, not the
+    rows it yields. Both pre-tier gates are covered: a non-published
+    story, and one with no sources (which never reaches the tier check
+    at all yet is still part of the population)."""
+    stories = {
+        "kept": _tiered("kept", NewsMaterialityTier.HIGH_SIGNAL),
+        "draft": replace(_tiered("draft", NewsMaterialityTier.HIGH_SIGNAL),
+                         status=NewsStoryStatus.DISCOVERED),
+        "bare": replace(_tiered("bare", None), sources=()),
+    }
+
+    counters = _counters_for(_settings(tmp_path), stories)
+    rows = recently_updated._news_row_sources(_settings(tmp_path), NOW, stories)
+
+    assert counters[_COUNTER_TOTAL] == 3
+    assert counters[_COUNTER_UNTIERED] == 1  # the sourceless one
+    assert len(rows) == 1  # only "kept" becomes a row
+
+
+def test_total_equals_the_number_of_stories_supplied(tmp_path):
+    stories = {f"s{i}": _tiered(f"s{i}", None if i % 2 else NewsMaterialityTier.WATCHLIST)
+               for i in range(17)}
+
+    counters = _counters_for(_settings(tmp_path), stories)
+
+    assert counters[_COUNTER_TOTAL] == len(stories) == 17
+
+
+# --- the stored field, never the classifier's answer ---------------------
+
+def test_a_stored_tier_counts_as_tiered_even_when_content_would_classify_differently(tmp_path):
+    """The whole point of reading the stored field BEFORE
+    effective_issuer_tier(): the fallback classifier returns a real tier
+    for an untiered story, so inferring 'untiered' from its result would
+    count nothing at all. Here a story whose headline never names its
+    issuer would fall back to BACKGROUND, but it carries a stored
+    HIGH_SIGNAL — it must count as tiered, and the stored tier must
+    still win for display."""
+    unnamed = replace(
+        _story("s-stored", "Fictional Co", "An unrelated headline naming nobody in particular",
+               "https://example.test/s-stored"),
+        materiality_tier=NewsMaterialityTier.HIGH_SIGNAL,
+    )
+    from src.data_access.daily_news import daily_news_pipeline
+
+    fallback_tier = daily_news_pipeline.classify_issuer_story(
+        unnamed.headline, unnamed.sources[0].excerpt_original, unnamed.sources[0].source_class,
+        issuer_names=daily_news_pipeline.issuer_name_forms(unnamed.company_name, unnamed.ticker),
+    )[0]
+
+    counters = _counters_for(_settings(tmp_path), {"s-stored": unnamed})
+    rows = recently_updated._news_row_sources(_settings(tmp_path), NOW, {"s-stored": unnamed})
+
+    assert fallback_tier == NewsMaterialityTier.BACKGROUND  # non-vacuity: they really differ
+    assert daily_news_pipeline.effective_issuer_tier(unnamed) == NewsMaterialityTier.HIGH_SIGNAL
+    assert counters[_COUNTER_TOTAL] == 1
+    assert counters[_COUNTER_UNTIERED] == 0  # stored, therefore tiered
+    assert len(rows) == 1  # and the stored tier still wins for display
+
+
+# --- the counters change nothing ----------------------------------------
+
+def test_the_counters_do_not_change_the_rows_produced(tmp_path):
+    settings = _settings(tmp_path)
+    stories = {f"s{i}": _tiered(f"s{i}", None if i % 2 else NewsMaterialityTier.HIGH_SIGNAL)
+               for i in range(12)}
+
+    inside_render = None
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        inside_render = recently_updated._news_row_sources(settings, NOW, stories)
+    outside_render = recently_updated._news_row_sources(settings, NOW, stories)
+
+    assert [s.identity_key for s in inside_render] == [s.identity_key for s in outside_render]
+    assert [s.sort_key for s in inside_render] == [s.sort_key for s in outside_render]
+    assert [s.title for s in inside_render] == [s.title for s in outside_render]
+
+
+def test_counting_is_a_no_op_for_standalone_callers(tmp_path):
+    """Outside a render there is nowhere to record, and the function
+    must behave exactly as before — no raise, and the same rows."""
+    settings = _settings(tmp_path)
+    stories = {f"s{i}": _tiered(f"s{i}", NewsMaterialityTier.HIGH_SIGNAL) for i in range(4)}
+
+    outside = recently_updated._news_row_sources(settings, NOW, stories)
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        inside = recently_updated._news_row_sources(settings, NOW, stories)
+
+    assert len(outside) == 4
+    assert [s.identity_key for s in outside] == [s.identity_key for s in inside]
+
+
+def test_an_untiered_story_is_counted_even_when_the_fallback_excludes_it(tmp_path):
+    """The counter measures the population that had to be classified,
+    not the rows that survived — an untiered story the fallback rules
+    send to Background still paid the full classification cost, which is
+    exactly the cost being investigated."""
+    stories = {f"s{i}": _tiered(f"s{i}", None) for i in range(4)}
+
+    counters = _counters_for(_settings(tmp_path), stories)
+    rows = recently_updated._news_row_sources(_settings(tmp_path), NOW, stories)
+
+    assert counters[_COUNTER_TOTAL] == 4
+    assert counters[_COUNTER_UNTIERED] == 4
+    assert rows == []  # all fell to Background through the fallback path
+
+
+def test_no_story_content_reaches_the_emitted_timing_record(tmp_path, caplog):
+    """The counters are aggregate integers. A real headline, company,
+    ticker, URL, excerpt, id or tier name must never appear in the
+    record — only fixed internal counter names and totals."""
+    import logging
+
+    settings = _settings(tmp_path)
+    secret_company = "Distinctive" + "CompanyName"
+    secret_headline = "Distinctive" + "HeadlineText"
+    secret_url = "https://distinctive" + "host.test/path"
+    story = replace(
+        _story("newsitem-distinctive-id", secret_company, secret_headline, secret_url),
+        ticker="ZZTOP", materiality_tier=None,
+    )
+
+    logger = logging.getLogger(render_timing.LOGGER_NAME)
+    render_timing._ensure_logger_configured()
+    logger.addHandler(caplog.handler)
+    try:
+        with render_timing.page_render("dashboard"):
+            render_timing.mark_setup_complete()
+            with render_timing.step("recently_updated.news_sources"):
+                recently_updated._news_row_sources(settings, NOW, {story.id: story})
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    emitted = "\n".join(r.getMessage() for r in caplog.records)
+    assert "counters=" in emitted  # non-vacuity: a record really was emitted
+    for needle in (secret_company, secret_headline, secret_url, "ZZTOP",
+                   "newsitem-distinctive-id", "distinctive"):
+        assert needle.lower() not in emitted.lower(), needle

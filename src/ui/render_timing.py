@@ -46,6 +46,11 @@ LOCAL profiling and both mispredicted production: PR #79 projected
 ~500ms for Recently Updated and delivered ~1,856ms. Measuring in
 production first is the whole point.
 
+Alongside the step durations, a record may carry aggregate integer
+counters (see count()), so a duration can be read as a per-item cost
+rather than a bare total. They are counts of a fixed internal kind and
+add no records of their own.
+
 Instrumentation only. This module performs no I/O beyond writing a log
 record: no network call, database query, cache read or write, background
 job, telemetry vendor, analytics beacon, browser timing code, or
@@ -167,6 +172,10 @@ class _RenderRecord:
     # `stages`: a step may sit inside a data_load block, inside a stage,
     # or neither. Empty for every page that declares no steps.
     steps: dict = field(default_factory=dict)
+    # Aggregate integer counters, emitted alongside the steps. Only ever
+    # counts of a fixed internal kind chosen in code — never a value
+    # derived from story, user or database content.
+    counters: dict = field(default_factory=dict)
     _data_load_depth: int = field(default=0, repr=False)
     _stage_depth: int = field(default=0, repr=False)
     _step_depth: int = field(default=0, repr=False)
@@ -301,6 +310,29 @@ def step(name: str):
         record._step_depth = 0
 
 
+def count(name: str, amount: int = 1) -> None:
+    """Adds to a named aggregate counter on the in-flight record.
+
+    A companion to step(): step() answers "how long did this take",
+    count() answers "over how many items". Both are needed to turn a
+    duration into a per-item cost, which is what distinguishes a slow
+    operation from a merely large population.
+
+    Strictly aggregate: the name is a fixed internal identifier chosen
+    in code and the value is an integer total, so a counter can never
+    carry story, company, user or database content. Volume is unchanged
+    — counters ride the existing one-record-per-render step record and
+    emit nothing of their own.
+
+    A no-op outside a page_render() block, so standalone callers of an
+    instrumented function are unaffected. Adds no I/O: it reads and
+    writes one in-memory dict entry."""
+    record = _current()
+    if record is None:
+        return
+    record.counters[name] = record.counters.get(name, 0) + amount
+
+
 @contextmanager
 def page_render(route: str):
     """Times one page render and emits exactly one structured record.
@@ -354,7 +386,7 @@ def _emit(record: _RenderRecord, outcome: str, failure_kind: str | None) -> None
     if record.stages:
         _emit_stages(record, outcome, failure_kind, ui_build_ms)
 
-    if record.steps:
+    if record.steps or record.counters:
         _emit_steps(record, outcome, failure_kind, data_load_ms)
 
 
@@ -425,6 +457,7 @@ def _emit_steps(
     recently_updated_step_ms = _group_total(record.steps, STEP_GROUP_RECENTLY_UPDATED)
     recently_updated_ms = record.stages.get(_RECENTLY_UPDATED_STAGE, 0.0)
     rendered = ",".join(f"{name}={value:.1f}" for name, value in record.steps.items())
+    rendered_counters = ",".join(f"{name}={value:d}" for name, value in record.counters.items())
     message = (
         f'event="{record.route}_step_timing" route="{record.route}" '
         f"render_ordinal={record.ordinal} outcome=\"{outcome}\" "
@@ -437,6 +470,8 @@ def _emit_steps(
         f"recently_updated_unaccounted_ms={recently_updated_ms - recently_updated_step_ms:.1f} "
         f'steps="{rendered}"'
     )
+    if rendered_counters:
+        message += f' counters="{rendered_counters}"'
     if failure_kind is not None:
         message += f' failure_kind="{failure_kind}"'
     _LOGGER.info(message)

@@ -444,3 +444,99 @@ def test_step_performs_no_io():
     }
 
     assert called <= {"monotonic", "get"}, called
+
+
+# === Aggregate counters on the same record ================================
+#
+# step() answers "how long did this take"; count() answers "over how many
+# items". Production timing already shows recently_updated.news_sources at
+# ~2.0s with near-complete coverage, and a local reproduction shows the
+# cost is read-time tiering of stories whose materiality_tier was never
+# stored. What the durations cannot say is how many such stories exist.
+# These counters answer exactly that and nothing else.
+
+COUNTER_TOTAL = "recently_updated.news_stories_total"
+COUNTER_UNTIERED = "recently_updated.news_stories_untiered"
+
+
+def _counter_map(message: str) -> dict[str, int]:
+    found = re.search(r'counters="([^"]*)"', message)
+    if not found or not found.group(1):
+        return {}
+    return {p.split("=")[0]: int(p.split("=")[1]) for p in found.group(1).split(",")}
+
+
+def test_counters_ride_the_existing_step_record(clock, records):
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        with render_timing.step("recently_updated.news_sources"):
+            clock.advance_ms(2000.0)
+            render_timing.count(COUNTER_TOTAL, 412)
+            render_timing.count(COUNTER_UNTIERED, 388)
+
+    lines = _step_lines(records)
+    assert len(lines) == 1  # still exactly one record, not a second one
+    assert _counter_map(lines[0]) == {COUNTER_TOTAL: 412, COUNTER_UNTIERED: 388}
+
+
+def test_a_render_with_counters_but_no_steps_still_emits_one_record(clock, records):
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        render_timing.count(COUNTER_TOTAL, 3)
+
+    lines = _step_lines(records)
+    assert len(lines) == 1
+    assert _counter_map(lines[0]) == {COUNTER_TOTAL: 3}
+    assert _step_map(lines[0]) == {}
+
+
+def test_a_render_with_no_counters_emits_no_counters_field(clock, records):
+    _drive(clock, data_load_steps=_SAMPLE_DATA_LOAD)
+
+    assert "counters=" not in _step_lines(records)[0]
+
+
+def test_counters_are_rendered_as_plain_integers(clock, records):
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        render_timing.count(COUNTER_TOTAL, 7)
+
+    rendered = re.search(r'counters="([^"]*)"', _step_lines(records)[0]).group(1)
+    assert rendered == f"{COUNTER_TOTAL}=7"
+    assert "." not in rendered.split("=")[1]
+
+
+def test_a_failed_render_still_reports_the_counters_it_accumulated(clock, records):
+    with pytest.raises(ValueError):
+        with render_timing.page_render("dashboard"):
+            render_timing.mark_setup_complete()
+            render_timing.count(COUNTER_TOTAL, 120)
+            raise ValueError("boom-with-sensitive-payload")
+
+    line = _step_lines(records)[0]
+    assert _counter_map(line)[COUNTER_TOTAL] == 120
+    assert _fields(line)["outcome"] == "failed"
+    assert "boom-with-sensitive-payload" not in line
+
+
+def test_counter_names_are_fixed_internal_identifiers(clock, records):
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        render_timing.count(COUNTER_TOTAL, 1)
+        render_timing.count(COUNTER_UNTIERED, 1)
+
+    for name in _counter_map(_step_lines(records)[0]):
+        assert re.fullmatch(r"[a-z_]+\.[a-z_]+", name), name
+
+
+def test_count_performs_no_io():
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(render_timing.count).lstrip())
+    called = {
+        node.func.attr for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+
+    assert called <= {"get"}, called
