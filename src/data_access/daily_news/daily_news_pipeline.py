@@ -176,6 +176,9 @@ def effective_issuer_tier(story: NewsStory) -> NewsMaterialityTier:
     before materiality_tier existed (None) is classified here, at read
     time, with the same rules run_discovery() applies to new items —
     the result is never written back; the stored record is untouched.
+    Reading never persists: clearing the legacy untiered cohort is the
+    job of the manual, operator-run
+    scripts/backfill_daily_news_materiality_tiers.py, never of a render.
     A story with no source reference keeps the old Watchlist default."""
     if story.materiality_tier is not None:
         return story.materiality_tier
