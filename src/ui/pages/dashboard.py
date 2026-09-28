@@ -317,50 +317,68 @@ def _load_source_reads(settings) -> "dict[str, SourceRead]":
     from src.logic.filing_visibility import not_material_rcept_nos_from_candidates
     from src.logic.market_map import REGION_SOURCE
 
-    # Phase 2G: timers only. Each step() wraps a call this function
-    # already made, in the order it already made it; no call was added,
-    # moved, merged or reordered to create a measurable region, and the
-    # five regions do not overlap, so their sum cannot double count.
-    # Splitting construction from load is the whole point: a repository
-    # factory opens a connection on every call (backend_factory's own
-    # _require_postgres_connection), so `_repo` and `_query` separate
-    # per-connection cost from query cost, which no single timer can.
+    # Phase 2H: one owned connection for the whole call, instead of one
+    # per repository. Phase 2G's timers proved the cost was connection
+    # construction and not query work — 996.3ms of 1,113.2ms — so the
+    # six constructions become one acquisition, timed on its own as
+    # source_connection_acquire. The per-source `_repo` steps stay, now
+    # measuring only the repository object construction they name; on
+    # Postgres that is a dataclass around an already-open connection,
+    # and on SQLite it is still that backend's own factory call, which
+    # is deliberately left alone.
     #
-    # The two halves that were one expression each are now two
-    # statements with a local name in between. That is the only way to
-    # time them separately; the calls, their order, and the try blocks
-    # that catch them are unchanged, so a failure in either half still
-    # fails closed to an empty collection for this source alone.
+    # Six sequential sibling steps, never nested: step() attributes a
+    # nested step entirely to its enclosing one and contributes no
+    # separate key. Each name accumulates across all three sources into
+    # one key, so the record stays a fixed six keys however many sources
+    # or rows exist, and no source name ever reaches a log.
     #
-    # Each name accumulates across all three sources into one key, so
-    # the record stays a fixed five keys however many sources or rows
-    # exist, and no source name ever reaches a log.
+    # Call order, the per-source try blocks, and the fail-closed empty
+    # collections are unchanged. What sharing one connection adds is
+    # rollback(): see the handlers below.
     reads: dict[str, SourceRead] = {}
-    for source in REGION_SOURCE.values():
-        try:
-            with render_timing.step("data_load.source_filing_repo"):
-                filing_repository = backend_factory.get_filing_event_repository(settings, source)
-            with render_timing.step("data_load.source_filing_query"):
-                filings = list(filing_repository.load_filing_events())
-        except Exception:  # noqa: BLE001 — fail closed per source, as every call site already did
-            filings = []
-        try:
-            with render_timing.step("data_load.source_candidate_repo"):
-                candidate_repository = backend_factory.get_candidate_repository(settings, source)
-            with render_timing.step("data_load.source_candidate_query"):
-                candidates = list(candidate_repository.load_candidates().values())
-        except Exception:  # noqa: BLE001 — a read failure never hides or promotes anything
-            candidates = []
-        # Deliberately outside both try blocks, exactly where this
-        # derivation already sat: it is pure and cannot raise on a
-        # candidate list either branch above can produce.
-        with render_timing.step("data_load.source_exclusions"):
-            not_material_ids = not_material_rcept_nos_from_candidates(candidates)
-        reads[source] = SourceRead(
-            filings=filings,
-            candidates=candidates,
-            not_material_ids=not_material_ids,
-        )
+    with render_timing.step("data_load.source_connection_acquire"):
+        repositories = backend_factory.open_source_read_repositories(settings)
+    try:
+        for source in REGION_SOURCE.values():
+            try:
+                with render_timing.step("data_load.source_filing_repo"):
+                    filing_repository = repositories.filing_repository(source)
+                with render_timing.step("data_load.source_filing_query"):
+                    filings = list(filing_repository.load_filing_events())
+            except Exception:  # noqa: BLE001 — fail closed per source, as every call site already did
+                filings = []
+                # A database error leaves the shared connection's
+                # transaction aborted, so without this the NEXT source
+                # would fail too and per-source isolation would be lost.
+                # rollback() is itself guarded and never raises.
+                repositories.rollback()
+            try:
+                with render_timing.step("data_load.source_candidate_repo"):
+                    candidate_repository = repositories.candidate_repository(source)
+                with render_timing.step("data_load.source_candidate_query"):
+                    candidates = list(candidate_repository.load_candidates().values())
+            except Exception:  # noqa: BLE001 — a read failure never hides or promotes anything
+                candidates = []
+                repositories.rollback()
+            # Deliberately outside both try blocks, exactly where this
+            # derivation already sat: it is pure and cannot raise on a
+            # candidate list either branch above can produce.
+            with render_timing.step("data_load.source_exclusions"):
+                not_material_ids = not_material_rcept_nos_from_candidates(candidates)
+            reads[source] = SourceRead(
+                filings=filings,
+                candidates=candidates,
+                not_material_ids=not_material_ids,
+            )
+    finally:
+        # Reached on success, on any per-source failure, and on an
+        # unexpected exception propagating out of the loop. close() is
+        # guarded and idempotent, so it can neither raise here nor mask
+        # the fail-closed collections already built. Everything returned
+        # is fully materialized (list/frozenset), so nothing the caller
+        # holds depends on this connection afterwards.
+        repositories.close()
     return reads
 
 

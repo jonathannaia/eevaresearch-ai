@@ -620,6 +620,142 @@ def get_filing_event_repository(settings: Settings, source: str) -> FilingEventR
     return JsonFilingEventRepository(cache_dir=settings.cache_dir, source=source)
 
 
+# --- Render-scoped source-read bundle (Performance Phase 2H) ---
+#
+# The Dashboard's _load_source_reads() needs a filing AND a candidate
+# repository for each of three sources. Going through the two factories
+# above six times opens six Postgres connections per render: production
+# measured that at 996.3ms median, 89.5% of the whole source-read cost,
+# against 95.8ms of actual query work.
+#
+# This bundle exists so ONE render can own ONE connection. It is
+# deliberately NOT a pool, cache, singleton, global or thread-local:
+# nothing here is module state, nothing outlives the call that opened
+# it, and a second call opens a second, unrelated connection. The
+# public factories above are untouched, so no existing caller changes.
+#
+# Only the Postgres branch shares anything. SQLite keeps going through
+# its own factory per repository, which keeps its per-connection
+# migrate() exactly as often as today (see _require_sqlite_connection's
+# note above for why that must not be collapsed), and the
+# connectionless backends never acquire anything at all.
+
+class SourceReadRepositories(Protocol):
+    def filing_repository(self, source: str) -> FilingEventRepositoryProtocol: ...
+    def candidate_repository(self, source: str) -> CandidateRepositoryProtocol: ...
+    def rollback(self) -> None: ...
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class FactoryBackedSourceReads:
+    """SQLite and the connectionless backends: every repository comes
+    from the public factory exactly as it does today, so connection and
+    migration behavior are bit-for-bit unchanged. rollback() and close()
+    are no-ops because this bundle owns nothing — the same posture
+    JsonUserPreferencesRepository.close() already takes."""
+
+    settings: Settings
+
+    def filing_repository(self, source: str) -> FilingEventRepositoryProtocol:
+        return get_filing_event_repository(self.settings, source)
+
+    def candidate_repository(self, source: str) -> CandidateRepositoryProtocol:
+        return get_candidate_repository(self.settings, source)
+
+    def rollback(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class PostgresSourceReads:
+    """One explicitly owned Postgres connection, shared by all six
+    repository uses of one _load_source_reads() call.
+
+    Sharing is safe because both read paths are pure reads over this
+    connection — neither commits, rolls back, changes autocommit or
+    isolation, replaces the row factory, or manages a cursor — and
+    because candidate_repository.load_candidates() ALREADY runs its own
+    query plus filing_event_repository.load_filing_events() on a single
+    connection, so two modules' reads sharing one connection is the
+    established pattern here, not a new one.
+
+    What sharing does change is failure blast radius, and that is why
+    rollback() exists. Psycopg connections are autocommit=False, so a
+    real database error aborts the open transaction and every later
+    statement on that connection fails until it is rolled back. Six
+    independent connections used to make that impossible; one shared
+    connection makes it the default. The caller must roll back after a
+    failed source so the next source still loads."""
+
+    conn: psycopg.Connection
+    source_of_failure: BaseException | None = None
+
+    def filing_repository(self, source: str) -> FilingEventRepositoryProtocol:
+        self._require_connection()
+        return PostgresFilingEventRepository(conn=self.conn, source=source)
+
+    def candidate_repository(self, source: str) -> CandidateRepositoryProtocol:
+        self._require_connection()
+        return PostgresCandidateRepository(conn=self.conn, source=source)
+
+    def _require_connection(self) -> None:
+        """Re-raises an acquisition failure at the point the old code
+        raised it — inside the caller's own per-source try block, so an
+        unreachable database still degrades each source to empty
+        collections rather than escaping _load_source_reads()."""
+        if self.source_of_failure is not None:
+            raise self.source_of_failure
+
+    def rollback(self) -> None:
+        """Returns the shared connection to a usable state after a
+        failed source. Guarded: a rollback that itself fails must never
+        replace or mask the source failure the caller is already
+        handling, and must never fail the render."""
+        if self.source_of_failure is not None:
+            return
+        try:
+            self.conn.rollback()
+        except Exception:  # noqa: BLE001 — never mask the failure being handled
+            return
+
+    def close(self) -> None:
+        """Deterministic, idempotent and guarded. psycopg's own close()
+        returns early when the connection is already closed, so a second
+        call is free; the guard covers a close that raises, which must
+        not mask the fail-closed result the caller already computed."""
+        if self.source_of_failure is not None:
+            return
+        try:
+            self.conn.close()
+        except Exception:  # noqa: BLE001 — cleanup never changes the page
+            return
+
+
+def open_source_read_repositories(settings: Settings) -> SourceReadRepositories:
+    """Opens one render's source-read repositories.
+
+    The caller OWNS the result and must close() it in a finally block.
+
+    Never raises. An acquisition failure is carried into the bundle and
+    re-raised from its repository accessors instead, which is where the
+    old code raised it too: _load_source_reads() wraps each source's
+    repository construction in its own try/except, so a database that
+    cannot be reached degrades every source to empty collections and the
+    Dashboard still renders. Raising here would instead take the whole
+    page down — a behavior change this optimization must not make."""
+    if _normalized_backend(settings) != "postgres":
+        return FactoryBackedSourceReads(settings=settings)
+    try:
+        conn = _require_postgres_connection(settings)
+    except Exception as exc:  # noqa: BLE001 — deferred, not swallowed (see docstring)
+        return PostgresSourceReads(conn=None, source_of_failure=exc)
+    return PostgresSourceReads(conn=conn)
+
+
 # --- Identifier repository — read-only in both backends, same reasoning as filing events ---
 #
 # resolve_and_cache() (both EDGAR's and DART's) bundles writing inside a
