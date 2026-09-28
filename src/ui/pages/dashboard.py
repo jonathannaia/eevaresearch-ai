@@ -317,20 +317,49 @@ def _load_source_reads(settings) -> "dict[str, SourceRead]":
     from src.logic.filing_visibility import not_material_rcept_nos_from_candidates
     from src.logic.market_map import REGION_SOURCE
 
+    # Phase 2G: timers only. Each step() wraps a call this function
+    # already made, in the order it already made it; no call was added,
+    # moved, merged or reordered to create a measurable region, and the
+    # five regions do not overlap, so their sum cannot double count.
+    # Splitting construction from load is the whole point: a repository
+    # factory opens a connection on every call (backend_factory's own
+    # _require_postgres_connection), so `_repo` and `_query` separate
+    # per-connection cost from query cost, which no single timer can.
+    #
+    # The two halves that were one expression each are now two
+    # statements with a local name in between. That is the only way to
+    # time them separately; the calls, their order, and the try blocks
+    # that catch them are unchanged, so a failure in either half still
+    # fails closed to an empty collection for this source alone.
+    #
+    # Each name accumulates across all three sources into one key, so
+    # the record stays a fixed five keys however many sources or rows
+    # exist, and no source name ever reaches a log.
     reads: dict[str, SourceRead] = {}
     for source in REGION_SOURCE.values():
         try:
-            filings = list(backend_factory.get_filing_event_repository(settings, source).load_filing_events())
+            with render_timing.step("data_load.source_filing_repo"):
+                filing_repository = backend_factory.get_filing_event_repository(settings, source)
+            with render_timing.step("data_load.source_filing_query"):
+                filings = list(filing_repository.load_filing_events())
         except Exception:  # noqa: BLE001 — fail closed per source, as every call site already did
             filings = []
         try:
-            candidates = list(backend_factory.get_candidate_repository(settings, source).load_candidates().values())
+            with render_timing.step("data_load.source_candidate_repo"):
+                candidate_repository = backend_factory.get_candidate_repository(settings, source)
+            with render_timing.step("data_load.source_candidate_query"):
+                candidates = list(candidate_repository.load_candidates().values())
         except Exception:  # noqa: BLE001 — a read failure never hides or promotes anything
             candidates = []
+        # Deliberately outside both try blocks, exactly where this
+        # derivation already sat: it is pure and cannot raise on a
+        # candidate list either branch above can produce.
+        with render_timing.step("data_load.source_exclusions"):
+            not_material_ids = not_material_rcept_nos_from_candidates(candidates)
         reads[source] = SourceRead(
             filings=filings,
             candidates=candidates,
-            not_material_ids=not_material_rcept_nos_from_candidates(candidates),
+            not_material_ids=not_material_ids,
         )
     return reads
 
@@ -451,8 +480,15 @@ def render() -> None:
     # Declared as data loading so it is attributed to data_load_ms rather
     # than silently inflating the ui_build_ms residual.
     with render_timing.data_load():
-        with render_timing.step("data_load.source_reads"):
-            source_reads = _load_source_reads(settings)
+        # Its own five substeps are timed inside it, so it is
+        # deliberately NOT wrapped in a step() of its own — that would
+        # swallow them (step() attributes a nested step entirely to its
+        # enclosing one and contributes no separate key). Production
+        # measured this region at ~1,506ms with an 873ms spread, which
+        # one timer can report but cannot explain; the substeps separate
+        # repository construction from query time so the next decision
+        # rests on measurement rather than inference.
+        source_reads = _load_source_reads(settings)
         # One Daily News / editorial read for the whole page, in the same
         # declared data-load boundary (see DailyNewsSnapshot). Its own
         # three substeps are timed inside it, so it is deliberately NOT

@@ -37,7 +37,11 @@ from src.ui import render_timing
 # rather than quietly vanishing from the record.
 EXPECTED_DATA_LOAD_STEPS = (
     "data_load.signals_feed",
-    "data_load.source_reads",
+    "data_load.source_filing_repo",
+    "data_load.source_filing_query",
+    "data_load.source_candidate_repo",
+    "data_load.source_candidate_query",
+    "data_load.source_exclusions",
     "data_load.daily_news_raw",
     "data_load.daily_news_canonical",
     "data_load.editorial_stories",
@@ -135,7 +139,7 @@ def _drive(
         clock.advance_ms(tail_ms)
 
 
-_SAMPLE_DATA_LOAD = (("data_load.signals_feed", 800.0), ("data_load.source_reads", 300.0))
+_SAMPLE_DATA_LOAD = (("data_load.signals_feed", 800.0), ("data_load.source_filing_query", 300.0))
 _SAMPLE_RU = (("recently_updated.sort", 120.0), ("recently_updated.render_rows", 60.0))
 
 
@@ -246,22 +250,22 @@ def test_the_two_groups_are_accounted_separately(clock, records):
 
 
 def test_repeated_use_of_one_step_name_sums_rather_than_overwrites(clock, records):
-    _drive(clock, data_load_steps=(("data_load.source_reads", 30.0), ("data_load.source_reads", 45.0)))
+    _drive(clock, data_load_steps=(("data_load.source_filing_query", 30.0), ("data_load.source_filing_query", 45.0)))
 
-    assert _step_map(_step_lines(records)[0])["data_load.source_reads"] == pytest.approx(75.0, abs=0.15)
+    assert _step_map(_step_lines(records)[0])["data_load.source_filing_query"] == pytest.approx(75.0, abs=0.15)
 
 
 def test_nested_steps_do_not_double_count(clock, records):
     with render_timing.page_render("dashboard"):
         render_timing.mark_setup_complete()
         with render_timing.data_load():
-            with render_timing.step("data_load.source_reads"):
+            with render_timing.step("data_load.source_filing_query"):
                 clock.advance_ms(40.0)
                 with render_timing.step("data_load.daily_news_raw"):
                     clock.advance_ms(60.0)
 
     steps = _step_map(_step_lines(records)[0])
-    assert steps == {"data_load.source_reads": pytest.approx(100.0, abs=0.15)}
+    assert steps == {"data_load.source_filing_query": pytest.approx(100.0, abs=0.15)}
     assert "data_load.daily_news_raw" not in steps
 
 
@@ -284,7 +288,7 @@ def test_a_step_skipped_by_the_execution_path_is_simply_absent(clock, records):
     _drive(clock, data_load_steps=(("data_load.signals_feed", 10.0),))
 
     steps = _step_map(_step_lines(records)[0])
-    assert "data_load.source_reads" not in steps
+    assert "data_load.source_filing_query" not in steps
     assert set(steps) == {"data_load.signals_feed"}
 
 
@@ -295,7 +299,11 @@ def test_dashboard_source_declares_exactly_the_expected_data_load_steps():
 
     from src.ui.pages import dashboard
 
-    source = inspect.getsource(dashboard.render) + inspect.getsource(dashboard._load_daily_news_snapshot)
+    source = (
+        inspect.getsource(dashboard.render)
+        + inspect.getsource(dashboard._load_source_reads)
+        + inspect.getsource(dashboard._load_daily_news_snapshot)
+    )
     declared = re.findall(r'render_timing\.step\("([^"]+)"\)', source)
 
     assert sorted(declared) == sorted(EXPECTED_DATA_LOAD_STEPS)
@@ -327,7 +335,7 @@ def test_every_declared_step_belongs_to_a_known_group():
 
 def test_a_failed_render_emits_exactly_one_safe_failed_step_record(clock, records):
     with pytest.raises(ValueError):
-        _drive(clock, data_load_steps=_SAMPLE_DATA_LOAD, raise_at="data_load.source_reads")
+        _drive(clock, data_load_steps=_SAMPLE_DATA_LOAD, raise_at="data_load.source_filing_query")
 
     lines = _step_lines(records)
     assert len(lines) == 1
@@ -339,11 +347,11 @@ def test_a_failed_render_emits_exactly_one_safe_failed_step_record(clock, record
 
 def test_a_failed_render_reports_the_steps_it_completed_before_raising(clock, records):
     with pytest.raises(ValueError):
-        _drive(clock, data_load_steps=_SAMPLE_DATA_LOAD, raise_at="data_load.source_reads")
+        _drive(clock, data_load_steps=_SAMPLE_DATA_LOAD, raise_at="data_load.source_filing_query")
 
     steps = _step_map(_step_lines(records)[0])
     assert steps["data_load.signals_feed"] == pytest.approx(800.0, abs=0.15)
-    assert steps["data_load.source_reads"] == pytest.approx(300.0, abs=0.15)
+    assert steps["data_load.source_filing_query"] == pytest.approx(300.0, abs=0.15)
 
 
 def test_the_original_exception_propagates_unchanged(clock, records):
@@ -540,3 +548,148 @@ def test_count_performs_no_io():
     }
 
     assert called <= {"get"}, called
+
+
+# --- the five source-read siblings (Phase 2G) -----------------------------
+#
+# These replaced a single `data_load.source_reads` step. They are
+# siblings rather than children because step() attributes a nested step
+# entirely to its enclosing one and contributes no separate key, so a
+# child of a surviving parent would have recorded nothing at all.
+
+SOURCE_READ_STEPS = (
+    "data_load.source_filing_repo",
+    "data_load.source_filing_query",
+    "data_load.source_candidate_repo",
+    "data_load.source_candidate_query",
+    "data_load.source_exclusions",
+)
+
+# One loop iteration's worth, in the order _load_source_reads performs them.
+_ONE_SOURCE = ((SOURCE_READ_STEPS[0], 200.0), (SOURCE_READ_STEPS[1], 40.0),
+               (SOURCE_READ_STEPS[2], 210.0), (SOURCE_READ_STEPS[3], 60.0),
+               (SOURCE_READ_STEPS[4], 2.0))
+_THREE_SOURCES = _ONE_SOURCE * 3
+
+
+def test_the_old_parent_step_is_gone_and_the_five_siblings_replace_it():
+    assert "data_load.source_reads" not in EXPECTED_DATA_LOAD_STEPS
+    for name in SOURCE_READ_STEPS:
+        assert name in EXPECTED_DATA_LOAD_STEPS
+
+
+def test_each_sibling_aggregates_all_three_sources_into_one_key(clock, records):
+    _drive(clock, data_load_steps=_THREE_SOURCES)
+
+    steps = _step_map(_step_lines(records)[0])
+    assert set(steps) == set(SOURCE_READ_STEPS)  # five keys, not fifteen
+    assert steps["data_load.source_filing_repo"] == pytest.approx(600.0, abs=0.2)
+    assert steps["data_load.source_filing_query"] == pytest.approx(120.0, abs=0.2)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(630.0, abs=0.2)
+    assert steps["data_load.source_candidate_query"] == pytest.approx(180.0, abs=0.2)
+    assert steps["data_load.source_exclusions"] == pytest.approx(6.0, abs=0.2)
+
+
+def test_the_five_siblings_do_not_overlap_and_sum_to_their_container(clock, records):
+    _drive(clock, data_load_steps=_THREE_SOURCES)
+
+    fields = _fields(_step_lines(records)[0])
+    steps = _step_map(_step_lines(records)[0])
+    # 3 * (200 + 40 + 210 + 60 + 2)
+    assert sum(steps.values()) == pytest.approx(1536.0, abs=0.3)
+    assert float(fields["data_load_step_ms"]) == pytest.approx(1536.0, abs=0.3)
+
+
+def test_a_sibling_nested_in_another_contributes_no_separate_key(clock, records):
+    """The guard that makes siblings mandatory: if these were ever
+    re-nested, the inner one would vanish rather than double count."""
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        with render_timing.data_load():
+            with render_timing.step("data_load.source_filing_repo"):
+                clock.advance_ms(30.0)
+                with render_timing.step("data_load.source_filing_query"):
+                    clock.advance_ms(70.0)
+
+    steps = _step_map(_step_lines(records)[0])
+    assert steps == {"data_load.source_filing_repo": pytest.approx(100.0, abs=0.15)}
+    assert "data_load.source_filing_query" not in steps
+
+
+def test_data_load_reconciliation_holds_with_the_five_siblings(clock, records):
+    _drive(clock, data_load_steps=_THREE_SOURCES, data_load_other_ms=9.0)
+
+    fields = _fields(_step_lines(records)[0])
+    data_load_ms = float(fields["data_load_ms"])
+    step_ms = float(fields["data_load_step_ms"])
+    unaccounted_ms = float(fields["data_load_unaccounted_ms"])
+
+    assert step_ms + unaccounted_ms == pytest.approx(data_load_ms, abs=0.3)
+    # The loop's own overhead is what lands in the remainder — by design,
+    # so no new field is needed to carry it.
+    assert unaccounted_ms == pytest.approx(9.0, abs=0.3)
+
+
+def test_the_untouched_data_load_steps_keep_their_values(clock, records):
+    _drive(clock, data_load_steps=(
+        ("data_load.signals_feed", 465.0),
+        *_THREE_SOURCES,
+        ("data_load.daily_news_raw", 215.0),
+        ("data_load.daily_news_canonical", 22.0),
+        ("data_load.editorial_stories", 208.0),
+    ))
+
+    steps = _step_map(_step_lines(records)[0])
+    assert steps["data_load.signals_feed"] == pytest.approx(465.0, abs=0.15)
+    assert steps["data_load.daily_news_raw"] == pytest.approx(215.0, abs=0.15)
+    assert steps["data_load.daily_news_canonical"] == pytest.approx(22.0, abs=0.15)
+    assert steps["data_load.editorial_stories"] == pytest.approx(208.0, abs=0.15)
+
+
+def test_still_exactly_one_step_record_per_render_with_a_bounded_key_set(clock, records):
+    # Ten sources' worth of iterations must not grow the record.
+    _drive(clock, data_load_steps=_ONE_SOURCE * 10)
+
+    lines = _step_lines(records)
+    assert len(lines) == 1
+    assert len(_step_map(lines[0])) == 5
+
+
+def test_a_failed_source_read_still_emits_partial_timing_with_class_name_only(clock, records):
+    with pytest.raises(ValueError):
+        _drive(clock, data_load_steps=_ONE_SOURCE, raise_at="data_load.source_candidate_repo")
+
+    lines = _step_lines(records)
+    assert len(lines) == 1
+    fields = _fields(lines[0])
+    assert fields["outcome"] == "failed"
+    assert fields["failure_kind"] == "ValueError"
+    assert "boom-with-sensitive-payload" not in lines[0]
+
+    steps = _step_map(lines[0])
+    assert steps["data_load.source_filing_repo"] == pytest.approx(200.0, abs=0.15)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(210.0, abs=0.15)
+    assert "data_load.source_candidate_query" not in steps  # never reached
+
+
+def test_emitted_step_identifiers_come_only_from_the_fixed_allowlist(clock, records):
+    _drive(clock, data_load_steps=_THREE_SOURCES, recently_updated_steps=_SAMPLE_RU)
+
+    allowed = set(EXPECTED_DATA_LOAD_STEPS) | set(EXPECTED_RECENTLY_UPDATED_STEPS)
+    assert set(_step_map(_step_lines(records)[0])) <= allowed
+
+
+def test_the_step_record_carries_no_source_or_record_identifying_text(clock, records):
+    """The specific reason the five names do NOT carry a source:
+    REGION_SOURCE's values are real source names, so a per-source key
+    would put them in the log."""
+    from src.logic.market_map import REGION_SOURCE
+
+    _drive(clock, data_load_steps=_THREE_SOURCES)
+    line = _step_lines(records)[0]
+
+    for source in REGION_SOURCE.values():
+        assert source not in line
+    for fragment in ("cand-", "rcept", "corp_code", "postgres://", "postgresql://",
+                     "dbname", "password", "@", "SEC", "DART", "EDINET"):
+        assert fragment not in line
