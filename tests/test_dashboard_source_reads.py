@@ -40,12 +40,44 @@ class _Counter:
     def __init__(self) -> None:
         self.filing_loads: list[str] = []
         self.candidate_loads: list[str] = []
+        # Phase 2H — the shared render-scoped connection's own lifecycle.
+        self.acquisitions: int = 0
+        self.closes: int = 0
+        self.rollbacks: int = 0
+
+
+class _FakeConnection:
+    """Stands in for a psycopg connection. Records lifecycle calls and,
+    like psycopg's own close(), is idempotent."""
+
+    def __init__(self, counter: _Counter) -> None:
+        self._counter = counter
+        self.closed = False
+
+    def rollback(self) -> None:
+        self._counter.rollbacks += 1
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self._counter.closes += 1
 
 
 @pytest.fixture
 def counting_backend(monkeypatch):
     """Counts every repository construction by source, and returns a
-    small, fixed synthetic dataset for each."""
+    small, fixed synthetic dataset for each.
+
+    Phase 2H: `_load_source_reads` no longer reaches the public
+    factories on the Postgres path — it goes through the render-scoped
+    bundle, which builds the Postgres repository classes directly from
+    one connection. So this patches BOTH seams: the public factories
+    (still used by Regional Brief, Theme Activity and Recently Updated's
+    own legacy paths) and the bundle's connection acquisition plus the
+    two Postgres repository classes. The bundle itself is the real one,
+    so these tests exercise the production routing rather than a stand-in
+    for it."""
     counter = _Counter()
 
     class _FilingRepo:
@@ -67,8 +99,17 @@ def counting_backend(monkeypatch):
                 f"c-{self.source}-2": _candidate(f"{self.source}-2", self.source, CandidateStatus.NEEDS_REVIEW),
             }
 
+    def _acquire(settings):
+        counter.acquisitions += 1
+        return _FakeConnection(counter)
+
     monkeypatch.setattr(backend_factory, "get_filing_event_repository", lambda s, src: _FilingRepo(src))
     monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo(src))
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", _acquire)
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository",
+                        lambda conn, source: _FilingRepo(source))
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository",
+                        lambda conn, source: _CandidateRepo(source))
     return counter
 
 
@@ -104,7 +145,7 @@ def test_each_source_read_carries_filings_candidates_and_its_own_exclusion_set(c
 def test_a_failing_source_degrades_to_an_empty_pair_without_affecting_others(monkeypatch):
     from src.ui.pages.dashboard import _load_source_reads
 
-    def _filing_repo(settings, source):
+    def _filing_repo(conn, source):
         if source == "EDINET":
             raise RuntimeError("fictional backend failure")
 
@@ -117,8 +158,9 @@ def test_a_failing_source_degrades_to_an_empty_pair_without_affecting_others(mon
         def load_candidates(self):
             return {}
 
-    monkeypatch.setattr(backend_factory, "get_filing_event_repository", _filing_repo)
-    monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo())
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", lambda s: _FakeConnection(_Counter()))
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository", _filing_repo)
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", lambda conn, source: _CandidateRepo())
 
     reads = _load_source_reads(_settings())
 
@@ -663,6 +705,7 @@ import re
 from src.ui import render_timing
 
 SOURCE_READ_STEPS = (
+    "data_load.source_connection_acquire",
     "data_load.source_filing_repo",
     "data_load.source_filing_query",
     "data_load.source_candidate_repo",
@@ -743,16 +786,22 @@ def timed_backend(monkeypatch, timing_clock):
             return {f"c-{self.source}-1": _candidate(f"{self.source}-1", self.source,
                                                      CandidateStatus.NOT_MATERIAL)}
 
-    def _filing_factory(settings, source):
-        timing_clock.advance_ms(200.0)   # stands in for opening a connection
+    def _acquire(settings):
+        counter.acquisitions += 1
+        timing_clock.advance_ms(200.0)   # stands in for opening ONE connection
+        return _FakeConnection(counter)
+
+    def _filing_repo(conn, source):
+        timing_clock.advance_ms(3.0)     # object construction only, no connect
         return _FilingRepo(source)
 
-    def _candidate_factory(settings, source):
-        timing_clock.advance_ms(210.0)
+    def _candidate_repo(conn, source):
+        timing_clock.advance_ms(3.0)
         return _CandidateRepo(source)
 
-    monkeypatch.setattr(backend_factory, "get_filing_event_repository", _filing_factory)
-    monkeypatch.setattr(backend_factory, "get_candidate_repository", _candidate_factory)
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", _acquire)
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository", _filing_repo)
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", _candidate_repo)
     return counter
 
 
@@ -765,7 +814,7 @@ def _run_source_reads():
             return _load_source_reads(_settings())
 
 
-def test_the_loop_declares_all_five_substeps(timed_backend, step_records):
+def test_the_loop_declares_all_six_substeps(timed_backend, step_records):
     _run_source_reads()
 
     assert set(_steps(step_records)) == set(SOURCE_READ_STEPS)
@@ -775,10 +824,13 @@ def test_construction_time_is_attributed_to_repo_and_load_time_to_query(timed_ba
     _run_source_reads()
     steps = _steps(step_records)
 
-    # Three sources, so each name carries three iterations' worth.
-    assert steps["data_load.source_filing_repo"] == pytest.approx(600.0, abs=0.3)
+    # Acquired ONCE for the whole call, not once per repository.
+    assert steps["data_load.source_connection_acquire"] == pytest.approx(200.0, abs=0.3)
+    # Three sources, so each per-source name carries three iterations'
+    # worth — and the repo steps no longer hide any connection cost.
+    assert steps["data_load.source_filing_repo"] == pytest.approx(9.0, abs=0.3)
     assert steps["data_load.source_filing_query"] == pytest.approx(120.0, abs=0.3)
-    assert steps["data_load.source_candidate_repo"] == pytest.approx(630.0, abs=0.3)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(9.0, abs=0.3)
     assert steps["data_load.source_candidate_query"] == pytest.approx(180.0, abs=0.3)
     assert steps["data_load.source_exclusions"] == pytest.approx(0.0, abs=0.3)
 
@@ -786,14 +838,14 @@ def test_construction_time_is_attributed_to_repo_and_load_time_to_query(timed_ba
 def test_the_substeps_do_not_overlap(timed_backend, step_records):
     _run_source_reads()
 
-    # 3 * (200 + 40 + 210 + 60) — every advanced millisecond attributed once.
-    assert sum(_steps(step_records).values()) == pytest.approx(1530.0, abs=0.5)
+    # 200 acquire + 3 * (3 + 40 + 3 + 60) — every advanced ms attributed once.
+    assert sum(_steps(step_records).values()) == pytest.approx(518.0, abs=0.5)
 
 
-def test_the_record_stays_five_keys_and_one_line(timed_backend, step_records):
+def test_the_record_stays_six_keys_and_one_line(timed_backend, step_records):
     _run_source_reads()
 
-    assert len(_steps(step_records)) == 5
+    assert len(_steps(step_records)) == 6
 
 
 def test_the_timed_loop_still_reads_each_source_exactly_once(timed_backend, step_records):
@@ -816,7 +868,9 @@ def test_the_timed_loop_returns_the_same_source_read_contents(timed_backend, ste
 def test_a_factory_failure_still_fails_closed_for_that_source_only(
     monkeypatch, timing_clock, step_records,
 ):
-    def _filing_factory(settings, source):
+    counter = _Counter()
+
+    def _filing_repo(conn, source):
         timing_clock.advance_ms(15.0)
         if source == "EDINET":
             raise RuntimeError("fictional backend failure")
@@ -830,8 +884,9 @@ def test_a_factory_failure_still_fails_closed_for_that_source_only(
         def load_candidates(self):
             return {}
 
-    monkeypatch.setattr(backend_factory, "get_filing_event_repository", _filing_factory)
-    monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo())
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", lambda s: _FakeConnection(counter))
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository", _filing_repo)
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", lambda conn, source: _CandidateRepo())
 
     reads = _run_source_reads()
 
@@ -841,6 +896,10 @@ def test_a_factory_failure_still_fails_closed_for_that_source_only(
     assert [f.rcept_no for f in reads["SEC EDGAR"].filings] == ["ok-1"]
     # The failing source still contributed the time it spent before raising.
     assert _steps(step_records)["data_load.source_filing_repo"] == pytest.approx(45.0, abs=0.3)
+    # A construction failure on one source rolled the shared connection
+    # back so the later sources could still use it.
+    assert counter.rollbacks >= 1
+    assert counter.closes == 1
 
 
 def test_a_load_failure_still_fails_closed_for_that_source_only(
@@ -859,8 +918,11 @@ def test_a_load_failure_still_fails_closed_for_that_source_only(
         def load_candidates(self):
             return {}
 
-    monkeypatch.setattr(backend_factory, "get_filing_event_repository", lambda s, src: _FilingRepo(src))
-    monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo())
+    counter = _Counter()
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", lambda s: _FakeConnection(counter))
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository",
+                        lambda conn, source: _FilingRepo(source))
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", lambda conn, source: _CandidateRepo())
 
     reads = _run_source_reads()
 
@@ -882,3 +944,216 @@ def test_the_step_record_names_no_source_and_no_record_identifier(timed_backend,
         assert source not in line
     for fragment in ("cand-", "rcept", "C1", "Synthetic", "fictional", "postgresql://"):
         assert fragment not in line
+
+
+# --- Phase 2H: one render-scoped connection, owned and closed here --------
+#
+# Production on b1716b8 measured repository construction at 996.3ms
+# median — 89.5% of source-read work — against 95.8ms of query work,
+# because each of the six factory calls opened its own connection.
+# These assert the ownership contract that replaced it. Offline: the
+# acquisition and the two Postgres repository classes are faked, so no
+# database, connection, credential or network is involved.
+
+def test_the_postgres_path_acquires_exactly_one_connection_for_all_three_sources(counting_backend):
+    from src.ui.pages.dashboard import _load_source_reads
+
+    reads = _load_source_reads(_settings())
+
+    assert counting_backend.acquisitions == 1          # was six, one per repository
+    assert len(counting_backend.filing_loads) == 3     # still three sources
+    assert len(counting_backend.candidate_loads) == 3
+    assert set(reads) == {"EDINET", "OpenDART / DART", "SEC EDGAR"}
+
+
+def test_the_one_connection_is_closed_exactly_once_after_the_function_returns(counting_backend):
+    from src.ui.pages.dashboard import _load_source_reads
+
+    _load_source_reads(_settings())
+
+    assert counting_backend.closes == 1
+
+
+def test_closing_is_idempotent_so_a_second_close_is_harmless(counting_backend):
+    conn = _FakeConnection(counting_backend)
+    bundle = backend_factory.PostgresSourceReads(conn=conn)
+
+    bundle.close()
+    bundle.close()
+    bundle.close()
+
+    assert counting_backend.closes == 1   # psycopg's own close() returns early too
+    assert conn.closed is True
+
+
+def test_a_close_failure_cannot_mask_the_handled_source_results(monkeypatch):
+    """Cleanup must never change the page. A connection whose close()
+    raises must still leave _load_source_reads returning normally with
+    the collections it already built."""
+    from src.ui.pages.dashboard import _load_source_reads
+
+    class _UnclosableConnection:
+        closed = False
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            raise RuntimeError("fictional close failure")
+
+    class _FilingRepo:
+        def __init__(self, source):
+            self.source = source
+
+        def load_filing_events(self):
+            return [_filing(f"{self.source}-1", self.source)]
+
+    class _CandidateRepo:
+        def load_candidates(self):
+            return {}
+
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", lambda s: _UnclosableConnection())
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository",
+                        lambda conn, source: _FilingRepo(source))
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", lambda conn, source: _CandidateRepo())
+
+    reads = _load_source_reads(_settings())   # must not raise
+
+    assert set(reads) == {"EDINET", "OpenDART / DART", "SEC EDGAR"}
+    for source, read in reads.items():
+        assert [f.rcept_no for f in read.filings] == [f"{source}-1"]
+
+
+def test_a_rollback_failure_cannot_mask_the_source_failure_being_handled(monkeypatch):
+    from src.ui.pages.dashboard import _load_source_reads
+
+    class _UnrollbackableConnection:
+        closed = False
+
+        def rollback(self):
+            raise RuntimeError("fictional rollback failure")
+
+        def close(self):
+            return None
+
+    def _filing_repo(conn, source):
+        raise RuntimeError("fictional backend failure")
+
+    class _CandidateRepo:
+        def load_candidates(self):
+            return {}
+
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", lambda s: _UnrollbackableConnection())
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository", _filing_repo)
+    monkeypatch.setattr(backend_factory, "PostgresCandidateRepository", lambda conn, source: _CandidateRepo())
+
+    reads = _load_source_reads(_settings())   # must not raise
+
+    for read in reads.values():
+        assert read.filings == []             # each source still fails closed
+        assert read.not_material_ids == frozenset()
+
+
+def test_an_unreachable_database_still_degrades_every_source_without_raising(monkeypatch):
+    """Acquisition failure must behave exactly as it did when each
+    source constructed its own repository: every source empty, the
+    function returns, the page still renders."""
+    from src.ui.pages.dashboard import _load_source_reads
+
+    def _raise(settings):
+        raise RuntimeError("fictional connection failure")
+
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", _raise)
+
+    reads = _load_source_reads(_settings())   # must not raise
+
+    assert set(reads) == {"EDINET", "OpenDART / DART", "SEC EDGAR"}
+    for read in reads.values():
+        assert read.filings == []
+        assert read.candidates == []
+        assert read.not_material_ids == frozenset()
+
+
+def test_nothing_returned_depends_on_the_connection_after_it_closes(counting_backend):
+    """No cursor, connection or lazily-evaluated object may escape."""
+    from src.ui.pages.dashboard import _load_source_reads
+
+    reads = _load_source_reads(_settings())
+
+    assert counting_backend.closes == 1       # the connection is already gone
+    for read in reads.values():               # and the data is still fully usable
+        assert isinstance(read.filings, list)
+        assert isinstance(read.candidates, list)
+        assert isinstance(read.not_material_ids, frozenset)
+        assert [f.rcept_no for f in read.filings]
+        assert len(read.candidates) == 2
+
+
+# --- the other backends are deliberately untouched ------------------------
+
+def test_the_sqlite_path_keeps_one_connection_and_migration_per_factory_call(monkeypatch, tmp_path):
+    """SQLite must NOT collapse connections: _require_sqlite_connection
+    migrates on every call by design (see backend_factory's own note),
+    and tests recreate databases at the same path within one process."""
+    calls = []
+
+    class _Conn:
+        pass
+
+    monkeypatch.setattr(backend_factory, "_require_sqlite_connection", lambda s: calls.append(1) or _Conn())
+    settings = Settings(db_backend="sqlite", state_db_path=str(tmp_path / "state.db"))
+
+    bundle = backend_factory.open_source_read_repositories(settings)
+    for source in ("SEC EDGAR", "OpenDART / DART", "EDINET"):
+        bundle.filing_repository(source)
+        bundle.candidate_repository(source)
+    bundle.close()
+
+    assert len(calls) == 6          # unchanged: one per repository, exactly as before
+    assert isinstance(bundle, backend_factory.FactoryBackedSourceReads)
+
+
+def test_the_json_path_constructs_no_connection_and_needs_no_dsn(monkeypatch, tmp_path):
+    def _never(settings):
+        raise AssertionError("a connectionless backend must never acquire a connection")
+
+    monkeypatch.setattr(backend_factory, "_require_postgres_connection", _never)
+    monkeypatch.setattr(backend_factory, "_require_sqlite_connection", _never)
+    settings = Settings(cache_dir=tmp_path)   # no db_backend, no state_db_url
+
+    bundle = backend_factory.open_source_read_repositories(settings)
+    filing_repo = bundle.filing_repository("SEC EDGAR")
+    candidate_repo = bundle.candidate_repository("SEC EDGAR")
+    bundle.rollback()
+    bundle.close()
+
+    assert isinstance(filing_repo, backend_factory.JsonFilingEventRepository)
+    assert isinstance(candidate_repo, backend_factory.JsonCandidateRepository)
+
+
+def test_the_public_factories_keep_their_signature_and_behaviour(tmp_path):
+    """Phase 2H adds a bundle; it does not change the factories the rest
+    of the codebase calls."""
+    import inspect
+
+    for factory in (backend_factory.get_filing_event_repository,
+                    backend_factory.get_candidate_repository):
+        parameters = list(inspect.signature(factory).parameters)
+        assert parameters == ["settings", "source"]
+
+    settings = Settings(cache_dir=tmp_path)
+    assert isinstance(backend_factory.get_filing_event_repository(settings, "SEC EDGAR"),
+                      backend_factory.JsonFilingEventRepository)
+    assert isinstance(backend_factory.get_candidate_repository(settings, "SEC EDGAR"),
+                      backend_factory.JsonCandidateRepository)
+
+
+def test_two_calls_open_two_unrelated_connections_not_a_cached_one(counting_backend):
+    """The bundle is render-scoped, never a pool, cache or singleton."""
+    from src.ui.pages.dashboard import _load_source_reads
+
+    _load_source_reads(_settings())
+    _load_source_reads(_settings())
+
+    assert counting_backend.acquisitions == 2
+    assert counting_backend.closes == 2

@@ -37,6 +37,7 @@ from src.ui import render_timing
 # rather than quietly vanishing from the record.
 EXPECTED_DATA_LOAD_STEPS = (
     "data_load.signals_feed",
+    "data_load.source_connection_acquire",
     "data_load.source_filing_repo",
     "data_load.source_filing_query",
     "data_load.source_candidate_repo",
@@ -558,6 +559,7 @@ def test_count_performs_no_io():
 # child of a surviving parent would have recorded nothing at all.
 
 SOURCE_READ_STEPS = (
+    "data_load.source_connection_acquire",
     "data_load.source_filing_repo",
     "data_load.source_filing_query",
     "data_load.source_candidate_repo",
@@ -565,14 +567,17 @@ SOURCE_READ_STEPS = (
     "data_load.source_exclusions",
 )
 
+# Phase 2H: the acquisition happens ONCE for the whole call, before the
+# loop; the other five are per-source. Shapes below mirror that exactly.
+_ACQUIRE = (("data_load.source_connection_acquire", 180.0),)
 # One loop iteration's worth, in the order _load_source_reads performs them.
-_ONE_SOURCE = ((SOURCE_READ_STEPS[0], 200.0), (SOURCE_READ_STEPS[1], 40.0),
-               (SOURCE_READ_STEPS[2], 210.0), (SOURCE_READ_STEPS[3], 60.0),
-               (SOURCE_READ_STEPS[4], 2.0))
-_THREE_SOURCES = _ONE_SOURCE * 3
+_ONE_SOURCE = ((SOURCE_READ_STEPS[1], 3.0), (SOURCE_READ_STEPS[2], 40.0),
+               (SOURCE_READ_STEPS[3], 3.0), (SOURCE_READ_STEPS[4], 60.0),
+               (SOURCE_READ_STEPS[5], 2.0))
+_THREE_SOURCES = _ACQUIRE + _ONE_SOURCE * 3
 
 
-def test_the_old_parent_step_is_gone_and_the_five_siblings_replace_it():
+def test_the_old_parent_step_is_gone_and_the_siblings_replace_it():
     assert "data_load.source_reads" not in EXPECTED_DATA_LOAD_STEPS
     for name in SOURCE_READ_STEPS:
         assert name in EXPECTED_DATA_LOAD_STEPS
@@ -582,22 +587,24 @@ def test_each_sibling_aggregates_all_three_sources_into_one_key(clock, records):
     _drive(clock, data_load_steps=_THREE_SOURCES)
 
     steps = _step_map(_step_lines(records)[0])
-    assert set(steps) == set(SOURCE_READ_STEPS)  # five keys, not fifteen
-    assert steps["data_load.source_filing_repo"] == pytest.approx(600.0, abs=0.2)
+    assert set(steps) == set(SOURCE_READ_STEPS)  # six keys, not sixteen
+    # Acquired once for the whole call, not once per source.
+    assert steps["data_load.source_connection_acquire"] == pytest.approx(180.0, abs=0.2)
+    assert steps["data_load.source_filing_repo"] == pytest.approx(9.0, abs=0.2)
     assert steps["data_load.source_filing_query"] == pytest.approx(120.0, abs=0.2)
-    assert steps["data_load.source_candidate_repo"] == pytest.approx(630.0, abs=0.2)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(9.0, abs=0.2)
     assert steps["data_load.source_candidate_query"] == pytest.approx(180.0, abs=0.2)
     assert steps["data_load.source_exclusions"] == pytest.approx(6.0, abs=0.2)
 
 
-def test_the_five_siblings_do_not_overlap_and_sum_to_their_container(clock, records):
+def test_the_siblings_do_not_overlap_and_sum_to_their_container(clock, records):
     _drive(clock, data_load_steps=_THREE_SOURCES)
 
     fields = _fields(_step_lines(records)[0])
     steps = _step_map(_step_lines(records)[0])
-    # 3 * (200 + 40 + 210 + 60 + 2)
-    assert sum(steps.values()) == pytest.approx(1536.0, abs=0.3)
-    assert float(fields["data_load_step_ms"]) == pytest.approx(1536.0, abs=0.3)
+    # 180 acquire + 3 * (3 + 40 + 3 + 60 + 2)
+    assert sum(steps.values()) == pytest.approx(504.0, abs=0.3)
+    assert float(fields["data_load_step_ms"]) == pytest.approx(504.0, abs=0.3)
 
 
 def test_a_sibling_nested_in_another_contributes_no_separate_key(clock, records):
@@ -616,7 +623,7 @@ def test_a_sibling_nested_in_another_contributes_no_separate_key(clock, records)
     assert "data_load.source_filing_query" not in steps
 
 
-def test_data_load_reconciliation_holds_with_the_five_siblings(clock, records):
+def test_data_load_reconciliation_holds_with_the_siblings(clock, records):
     _drive(clock, data_load_steps=_THREE_SOURCES, data_load_other_ms=9.0)
 
     fields = _fields(_step_lines(records)[0])
@@ -648,16 +655,16 @@ def test_the_untouched_data_load_steps_keep_their_values(clock, records):
 
 def test_still_exactly_one_step_record_per_render_with_a_bounded_key_set(clock, records):
     # Ten sources' worth of iterations must not grow the record.
-    _drive(clock, data_load_steps=_ONE_SOURCE * 10)
+    _drive(clock, data_load_steps=_ACQUIRE + _ONE_SOURCE * 10)
 
     lines = _step_lines(records)
     assert len(lines) == 1
-    assert len(_step_map(lines[0])) == 5
+    assert len(_step_map(lines[0])) == 6
 
 
 def test_a_failed_source_read_still_emits_partial_timing_with_class_name_only(clock, records):
     with pytest.raises(ValueError):
-        _drive(clock, data_load_steps=_ONE_SOURCE, raise_at="data_load.source_candidate_repo")
+        _drive(clock, data_load_steps=_ACQUIRE + _ONE_SOURCE, raise_at="data_load.source_candidate_repo")
 
     lines = _step_lines(records)
     assert len(lines) == 1
@@ -667,8 +674,9 @@ def test_a_failed_source_read_still_emits_partial_timing_with_class_name_only(cl
     assert "boom-with-sensitive-payload" not in lines[0]
 
     steps = _step_map(lines[0])
-    assert steps["data_load.source_filing_repo"] == pytest.approx(200.0, abs=0.15)
-    assert steps["data_load.source_candidate_repo"] == pytest.approx(210.0, abs=0.15)
+    assert steps["data_load.source_connection_acquire"] == pytest.approx(180.0, abs=0.15)
+    assert steps["data_load.source_filing_repo"] == pytest.approx(3.0, abs=0.15)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(3.0, abs=0.15)
     assert "data_load.source_candidate_query" not in steps  # never reached
 
 

@@ -614,3 +614,97 @@ def test_phase4b_files_never_reference_real_local_state_or_non_loopback_hosts():
             if keyword in lowered:
                 offenders.append(f"{path.name}: contains suspicious hosted-provider keyword {keyword!r}")
     assert not offenders, offenders
+
+
+# --- Phase 2H: the render-scoped source-read bundle, against real Postgres ---
+#
+# The Dashboard now shares ONE connection across all six source-read
+# repository uses. That is safe for the reads themselves (both paths are
+# pure reads, and load_candidates() already runs two modules' queries on
+# one connection), but it changes failure blast radius: psycopg
+# connections are autocommit=False, so a real database error aborts the
+# open transaction and every later statement fails until a rollback.
+# Six independent connections made that impossible; one shared
+# connection makes it the default. Only a real Postgres server exhibits
+# this — an in-memory fake cannot — so it is proved here.
+
+def test_a_database_error_poisons_the_shared_connection_until_rollback(pg_isolated_dsn):
+    import psycopg
+
+    settings = _postgres_settings(pg_isolated_dsn)
+    bundle = backend_factory.open_source_read_repositories(settings)
+    try:
+        assert isinstance(bundle, backend_factory.PostgresSourceReads)
+        # A normal read on the shared connection works.
+        assert bundle.filing_repository("SEC EDGAR").load_filing_events() == ()
+
+        # Provoke a genuine server-side error on that same connection.
+        with pytest.raises(psycopg.Error):
+            bundle.conn.execute("SELECT 1 FROM a_table_that_does_not_exist_phase_2h")
+
+        # Without a rollback the connection is unusable — this is
+        # exactly the cascade the per-source handlers must prevent.
+        with pytest.raises(psycopg.Error):
+            bundle.filing_repository("EDINET").load_filing_events()
+
+        # The guarded rollback restores it, so the NEXT source loads
+        # normally and per-source isolation is preserved.
+        bundle.rollback()
+        assert bundle.filing_repository("EDINET").load_filing_events() == ()
+        assert bundle.candidate_repository("EDINET").load_candidates() == {}
+    finally:
+        bundle.close()
+
+
+def test_a_failing_source_still_leaves_later_sources_loadable_through_the_loop(pg_isolated_dsn, monkeypatch):
+    """The same property, end to end through _load_source_reads: one
+    source raising a real database error must not empty the others."""
+    from src.ui.pages.dashboard import _load_source_reads
+
+    settings = _postgres_settings(pg_isolated_dsn)
+    real_filing_repository = backend_factory.PostgresFilingEventRepository
+
+    class _PoisoningRepository:
+        """For one source only, issues a statement the server rejects —
+        aborting the shared transaction exactly as a real fault would."""
+
+        def __init__(self, conn, source):
+            self.conn = conn
+            self.source = source
+
+        def load_filing_events(self):
+            self.conn.execute("SELECT 1 FROM a_table_that_does_not_exist_phase_2h")
+            raise AssertionError("unreachable: the statement above must raise")
+
+    def _filing_repository(conn, source):
+        if source == "SEC EDGAR":
+            return _PoisoningRepository(conn, source)
+        return real_filing_repository(conn=conn, source=source)
+
+    monkeypatch.setattr(backend_factory, "PostgresFilingEventRepository", _filing_repository)
+
+    reads = _load_source_reads(settings)
+
+    # The poisoned source failed closed...
+    assert reads["SEC EDGAR"].filings == []
+    # ...and every later source still reached the database successfully.
+    # (An empty isolated schema returns no rows; the point is that these
+    # are real completed reads, not the InFailedSqlTransaction the
+    # cascade would otherwise have produced.)
+    for source in ("OpenDART / DART", "EDINET"):
+        assert reads[source].filings == []
+        assert reads[source].candidates == []
+        assert reads[source].not_material_ids == frozenset()
+    assert set(reads) == {"SEC EDGAR", "OpenDART / DART", "EDINET"}
+
+
+def test_the_render_scoped_connection_is_actually_closed_afterwards(pg_isolated_dsn):
+    settings = _postgres_settings(pg_isolated_dsn)
+    bundle = backend_factory.open_source_read_repositories(settings)
+
+    bundle.filing_repository("SEC EDGAR").load_filing_events()
+    bundle.close()
+
+    assert bundle.conn.closed
+    bundle.close()   # idempotent
+    assert bundle.conn.closed
