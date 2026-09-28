@@ -646,3 +646,239 @@ def test_feeding_theme_activity_the_canonical_set_would_undercount(
     )
 
     assert [r.count for r in rows] == [1]
+
+
+# --- Phase 2G: the five source-read timing substeps -----------------------
+#
+# Offline only, exactly as the rest of this file: the repository
+# factories are replaced with fakes that advance a fake clock, so the
+# timings below are deterministic and no database, connection,
+# credential or network is involved. These assert the timers over the
+# REAL _load_source_reads loop — test_dashboard_step_timing.py asserts
+# the record schema those timers feed.
+
+import logging
+import re
+
+from src.ui import render_timing
+
+SOURCE_READ_STEPS = (
+    "data_load.source_filing_repo",
+    "data_load.source_filing_query",
+    "data_load.source_candidate_repo",
+    "data_load.source_candidate_query",
+    "data_load.source_exclusions",
+)
+
+
+class _TimedClock:
+    def __init__(self) -> None:
+        self.now = 5_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance_ms(self, milliseconds: float) -> None:
+        self.now += milliseconds / 1000.0
+
+
+@pytest.fixture
+def timing_clock(monkeypatch):
+    import threading
+
+    fake = _TimedClock()
+    monkeypatch.setattr(render_timing.time, "monotonic", fake)
+    monkeypatch.setattr(render_timing, "_render_ordinal", 0)
+    monkeypatch.setattr(render_timing, "_STATE", threading.local())
+    return fake
+
+
+@pytest.fixture
+def step_records(caplog):
+    logger = logging.getLogger(render_timing.LOGGER_NAME)
+    render_timing._ensure_logger_configured()
+    previous = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(caplog.handler)
+    try:
+        yield caplog
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(previous)
+
+
+def _steps(step_records) -> dict:
+    lines = [r.getMessage() for r in step_records.records if "step_timing" in r.getMessage()]
+    assert len(lines) == 1, f"expected exactly one step record, got {len(lines)}"
+    rendered = re.search(r'steps="([^"]*)"', lines[0]).group(1)
+    return {p.split("=")[0]: float(p.split("=")[1]) for p in rendered.split(",") if p}
+
+
+def _step_line(step_records) -> str:
+    return [r.getMessage() for r in step_records.records if "step_timing" in r.getMessage()][0]
+
+
+@pytest.fixture
+def timed_backend(monkeypatch, timing_clock):
+    """Counting fakes that also cost measurable time, so construction
+    and load are distinguishable in the record."""
+    counter = _Counter()
+
+    class _FilingRepo:
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def load_filing_events(self):
+            counter.filing_loads.append(self.source)
+            timing_clock.advance_ms(40.0)
+            return [_filing(f"{self.source}-1", self.source)]
+
+    class _CandidateRepo:
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def load_candidates(self):
+            counter.candidate_loads.append(self.source)
+            timing_clock.advance_ms(60.0)
+            return {f"c-{self.source}-1": _candidate(f"{self.source}-1", self.source,
+                                                     CandidateStatus.NOT_MATERIAL)}
+
+    def _filing_factory(settings, source):
+        timing_clock.advance_ms(200.0)   # stands in for opening a connection
+        return _FilingRepo(source)
+
+    def _candidate_factory(settings, source):
+        timing_clock.advance_ms(210.0)
+        return _CandidateRepo(source)
+
+    monkeypatch.setattr(backend_factory, "get_filing_event_repository", _filing_factory)
+    monkeypatch.setattr(backend_factory, "get_candidate_repository", _candidate_factory)
+    return counter
+
+
+def _run_source_reads():
+    from src.ui.pages.dashboard import _load_source_reads
+
+    with render_timing.page_render("dashboard"):
+        render_timing.mark_setup_complete()
+        with render_timing.data_load():
+            return _load_source_reads(_settings())
+
+
+def test_the_loop_declares_all_five_substeps(timed_backend, step_records):
+    _run_source_reads()
+
+    assert set(_steps(step_records)) == set(SOURCE_READ_STEPS)
+
+
+def test_construction_time_is_attributed_to_repo_and_load_time_to_query(timed_backend, step_records):
+    _run_source_reads()
+    steps = _steps(step_records)
+
+    # Three sources, so each name carries three iterations' worth.
+    assert steps["data_load.source_filing_repo"] == pytest.approx(600.0, abs=0.3)
+    assert steps["data_load.source_filing_query"] == pytest.approx(120.0, abs=0.3)
+    assert steps["data_load.source_candidate_repo"] == pytest.approx(630.0, abs=0.3)
+    assert steps["data_load.source_candidate_query"] == pytest.approx(180.0, abs=0.3)
+    assert steps["data_load.source_exclusions"] == pytest.approx(0.0, abs=0.3)
+
+
+def test_the_substeps_do_not_overlap(timed_backend, step_records):
+    _run_source_reads()
+
+    # 3 * (200 + 40 + 210 + 60) — every advanced millisecond attributed once.
+    assert sum(_steps(step_records).values()) == pytest.approx(1530.0, abs=0.5)
+
+
+def test_the_record_stays_five_keys_and_one_line(timed_backend, step_records):
+    _run_source_reads()
+
+    assert len(_steps(step_records)) == 5
+
+
+def test_the_timed_loop_still_reads_each_source_exactly_once(timed_backend, step_records):
+    reads = _run_source_reads()
+
+    assert len(timed_backend.filing_loads) == 3
+    assert len(timed_backend.candidate_loads) == 3
+    assert set(reads) == {"EDINET", "OpenDART / DART", "SEC EDGAR"}
+
+
+def test_the_timed_loop_returns_the_same_source_read_contents(timed_backend, step_records):
+    reads = _run_source_reads()
+
+    for source, read in reads.items():
+        assert [f.rcept_no for f in read.filings] == [f"{source}-1"]
+        assert len(read.candidates) == 1
+        assert read.not_material_ids == frozenset({f"{source}-1"})
+
+
+def test_a_factory_failure_still_fails_closed_for_that_source_only(
+    monkeypatch, timing_clock, step_records,
+):
+    def _filing_factory(settings, source):
+        timing_clock.advance_ms(15.0)
+        if source == "EDINET":
+            raise RuntimeError("fictional backend failure")
+
+        class _R:
+            def load_filing_events(self):
+                return [_filing("ok-1", source)]
+        return _R()
+
+    class _CandidateRepo:
+        def load_candidates(self):
+            return {}
+
+    monkeypatch.setattr(backend_factory, "get_filing_event_repository", _filing_factory)
+    monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo())
+
+    reads = _run_source_reads()
+
+    assert reads["EDINET"].filings == []
+    assert reads["EDINET"].candidates == []
+    assert reads["EDINET"].not_material_ids == frozenset()
+    assert [f.rcept_no for f in reads["SEC EDGAR"].filings] == ["ok-1"]
+    # The failing source still contributed the time it spent before raising.
+    assert _steps(step_records)["data_load.source_filing_repo"] == pytest.approx(45.0, abs=0.3)
+
+
+def test_a_load_failure_still_fails_closed_for_that_source_only(
+    monkeypatch, timing_clock, step_records,
+):
+    class _FilingRepo:
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def load_filing_events(self):
+            if self.source == "EDINET":
+                raise RuntimeError("fictional read failure")
+            return [_filing("ok-1", self.source)]
+
+    class _CandidateRepo:
+        def load_candidates(self):
+            return {}
+
+    monkeypatch.setattr(backend_factory, "get_filing_event_repository", lambda s, src: _FilingRepo(src))
+    monkeypatch.setattr(backend_factory, "get_candidate_repository", lambda s, src: _CandidateRepo())
+
+    reads = _run_source_reads()
+
+    assert reads["EDINET"].filings == []
+    assert reads["EDINET"].not_material_ids == frozenset()
+    assert [f.rcept_no for f in reads["SEC EDGAR"].filings] == ["ok-1"]
+    # A failed load never suppresses the record, and the repo step for
+    # the failing source is still present.
+    assert "data_load.source_filing_repo" in _steps(step_records)
+
+
+def test_the_step_record_names_no_source_and_no_record_identifier(timed_backend, step_records):
+    _run_source_reads()
+    line = _step_line(step_records)
+
+    from src.logic.market_map import REGION_SOURCE
+
+    for source in REGION_SOURCE.values():
+        assert source not in line
+    for fragment in ("cand-", "rcept", "C1", "Synthetic", "fictional", "postgresql://"):
+        assert fragment not in line
