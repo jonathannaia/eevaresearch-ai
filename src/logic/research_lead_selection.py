@@ -64,6 +64,66 @@ _POSITIVE_REASONS: tuple[str, ...] = (
     "case_not_previously_triggered",
 )
 
+# The complete, closed vocabulary of reasons a REJECTED selection can
+# carry. Every member is a fixed literal authored in this module --
+# never caller-supplied text, never an issuer name, ticker, document
+# id, URL, excerpt, provider payload or exception string. That property
+# is what makes a reason safe to aggregate into a log line, so it is
+# stated here once and allowlisted against by the aggregator rather
+# than re-derived somewhere else (see
+# src.logic.research_lead_orchestration.rejection_reason_histogram).
+#
+# Deliberately excludes the success path's own tokens: `final_reasons`
+# there carries a `category:<slug>` entry derived from the candidate's
+# own `matched_rules`, which is source-controlled text and therefore
+# not a closed vocabulary. A QUALIFIED/HIGH_SIGNAL selection's reasons
+# must never reach a histogram; the aggregator enforces that
+# separately.
+#
+# A reason added to this module later but not added here is not a leak:
+# the aggregator counts anything it does not recognize as a single
+# fixed `other` token. Keeping this set current only affects how
+# useful the histogram is, never how safe it is.
+REJECTION_REASONS: frozenset[str] = frozenset({
+    # config gate
+    "invalid_config",
+    "invalid_as_of_date",
+    "invalid_lookback_days",
+    "invalid_recognized_source_names",
+    # candidate shape
+    "invalid_candidate",
+    "blank_candidate_id",
+    "invalid_filing",
+    # issuer/document provenance
+    "blank_source_name",
+    "source_not_recognized",
+    "blank_document_id",
+    "blank_issuer_id",
+    "blank_issuer_name",
+    "blank_source_url",
+    # extraction
+    "invalid_extraction_state",
+    "excerpt_not_extracted",
+    "blank_original_excerpt",
+    # rules / categories
+    "invalid_matched_rules",
+    "no_rule_categories",
+    _AMENDMENT_MARKER,
+    # confidence / status
+    "invalid_confidence",
+    "confidence_not_qualified",
+    "invalid_candidate_status",
+    "status_not_needs_review",
+    # receipt date
+    "invalid_receipt_date",
+    "receipt_date_in_future",
+    "receipt_date_outside_lookback",
+    # case-id derivation / dedup
+    "missing_candidate_detected_timestamp",
+    "invalid_already_triggered_case_ids",
+    "case_already_triggered",
+})
+
 
 class LeadPriority(str, Enum):
     HIGH_SIGNAL = "HIGH_SIGNAL"

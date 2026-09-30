@@ -179,7 +179,11 @@ from src.data_access.state_db.scan_status_repository import ProviderScanStatus
 from src.data_access.state_db.coverage_status_repository import CoverageEvent, InstrumentLaneCoverage
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
 from src.logic.research_case_theme_matching import evaluate_theme_match
-from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
+from src.logic.research_lead_orchestration import (
+    ResearchLeadOrchestrationConfig,
+    prepare_research_case_bundles,
+    rejection_reason_histogram,
+)
 from src.logic.theme_auto_publish import evaluate_auto_publish_gates
 from src.logic.theme_candidate_detection import detect_theme_candidates
 from src.models.research_case import ResearchCase
@@ -471,7 +475,8 @@ def _run_edgar_research_case_step(
         f"EDGAR: research cases — evaluated={result.evaluated_count} created={created} "
         f"existing={result.already_existing_count} not_qualified={result.not_qualified_count} "
         f"factory_rejected={result.factory_rejected_count} validation_rejected={result.validation_rejected_count} "
-        f"write_rejected={write_rejected}"
+        f"write_rejected={write_rejected} "
+        f"rejection_reasons={rejection_reason_histogram(result)}"
     )
     if result.membership_check_failed_count:
         summary += f" membership_check_failed={result.membership_check_failed_count}"
@@ -543,7 +548,8 @@ def _run_source_research_case_step(
         f"{provider_key.upper()}: research cases — evaluated={result.evaluated_count} created={created} "
         f"existing={result.already_existing_count} not_qualified={result.not_qualified_count} "
         f"factory_rejected={result.factory_rejected_count} validation_rejected={result.validation_rejected_count} "
-        f"write_rejected={write_rejected}"
+        f"write_rejected={write_rejected} "
+        f"rejection_reasons={rejection_reason_histogram(result)}"
     )
     if result.membership_check_failed_count:
         summary += f" membership_check_failed={result.membership_check_failed_count}"

@@ -44,6 +44,7 @@ from typing import Callable, Collection, Sequence
 from src.logic.research_case_validation import ResearchCaseBundle, validate_research_case_bundle
 from src.logic.research_lead_factory import build_research_case_bundle_from_lead
 from src.logic.research_lead_selection import (
+    REJECTION_REASONS,
     LeadPriority,
     LeadSelectionResult,
     ResearchLeadSelectionConfig,
@@ -53,6 +54,71 @@ from src.models.models import CandidateSignal, CandidateStatus
 
 _MIN_MAX_CANDIDATES = 1
 _MAX_MAX_CANDIDATES = 10
+
+# Observability-only reason tokens this module adds on top of the
+# selector's own closed vocabulary. Both are fixed literals, same
+# safety property as every member of REJECTION_REASONS.
+#
+# `other` is the allowlist's fallback: any reason value this module
+# does not recognize -- a future selector token, a malformed entry, a
+# non-string -- is counted as `other` rather than passed through, so no
+# caller-supplied or source-controlled text can reach a log line even
+# if the selector's vocabulary changes later.
+_UNRECOGNIZED_REASON = "other"
+# This module's own rejection, not the selector's: the selector said
+# QUALIFIED/HIGH_SIGNAL but returned a blank case_id. That selection's
+# `reasons` are success-path tokens (which include a source-derived
+# `category:<slug>` entry) and must never be counted as qualification
+# rejection reasons, so this fixed token stands in for them.
+_QUALIFIED_WITHOUT_CASE_ID = "qualified_without_case_id"
+
+_HISTOGRAM_VOCABULARY: frozenset[str] = REJECTION_REASONS | {
+    _UNRECOGNIZED_REASON, _QUALIFIED_WITHOUT_CASE_ID,
+}
+
+# Canonicalization, not merely validation. Membership in a frozenset is
+# decided by __hash__/__eq__, so a `str` SUBCLASS whose value equals an
+# allowlisted token passes `x in vocabulary` while still carrying its
+# own __str__/__format__ -- which is what an f-string would then call,
+# putting arbitrary text in a log line despite the allowlist. Resolving
+# through a dict instead returns the VALUE stored here, a plain `str`
+# literal this module owns, and discards the caller's object entirely.
+# `.get()` never invokes the key's formatting, only its hash/eq.
+_CANONICAL_REJECTION_REASONS: dict[str, str] = {reason: reason for reason in REJECTION_REASONS}
+_CANONICAL_HISTOGRAM_REASONS: dict[str, str] = {reason: reason for reason in _HISTOGRAM_VOCABULARY}
+
+_HISTOGRAM_NONE = "none"
+_HISTOGRAM_UNAVAILABLE = "unavailable"
+
+
+def _canonical_reason(reason: object, canonical: dict[str, str]) -> str:
+    """The one way a reason becomes output text: an exact plain `str`
+    owned by this module, or the fixed `other` token.
+
+    Fails closed on anything that is not a plain-comparable string --
+    including a non-string, an unhashable value, and a subclass whose
+    own __hash__/__eq__ misbehaves or raises."""
+    if not isinstance(reason, str):
+        return _UNRECOGNIZED_REASON
+    try:
+        return canonical.get(reason, _UNRECOGNIZED_REASON)
+    except Exception:  # noqa: BLE001 — a hostile __hash__/__eq__ must not escape
+        return _UNRECOGNIZED_REASON
+
+
+def _is_not_qualified(priority: object) -> bool:
+    """Equality, deliberately, not identity — matching the selection
+    call site in prepare_research_case_bundles exactly.
+
+    `LeadPriority` subclasses `str`, so the raw string "NOT_QUALIFIED"
+    compares equal to the enum member. The call site treats such a
+    selection as a rejection; this aggregator must classify it the same
+    way, or the histogram would disagree with the decision it reports
+    on. Fails closed to False for an object whose __eq__ raises."""
+    try:
+        return bool(priority == LeadPriority.NOT_QUALIFIED)
+    except Exception:  # noqa: BLE001 — a hostile __eq__ must not escape
+        return False
 
 
 @dataclass(frozen=True)
@@ -88,6 +154,24 @@ class ResearchLeadOrchestrationResult:
     # with zero eligible candidates looks identical otherwise), hence
     # this explicit, separate signal.
     config_valid: bool
+    # Observability only — never read by any selection decision, and
+    # additive: defaulted so every existing construction of this
+    # dataclass keeps working unchanged.
+    #
+    # Occurrence counts of the safe, closed-vocabulary reasons behind
+    # `not_qualified_count`, already sorted by reason for deterministic
+    # output. Three distinct states:
+    #   ()    — no candidate was rejected (renders as "none")
+    #   None  — aggregation itself failed (renders as "unavailable");
+    #           every other field on this result is still exact
+    #   pairs — the histogram
+    #
+    # These are reason OCCURRENCES, not candidates: one candidate
+    # failing three gates contributes three counts, so the sum may
+    # exceed `not_qualified_count`. That is deliberate — a candidate
+    # blocked by several gates needs all of them visible to choose a
+    # repair.
+    rejection_reason_counts: tuple[tuple[str, int], ...] | None = ()
 
 
 def _nonblank(value: object) -> bool:
@@ -125,6 +209,92 @@ def _empty_result(config_valid: bool, evaluated_count: int = 0, skipped_count: i
         not_qualified_count=0, already_existing_count=0, membership_check_failed_count=0,
         factory_rejected_count=0, validation_rejected_count=0, config_valid=config_valid,
     )
+
+
+def _record_rejection_reasons(counts: dict[str, int], selection: object) -> None:
+    """Folds one rejected selection's reasons into `counts`.
+
+    Allowlist, never denylist, and canonicalizing rather than merely
+    validating: every key written here is a plain `str` owned by this
+    module (see `_canonical_reason`), so this can only ever emit fixed
+    literals regardless of what the selector returns. Mutates `counts`
+    in place and returns nothing — it never inspects or alters the
+    selection itself, and no caller's decision depends on it.
+
+    Three cases, in the order they are distinguished:
+
+      1. priority EQUALS NOT_QUALIFIED (the real selector's own
+         rejection, and equally a raw string-equivalent) — count its
+         reasons, which is the whole point of the histogram;
+      2. priority is a real LeadPriority but some other member — the
+         selector qualified it and prepare_research_case_bundles
+         rejected it on its own blank-case_id guard;
+      3. anything else — a malformed or hand-constructed object with no
+         usable priority at all. That is not a qualified selection and
+         must not be labelled as one, so it counts as `other`."""
+    priority = getattr(selection, "priority", None)
+
+    if not _is_not_qualified(priority):
+        if isinstance(priority, LeadPriority):
+            # Case 2 — see _QUALIFIED_WITHOUT_CASE_ID's own comment for
+            # why this selection's own reasons must not be counted.
+            counts[_QUALIFIED_WITHOUT_CASE_ID] = counts.get(_QUALIFIED_WITHOUT_CASE_ID, 0) + 1
+        else:
+            # Case 3 — malformed. `other` is the truthful bucket.
+            counts[_UNRECOGNIZED_REASON] = counts.get(_UNRECOGNIZED_REASON, 0) + 1
+        return
+
+    reasons = getattr(selection, "reasons", None)
+    if not isinstance(reasons, (tuple, list)) or not reasons:
+        counts[_UNRECOGNIZED_REASON] = counts.get(_UNRECOGNIZED_REASON, 0) + 1
+        return
+
+    for reason in reasons:
+        key = _canonical_reason(reason, _CANONICAL_REJECTION_REASONS)
+        counts[key] = counts.get(key, 0) + 1
+
+
+def rejection_reason_histogram(result: object) -> str:
+    """The one log-safe rendering of a batch's qualification-rejection
+    reasons, for a worker summary line.
+
+    Returns `none` when nothing was rejected, `unavailable` when
+    aggregation failed or the value is malformed, and otherwise
+    `reason:count` pairs joined by commas in ascending reason order, so
+    the same batch always renders byte-identically.
+
+    Re-canonicalizes rather than trusting the stored value:
+    `ResearchLeadOrchestrationResult` is a public dataclass a caller can
+    construct by hand, so every reason is resolved back to a plain `str`
+    this module owns before it reaches the output — an equal-valued
+    `str` subclass cannot smuggle its own __format__ into the log line.
+    Never raises."""
+    try:
+        counts = getattr(result, "rejection_reason_counts", None)
+        if counts is None:
+            return _HISTOGRAM_UNAVAILABLE
+        if not isinstance(counts, (tuple, list)):
+            return _HISTOGRAM_UNAVAILABLE
+
+        merged: dict[str, int] = {}
+        for entry in counts:
+            if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+                return _HISTOGRAM_UNAVAILABLE
+            reason, count = entry
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                return _HISTOGRAM_UNAVAILABLE
+            key = _canonical_reason(reason, _CANONICAL_HISTOGRAM_REASONS)
+            # int() for the same reason the reason is canonicalized: an
+            # `int` subclass can override __format__, and relying on
+            # `0 + count` to launder it back to a plain int is not safe
+            # (a subclass __radd__ takes priority and may return self).
+            merged[key] = merged.get(key, 0) + int(count)
+
+        if not merged:
+            return _HISTOGRAM_NONE
+        return ",".join(f"{reason}:{count}" for reason, count in sorted(merged.items()))
+    except Exception:  # noqa: BLE001 — observability must never break a provider tick
+        return _HISTOGRAM_UNAVAILABLE
 
 
 def _source_recognized(candidate: CandidateSignal, allowed_source_names: Sequence[str]) -> bool:
@@ -210,19 +380,30 @@ def prepare_research_case_bundles(
 
     not_qualified_count = 0
     survivors: list[tuple[CandidateSignal, LeadSelectionResult]] = []
+    # Observability only. `None` means aggregation failed and the
+    # histogram renders "unavailable" — the selection loop's own
+    # decisions are unaffected either way.
+    reason_counts: dict[str, int] | None = {}
     for candidate in capped:
         selection = select_research_lead(candidate, frozenset(), selector_config)
         if selection.priority == LeadPriority.NOT_QUALIFIED or not _nonblank(selection.case_id):
             not_qualified_count += 1
+            if reason_counts is not None:
+                try:
+                    _record_rejection_reasons(reason_counts, selection)
+                except Exception:  # noqa: BLE001 — a logging aggregate must never change a selection outcome
+                    reason_counts = None
             continue
         survivors.append((candidate, selection))
+
+    rejection_reason_counts = None if reason_counts is None else tuple(sorted(reason_counts.items()))
 
     if not survivors:
         return ResearchLeadOrchestrationResult(
             bundles=(), evaluated_count=evaluated_count, skipped_count=skipped_count,
             not_qualified_count=not_qualified_count, already_existing_count=0,
             membership_check_failed_count=0, factory_rejected_count=0, validation_rejected_count=0,
-            config_valid=True,
+            config_valid=True, rejection_reason_counts=rejection_reason_counts,
         )
 
     candidate_case_ids = [selection.case_id for _candidate, selection in survivors]
@@ -241,6 +422,7 @@ def prepare_research_case_bundles(
             not_qualified_count=not_qualified_count, already_existing_count=0,
             membership_check_failed_count=len(survivors), factory_rejected_count=0,
             validation_rejected_count=0, config_valid=True,
+            rejection_reason_counts=rejection_reason_counts,
         )
 
     already_existing_count = 0
@@ -266,4 +448,5 @@ def prepare_research_case_bundles(
         not_qualified_count=not_qualified_count, already_existing_count=already_existing_count,
         membership_check_failed_count=0, factory_rejected_count=factory_rejected_count,
         validation_rejected_count=validation_rejected_count, config_valid=True,
+        rejection_reason_counts=rejection_reason_counts,
     )
