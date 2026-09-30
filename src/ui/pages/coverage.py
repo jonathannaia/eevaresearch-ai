@@ -13,17 +13,29 @@ system, unlike Radar Inbox's Scan/Process/Publish/Monitor/Exclude
 controls."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import streamlit as st
 
 from src.config.issuer_registry import DISCOVERY_STUBS, SEED_ISSUERS, source_name_for_seed_issuer
 from src.config.ontology import KNOWN_CATEGORY_CONFLICTS
+from src.config.issuer_registry import SEED_ISSUERS as _SEED_FOR_NAMES
 from src.logic.issuer_coverage import (
+    COVERAGE_STATES,
+    coverage_counts_by_lane,
+    coverage_gaps,
+    last_verified_observation_by_lane,
+    stale_after_hours,
     filter_seed_issuers,
     get_ambiguous_stub_labels,
     get_coverage_summary,
     get_jurisdiction_gaps,
 )
 from src.models.issuer import Issuer
+
+# issuer_id -> legal name. The gaps table shows the instrument, never a
+# source, URL or document id.
+_ISSUER_NAMES = {issuer.issuer_id: issuer.legal_name for issuer in _SEED_FOR_NAMES}
 from src.ui import render_timing
 from src.ui.components.cards import metric_tile
 from src.ui.components.empty_state import empty_state
@@ -161,13 +173,25 @@ def _render_discovery_queue() -> None:
         st.dataframe([_discovery_row(i) for i in DISCOVERY_STUBS], hide_index=True, width="stretch")
 
 
-def _render_coverage_freshness_panel() -> None:
-    """Beta UI polish pass (design/DECISIONS.md) — three static,
-    pre-approved sentences only. Deliberately no repository call, no
-    timestamp, no health/live-status indicator: no current UI data path
-    exists for that without a change to data fetching, which is out of
-    scope for this presentation-only pass."""
-    section_header("Coverage & Freshness")
+_LANE_LABELS = {"edgar": "SEC EDGAR (U.S.)", "edinet": "EDINET (Japan)", "dart": "DART (Korea)"}
+
+# Closed vocabulary. A reason that is not in here is never rendered —
+# this is what keeps a raw exception message, a URL or a source name
+# from reaching a reader through the blocking-reason column.
+_BLOCKING_REASON_LABELS = {
+    "identity_unresolved": "Identity not resolved",
+    "untrusted_outcome": "Outcome not trustworthy",
+    "provider_error": "Source unavailable",
+    "lane_untrusted": "Lane result not trustworthy",
+    "unresolvable_scan_name": "Unrecognized instrument in scan",
+    "": "—",
+}
+
+
+def _static_coverage_freshness_panel() -> None:
+    """The pre-measurement panel. Still the fallback whenever measured
+    coverage cannot be read, so a backend problem degrades this page to
+    what it said yesterday rather than taking it down."""
     with st.container(border=True, key="card-coverage-freshness"):
         st.markdown(
             "**Filing Radar** — selected issuers across SEC EDGAR (U.S.), EDINET (Japan), "
@@ -181,6 +205,98 @@ def _render_coverage_freshness_panel() -> None:
             "**Translations** — machine-generated English translations for supported short "
             "Japanese and Korean content; original sources remain authoritative."
         )
+
+
+def _relative_age(timestamp: str | None, now: datetime) -> str:
+    if not timestamp:
+        return "never"
+    try:
+        moment = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return "unknown"
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    minutes = int((now - moment).total_seconds() // 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    return f"{hours}h ago" if hours < 48 else f"{hours // 24}d ago"
+
+
+def _measured_coverage_rows():
+    """The one repository read this page performs. Timed as its own
+    data-load step so it can be seen in production timing alongside the
+    Dashboard's."""
+    from src.config.settings import get_settings
+    from src.data_access import backend_factory
+
+    with render_timing.step("data_load.coverage_status"):
+        settings = get_settings()
+        repository = backend_factory.get_coverage_status_repository(settings)
+        return tuple(repository.get_all_coverage_statuses().values()), settings
+
+
+def _render_coverage_freshness_panel() -> None:
+    """Measured coverage per lane, replacing the three static sentences
+    this panel used to carry.
+
+    Fails closed: any problem reading measured coverage — an
+    unsupported backend, an unreachable database, a schema not yet
+    migrated — falls back to the static panel. A reader never sees an
+    error, a source name, a document id or a database detail."""
+    section_header("Coverage & Freshness")
+    try:
+        rows, settings = _measured_coverage_rows()
+    except Exception:  # noqa: BLE001 — observability must never take down the page
+        _static_coverage_freshness_panel()
+        return
+    if not rows:
+        _static_coverage_freshness_panel()
+        return
+
+    now = datetime.now(timezone.utc)
+    stale_hours = stale_after_hours(getattr(settings, "radar_scan_interval_minutes", 60))
+    counts = coverage_counts_by_lane(rows, now, stale_hours)
+    latest = last_verified_observation_by_lane(rows)
+    gaps = coverage_gaps(rows, now, stale_hours)
+
+    with st.container(border=True, key="card-coverage-freshness"):
+        st.markdown(
+            f'<div class="er-muted">Measured from completed scans. A lane is considered stale '
+            f"after {stale_hours}h without a trustworthy observation.</div>",
+            unsafe_allow_html=True,
+        )
+        st.dataframe(
+            [
+                {
+                    "Lane": _LANE_LABELS.get(lane, lane),
+                    **{state: counts[lane][state] for state in COVERAGE_STATES},
+                    "Last verified": _relative_age(latest.get(lane), now),
+                }
+                for lane in sorted(counts)
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+
+    if gaps:
+        with st.expander(f"{len(gaps)} instrument coverage gaps", expanded=False):
+            st.dataframe(
+                [
+                    {
+                        "Instrument": _ISSUER_NAMES.get(gap["issuer_id"], gap["issuer_id"]),
+                        "Lane": _LANE_LABELS.get(gap["lane"], gap["lane"]),
+                        "State": gap["state"],
+                        "Reason": _BLOCKING_REASON_LABELS.get(gap["blocking_reason"], "—"),
+                        "Last verified": _relative_age(gap["last_success_at"], now),
+                    }
+                    for gap in gaps
+                ],
+                hide_index=True,
+                width="stretch",
+            )
 
 
 def _render_coverage_notes() -> None:

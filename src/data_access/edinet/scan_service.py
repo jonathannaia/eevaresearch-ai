@@ -117,6 +117,18 @@ class ScanResult:
     already_seen_count: int
     errors: tuple[str, ...]
     no_data_companies: tuple[str, ...] = ()
+    # Coverage Control Plane, Milestone 1 — ALL-OR-NOTHING for EDINET,
+    # unlike the per-company EDGAR/DART equivalents, because this scan is
+    # day-keyed rather than company-keyed: it asks each calendar day for
+    # every filer and infers a company's absence from that day's rows.
+    #
+    # That inference is only sound when every queried day came back
+    # clean. A day that failed to fetch contributes zero rows, so
+    # `no_data_companies` below (a complement over companies_with_data)
+    # would silently name EVERY company — reporting a source failure as
+    # healthy "no new filing". Leaving this empty whenever any day warned
+    # is what lets the caller refuse that inference for the whole tick.
+    observed_companies: tuple[str, ...] = ()
     # Rows that matched a tracked company by edinetCode but were held
     # back from FilingEvent creation this run because one of the three
     # unconfirmed status fields carried a non-empty value — see
@@ -490,9 +502,17 @@ def scan(
     # later change. A day that failed to fetch contributes 0 rows and is
     # already reported through day_result.warnings.
     normalized_rows_fetched = sum(len(fetched[day.isoformat()].rows) for day in query_dates)
+    # Tracked separately from `errors`, which also accumulates row-level
+    # document/date rejections further down. Those are ordinary data
+    # quality on a day that fetched completely and say nothing about
+    # whether the day's row set is whole; only a day-level warning does.
+    # Conflating them would make one unparseable document date mark the
+    # entire lane untrusted (see observed_companies below).
+    untrusted_day_fetch = False
     for day in query_dates:
         day_result = fetched[day.isoformat()]
         for warning in day_result.warnings:
+            untrusted_day_fetch = True
             errors.append(f"{day.isoformat()}: {warning}")
 
         for row in day_result.rows:
@@ -522,6 +542,10 @@ def scan(
                 new_candidate_signals.append(_candidate_signal_from_evaluation(filing, evaluation))
 
     no_data_companies = tuple(c.name for c in companies if c.name not in companies_with_data)
+    # Trustworthy only when EVERY queried day FETCHED cleanly. A
+    # row-level date rejection on an otherwise complete day leaves the
+    # complement above perfectly sound, so it must not empty this.
+    observed_companies = () if untrusted_day_fetch else tuple(c.name for c in companies)
 
     cache["seen_keys"] = sorted(seen)
     cache["filing_events"] = cache["filing_events"] + [asdict(f) for f in new_filing_events]
@@ -540,7 +564,7 @@ def scan(
     )
     return ScanResult(
         scope=scope, new_filing_events=tuple(new_filing_events), new_candidate_signals=tuple(new_candidate_signals),
-        already_seen_count=already_seen_count, errors=tuple(errors), no_data_companies=no_data_companies,
+        already_seen_count=already_seen_count, errors=tuple(errors), no_data_companies=no_data_companies, observed_companies=observed_companies,
         deferred_status_count=deferred_status_count,
         normalized_rows_fetched=normalized_rows_fetched,
     )

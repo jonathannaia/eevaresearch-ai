@@ -115,6 +115,18 @@ class ScanReport:
     # scripts/daily_news_worker.py or any Daily News code path.
     filing_candidate_shadow_matches: tuple[FilingDerivedNewsCandidate, ...] = ()
     filing_candidate_shadow_diagnostics: tuple[str, ...] = ()
+    # Coverage Control Plane, Milestone 1 — additive and defaulted, so
+    # every existing construction of this dataclass (positional or
+    # keyword) and every existing caller is unaffected. These are the
+    # raw per-company sets the scan produced; this pipeline deliberately
+    # does NOT classify them into coverage states. That decision needs
+    # the expected universe from the issuer registry, which only
+    # scripts/radar_worker.py has, and keeping it there means one
+    # ordered rule set rather than three that could drift apart.
+    observed_companies: tuple[str, ...] = ()
+    no_data_companies: tuple[str, ...] = ()
+    companies_with_new_items: tuple[str, ...] = ()
+    companies_with_new_material_items: tuple[str, ...] = ()
 
 
 def _build_dart_filing_candidate_shadow_report(
@@ -435,6 +447,12 @@ def run_pipeline(
         translations_completed=counters["translations_completed"],
         already_seen_count=scan_result.already_seen_count,
         no_data_count=len(scan_result.no_data_companies),
+        observed_companies=tuple(scan_result.observed_companies),
+        no_data_companies=tuple(scan_result.no_data_companies),
+        companies_with_new_items=tuple(dict.fromkeys(f.corp_name for f in scan_result.new_filing_events)),
+        companies_with_new_material_items=tuple(
+            dict.fromkeys(c.filing.corp_name for c in scan_result.new_candidate_signals)
+        ),
         errors_by_category=error_counts,
         cache_hits=counters["cache_hits"],
         warnings=tuple(warnings),

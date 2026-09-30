@@ -516,7 +516,7 @@ def test_main_passes_absent_provider_list_through_as_all_three(tmp_path, monkeyp
 
     captured_providers = []
 
-    def _capture(worker_settings, scan_status_repo, providers=radar_worker._PROVIDERS):
+    def _capture(worker_settings, scan_status_repo, providers=radar_worker._PROVIDERS, coverage_repo=None):
         captured_providers.append(providers)
         radar_worker._shutdown_requested = True  # stop main()'s while-loop after one tick
 

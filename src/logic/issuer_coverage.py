@@ -13,6 +13,7 @@ reads and set/list operations — no field is assumed non-empty."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from src.config.issuer_registry import DISCOVERY_STUBS, SEED_ISSUERS, source_name_for_seed_issuer
 from src.models.issuer import Issuer
@@ -111,3 +112,88 @@ def get_ambiguous_stub_labels() -> list[str]:
         for issuer in DISCOVERY_STUBS
         if _AMBIGUOUS_MARKER in issuer.normalization_status
     ]
+
+
+# --- Measured coverage aggregation (Coverage Control Plane, Milestone 1) ---
+#
+# Pure, exactly like everything above it: these take rows a caller has
+# ALREADY read and return plain values. No repository import, no I/O, no
+# Streamlit — the page fetches, this module decides what the numbers mean.
+#
+# `Stale` is computed here rather than stored, so it can never age out of
+# date in the database. A stored boolean would be wrong the moment the
+# clock moved past it; a derived one is correct at every read.
+
+COVERAGE_STATES = ("Covered", "NoData", "Stale", "Failing", "Unmapped", "NotExpected")
+
+_HEALTHY = frozenset({"Covered", "NoData"})
+_STALE_FLOOR_HOURS = 6
+
+
+def stale_after_hours(radar_tick_interval_minutes: int) -> int:
+    """Three consecutive missed ticks, with a floor so a misconfigured
+    tiny interval cannot mark the whole universe permanently stale. At
+    the 60-minute default this is 6 hours."""
+    return max(3 * max(radar_tick_interval_minutes, 0) // 60, _STALE_FLOOR_HOURS)
+
+
+def effective_state(row, now: datetime, stale_hours: int) -> str:
+    """The state a reader should see.
+
+    Only a healthy row can go Stale: Failing, Unmapped and NotExpected
+    already say something more specific than "we have not heard
+    lately", and overriding them would hide the actual blocker."""
+    state = row.coverage_state
+    if state not in _HEALTHY:
+        return state
+    if not row.last_success_at:
+        return "Stale"
+    try:
+        last = datetime.fromisoformat(row.last_success_at)
+    except ValueError:
+        return "Stale"
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return "Stale" if (now - last) > timedelta(hours=stale_hours) else state
+
+
+def coverage_counts_by_lane(rows, now: datetime, stale_hours: int) -> dict[str, dict[str, int]]:
+    """{lane: {state: count}} with every state present, so a lane with
+    no rows in a state reports 0 rather than being absent."""
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        lane_counts = counts.setdefault(row.lane, {state: 0 for state in COVERAGE_STATES})
+        lane_counts[effective_state(row, now, stale_hours)] += 1
+    return counts
+
+
+def coverage_gaps(rows, now: datetime, stale_hours: int) -> list[dict]:
+    """Every instrument a reader should look at: anything not currently
+    Covered or NoData. Carries no source name, URL, document id or
+    error text — only the instrument, its lane, its state and a
+    closed-vocabulary blocking reason."""
+    gaps = []
+    for row in rows:
+        state = effective_state(row, now, stale_hours)
+        if state in _HEALTHY or state == "NotExpected":
+            continue
+        gaps.append({
+            "issuer_id": row.issuer_id,
+            "lane": row.lane,
+            "state": state,
+            "blocking_reason": row.blocking_reason or "",
+            "last_success_at": row.last_success_at,
+        })
+    return sorted(gaps, key=lambda g: (g["lane"], g["state"], g["issuer_id"]))
+
+
+def last_verified_observation_by_lane(rows) -> dict[str, str | None]:
+    """The most recent trustworthy observation per lane — the newest
+    `last_success_at`, which only Covered and NoData ever advance."""
+    latest: dict[str, str | None] = {}
+    for row in rows:
+        current = latest.get(row.lane)
+        if row.last_success_at and (current is None or row.last_success_at > current):
+            latest[row.lane] = row.last_success_at
+        latest.setdefault(row.lane, None)
+    return latest

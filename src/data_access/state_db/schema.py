@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 22
+CURRENT_SCHEMA_VERSION = 23
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1015,6 +1015,61 @@ _V22_STATEMENTS: tuple[str, ...] = (
 # Adding a new schema version later means appending a new
 # (N, (...statements...)) entry here — existing entries are never edited
 # or removed.
+_V23_STATEMENTS: tuple[str, ...] = (
+    # Coverage Control Plane, Milestone 1 — measured Radar coverage.
+    #
+    # Before this, coverage was ASSERTED from configuration: the Coverage
+    # page read the static issuer registry, and each scan's own
+    # `no_data_companies` set was reduced to a count in the pipelines and
+    # thrown away. Which specific instruments a lane failed to cover was
+    # unrecoverable after the tick that observed it.
+    #
+    # Current state is one row per (issuer_id, lane), updated in place and
+    # bounded by the curated universe. History is deliberately separate and
+    # compact: an event is written only when something genuinely changes,
+    # never once per scan per instrument.
+    """
+    CREATE TABLE instrument_lane_coverage (
+        issuer_id TEXT NOT NULL,
+        lane TEXT NOT NULL,
+        expected BOOLEAN NOT NULL,
+        coverage_state TEXT NOT NULL,
+        last_attempt_at TEXT,
+        last_success_at TEXT,
+        last_no_data_at TEXT,
+        last_item_at TEXT,
+        last_material_item_at TEXT,
+        consecutive_empty_runs INTEGER NOT NULL DEFAULT 0,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        failure_class TEXT,
+        blocking_reason TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (issuer_id, lane)
+    )
+    """,
+    # `issuer_id` is NULL for a lane-scoped incident: a provider-wide
+    # failure or an untrusted EDINET tick is ONE fact about the lane, not
+    # 27 facts about instruments, and fanning it out per instrument is what
+    # would make this table unbounded under a flapping lane.
+    """
+    CREATE TABLE instrument_lane_coverage_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL,
+        issuer_id TEXT,
+        lane TEXT NOT NULL,
+        from_state TEXT,
+        to_state TEXT NOT NULL,
+        failure_class TEXT,
+        blocking_reason TEXT NOT NULL DEFAULT '',
+        detail TEXT NOT NULL DEFAULT '',
+        at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_instrument_lane_coverage_lane ON instrument_lane_coverage (lane, coverage_state)",
+    "CREATE INDEX idx_instrument_lane_coverage_events_lane_at ON instrument_lane_coverage_events (lane, at)",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1038,6 +1093,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (20, _V20_STATEMENTS),
     (21, _V21_STATEMENTS),
     (22, _V22_STATEMENTS),
+    (23, _V23_STATEMENTS),
 )
 
 

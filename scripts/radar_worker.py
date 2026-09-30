@@ -165,6 +165,7 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -175,6 +176,7 @@ from src.data_access.dart import radar_service as dart_radar_service
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.data_access.state_db.coverage_status_repository import CoverageEvent, InstrumentLaneCoverage
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
 from src.logic.research_case_theme_matching import evaluate_theme_match
 from src.logic.research_lead_orchestration import ResearchLeadOrchestrationConfig, prepare_research_case_bundles
@@ -879,9 +881,401 @@ def _run_theme_auto_publish_step(worker_settings: Settings) -> str:
 
 _NO_CASES_GATHERED: tuple[dict[str, CandidateSignal], tuple[ResearchCase, ...]] = ({}, ())
 
+# --- Measured coverage per (issuer, lane) — Coverage Control Plane, M1 ---
+#
+# Before this, a scan's own `no_data_companies` set was reduced to a
+# count in each pipeline and discarded, so which instruments a lane
+# actually failed to cover was unrecoverable once the tick ended, and
+# the Coverage page could only assert coverage from configuration.
+#
+# The ordered rules below are the whole point of this block. A no-data
+# issuer is in BOTH `no_data_companies` and `observed_companies` by
+# construction (a trustworthy "nothing new" IS a successful
+# observation), so without an explicit order it could be persisted as
+# Covered and lose the distinction. Identity is checked FIRST because an
+# unresolved issuer is never fetched at all: on EDGAR/DART it lands in
+# neither set and would otherwise read as an untrusted outcome, and on
+# EDINET — whose no-data is derived by complement — it would otherwise
+# read as healthy no-data, which is exactly the misreport this milestone
+# exists to prevent.
+#
+# Duck-typed on the repository, exactly as ProviderScanStatus already
+# is: the SQLite and Postgres records have identical field shapes and
+# neither package imports the other.
+
+_COVERED = "Covered"
+_NO_DATA = "NoData"
+_FAILING = "Failing"
+_UNMAPPED = "Unmapped"
+_NOT_EXPECTED = "NotExpected"
+
+# Covered and NoData are ONE health class for audit purposes. They stay
+# separate current states with their own timestamps and counters, but a
+# move between them is not a change worth a history row — recording
+# every oscillation would turn a bounded table into a per-tick log.
+_HEALTHY_STATES = frozenset({_COVERED, _NO_DATA})
+
+_LANE_HEALTHY = "lane_healthy"
+_LANE_FAILING = "lane_failing"
+
+_REASON_IDENTITY = "identity_unresolved"
+_REASON_UNTRUSTED = "untrusted_outcome"
+_REASON_PROVIDER_ERROR = "provider_error"
+_REASON_LANE_UNTRUSTED = "lane_untrusted"
+_REASON_INTEGRITY = "unresolvable_scan_name"
+
+# Its own scope: an integrity condition is a fact about the scan, not
+# about one instrument (there is no instrument to name) and not a lane
+# incident (the lane itself is healthy). Overloading either would make
+# `scope` useless for filtering.
+_SCOPE_INTEGRITY = "integrity"
+_INTEGRITY_PRESENT = "integrity_present"
+_INTEGRITY_CLEAR = "integrity_clear"
+
+_COMPANY_LISTERS = {
+    "edgar": lambda settings: edgar_service.get_edgar_companies(settings.cache_dir, settings),
+    "dart": lambda settings: dart_radar_service.get_radar_companies(settings.cache_dir, settings),
+    "edinet": lambda settings: edinet_service.get_edinet_companies(settings.cache_dir),
+}
+
+
+@contextmanager
+def _coverage_transaction(coverage_repo):
+    """One top-level transaction per lane per tick, so state rows and
+    history rows can never disagree. Never nested — both connection
+    packages document that nesting is unsupported. A repository without
+    a `conn` (the in-memory fake the tests use) simply yields."""
+    conn = getattr(coverage_repo, "conn", None)
+    if conn is None:
+        yield
+        return
+    if hasattr(conn, "rollback") and hasattr(conn, "commit"):
+        try:
+            yield
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        return
+    yield
+
+
+def _is_healthy(state: str | None) -> bool:
+    return state in _HEALTHY_STATES
+
+
+@dataclass(frozen=True)
+class _LaneInstrument:
+    """One registry issuer's standing on one lane for this tick."""
+
+    company_name: str
+    active: bool           # still in the lane service's active company list
+    identity_resolved: bool
+
+
+def _lane_instruments(lane: str, worker_settings: Settings) -> dict[str, _LaneInstrument]:
+    """{issuer_id: _LaneInstrument} for EVERY registry issuer on this
+    lane — active and inactive alike.
+
+    The registry is the authoritative universe. Inactive issuers are
+    returned too, flagged, rather than filtered out: a company that goes
+    inactive silently stops appearing in scan output
+    (`get_tracked_companies_for_source` is active-only), so if it were
+    dropped here its last row would simply freeze on whatever state it
+    held and then age into Stale — reported forever as a coverage gap
+    for an instrument nobody expects to cover. Returning it lets the
+    caller record NotExpected instead.
+
+    Also the only source available on a provider-wide failure, where
+    there is no ScanResult at all yet every expected instrument still
+    has to be marked."""
+    from src.config.issuer_registry import SEED_ISSUERS, source_name_for_seed_issuer
+
+    display_source = _SOURCE_DISPLAY_NAMES[lane]
+    resolved_by_name = {c.name: bool(c.corp_code) for c in _COMPANY_LISTERS[lane](worker_settings)}
+    instruments: dict[str, _LaneInstrument] = {}
+    for issuer in SEED_ISSUERS:
+        if source_name_for_seed_issuer(issuer) != display_source:
+            continue
+        name = issuer.legal_name
+        active = name in resolved_by_name
+        instruments[issuer.issuer_id] = _LaneInstrument(
+            company_name=name, active=active,
+            identity_resolved=resolved_by_name.get(name, False),
+        )
+    return instruments
+
+
+def _expected_instruments(lane: str, worker_settings: Settings) -> dict[str, tuple[str, bool]]:
+    """The ACTIVE subset, in the shape the outcome rules consume."""
+    return {
+        issuer_id: (instrument.company_name, instrument.identity_resolved)
+        for issuer_id, instrument in _lane_instruments(lane, worker_settings).items()
+        if instrument.active
+    }
+
+
+def _apply_not_expected(coverage_repo, lane: str, instruments: dict, existing: dict, now: str) -> None:
+    """Records every inactive registry issuer as NotExpected.
+
+    Timestamps and counters are carried forward untouched — an issuer
+    leaving the scanned universe is not an observation, so neither
+    `last_attempt_at` nor `last_success_at` may move. An event is
+    written only on the crossing itself, so a permanently inactive
+    issuer costs one row once, not one per tick."""
+    for issuer_id, instrument in instruments.items():
+        if instrument.active:
+            continue
+        previous = existing.get((issuer_id, lane))
+        if previous is not None and previous.coverage_state == _NOT_EXPECTED:
+            coverage_repo.upsert_coverage_status(
+                _next_status(previous, issuer_id, lane, _NOT_EXPECTED, now)
+            )
+            continue  # already not expected — event-silent
+        coverage_repo.upsert_coverage_status(
+            _next_status(previous, issuer_id, lane, _NOT_EXPECTED, now)
+        )
+        if previous is not None:
+            coverage_repo.record_coverage_event(CoverageEvent(
+                scope="instrument", issuer_id=issuer_id, lane=lane,
+                from_state=previous.coverage_state, to_state=_NOT_EXPECTED,
+                failure_class=None, blocking_reason="", detail="", at=now,
+            ))
+
+
+def _blank_status(issuer_id: str, lane: str, now: str) -> InstrumentLaneCoverage:
+    return InstrumentLaneCoverage(
+        issuer_id=issuer_id, lane=lane, expected=True, coverage_state=_FAILING,
+        last_attempt_at=None, last_success_at=None, last_no_data_at=None,
+        last_item_at=None, last_material_item_at=None,
+        consecutive_empty_runs=0, consecutive_failures=0,
+        failure_class=None, blocking_reason="", updated_at=now,
+    )
+
+
+def _next_status(
+    previous: InstrumentLaneCoverage | None, issuer_id: str, lane: str, state: str,
+    now: str, *, blocking_reason: str = "", failure_class: str | None = None,
+    has_new_item: bool = False, has_new_material_item: bool = False,
+) -> InstrumentLaneCoverage:
+    """Applies one outcome to one instrument's row.
+
+    The single invariant this function exists to enforce: only Covered
+    and NoData may advance `last_success_at`. Every other state carries
+    the previous value forward untouched, so a failing scan can never be
+    read later as a recent successful observation."""
+    base = previous or _blank_status(issuer_id, lane, now)
+    advances_success = state in _HEALTHY_STATES
+    return InstrumentLaneCoverage(
+        issuer_id=issuer_id,
+        lane=lane,
+        expected=state != _NOT_EXPECTED,
+        coverage_state=state,
+        last_attempt_at=now if state != _NOT_EXPECTED else base.last_attempt_at,
+        last_success_at=now if advances_success else base.last_success_at,
+        last_no_data_at=now if state == _NO_DATA else base.last_no_data_at,
+        last_item_at=now if has_new_item else base.last_item_at,
+        last_material_item_at=now if has_new_material_item else base.last_material_item_at,
+        consecutive_empty_runs=(base.consecutive_empty_runs + 1) if state == _NO_DATA else (
+            0 if state == _COVERED else base.consecutive_empty_runs
+        ),
+        consecutive_failures=(base.consecutive_failures + 1) if state == _FAILING else (
+            0 if advances_success else base.consecutive_failures
+        ),
+        failure_class=failure_class if state == _FAILING else None,
+        blocking_reason=blocking_reason,
+        updated_at=now,
+    )
+
+
+def _classify(
+    issuer_id: str, name: str, identity_resolved: bool, report, previous, lane: str, now: str,
+) -> InstrumentLaneCoverage:
+    """The ordered rules. First match wins — see this section's header
+    for why the order is load-bearing rather than cosmetic."""
+    if not identity_resolved:
+        return _next_status(previous, issuer_id, lane, _UNMAPPED, now, blocking_reason=_REASON_IDENTITY)
+    if name in set(getattr(report, "no_data_companies", ())):
+        return _next_status(previous, issuer_id, lane, _NO_DATA, now)
+    if name in set(getattr(report, "observed_companies", ())):
+        return _next_status(
+            previous, issuer_id, lane, _COVERED, now,
+            has_new_item=name in set(getattr(report, "companies_with_new_items", ())),
+            has_new_material_item=name in set(getattr(report, "companies_with_new_material_items", ())),
+        )
+    return _next_status(previous, issuer_id, lane, _FAILING, now, blocking_reason=_REASON_UNTRUSTED)
+
+
+def _lane_was_failing(existing: dict, expected: dict, lane: str) -> bool:
+    """A lane counts as already in a lane-wide incident when every
+    expected instrument is Failing for a lane-scoped reason. Used only
+    to decide whether a lane event is a new transition."""
+    rows = [existing.get((iid, lane)) for iid in expected]
+    if not rows or any(r is None for r in rows):
+        return False
+    return all(
+        r.coverage_state == _FAILING and r.blocking_reason in (_REASON_PROVIDER_ERROR, _REASON_LANE_UNTRUSTED)
+        for r in rows
+    )
+
+
+def _apply_lane_failure(
+    coverage_repo, lane: str, worker_settings: Settings, blocking_reason: str,
+    failure_class: str | None, now: str,
+) -> None:
+    """Every expected instrument on the lane becomes Failing, and no
+    instrument's `last_success_at` advances. Exactly ONE lane-scoped
+    event is written — fanning this out per instrument would record one
+    copy per instrument of a single fact about the lane, and is what
+    would make the history table unbounded under a flapping source."""
+    instruments = _lane_instruments(lane, worker_settings)
+    expected = {i: v for i, v in instruments.items() if v.active}
+    existing = coverage_repo.get_all_coverage_statuses()
+    was_failing = _lane_was_failing(existing, expected, lane)
+    for issuer_id in expected:
+        coverage_repo.upsert_coverage_status(_next_status(
+            existing.get((issuer_id, lane)), issuer_id, lane, _FAILING, now,
+            blocking_reason=blocking_reason, failure_class=failure_class,
+        ))
+    _apply_not_expected(coverage_repo, lane, instruments, existing, now)
+    if not was_failing:
+        coverage_repo.record_coverage_event(CoverageEvent(
+            scope="lane", issuer_id=None, lane=lane,
+            from_state=_LANE_HEALTHY, to_state=_LANE_FAILING,
+            failure_class=failure_class, blocking_reason=blocking_reason,
+            detail="", at=now,
+        ))
+
+
+def _unknown_name_digest(names) -> str:
+    """A deterministic fingerprint of the unknown-name SET, used only to
+    detect change between ticks.
+
+    A digest rather than the names themselves: an unrecognized name came
+    from provider output, so storing it verbatim would put untrusted
+    source text in a history row that the Coverage page and any future
+    export read. The digest is a SHA-256 prefix over the sorted names —
+    stable across ticks, order-independent, and not reversible to a
+    name. Only the digest and a count ever leave this function."""
+    import hashlib
+
+    ordered = sorted(set(names))
+    if not ordered:
+        return ""
+    fingerprint = hashlib.sha256("\n".join(ordered).encode("utf-8")).hexdigest()[:16]
+    return f"count={len(ordered)} digest={fingerprint}"
+
+
+def _last_integrity_detail(coverage_repo, lane: str) -> str:
+    """The most recent integrity condition recorded for this lane, or ""
+    when the condition is not currently present.
+
+    Read back from the events table rather than stored in a new column:
+    the condition is already fully described by the last integrity event,
+    so a schema change would add a second place for the same fact to live
+    and a second place for it to drift."""
+    try:
+        events = coverage_repo.get_coverage_events(lane)
+    except Exception:  # noqa: BLE001 — change detection must never fail a tick
+        return ""
+    for event in reversed(list(events)):
+        if event.scope == _SCOPE_INTEGRITY:
+            return "" if event.to_state == _INTEGRITY_CLEAR else (event.detail or "")
+    return ""
+
+
+def _apply_integrity_condition(coverage_repo, lane: str, unknown_names, now: str) -> None:
+    """Records unrecognized scan names as their own condition.
+
+    Three properties this needs and the previous version did not have:
+    it is its own `scope`, so it never masquerades as an instrument
+    event with no instrument; it writes only when the condition first
+    appears, changes, or clears, so a persistent unknown name costs one
+    row rather than one per tick; and an exact replay of the same tick
+    writes nothing, because the digest is unchanged."""
+    current = _unknown_name_digest(unknown_names)
+    previous = _last_integrity_detail(coverage_repo, lane)
+    if current == previous:
+        return
+    coverage_repo.record_coverage_event(CoverageEvent(
+        scope=_SCOPE_INTEGRITY, issuer_id=None, lane=lane,
+        from_state=_INTEGRITY_PRESENT if previous else _INTEGRITY_CLEAR,
+        to_state=_INTEGRITY_PRESENT if current else _INTEGRITY_CLEAR,
+        failure_class=None, blocking_reason=_REASON_INTEGRITY,
+        detail=current, at=now,
+    ))
+
+
+def _apply_coverage_outcomes(coverage_repo, lane: str, worker_settings: Settings, report, now: str) -> None:
+    """One trustworthy scan's outcomes, applied to every registry
+    instrument on the lane.
+
+    EDINET's empty `observed_companies` is the lane-untrusted signal:
+    its no-data set is derived by complement over day rows, so an
+    untrustworthy day would otherwise name every company as healthy
+    no-data."""
+    if lane == "edinet" and not getattr(report, "observed_companies", ()):
+        _apply_lane_failure(coverage_repo, lane, worker_settings, _REASON_LANE_UNTRUSTED, None, now)
+        return
+
+    instruments = _lane_instruments(lane, worker_settings)
+    expected = {i: (v.company_name, v.identity_resolved) for i, v in instruments.items() if v.active}
+    existing = coverage_repo.get_all_coverage_statuses()
+    lane_recovering = _lane_was_failing(existing, expected, lane)
+
+    for issuer_id, (name, identity_resolved) in expected.items():
+        previous = existing.get((issuer_id, lane))
+        status = _classify(issuer_id, name, identity_resolved, report, previous, lane, now)
+        coverage_repo.upsert_coverage_status(status)
+
+        previous_state = previous.coverage_state if previous else None
+        previous_reason = previous.blocking_reason if previous else ""
+        if previous_state is None:
+            continue  # first sighting is the row itself, not a transition
+
+        # During a lane recovery, only the recovery OF the lane-wide
+        # failure is attributable to the lane and covered by the single
+        # lane event below. An issuer that independently fails on the
+        # same tick is its own fact and still gets its own event —
+        # otherwise that failure would never appear in history at all,
+        # because the next tick sees no change.
+        recovered_from_lane_incident = (
+            lane_recovering
+            and previous_reason in (_REASON_PROVIDER_ERROR, _REASON_LANE_UNTRUSTED)
+            and _is_healthy(status.coverage_state)
+        )
+        if recovered_from_lane_incident:
+            continue
+
+        changed_class = _is_healthy(status.coverage_state) != _is_healthy(previous_state)
+        changed_reason = previous_reason != status.blocking_reason
+        if changed_class or changed_reason:
+            coverage_repo.record_coverage_event(CoverageEvent(
+                scope="instrument", issuer_id=issuer_id, lane=lane,
+                from_state=previous_state, to_state=status.coverage_state,
+                failure_class=status.failure_class, blocking_reason=status.blocking_reason,
+                detail="", at=now,
+            ))
+
+    _apply_not_expected(coverage_repo, lane, instruments, existing, now)
+
+    if lane_recovering:
+        coverage_repo.record_coverage_event(CoverageEvent(
+            scope="lane", issuer_id=None, lane=lane,
+            from_state=_LANE_FAILING, to_state=_LANE_HEALTHY,
+            failure_class=None, blocking_reason="", detail="", at=now,
+        ))
+
+    # An unrecognized scan name is an integrity problem, never a silent
+    # drop and never healthy no-data: the scan reported a company this
+    # worker cannot tie to any registry instrument.
+    known_names = {value.company_name for value in instruments.values()}
+    unknown = [n for n in (getattr(report, "observed_companies", ()) or ()) if n not in known_names]
+    _apply_integrity_condition(coverage_repo, lane, unknown, now)
+
 
 def _run_provider_tick(
-    provider_key: str, worker_settings: Settings, scan_status_repo,
+    provider_key: str, worker_settings: Settings, scan_status_repo, coverage_repo=None,
 ) -> tuple[dict[str, CandidateSignal], tuple[ResearchCase, ...]]:
     """Phase 2 (design/DECISIONS.md): now returns this tick's own
     `(candidates, newly_created_cases)` for EVERY provider — EDGAR,
@@ -911,6 +1305,19 @@ def _run_provider_tick(
             report = service_module.run_scan(worker_settings, candidate_repository=candidate_repository)
         except Exception as exc:  # noqa: BLE001 — one provider's failure must never stop the others
             _record_failure(scan_status_repo, display_source, previous_status, started_at, type(exc).__name__)
+            # Every expected instrument on this lane becomes Failing, with
+            # one lane-scoped event. Guarded separately so a coverage-write
+            # problem can never change how a scan failure is reported.
+            if coverage_repo is not None:
+                try:
+                    with _coverage_transaction(coverage_repo):
+                        _apply_lane_failure(
+                            coverage_repo, provider_key, worker_settings,
+                            _REASON_PROVIDER_ERROR, type(exc).__name__,
+                            datetime.now(timezone.utc).isoformat(),
+                        )
+                except Exception:  # noqa: BLE001 — coverage is observability, never the scan's outcome
+                    print(f"{provider_key.upper()}: coverage write failed — scan outcome unaffected.")
             print(f"{provider_key.upper()}: scan failed ({type(exc).__name__}) — skipped this tick.")
             return _NO_CASES_GATHERED
 
@@ -948,6 +1355,18 @@ def _run_provider_tick(
             failure_code=None,
             updated_at=completed_at,
         ))
+        # Measured coverage, written immediately after the provider-level
+        # scan status it complements. In its own guard: a successful scan
+        # must never be reported as failed because an observability write
+        # did not land.
+        if coverage_repo is not None:
+            try:
+                with _coverage_transaction(coverage_repo):
+                    _apply_coverage_outcomes(
+                        coverage_repo, provider_key, worker_settings, report, completed_at,
+                    )
+            except Exception:  # noqa: BLE001 — coverage is observability, never the scan's outcome
+                print(f"{provider_key.upper()}: coverage write failed — scan outcome unaffected.")
         # One line per provider carrying each funnel stage separately, so
         # a drop can be located rather than guessed at. already_seen
         # comes from the on-disk dedupe cache, which is ephemeral on a
@@ -1018,7 +1437,10 @@ def _run_provider_tick(
         return _NO_CASES_GATHERED
 
 
-def run_one_tick(worker_settings: Settings, scan_status_repo, providers: tuple[str, ...] = _PROVIDERS) -> None:
+def run_one_tick(
+    worker_settings: Settings, scan_status_repo, providers: tuple[str, ...] = _PROVIDERS,
+    coverage_repo=None,
+) -> None:
     """Runs exactly one scan attempt per provider, in order, each fully
     isolated from the others' exceptions. Never loops, never sleeps,
     never checks the shutdown flag itself — the only function tests
@@ -1052,7 +1474,9 @@ def run_one_tick(worker_settings: Settings, scan_status_repo, providers: tuple[s
     all_candidates: dict[str, CandidateSignal] = {}
     all_newly_created_cases: list[ResearchCase] = []
     for provider_key in providers:
-        candidates, newly_created_cases = _run_provider_tick(provider_key, worker_settings, scan_status_repo)
+        candidates, newly_created_cases = _run_provider_tick(
+            provider_key, worker_settings, scan_status_repo, coverage_repo,
+        )
         all_candidates.update(candidates)
         all_newly_created_cases.extend(newly_created_cases)
 
@@ -1111,6 +1535,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         scan_status_repo = backend_factory.get_scan_status_repository(worker_settings)
+        # Optional by construction: a backend that cannot provide measured
+        # coverage must not stop the worker from scanning.
+        try:
+            coverage_repo = backend_factory.get_coverage_status_repository(worker_settings)
+        except Exception:  # noqa: BLE001 — coverage is observability, never a scan precondition
+            coverage_repo = None
+            print("coverage: measured-coverage persistence unavailable — scans continue.")
     except Exception as exc:  # noqa: BLE001 — never leak a raw connection/config error
         print(f"ERROR: could not construct the scan-status repository ({type(exc).__name__}).", file=sys.stderr)
         return 1
@@ -1123,7 +1554,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     while not _shutdown_requested:
-        run_one_tick(worker_settings, scan_status_repo, providers=active_providers)
+        run_one_tick(worker_settings, scan_status_repo, providers=active_providers, coverage_repo=coverage_repo)
         if _shutdown_requested:
             break
         _sleep_in_chunks(interval_seconds)
