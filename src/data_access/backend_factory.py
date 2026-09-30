@@ -105,6 +105,7 @@ from src.data_access.postgres_state_db import user_account_repository as postgre
 from src.data_access.postgres_state_db import user_preferences_repository as postgres_user_preferences
 from src.data_access.postgres_state_db import agent_repository as postgres_agent_store
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
+from src.data_access.postgres_state_db import coverage_status_repository as postgres_coverage_status
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
     ResolvedIdentifierRecord as PostgresResolvedIdentifierRecord,
@@ -124,9 +125,11 @@ from src.data_access.state_db import user_account_repository as sqlite_user_acco
 from src.data_access.state_db import user_preferences_repository as sqlite_user_preferences
 from src.data_access.state_db import agent_repository as sqlite_agent_store
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
+from src.data_access.state_db import coverage_status_repository as sqlite_coverage_status
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.data_access.state_db.coverage_status_repository import CoverageEvent, InstrumentLaneCoverage
 from src.data_access.state_db.signal_repository import SqliteSignalRepository
 from src.models.models import CandidateSignal, FilingEvent
 from src.logic.research_case_validation import ResearchCaseBundle
@@ -875,6 +878,82 @@ class PostgresScanStatusRepository:
 
     def upsert_scan_status(self, status: PostgresProviderScanStatus) -> None:
         postgres_scan_status.upsert_scan_status(self.conn, status)
+
+
+# --- Measured Radar coverage (Coverage Control Plane, Milestone 1) ---
+#
+# Same posture as the scan-status factory above: sqlite/postgres only,
+# no JSON branch. Unlike that one, this repository is read by the
+# Coverage page as well as written by the worker, so the page is
+# expected to treat a BackendConfigurationError as "no measured
+# coverage available" and fall back to its static panel — never to
+# surface a backend problem to a reader.
+
+class CoverageStatusRepositoryProtocol(Protocol):
+    def get_coverage_status(self, issuer_id: str, lane: str) -> object | None: ...
+    def get_all_coverage_statuses(self) -> dict: ...
+    def get_coverage_statuses_for_lane(self, lane: str) -> tuple: ...
+    def upsert_coverage_status(self, status: object) -> None: ...
+    def record_coverage_event(self, event: object) -> None: ...
+    def get_coverage_events(self, lane: str | None = None) -> tuple: ...
+
+
+@dataclass(frozen=True)
+class SqliteCoverageStatusRepository:
+    conn: sqlite3.Connection
+
+    def get_coverage_status(self, issuer_id: str, lane: str):
+        return sqlite_coverage_status.get_coverage_status(self.conn, issuer_id, lane)
+
+    def get_all_coverage_statuses(self) -> dict:
+        return sqlite_coverage_status.get_all_coverage_statuses(self.conn)
+
+    def get_coverage_statuses_for_lane(self, lane: str) -> tuple:
+        return sqlite_coverage_status.get_coverage_statuses_for_lane(self.conn, lane)
+
+    def upsert_coverage_status(self, status) -> None:
+        sqlite_coverage_status.upsert_coverage_status(self.conn, status)
+
+    def record_coverage_event(self, event) -> None:
+        sqlite_coverage_status.record_coverage_event(self.conn, event)
+
+    def get_coverage_events(self, lane: str | None = None) -> tuple:
+        return sqlite_coverage_status.get_coverage_events(self.conn, lane)
+
+
+@dataclass(frozen=True)
+class PostgresCoverageStatusRepository:
+    conn: psycopg.Connection
+
+    def get_coverage_status(self, issuer_id: str, lane: str):
+        return postgres_coverage_status.get_coverage_status(self.conn, issuer_id, lane)
+
+    def get_all_coverage_statuses(self) -> dict:
+        return postgres_coverage_status.get_all_coverage_statuses(self.conn)
+
+    def get_coverage_statuses_for_lane(self, lane: str) -> tuple:
+        return postgres_coverage_status.get_coverage_statuses_for_lane(self.conn, lane)
+
+    def upsert_coverage_status(self, status) -> None:
+        postgres_coverage_status.upsert_coverage_status(self.conn, status)
+
+    def record_coverage_event(self, event) -> None:
+        postgres_coverage_status.record_coverage_event(self.conn, event)
+
+    def get_coverage_events(self, lane: str | None = None) -> tuple:
+        return postgres_coverage_status.get_coverage_events(self.conn, lane)
+
+
+def get_coverage_status_repository(settings: Settings) -> CoverageStatusRepositoryProtocol:
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteCoverageStatusRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresCoverageStatusRepository(conn=_require_postgres_connection(settings))
+    raise BackendConfigurationError(
+        "Measured coverage persistence requires an explicit db_backend of "
+        f'"sqlite" or "postgres" (got {backend!r}).'
+    )
 
 
 def get_scan_status_repository(settings: Settings) -> ScanStatusRepositoryProtocol:

@@ -73,6 +73,12 @@ class ScanResult:
     # One entry per company that failed — the scan continues for the
     # remaining companies rather than aborting entirely.
     errors: tuple[str, ...]
+    # Coverage Control Plane, Milestone 1 — see edgar/scan_service.py's
+    # own ScanResult for the full contract. A company is included only
+    # when its identity resolved and every page request completed
+    # without a DartError; trustworthy no-data and already-seen-only
+    # outcomes are included, an aborted company is not.
+    observed_companies: tuple[str, ...] = ()
     # Companies whose search legitimately returned zero disclosures this
     # window (DART status "013" / an empty first page) — an expected,
     # non-error outcome, tracked separately from `errors` so a caller can
@@ -205,6 +211,7 @@ def scan(
     already_seen_count = 0
     errors: list[str] = []
     no_data_companies: list[str] = []
+    observed_companies: list[str] = []
 
     for company in companies:
         if not company.corp_code:
@@ -229,6 +236,9 @@ def scan(
                 if not records or page_no * PAGE_SIZE >= total_count:
                     break
                 page_no += 1
+            # Every page for this company completed — the outcome, new
+            # filings or none, is one this scan stands behind.
+            observed_companies.append(company.name)
         except DartError as exc:
             errors.append(f"{company.name}: {exc}")
             continue
@@ -245,4 +255,5 @@ def scan(
     return ScanResult(
         scope=scope, new_filing_events=tuple(new_filing_events), new_candidate_signals=tuple(new_candidate_signals),
         already_seen_count=already_seen_count, errors=tuple(errors), no_data_companies=tuple(no_data_companies),
+        observed_companies=tuple(observed_companies),
     )

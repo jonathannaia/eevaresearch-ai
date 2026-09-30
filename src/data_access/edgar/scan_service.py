@@ -73,6 +73,15 @@ class ScanResult:
     already_seen_count: int
     errors: tuple[str, ...]
     no_data_companies: tuple[str, ...] = ()
+    # Coverage Control Plane, Milestone 1 — the companies whose scan
+    # completed with results this scan is willing to stand behind:
+    # identity resolved, fetch completed, rows parsed with no
+    # company-level warning. It deliberately INCLUDES trustworthy
+    # no-data and already-seen-only outcomes, because "we looked
+    # properly and there was nothing new" is a successful observation.
+    # A company absent from here was not trustworthily observed, whether
+    # or not it also appears in no_data_companies.
+    observed_companies: tuple[str, ...] = ()
 
 
 def normalize_recent_filings(recent: object) -> tuple[list[dict], tuple[str, ...]]:
@@ -269,6 +278,7 @@ def scan(
     already_seen_count = 0
     errors: list[str] = []
     no_data_companies: list[str] = []
+    observed_companies: list[str] = []
 
     for company in companies:
         if not company.corp_code:
@@ -285,6 +295,7 @@ def scan(
             errors.append(f"{company.name}: {warning}")
         if not rows and not warnings:
             no_data_companies.append(company.name)
+            observed_companies.append(company.name)
             continue
 
         matched_in_window = 0
@@ -312,6 +323,12 @@ def scan(
 
         if matched_in_window == 0 and not warnings:
             no_data_companies.append(company.name)
+        if not warnings:
+            # Reached only past the identity check and a completed fetch,
+            # so this covers new filings, already-seen-only, and
+            # trustworthy no-data alike. A company that produced any
+            # warning is excluded: its outcome cannot be trusted.
+            observed_companies.append(company.name)
 
     cache["seen_keys"] = sorted(seen)
     cache["filing_events"] = cache["filing_events"] + [asdict(f) for f in new_filing_events]
@@ -325,4 +342,5 @@ def scan(
     return ScanResult(
         scope=scope, new_filing_events=tuple(new_filing_events), new_candidate_signals=tuple(new_candidate_signals),
         already_seen_count=already_seen_count, errors=tuple(errors), no_data_companies=tuple(no_data_companies),
+        observed_companies=tuple(observed_companies),
     )

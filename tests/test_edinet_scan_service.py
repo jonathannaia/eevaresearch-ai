@@ -943,3 +943,47 @@ def test_scan_calls_get_document_list_exactly_once_per_date_via_the_shared_helpe
     client = _client({})
     scan_service.scan(client, [_ACME], tmp_path, lookback_days=2)
     assert client.get_document_list.call_count == 3  # 2-day lookback -> 3 calendar days, one call each
+
+
+# --- observed_companies: what the lane is willing to stand behind -----------
+#
+# EDINET infers a company's absence from a day's rows, so that inference
+# is only sound when the day fetched completely. `observed_companies` is
+# the signal the coverage worker uses to decide whether to trust the
+# complement-derived `no_data_companies` at all.
+
+def test_a_clean_day_fetch_observes_every_queried_company(tmp_path):
+    today = datetime.now(timezone.utc).date().isoformat()
+    client = _client({today: _envelope([_result()])})
+
+    result = scan_service.scan(client, [_ACME, _SOFTBANK], tmp_path, lookback_days=1)
+
+    assert set(result.observed_companies) == {"Acme Test Co", "SoftBank Group Corp."}
+
+
+def test_a_warned_day_fetch_observes_nothing_so_the_lane_is_untrusted(tmp_path):
+    """A day that could not be trusted must not let the complement below
+    name every company as healthy no-data."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    client = _client({today: _envelope([], status="500", message="server error")})
+
+    result = scan_service.scan(client, [_ACME, _SOFTBANK], tmp_path, lookback_days=1)
+
+    assert result.errors  # the day warning is still reported as before
+    assert result.observed_companies == ()
+    # The complement still names them; it is the empty observed set that
+    # tells the caller not to believe it.
+    assert set(result.no_data_companies) == {"Acme Test Co", "SoftBank Group Corp."}
+
+
+def test_a_rejected_document_date_on_a_good_day_does_not_untrust_the_lane(tmp_path):
+    """Regression for the over-broad trust gate: a row-level date
+    rejection is ordinary data quality on a complete fetch and says
+    nothing about whether the day's row set is whole."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    client = _client({today: _envelope([_result(submit_date_time="not-a-timestamp")])})
+
+    result = scan_service.scan(client, [_ACME, _SOFTBANK], tmp_path, lookback_days=1)
+
+    assert result.errors  # the rejection is still collected as a diagnostic
+    assert set(result.observed_companies) == {"Acme Test Co", "SoftBank Group Corp."}
