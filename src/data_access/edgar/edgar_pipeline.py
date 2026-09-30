@@ -32,6 +32,8 @@ from src.data_access.dart.candidate_store import CandidatePersistence
 from src.data_access.daily_news.edgar_filing_candidate_adapter import map_edgar_filing_to_candidate
 from src.data_access.daily_news.filing_event_models import FilingDerivedNewsCandidate
 from src.data_access.edgar import document_service, edgar_rules, scan_service
+from src.logic.edgar_publication_gate import may_publish_autonomously
+from src.logic.signal_promotion import PUBLISHED_BY_AUTONOMOUS_EDGAR
 from src.logic.signal_decision_policy import SignalRoute, decide_signal_route
 from src.data_access.edgar.client import EdgarClient
 from src.models.models import (
@@ -197,6 +199,11 @@ def process_candidate(
     counters: dict[str, int],
     error_counts: dict[str, int],
     auto_publish_enabled: bool = False,
+    # The database-backed EDGAR publication control, resolved by the
+    # execution boundary. Defaults to False at EVERY boundary so a
+    # caller that omits it cannot publish: supplying
+    # auto_publish_enabled=True alone is never sufficient.
+    publication_control_enabled: bool = False,
 ) -> CandidateSignal:
     """The per-candidate retrieval/extraction state machine — a single
     explicit candidate, never a loop. Called both from run_pipeline's
@@ -312,8 +319,26 @@ def process_candidate(
             final_status = CandidateStatus.MONITORING
         elif shadow_decision.route == SignalRoute.ARCHIVE:
             final_status = CandidateStatus.DISMISSED
-        elif shadow_decision.route == SignalRoute.PUBLISH and auto_publish_enabled:
+        elif shadow_decision.route == SignalRoute.PUBLISH and auto_publish_enabled and may_publish_autonomously(
+            source_name=candidate.filing.source_name,
+            # pblntf_ty, NOT report_nm: report_nm is primaryDocDescription
+            # (a document description), while pblntf_ty carries the
+            # canonical SEC form code. signal_decision_policy reads
+            # pblntf_ty too — the gate and the policy must agree on where
+            # the form type lives or the cohort check is meaningless.
+            form_type=candidate.filing.pblntf_ty,
+            route=shadow_decision.route,
+            setting_enabled=auto_publish_enabled,
+            control_enabled=publication_control_enabled,
+        ).allowed:
+            # Cohort-scoped, not route-scoped. Both booleans are real
+            # values threaded from the execution boundary -- neither is
+            # assumed here -- and the gate additionally re-checks lane and
+            # form, so a future rule that
+            # returns PUBLISH for another form cannot publish even if the
+            # flag is on. Both have to agree.
             final_status = CandidateStatus.PUBLISHED
+            candidate.published_by = PUBLISHED_BY_AUTONOMOUS_EDGAR
         else:
             # REVIEW and disabled PUBLISH remain human-gated.
             final_status = CandidateStatus.NEEDS_REVIEW
@@ -332,6 +357,11 @@ def process_single_candidate(
     cache_dir: Path,
     candidate_repository: CandidatePersistence | None = None,
     auto_publish_enabled: bool = False,
+    # The database-backed EDGAR publication control, resolved by the
+    # execution boundary. Defaults to False at EVERY boundary so a
+    # caller that omits it cannot publish: supplying
+    # auto_publish_enabled=True alone is never sufficient.
+    publication_control_enabled: bool = False,
 ) -> CandidateSignal | None:
     """On-demand processing of exactly one named candidate — the seam
     Radar Inbox's manual "Process now"/"Retry processing" actions call
@@ -357,6 +387,7 @@ def process_single_candidate(
         counters,
         error_counts,
         auto_publish_enabled=auto_publish_enabled,
+        publication_control_enabled=publication_control_enabled,
     )
     if candidate_repository is None:
         candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)
@@ -373,6 +404,11 @@ def run_pipeline(
     max_candidates_to_process: int = DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
     auto_publish_enabled: bool = False,
+    # The database-backed EDGAR publication control, resolved by the
+    # execution boundary. Defaults to False at EVERY boundary so a
+    # caller that omits it cannot publish: supplying
+    # auto_publish_enabled=True alone is never sufficient.
+    publication_control_enabled: bool = False,
     filing_candidate_shadow_enabled: bool = False,
 ) -> ScanReport:
     """One bounded, idempotent pipeline run. Re-running with the same
@@ -446,6 +482,7 @@ def run_pipeline(
             counters,
             error_counts,
             auto_publish_enabled=auto_publish_enabled,
+            publication_control_enabled=publication_control_enabled,
         )
         if candidate_repository is None:
             candidate_store.update_candidate(cache_dir, processed, CANDIDATE_STORE_FILENAME)

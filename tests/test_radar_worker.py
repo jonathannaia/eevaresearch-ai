@@ -76,13 +76,19 @@ def test_build_worker_settings_uses_dedicated_worker_fields_not_ambient_db_field
     assert worker_settings.state_db_url is None
 
 
-def test_build_worker_settings_forces_edgar_auto_publish_disabled_even_when_ambient_enables_it(tmp_path):
-    """The critical safety proof: EDGE_EDGAR_AUTO_PUBLISH_ENABLED=true in
-    this worker process's own ambient environment must never let the
-    worker autonomously PUBLISH a candidate. edgar_pipeline.run_pipeline's
-    own auto_publish_enabled parameter (a separate, pre-existing feature)
-    is the one mechanism that could otherwise do this — see this
-    module's own docstring."""
+def test_build_worker_settings_never_freezes_the_publication_control_state(tmp_path):
+    """The safety proof, relocated rather than weakened.
+
+    This function used to force edgar_auto_publish_enabled=False
+    unconditionally. That was right while nothing could publish, but it
+    also meant a control read here would freeze for the lifetime of the
+    worker process — so `--off` would have needed a restart.
+
+    The setting now passes through, and publication is gated by the
+    database control that edgar_service.run_scan() re-reads on every
+    tick. What this test proves is the narrow thing this function is
+    still responsible for: it decides nothing about publication on its
+    own, and carries no cached control state."""
     ambient = _ambient_settings(
         radar_worker_db_backend="sqlite",
         radar_worker_state_db_path=tmp_path / "state.db",
@@ -91,7 +97,15 @@ def test_build_worker_settings_forces_edgar_auto_publish_disabled_even_when_ambi
     assert ambient.edgar_auto_publish_enabled is True  # sanity: the dangerous ambient value is really set
 
     worker_settings = radar_worker._build_worker_settings(ambient)
-    assert worker_settings.edgar_auto_publish_enabled is False
+
+    # The setting is carried, not decided here...
+    assert worker_settings.edgar_auto_publish_enabled is True
+    # ...and no control state is frozen onto the settings object, so
+    # nothing here can outlive a tick. The control is resolved per call
+    # by edgar_service.run_scan(); tests/test_edgar_autonomous_publication
+    # proves the setting alone never publishes.
+    assert not hasattr(worker_settings, "publication_control_enabled")
+    assert radar_worker._build_worker_settings(ambient).edgar_auto_publish_enabled is True
 
 
 # --- _resolve_active_providers: provider-scoping safety control ---
@@ -527,3 +541,64 @@ def test_main_passes_absent_provider_list_through_as_all_three(tmp_path, monkeyp
         radar_worker._shutdown_requested = False  # restore module state for later tests
 
     assert captured_providers == [("edgar", "dart", "edinet")]
+
+
+# --- autonomous EDGAR publication: the worker reaches the control per tick ---
+#
+# The whole freshness guarantee rests on one fact: the worker calls
+# edgar_service.run_scan() once per EDGAR tick, and run_scan resolves the
+# database control per call. This asserts the worker half of that chain
+# through the normal path rather than assuming it.
+
+def test_one_edgar_provider_tick_reaches_run_scan_exactly_once(tmp_path, monkeypatch):
+    worker_settings = _worker_settings(tmp_path)
+    calls: list[object] = []
+
+    def _run_scan(settings, candidate_repository=None, **_kwargs):
+        calls.append(settings)
+        return _FakeReport()
+
+    monkeypatch.setitem(
+        radar_worker._SERVICE_MODULES, "edgar", types.SimpleNamespace(run_scan=_run_scan),
+    )
+    scan_status_repo = _scan_status_repo(worker_settings)
+
+    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+
+    assert len(calls) == 1
+
+
+def test_consecutive_edgar_ticks_each_reach_run_scan_again(tmp_path, monkeypatch):
+    """Two ticks, two resolutions — which is what lets `--off` take
+    effect on the next tick without a restart."""
+    worker_settings = _worker_settings(tmp_path)
+    calls: list[object] = []
+
+    def _run_scan(settings, candidate_repository=None, **_kwargs):
+        calls.append(settings)
+        return _FakeReport()
+
+    monkeypatch.setitem(
+        radar_worker._SERVICE_MODULES, "edgar", types.SimpleNamespace(run_scan=_run_scan),
+    )
+    scan_status_repo = _scan_status_repo(worker_settings)
+
+    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+    radar_worker._run_provider_tick("edgar", worker_settings, scan_status_repo)
+
+    assert len(calls) == 2
+
+
+def test_the_worker_settings_carry_the_setting_and_no_frozen_control(tmp_path):
+    """_build_worker_settings runs once, above the tick loop, so anything
+    it decided about publication would outlive every tick."""
+    ambient = _ambient_settings(
+        radar_worker_db_backend="sqlite",
+        radar_worker_state_db_path=tmp_path / "state.db",
+        edgar_auto_publish_enabled=True,
+    )
+
+    worker_settings = radar_worker._build_worker_settings(ambient)
+
+    assert worker_settings.edgar_auto_publish_enabled is True
+    assert not hasattr(worker_settings, "publication_control_enabled")

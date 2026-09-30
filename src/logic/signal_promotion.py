@@ -46,6 +46,25 @@ from src.ui.components.analyst_view import (
 # to CandidateStatus is excluded by default rather than silently included.
 _ELIGIBLE_STATUSES = frozenset({CandidateStatus.PUBLISHED})
 
+# Autonomous EDGAR 424B5 cohort. A withdrawn candidate simply stops
+# being in _ELIGIBLE_STATUSES above, so it leaves every public surface
+# the moment the next read happens -- no query anywhere has to remember
+# to exclude it, which is exactly the kind of thing that gets forgotten.
+PUBLISHED_BY_AUTONOMOUS_EDGAR = "autonomous_edgar_424b5"
+
+# The public wording. One constant so the Signals page and the card view
+# cannot drift apart, and so changing it is one reviewed edit.
+AUTOMATED_DISCLOSURE_LABEL = "Automated disclosure update"
+
+
+def is_autonomously_published(signal) -> bool:
+    """Whether a Signal should carry the public automation label.
+
+    Reads provenance only. It never infers from source, rule, form type
+    or confidence -- an item is labelled because it was published
+    autonomously, not because it looks like it was."""
+    return getattr(signal, "published_by", "") == PUBLISHED_BY_AUTONOMOUS_EDGAR
+
 _STRENGTH_BY_CONFIDENCE = {"Low": Strength.WEAK, "Moderate": Strength.MODERATE, "High": Strength.STRONG}
 _EDGAR_SOURCE = "SEC EDGAR"
 
@@ -162,6 +181,11 @@ def candidate_to_signal(candidate: CandidateSignal) -> Signal:
         related_tickers=[filing.stock_code] if filing.stock_code else [],
         last_updated=last_updated,
         is_demo=False,
+        # Publication provenance, copied verbatim -- never inferred. A
+        # human-published candidate carries no value here, so the public
+        # automation label below is opt-in by provenance: a human item
+        # cannot acquire it by default or by omission.
+        published_by=candidate.published_by or "",
         issuer=filing.corp_name,
         source_name=filing.source_name,
         source_url=_source_url(filing),

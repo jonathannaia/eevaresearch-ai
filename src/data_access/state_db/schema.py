@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1070,6 +1070,29 @@ _V23_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V24_STATEMENTS: tuple[str, ...] = (
+    # Autonomous EDGAR 424B5 publication control (one row, id = 1),
+    # modelled on agent_control: restrict-only, read every tick, and
+    # changeable without a redeploy.
+    #
+    # `enabled` is deliberately NOT a permission by itself. The gate in
+    # src/logic/edgar_publication_gate.py also requires the deployment
+    # setting and the cohort match, so this row can only ever take
+    # publication AWAY. An absent row, an unreadable row or a malformed
+    # value all resolve to off in the repository — the deny direction is
+    # the one a failure must fall into.
+    """
+    CREATE TABLE edgar_publication_control (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        enabled BOOLEAN NOT NULL DEFAULT 0,
+        reason TEXT,
+        updated_by TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1094,6 +1117,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (21, _V21_STATEMENTS),
     (22, _V22_STATEMENTS),
     (23, _V23_STATEMENTS),
+    (24, _V24_STATEMENTS),
 )
 
 
