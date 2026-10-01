@@ -657,7 +657,38 @@ def _run_theme_matching_step(
 _THEME_CANDIDATE_DETECTION_WINDOW_DAYS = 90
 _THEME_CANDIDATE_DETECTION_MIN_COMPANIES = 2
 _THEME_CANDIDATE_DETECTION_RULE_CATEGORIES: tuple[str, ...] = (
+    # EDGAR's own category names (8-K items 1.01 / 2.03 and the
+    # registration-and-prospectus forms / 8-K item 8.01). This tuple was
+    # written in EDGAR's vocabulary, so DART's and EDINET's category
+    # vocabularies intersected it at exactly zero: DART names its
+    # capital-raise category `financing`, not `financing_or_debt`, and
+    # EDINET's only real code-mapped categories are
+    # annual_securities_report / share_buyback_status /
+    # extraordinary_report. Nothing those two markets emit could clear
+    # this gate at all.
     "material_agreement", "financing_or_debt", "other_material_event",
+    # DART's statutory new-facility/facility-investment disclosure
+    # (신규시설투자 / 시설투자, dart_rules.KOREAN_KEYWORD_LEXICON) — a
+    # category directly related to capacity formation, and the one the
+    # DART module itself records as observed repeatedly in a real pull
+    # rather than carried as a "standard, not observed" entry.
+    #
+    # Deliberately one category, not a vocabulary alignment: admitting
+    # the category is necessary, never sufficient. The keyword gate still
+    # runs after it, `min_distinct_companies` still requires a cluster to
+    # span two issuers, and autonomous publication stays off — so this
+    # widens what can be EXAMINED for relevance, and promises no Theme
+    # candidate. No EDGAR or EDINET rule can emit this slug, so the
+    # change is market-scoped by construction and cannot alter either of
+    # those markets' detection behavior.
+    #
+    # Known limitation this does NOT address: the keyword gate reads
+    # `excerpt_original` + `report_nm` — original-language text — against
+    # an English keyword list, so an admitted DART pair is still likely
+    # to be rejected at the keyword gate instead. That is a deliberate
+    # outcome to MEASURE via the category_rejected/keyword_rejected
+    # split, not a reason to broaden keywords here.
+    "capex_or_facility_investment",
 )
 _THEME_CANDIDATE_DETECTION_KEYWORDS: tuple[str, ...] = (
     "capacity", "wafer", "fab", "foundry", "packaging", "hbm", "dram", "allocation",

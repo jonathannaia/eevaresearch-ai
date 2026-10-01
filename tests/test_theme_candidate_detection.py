@@ -759,3 +759,96 @@ def test_the_two_known_rejection_outcomes_are_matched_explicitly(monkeypatch):
         assert diag.pairs_examined - diag.pairs_malformed == (
             diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
         )
+
+
+# ============================================================
+# DART facility-investment category admission (category policy)
+# ============================================================
+
+# The allowlist as it stands AFTER this change, and as it stood before,
+# written as literals here so a pure-engine test never has to import the
+# worker. scripts/radar_worker.py's own constant is pinned separately, in
+# tests/test_radar_worker_theme_candidate_detection_integration.py.
+_ALLOWLIST_BEFORE = ("material_agreement", "financing_or_debt", "other_material_event")
+_ALLOWLIST_AFTER = _ALLOWLIST_BEFORE + ("capex_or_facility_investment",)
+
+# A real-shaped DART facility-investment rule string: the category slug,
+# the rule name, then the Korean keyword that fired, exactly the
+# `f"{category}:{rule_name}:{kw}"` shape dart_rules.evaluate_report_name
+# emits. Only the leading slug is read by the gate.
+_DART_CAPEX_RULE = "capex_or_facility_investment:facility_investment:신규시설투자"
+# Deliberately contains no term from the keyword list, so a pair built
+# with it can only be rejected at the keyword gate, never at the
+# category gate. "agreement" alone is not a keyword -- "supply
+# agreement" is -- and no substring of any other keyword occurs here.
+_NO_KEYWORD_EXCERPT = "The registrant entered into an agreement."
+
+
+def test_the_dart_facility_investment_category_now_passes_the_category_gate():
+    """The whole change, stated as one before/after: the same candidate
+    that the old allowlist rejected at the CATEGORY gate is admitted past
+    it by the new one. Nothing about the keyword gate moves."""
+    _case, candidate = _pair(matched_rules=(_DART_CAPEX_RULE,))
+
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _ALLOWLIST_BEFORE) == RELEVANCE_CATEGORY_REJECTED
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _ALLOWLIST_AFTER) == RELEVANCE_RELEVANT
+
+
+def test_an_admitted_facility_investment_pair_without_a_keyword_moves_to_the_keyword_gate():
+    """Admission is necessary, never sufficient. A pair carrying the newly
+    admitted category but no keyword must be reported as
+    `keyword_rejected` -- NOT `category_rejected`. This is the assertion
+    that proves the change moved the rejection to a later gate rather
+    than silently doing nothing, and it is exactly the migration the
+    production counters would show."""
+    _case, candidate = _pair(matched_rules=(_DART_CAPEX_RULE,), excerpt=_NO_KEYWORD_EXCERPT)
+
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _ALLOWLIST_BEFORE) == RELEVANCE_CATEGORY_REJECTED
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _ALLOWLIST_AFTER) == RELEVANCE_KEYWORD_REJECTED
+
+
+@pytest.mark.parametrize("rule", [
+    # Periodic reporting -- fires on every results filing.
+    "earnings:earnings_or_results_report:실적",
+    # The DART module routes this through its own materiality gate
+    # precisely because a bare treasury-share transaction is routine.
+    "treasury_stock_activity:treasury_stock_disposal_or_acquisition:자기주식취득",
+    # EDGAR's coarse fallback when SEC's `items` metadata is missing or
+    # malformed: it carries no event meaning at all, so admitting it
+    # would admit every unclassified 8-K.
+    "material_event_8k_pending_items:8-K",
+    # DART's capital-raise category -- near-synonymous with the admitted
+    # `financing_or_debt`, and still deliberately NOT admitted here.
+    "financing:capital_raise_or_treasury_stock:유상증자",
+])
+def test_categories_outside_the_allowlist_are_still_category_rejected(rule):
+    """A negative pin: broadening the allowlist beyond the one category
+    this change adds must fail a test, not pass silently. Each candidate
+    carries a keyword-rich excerpt, so only the category gate can be
+    rejecting it."""
+    _case, candidate = _pair(matched_rules=(rule,))
+
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _ALLOWLIST_AFTER) == RELEVANCE_CATEGORY_REJECTED
+    assert _is_constraint_relevant(candidate, _KEYWORDS, _ALLOWLIST_AFTER) is False
+
+
+def test_pair_stage_identity_holds_for_a_mixed_batch_including_the_new_category():
+    """All four outcomes in one batch, every bucket non-zero, with the
+    identity still exact."""
+    pairs = [
+        (None, None),                                                                      # malformed
+        _pair(company="A", candidate_id="a", case_id="A",
+              matched_rules=("earnings:earnings_or_results_report:실적",)),                 # category gate
+        _pair(company="B", candidate_id="b", case_id="B",
+              matched_rules=(_DART_CAPEX_RULE,), excerpt=_NO_KEYWORD_EXCERPT),             # keyword gate
+        _pair(company="C", candidate_id="c", case_id="C",
+              matched_rules=(_DART_CAPEX_RULE,)),                                          # relevant
+    ]
+
+    _result, diag = _detect_with_diag(pairs, constraint_rule_categories=_ALLOWLIST_AFTER)
+
+    assert (diag.pairs_examined, diag.pairs_malformed) == (4, 1)
+    assert (diag.category_rejected, diag.keyword_rejected, diag.constraint_relevant) == (1, 1, 1)
+    assert diag.pairs_examined - diag.pairs_malformed == (
+        diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
+    )
