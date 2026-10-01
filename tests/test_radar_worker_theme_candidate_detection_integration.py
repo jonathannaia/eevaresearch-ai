@@ -435,3 +435,77 @@ def test_never_creates_evidence_or_changes_visibility(tmp_path, monkeypatch):
     assert theme_repo.evidence_for_theme(themes[0].id) == ()
     assert theme_repo.list_published_themes() == ()
     assert themes[0].visibility is ThemeVisibility.INTERNAL
+
+
+# ============================================================
+# Funnel counters on the detection summary (observability only)
+# ============================================================
+
+
+def test_detection_summary_carries_the_funnel_counters_in_a_stable_order(tmp_path, monkeypatch, capsys):
+    """Placement and order are fixed so a log reader can rely on them,
+    and the pre-existing counters keep their position and meaning."""
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    assert summary.startswith("EDGAR: theme candidate detection — clusters_detected=0 themes_created=0 ")
+    for field in ("matches_created=", "company_roles_created=", "notes_created=", "creation_errors=",
+                  "pairs_gathered=", "pairs_examined=", "pairs_malformed=", "constraint_relevant=",
+                  "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="):
+        assert field in summary, field
+    # Stable order: the new block follows creation_errors, in this order.
+    # pairs_malformed sits directly after pairs_examined because it is
+    # subtracted from it to isolate relevance rejections.
+    tail = summary.split("creation_errors=", 1)[1]
+    order = ["pairs_gathered=", "pairs_examined=", "pairs_malformed=", "constraint_relevant=",
+             "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="]
+    positions = [tail.index(f) for f in order]
+    assert positions == sorted(positions), tail
+
+
+def test_detection_summary_contains_only_integer_metric_values(tmp_path):
+    """No issuer, slug, excerpt, identifier or source text can reach the
+    log line through the new fields."""
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    for field in ("pairs_gathered", "pairs_examined", "pairs_malformed", "constraint_relevant",
+                  "clusters_formed", "clusters_scope_suppressed", "clusters_below_threshold"):
+        match = re.search(rf"{field}=(\S+)", summary)
+        assert match and match.group(1).isdigit(), f"{field} -> {match and match.group(1)}"
+
+
+def test_metric_formatting_failure_degrades_to_unavailable_and_changes_nothing_else(tmp_path, monkeypatch):
+    """Observability must never alter a tick. A broken diagnostics
+    object renders a fixed marker; every pre-existing counter keeps its
+    value."""
+    worker_settings = _worker_settings(tmp_path)
+    healthy = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    class _Hostile:
+        @property
+        def pairs_examined(self):
+            raise RuntimeError("metric access exploded")
+
+    real = radar_worker.detect_theme_candidates_with_diagnostics
+    monkeypatch.setattr(
+        radar_worker, "detect_theme_candidates_with_diagnostics",
+        lambda *a, **k: (real(*a, **k)[0], _Hostile()),
+    )
+    degraded = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    assert "clusters_below_threshold=unavailable" in degraded
+    assert "pairs_examined=unavailable" in degraded
+    assert "pairs_malformed=unavailable" in degraded
+    # Every pre-existing counter is unchanged.
+    for field in ("clusters_detected=0", "themes_created=0", "matches_created=0",
+                  "company_roles_created=0", "notes_created=0", "creation_errors=0"):
+        assert field in healthy and field in degraded, field
+
+
+def test_formatter_never_raises_for_an_arbitrary_object():
+    f = radar_worker._format_detection_metrics
+    for bad in (None, object(), "not-diagnostics", 42, []):
+        assert "unavailable" in f(bad)

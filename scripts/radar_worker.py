@@ -185,7 +185,7 @@ from src.logic.research_lead_orchestration import (
     rejection_reason_histogram,
 )
 from src.logic.theme_auto_publish import evaluate_auto_publish_gates
-from src.logic.theme_candidate_detection import detect_theme_candidates
+from src.logic.theme_candidate_detection import detect_theme_candidates_with_diagnostics
 from src.models.research_case import ResearchCase
 from src.models.theme_matching import ThemeMatchingScope
 from src.models.theme_research import (
@@ -694,6 +694,40 @@ def _gather_case_candidate_pairs_for_detection(
     return pairs
 
 
+_DETECTION_METRICS_UNAVAILABLE = (
+    "pairs_examined=unavailable pairs_malformed=unavailable constraint_relevant=unavailable "
+    "clusters_formed=unavailable clusters_scope_suppressed=unavailable "
+    "clusters_below_threshold=unavailable"
+)
+
+
+def _format_detection_metrics(diagnostics: object) -> str:
+    """The theme-candidate funnel counts, rendered for the worker
+    summary. Integers only -- `DetectionDiagnostics` carries no issuer,
+    slug, excerpt, identifier or source text, so nothing unsafe can
+    reach a log line through here.
+
+    Observability must never change a tick's outcome, so a malformed or
+    missing diagnostics object degrades to a fixed `unavailable` marker
+    for every field rather than raising: detection has already
+    completed and its candidates are already persisted by the time this
+    runs. Never raises."""
+    try:
+        parts = []
+        # Fixed order, and the only names this function will ever
+        # emit: the field list is a literal here, so a diagnostics
+        # object cannot introduce a name of its own.
+        for name in ("pairs_examined", "pairs_malformed", "constraint_relevant",
+                     "clusters_formed", "clusters_scope_suppressed", "clusters_below_threshold"):
+            value = getattr(diagnostics, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return _DETECTION_METRICS_UNAVAILABLE
+            parts.append(f"{name}={int(value)}")
+        return " ".join(parts)
+    except Exception:  # noqa: BLE001 — a logging aggregate must never affect a provider tick
+        return _DETECTION_METRICS_UNAVAILABLE
+
+
 def _run_theme_candidate_detection_step(
     worker_settings: Settings, candidates: dict[str, CandidateSignal], newly_created_cases: tuple[ResearchCase, ...],
 ) -> str:
@@ -720,7 +754,7 @@ def _run_theme_candidate_detection_step(
                 already_covered.add((tag, subtag))
 
     pairs = _gather_case_candidate_pairs_for_detection(worker_settings, candidates, newly_created_cases)
-    detected = detect_theme_candidates(
+    detected, detection_diagnostics = detect_theme_candidates_with_diagnostics(
         pairs, as_of_date=_current_utc_date(), window_days=_THEME_CANDIDATE_DETECTION_WINDOW_DAYS,
         min_distinct_companies=_THEME_CANDIDATE_DETECTION_MIN_COMPANIES,
         constraint_keywords=_THEME_CANDIDATE_DETECTION_KEYWORDS,
@@ -817,7 +851,8 @@ def _run_theme_candidate_detection_step(
     return (
         f"EDGAR: theme candidate detection — clusters_detected={clusters_detected} themes_created={themes_created} "
         f"matches_created={matches_created} company_roles_created={company_roles_created} notes_created={notes_created} "
-        f"creation_errors={creation_errors}"
+        f"creation_errors={creation_errors} "
+        f"pairs_gathered={len(pairs)} {_format_detection_metrics(detection_diagnostics)}"
     )
 
 
