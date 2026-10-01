@@ -8,8 +8,15 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from src.logic.theme_candidate_detection import (
+    RELEVANCE_CATEGORY_REJECTED,
+    RELEVANCE_KEYWORD_REJECTED,
+    RELEVANCE_RELEVANT,
     ThemeCandidate,
+    _classify_constraint_relevance,
+    _is_constraint_relevant,
     detect_theme_candidates,
     detect_theme_candidates_with_diagnostics,
 )
@@ -513,3 +520,242 @@ def test_pair_stage_identity_across_malformed_rejected_and_relevant_pairs():
     assert relevance_rejected == 2          # exactly the wrong-category and no-keyword pairs
     # ...and the cluster stage still reconciles on the same run.
     assert diag.clusters_formed == diag.clusters_scope_suppressed + diag.clusters_below_threshold + len(result)
+
+
+# ============================================================
+# Category-versus-keyword rejection diagnostics
+#
+# `_is_constraint_relevant` short-circuits: an empty category
+# intersection returns before the keyword list is consulted. So a
+# category rejection says nothing about whether a keyword would have
+# matched, and collapsing the two into one count makes a vocabulary
+# problem indistinguishable from a language problem. Production
+# reported constraint_relevant=0 over 21 pairs without being able to
+# say which gate fired. These separate them.
+# ============================================================
+
+
+def test_classifier_reports_each_gate_and_the_predicate_agrees():
+    relevant = _pair(company="TSMC", candidate_id="c1", case_id="case-1")[1]
+    wrong_category = _pair(candidate_id="c2", case_id="case-2", matched_rules=("governance:5.02",))[1]
+    no_keyword = _pair(candidate_id="c3", case_id="case-3", excerpt="Routine administrative notice.")[1]
+
+    assert _classify_constraint_relevance(relevant, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+    assert _classify_constraint_relevance(wrong_category, _KEYWORDS, _CATEGORIES) == RELEVANCE_CATEGORY_REJECTED
+    assert _classify_constraint_relevance(no_keyword, _KEYWORDS, _CATEGORIES) == RELEVANCE_KEYWORD_REJECTED
+
+    # The public predicate's truth value is unchanged for all three.
+    assert _is_constraint_relevant(relevant, _KEYWORDS, _CATEGORIES) is True
+    assert _is_constraint_relevant(wrong_category, _KEYWORDS, _CATEGORIES) is False
+    assert _is_constraint_relevant(no_keyword, _KEYWORDS, _CATEGORIES) is False
+
+
+def test_category_rejection_never_consults_the_keyword_list():
+    """Short-circuit preserved: a keyword list that would raise if
+    iterated proves the category gate returns first."""
+    class _Exploding:
+        def __iter__(self):
+            raise AssertionError("keyword list must not be consulted after a category rejection")
+
+    wrong_category = _pair(candidate_id="c1", case_id="case-1", matched_rules=("governance:5.02",))[1]
+
+    assert _classify_constraint_relevance(wrong_category, _Exploding(), _CATEGORIES) == RELEVANCE_CATEGORY_REJECTED
+    assert _is_constraint_relevant(wrong_category, _Exploding(), _CATEGORIES) is False
+
+
+def test_category_rejected_pairs_are_counted_as_such():
+    pairs = [
+        _pair(candidate_id="c1", case_id="case-1", matched_rules=("governance:5.02",)),
+        _pair(candidate_id="c2", case_id="case-2", matched_rules=()),
+    ]
+
+    result, diag = _detect_with_diag(pairs)
+
+    assert result == ()
+    assert (diag.category_rejected, diag.keyword_rejected, diag.constraint_relevant) == (2, 0, 0)
+
+
+def test_keyword_rejected_pairs_are_counted_as_such():
+    pairs = [
+        _pair(candidate_id="c1", case_id="case-1", excerpt="Routine administrative notice."),
+        _pair(candidate_id="c2", case_id="case-2", excerpt="Board appointed a new auditor."),
+    ]
+
+    result, diag = _detect_with_diag(pairs)
+
+    assert result == ()
+    assert (diag.category_rejected, diag.keyword_rejected, diag.constraint_relevant) == (0, 2, 0)
+
+
+def test_a_passing_pair_is_counted_in_neither_gate():
+    pairs = [
+        _pair(company="TSMC", candidate_id="c1", case_id="case-1"),
+        _pair(company="Samsung", candidate_id="c2", case_id="case-2"),
+    ]
+
+    result, diag = _detect_with_diag(pairs)
+
+    assert len(result) == 1
+    assert (diag.category_rejected, diag.keyword_rejected, diag.constraint_relevant) == (0, 0, 2)
+
+
+def test_empty_input_and_invalid_config_report_zero_for_both_gates():
+    _r1, d1 = _detect_with_diag([])
+    assert (d1.category_rejected, d1.keyword_rejected) == (0, 0)
+
+    supplied = [_pair(candidate_id="c1", case_id="case-1"), _pair(candidate_id="c2", case_id="case-2")]
+    _r2, d2 = _detect_with_diag(supplied, window_days=0)
+    assert d2.pairs_examined == 0            # loop never ran
+    assert (d2.category_rejected, d2.keyword_rejected, d2.constraint_relevant) == (0, 0, 0)
+
+
+def test_malformed_pairs_reach_neither_gate():
+    _c, candidate = _pair(candidate_id="cx", case_id="case-x")
+
+    _result, diag = _detect_with_diag([(None, candidate), ("x", "y")])
+
+    assert diag.pairs_malformed == 2
+    assert (diag.category_rejected, diag.keyword_rejected, diag.constraint_relevant) == (0, 0, 0)
+
+
+def test_pair_stage_identity_holds_across_mixed_buckets():
+    """pairs_examined − pairs_malformed
+    == category_rejected + keyword_rejected + constraint_relevant,
+    with every bucket non-zero and each expected value known
+    independently of the counters."""
+    _c, candidate = _pair(candidate_id="cx", case_id="case-x")
+    pairs = [
+        (None, candidate),                                                                   # malformed
+        _pair(candidate_id="c1", case_id="case-1", matched_rules=("governance:5.02",)),      # category
+        _pair(candidate_id="c2", case_id="case-2", matched_rules=("ownership_change:3.01",)),# category
+        _pair(candidate_id="c3", case_id="case-3", excerpt="Routine notice."),               # keyword
+        _pair(company="TSMC", candidate_id="c4", case_id="case-4"),                          # relevant
+        _pair(company="Samsung", candidate_id="c5", case_id="case-5"),                       # relevant
+    ]
+
+    result, diag = _detect_with_diag(pairs)
+
+    assert diag.pairs_examined == 6
+    assert diag.pairs_malformed == 1
+    assert diag.category_rejected == 2
+    assert diag.keyword_rejected == 1
+    assert diag.constraint_relevant == 2
+    assert diag.pairs_examined - diag.pairs_malformed == (
+        diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
+    )
+    # ...and the cluster identity still holds on the same run.
+    assert diag.clusters_formed == diag.clusters_scope_suppressed + diag.clusters_below_threshold + len(result)
+
+
+def test_pair_stage_identity_holds_for_every_existing_scenario_family():
+    sup = frozenset({("ai-buildout", "compute-accelerators")})
+    _c, cand = _pair(candidate_id="cx", case_id="case-x")
+    families = [
+        ([], {}),
+        ([(None, cand)], {}),
+        ([_pair(candidate_id="a", case_id="A", matched_rules=("governance:5.02",))], {}),
+        ([_pair(candidate_id="b", case_id="B", excerpt="Routine notice.")], {}),
+        ([_pair(company="TSMC", candidate_id="c", case_id="C")], {}),
+        ([_pair(company="TSMC", candidate_id="d", case_id="D"),
+          _pair(company="Samsung", candidate_id="e", case_id="E")], {}),
+        ([_pair(company="TSMC", candidate_id="f", case_id="F"),
+          _pair(company="Samsung", candidate_id="g", case_id="G")], dict(already_covered=sup)),
+        ([_pair(company="TSMC", candidate_id="h", case_id="H")], dict(window_days=0)),
+    ]
+    for pairs, ov in families:
+        _result, diag = _detect_with_diag(pairs, **ov)
+        assert diag.pairs_examined - diag.pairs_malformed == (
+            diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
+        ), (pairs, ov)
+
+
+def test_detection_output_is_unchanged_across_the_existing_scenario_families():
+    """Non-interference: the classifier replaced a bool call inside the
+    loop, so the returned candidates must be identical to what the
+    public entry point produces, family by family."""
+    sup = frozenset({("ai-buildout", "compute-accelerators")})
+    _c, cand = _pair(candidate_id="cx", case_id="case-x")
+    families = [
+        ([], {}),
+        ([(None, cand)], {}),
+        ([("not-a-case", "not-a-candidate")], {}),
+        ([_pair(candidate_id="a", case_id="A", matched_rules=("governance:5.02",))], {}),
+        ([_pair(candidate_id="b", case_id="B", excerpt="Routine notice.")], {}),
+        ([_pair(company="TSMC", candidate_id="c", case_id="C")], {}),
+        ([_pair(company="TSMC", candidate_id="d", case_id="D"),
+          _pair(company="Samsung", candidate_id="e", case_id="E")], {}),
+        ([_pair(company="TSMC", candidate_id="f", case_id="F"),
+          _pair(company="Samsung", candidate_id="g", case_id="G")], dict(already_covered=sup)),
+        ([_pair(company="TSMC", candidate_id="h", case_id="H")], dict(window_days=0)),
+        ([_pair(company="TSMC", candidate_id="i", case_id="I", rcept_dt="2026-01-01"),
+          _pair(company="Samsung", candidate_id="j", case_id="J")], {}),
+    ]
+    for pairs, ov in families:
+        assert _detect(pairs, **ov) == _detect_with_diag(pairs, **ov)[0], (pairs, ov)
+
+
+def test_the_predicate_is_evaluated_once_per_pair(monkeypatch):
+    """Classification must not cost a second evaluation."""
+    from src.logic import theme_candidate_detection as mod
+
+    calls = []
+    real = mod._classify_constraint_relevance
+    monkeypatch.setattr(mod, "_classify_constraint_relevance",
+                        lambda c, k, r: (calls.append(1), real(c, k, r))[1])
+    pairs = [
+        _pair(company="TSMC", candidate_id="c1", case_id="case-1"),
+        _pair(candidate_id="c2", case_id="case-2", matched_rules=("governance:5.02",)),
+        _pair(candidate_id="c3", case_id="case-3", excerpt="Routine notice."),
+    ]
+
+    _detect_with_diag(pairs)
+
+    assert len(calls) == 3  # exactly one per type-valid pair
+
+
+def test_gate_outcome_constants_are_fixed_safe_literals():
+    for token in (RELEVANCE_RELEVANT, RELEVANCE_CATEGORY_REJECTED, RELEVANCE_KEYWORD_REJECTED):
+        assert isinstance(token, str) and token and token.replace("_", "").isalnum() and token.islower()
+    assert len({RELEVANCE_RELEVANT, RELEVANCE_CATEGORY_REJECTED, RELEVANCE_KEYWORD_REJECTED}) == 3
+
+
+def test_an_unrecognised_classifier_outcome_raises_rather_than_being_mislabelled(monkeypatch):
+    """Unreachable with this module's own classifier, whose return set
+    is the three RELEVANCE_* constants. Pinned because defaulting a
+    fourth outcome into `keyword_rejected` would be exactly the
+    mis-attribution these counters exist to prevent, and would break
+    the pair-stage identity silently.
+
+    The decision for such a pair is unchanged either way -- anything
+    that is not RELEVANCE_RELEVANT is rejected -- so this changes only
+    how the rejection is recorded."""
+    from src.logic import theme_candidate_detection as mod
+
+    monkeypatch.setattr(mod, "_classify_constraint_relevance", lambda c, k, r: "some_future_outcome")
+    pairs = [_pair(company="TSMC", candidate_id="c1", case_id="case-1")]
+
+    with pytest.raises(ValueError):
+        _detect_with_diag(pairs)
+    # The public entry point surfaces it identically.
+    with pytest.raises(ValueError):
+        _detect(pairs)
+
+
+def test_the_two_known_rejection_outcomes_are_matched_explicitly(monkeypatch):
+    """Each known outcome lands in its own bucket by explicit match,
+    not by falling through to an else."""
+    from src.logic import theme_candidate_detection as mod
+
+    for outcome, expected in (
+        (mod.RELEVANCE_CATEGORY_REJECTED, "category"),
+        (mod.RELEVANCE_KEYWORD_REJECTED, "keyword"),
+    ):
+        monkeypatch.setattr(mod, "_classify_constraint_relevance", lambda c, k, r, o=outcome: o)
+        _result, diag = _detect_with_diag([_pair(company="TSMC", candidate_id="c1", case_id="case-1")])
+        if expected == "category":
+            assert (diag.category_rejected, diag.keyword_rejected) == (1, 0)
+        else:
+            assert (diag.category_rejected, diag.keyword_rejected) == (0, 1)
+        assert diag.pairs_examined - diag.pairs_malformed == (
+            diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
+        )
