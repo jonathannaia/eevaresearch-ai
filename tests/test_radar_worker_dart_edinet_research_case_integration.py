@@ -18,8 +18,11 @@ import pytest
 
 from scripts import radar_worker
 from src.config.settings import Settings
+from src.config.tracked_companies import TrackedCompany
 from src.data_access import backend_factory
 from src.data_access.dart import radar_service as dart_radar_service
+from src.data_access.dart import scan_service as dart_scan_service
+from src.data_access.dart.client import DisclosureRecord
 from src.data_access.edinet import edinet_service
 from src.logic import research_lead_orchestration
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
@@ -219,3 +222,76 @@ def test_edinet_research_step_failure_does_not_prevent_edgar_or_dart(tmp_path, m
     assert scan_status_repo.get_scan_status("SEC EDGAR").failure_code is None
     assert scan_status_repo.get_scan_status("OpenDART / DART").failure_code is None
     assert scan_status_repo.get_scan_status("EDINET").failure_code is None  # the scan itself still succeeded
+
+
+# ============================================================
+# Repair B — DART source-native compact receipt dates
+#
+# DART's disclosure list returns `rcept_dt` in its own compact
+# YYYYMMDD form. FilingEvent.rcept_dt is documented as an ISO 8601 date
+# and Research Case selection accepts strict YYYY-MM-DD only, so an
+# unconverted DART date reaches the selector as `invalid_receipt_date`
+# and no case can ever be created for that lane. Observed in production
+# on revision d552e59 (2026-09-30): DART evaluated=5 created=0
+# rejection_reasons=invalid_receipt_date:5, while EDGAR and EDINET —
+# whose sources already emit dashed ISO — created cases on the same
+# tick.
+#
+# These go through dart/scan_service's own DTO->domain mapping rather
+# than hand-building a FilingEvent, so the boundary under repair is the
+# thing actually exercised.
+# ============================================================
+
+
+def _dart_company():
+    return TrackedCompany(
+        name="Example Issuer", exchange="KRX", krx_code="000000",
+        source="OpenDART / DART", themes=("memory",), subthemes=(),
+        corp_code="00000000",
+    )
+
+
+def _dart_record(rcept_no="acc-compact-1", rcept_dt="20260815"):
+    """A provider record carrying DART's own native compact date."""
+    return DisclosureRecord(
+        corp_cls="Y", corp_name="Example Issuer", corp_code="00000000", stock_code="000000",
+        report_nm="Material Disclosure", rcept_no=rcept_no, flr_nm="Example Issuer",
+        rcept_dt=rcept_dt, rm="",
+    )
+
+
+def _candidate_from_dart_record(record, *, detected_at="2026-08-15T00:00:00+00:00"):
+    """Builds the candidate exactly as the DART pipeline would: the
+    filing comes from scan_service's real DTO->domain mapping, so
+    whatever that mapping does to `rcept_dt` is what the selector sees."""
+    filing = dart_scan_service._filing_event_from_record(
+        record, _dart_company(), retrieved_at="2026-08-15T01:00:00+00:00",
+    )
+    return CandidateSignal(
+        id=f"dart-cand-{record.rcept_no}", filing=filing,
+        matched_rules=["supply_or_sales_contract:single_sales_contract"],
+        confidence="High", status=CandidateStatus.NEEDS_REVIEW,
+        extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="공급계약 체결 안내.",
+        state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=detected_at)],
+    )
+
+
+def test_dart_native_compact_receipt_date_reaches_research_case_creation(tmp_path, monkeypatch):
+    """The Repair B acceptance test: a DART filing carrying the source's
+    own compact date must produce a Research Case, not an
+    `invalid_receipt_date` rejection."""
+    worker_settings = _worker_settings(tmp_path)
+    _set_fixed_as_of_date(monkeypatch, "2026-08-20")
+    candidate = _candidate_from_dart_record(_dart_record(rcept_dt="20260815"))
+    _seed_candidates(worker_settings, "dart", candidate)
+    repo = backend_factory.get_candidate_repository(worker_settings, "OpenDART / DART")
+
+    summary, _candidates, cases = radar_worker._run_source_research_case_step("dart", worker_settings, repo)
+
+    assert "created=1" in summary
+    assert "invalid_receipt_date" not in summary
+    assert len(cases) == 1
+    assert cases[0].trigger_source_id == candidate.id
+    # The safe histogram still renders, and reports no rejection.
+    assert "rejection_reasons=none" in summary
