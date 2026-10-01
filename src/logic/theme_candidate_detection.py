@@ -91,13 +91,45 @@ def _combined_text(candidate: object) -> str:
     return f"{excerpt} {report_nm}".lower()
 
 
+# The three outcomes of the relevance predicate, named so a caller can
+# record WHICH gate rejected a pair without evaluating the predicate a
+# second time. Fixed literals: no candidate value is ever carried here.
+RELEVANCE_RELEVANT = "relevant"
+RELEVANCE_CATEGORY_REJECTED = "category_rejected"
+RELEVANCE_KEYWORD_REJECTED = "keyword_rejected"
+
+# Fixed message: carries no candidate value, so it is safe even
+# though the worker logs only the exception TYPE, never the text.
+_UNRECOGNISED_RELEVANCE_OUTCOME = "unrecognised relevance outcome"
+
+
+def _classify_constraint_relevance(
+    candidate: object, keywords: Sequence[str], rule_categories: Sequence[str],
+) -> str:
+    """The relevance predicate, reporting which gate decided.
+
+    Byte-for-byte the same two checks, in the same order, with the same
+    short-circuit: an empty category intersection returns before
+    `_combined_text` is built or any keyword is examined. That ordering
+    is why the two rejections are not symmetric — a category rejection
+    says nothing about whether a keyword would have matched — and why
+    counting them separately is the only way to tell the two apart."""
+    if not (_candidate_categories(candidate) & set(rule_categories)):
+        return RELEVANCE_CATEGORY_REJECTED
+    combined = _combined_text(candidate)
+    if any(isinstance(k, str) and k.lower() in combined for k in keywords):
+        return RELEVANCE_RELEVANT
+    return RELEVANCE_KEYWORD_REJECTED
+
+
 def _is_constraint_relevant(
     candidate: object, keywords: Sequence[str], rule_categories: Sequence[str],
 ) -> bool:
-    if not (_candidate_categories(candidate) & set(rule_categories)):
-        return False
-    combined = _combined_text(candidate)
-    return any(isinstance(k, str) and k.lower() in combined for k in keywords)
+    """Unchanged predicate: same signature, same truth value, same
+    short-circuit, same exceptions. It now delegates so that the
+    detector can classify and decide from ONE evaluation rather than
+    running the predicate twice."""
+    return _classify_constraint_relevance(candidate, keywords, rule_categories) == RELEVANCE_RELEVANT
 
 
 def _parse_date(value: object) -> date | None:
@@ -203,10 +235,21 @@ class DetectionDiagnostics:
     `pairs_malformed` counts pairs rejected by the existing
     ResearchCase/CandidateSignal type check, which runs BEFORE the
     relevance predicate — so a malformed pair never reaches it and is
-    never counted as relevance-rejected. Without this field the
-    subtraction above would silently attribute malformed pairs to the
-    category/keyword gate, which is the gate this record exists to
-    measure.
+    never counted as relevance-rejected.
+
+    The relevance predicate's own two gates are counted separately,
+    because they imply different repairs and the predicate
+    short-circuits between them:
+
+        pairs_examined - pairs_malformed
+            == category_rejected + keyword_rejected + constraint_relevant
+
+    `category_rejected` is pairs whose candidate categories do not
+    intersect the allowlist; the keyword list is never consulted for
+    them, so such a pair says nothing about whether a keyword would
+    have matched. `keyword_rejected` is pairs that passed the category
+    gate and matched no keyword. Collapsing the two would make a
+    vocabulary problem indistinguishable from a language problem.
 
     The cluster stage reconciles exactly:
 
@@ -223,6 +266,8 @@ class DetectionDiagnostics:
 
     pairs_examined: int
     pairs_malformed: int
+    category_rejected: int
+    keyword_rejected: int
     constraint_relevant: int
     clusters_formed: int
     clusters_scope_suppressed: int
@@ -287,11 +332,13 @@ def detect_theme_candidates_with_diagnostics(
         # caller comparing this against the number of pairs it supplied
         # sees the short-circuit rather than mistaking it for relevance
         # rejecting everything.
-        return (), DetectionDiagnostics(0, 0, 0, 0, 0, 0)
+        return (), DetectionDiagnostics(0, 0, 0, 0, 0, 0, 0, 0)
     cutoff = as_of - timedelta(days=window_days)
 
     pairs_examined = 0
     pairs_malformed = 0
+    category_rejected = 0
+    keyword_rejected = 0
     constraint_relevant = 0
 
     clusters: dict[tuple[str, str | None], list[tuple[ResearchCase, CandidateSignal]]] = {}
@@ -300,7 +347,24 @@ def detect_theme_candidates_with_diagnostics(
         if not isinstance(case, ResearchCase) or not isinstance(candidate, CandidateSignal):
             pairs_malformed += 1
             continue
-        if not _is_constraint_relevant(candidate, constraint_keywords, constraint_rule_categories):
+        relevance = _classify_constraint_relevance(
+            candidate, constraint_keywords, constraint_rule_categories,
+        )
+        if relevance != RELEVANCE_RELEVANT:
+            if relevance == RELEVANCE_CATEGORY_REJECTED:
+                category_rejected += 1
+            elif relevance == RELEVANCE_KEYWORD_REJECTED:
+                keyword_rejected += 1
+            else:
+                # Unreachable with this module's own classifier, whose
+                # return set is the three constants above. Raising
+                # rather than defaulting to one bucket is deliberate: a
+                # fourth outcome counted as `keyword_rejected` would be
+                # exactly the mis-attribution these counters exist to
+                # prevent, and would break the pair-stage identity
+                # silently. This is a programming error, not malformed
+                # input -- input handling is unchanged.
+                raise ValueError(_UNRECOGNISED_RELEVANCE_OUTCOME)
             continue
         constraint_relevant += 1
         filing = getattr(candidate, "filing", None)
@@ -336,6 +400,8 @@ def detect_theme_candidates_with_diagnostics(
     return tuple(results), DetectionDiagnostics(
         pairs_examined=pairs_examined,
         pairs_malformed=pairs_malformed,
+        category_rejected=category_rejected,
+        keyword_rejected=keyword_rejected,
         constraint_relevant=constraint_relevant,
         clusters_formed=len(clusters),
         clusters_scope_suppressed=clusters_scope_suppressed,

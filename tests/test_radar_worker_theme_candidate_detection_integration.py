@@ -450,14 +450,16 @@ def test_detection_summary_carries_the_funnel_counters_in_a_stable_order(tmp_pat
 
     assert summary.startswith("EDGAR: theme candidate detection — clusters_detected=0 themes_created=0 ")
     for field in ("matches_created=", "company_roles_created=", "notes_created=", "creation_errors=",
-                  "pairs_gathered=", "pairs_examined=", "pairs_malformed=", "constraint_relevant=",
+                  "pairs_gathered=", "pairs_examined=", "pairs_malformed=",
+                  "category_rejected=", "keyword_rejected=", "constraint_relevant=",
                   "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="):
         assert field in summary, field
     # Stable order: the new block follows creation_errors, in this order.
     # pairs_malformed sits directly after pairs_examined because it is
     # subtracted from it to isolate relevance rejections.
     tail = summary.split("creation_errors=", 1)[1]
-    order = ["pairs_gathered=", "pairs_examined=", "pairs_malformed=", "constraint_relevant=",
+    order = ["pairs_gathered=", "pairs_examined=", "pairs_malformed=",
+             "category_rejected=", "keyword_rejected=", "constraint_relevant=",
              "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="]
     positions = [tail.index(f) for f in order]
     assert positions == sorted(positions), tail
@@ -471,7 +473,8 @@ def test_detection_summary_contains_only_integer_metric_values(tmp_path):
     worker_settings = _worker_settings(tmp_path)
     summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
 
-    for field in ("pairs_gathered", "pairs_examined", "pairs_malformed", "constraint_relevant",
+    for field in ("pairs_gathered", "pairs_examined", "pairs_malformed",
+                  "category_rejected", "keyword_rejected", "constraint_relevant",
                   "clusters_formed", "clusters_scope_suppressed", "clusters_below_threshold"):
         match = re.search(rf"{field}=(\S+)", summary)
         assert match and match.group(1).isdigit(), f"{field} -> {match and match.group(1)}"
@@ -499,6 +502,8 @@ def test_metric_formatting_failure_degrades_to_unavailable_and_changes_nothing_e
     assert "clusters_below_threshold=unavailable" in degraded
     assert "pairs_examined=unavailable" in degraded
     assert "pairs_malformed=unavailable" in degraded
+    assert "category_rejected=unavailable" in degraded
+    assert "keyword_rejected=unavailable" in degraded
     # Every pre-existing counter is unchanged.
     for field in ("clusters_detected=0", "themes_created=0", "matches_created=0",
                   "company_roles_created=0", "notes_created=0", "creation_errors=0"):
@@ -509,3 +514,19 @@ def test_formatter_never_raises_for_an_arbitrary_object():
     f = radar_worker._format_detection_metrics
     for bad in (None, object(), "not-diagnostics", 42, []):
         assert "unavailable" in f(bad)
+
+
+def test_worker_summary_reports_both_relevance_gates_as_plain_integers(tmp_path):
+    """The two new fields render through the real worker step, in fixed
+    position, as integers — never as a gate name or candidate value."""
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    for field in ("category_rejected", "keyword_rejected"):
+        match = re.search(rf"{field}=(\S+)", summary)
+        assert match and match.group(1).isdigit(), f"{field} -> {match and match.group(1)}"
+    # Placement: both sit between pairs_malformed and constraint_relevant.
+    tail = summary.split("pairs_malformed=", 1)[1]
+    assert tail.index("category_rejected=") < tail.index("keyword_rejected=") < tail.index("constraint_relevant=")
