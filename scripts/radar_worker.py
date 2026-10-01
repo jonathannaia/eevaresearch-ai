@@ -668,11 +668,10 @@ _THEME_CANDIDATE_DETECTION_RULE_CATEGORIES: tuple[str, ...] = (
     # this gate at all.
     "material_agreement", "financing_or_debt", "other_material_event",
     # DART's statutory new-facility/facility-investment disclosure
-    # (신규시설투자 / 시설투자, dart_rules.KOREAN_KEYWORD_LEXICON) — the
-    # single most constraint-specific category in any of the three
-    # lexicons, since facility investment IS capacity formation, and the
-    # one the DART module itself records as observed repeatedly in a real
-    # pull rather than carried as a "standard, not observed" entry.
+    # (신규시설투자 / 시설투자, dart_rules.KOREAN_KEYWORD_LEXICON) — a
+    # category directly related to capacity formation, and the one the
+    # DART module itself records as observed repeatedly in a real pull
+    # rather than carried as a "standard, not observed" entry.
     #
     # Deliberately one category, not a vocabulary alignment: admitting
     # the category is necessary, never sufficient. The keyword gate still
