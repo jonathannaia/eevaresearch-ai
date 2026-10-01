@@ -312,9 +312,32 @@ def _status_needs_review(candidate: CandidateSignal) -> bool:
 
 
 def _sort_key(candidate: CandidateSignal) -> tuple[str, str, str]:
-    """Deterministic ascending sort key with safe fixed fallbacks — a
-    malformed (non-string) rcept_dt/rcept_no/id never raises a
-    comparison TypeError; it simply sorts as if that field were blank."""
+    """Deterministic sort key with safe fixed fallbacks — a malformed
+    (non-string) rcept_dt/rcept_no/id never raises a comparison
+    TypeError; it simply sorts as if that field were blank.
+
+    The key itself is ordinary ascending `(rcept_dt, rcept_no, id)`; the
+    one caller applies it with `reverse=True` so the bounded evaluation
+    window is filled NEWEST-FIRST. That direction is load-bearing, not
+    cosmetic. Selection evaluates only `config.max_candidates` per tick
+    and a rejection writes no state, so under the previous oldest-first
+    order the same expired candidates were re-evaluated and re-rejected
+    every tick, permanently occupying the window while newer eligible
+    candidates queued behind them and were never reached. Newest-first
+    keeps fresh eligible candidates ahead of stale ones.
+
+    HISTORICAL EVIDENCE for that change, not a description of current
+    behavior: a read-only observation of production revision `6b5c0b5`
+    on 2026-09-30 recorded, in aggregate, `evaluated=5 created=0` with
+    `receipt_date_outside_lookback:5` on both the EDGAR and EDINET
+    lanes. Those figures are expected to stop holding once this
+    ordering takes effect; they are retained only to record why the
+    direction was chosen.
+
+    All three components are retained so the ordering stays total and
+    reproducible: candidates sharing a receipt date fall through to
+    receipt number and then candidate id, and reversing a total order
+    leaves it total."""
     filing = getattr(candidate, "filing", None)
     rcept_dt = getattr(filing, "rcept_dt", None)
     rcept_no = getattr(filing, "rcept_no", None)
@@ -369,7 +392,11 @@ def prepare_research_case_bundles(
             continue
         eligible.append(candidate)
 
-    eligible.sort(key=_sort_key)
+    # Newest-first — see _sort_key's own docstring for why the direction
+    # matters. Only the ORDER in which eligible candidates enter the
+    # bounded window changes; the cap, the eligibility filters above and
+    # every gate applied below are untouched.
+    eligible.sort(key=_sort_key, reverse=True)
     capped = eligible[: config.max_candidates]
     evaluated_count = len(capped)
 
