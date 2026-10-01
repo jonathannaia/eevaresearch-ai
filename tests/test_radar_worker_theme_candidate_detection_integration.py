@@ -530,3 +530,97 @@ def test_worker_summary_reports_both_relevance_gates_as_plain_integers(tmp_path)
     # Placement: both sit between pairs_malformed and constraint_relevant.
     tail = summary.split("pairs_malformed=", 1)[1]
     assert tail.index("category_rejected=") < tail.index("keyword_rejected=") < tail.index("constraint_relevant=")
+
+
+# ============================================================
+# DART facility-investment category admission (category policy)
+# ============================================================
+
+_DART_CAPEX_RULE = "capex_or_facility_investment:facility_investment:신규시설투자"
+# No term from _THEME_CANDIDATE_DETECTION_KEYWORDS occurs here, and the
+# filing's report_nm ("8-K") carries none either -- so a pair built with
+# this excerpt can only ever be rejected at the keyword gate.
+_NO_KEYWORD_EXCERPT = "The registrant entered into an agreement."
+
+
+def test_the_detector_category_allowlist_is_exactly_the_reviewed_set():
+    """A pinned literal. The allowlist is a category POLICY, so widening
+    it must be a deliberate, reviewed edit that fails this test first --
+    never an incidental import or refactor."""
+    assert radar_worker._THEME_CANDIDATE_DETECTION_RULE_CATEGORIES == (
+        "material_agreement", "financing_or_debt", "other_material_event",
+        "capex_or_facility_investment",
+    )
+
+
+def _seed_pair_with_rules(worker_settings, candidates, *, candidate_id, company, matched_rules,
+                          excerpt, rcept_dt="2026-08-01"):
+    """Seeds one Research Case + CandidateSignal whose rule categories and
+    excerpt are chosen to land on a specific gate."""
+    candidate = _candidate(candidate_id, company, rcept_dt)
+    candidate = CandidateSignal(
+        id=candidate.id, filing=candidate.filing, matched_rules=list(matched_rules),
+        confidence=candidate.confidence, status=candidate.status,
+        extraction_state=candidate.extraction_state, excerpt_original=excerpt,
+        state_history=candidate.state_history,
+    )
+    _seed_case_and_candidate(worker_settings, candidate, _case(f"case-{candidate_id}", candidate_id, company, rcept_dt))
+    candidates[candidate_id] = candidate
+    return candidates
+
+
+def test_worker_summary_reports_non_zero_counts_at_both_relevance_gates(tmp_path, monkeypatch):
+    """The real worker step, over a real SQLite backend, with the real
+    allowlist and the real keyword list -- no monkeypatched classifier.
+
+    Three pairs, one per outcome, so the summary line renders a non-zero
+    `category_rejected` AND a non-zero `keyword_rejected` rather than the
+    zeros an empty batch produces. The relevant pair deliberately stands
+    alone, so it is held back by the unchanged distinct-company threshold:
+    admitting a category creates no Theme candidate by itself."""
+    import re
+
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    # Category gate: DART earnings is not on the allowlist, and the
+    # excerpt is keyword-rich, so only the category gate can reject it.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-cat", company="A",
+        matched_rules=("earnings:earnings_or_results_report:실적",),
+        excerpt="Company disclosed a capacity expansion and wafer allocation agreement.",
+    )
+    # Keyword gate: newly admitted category, no keyword anywhere.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-kw", company="B",
+        matched_rules=(_DART_CAPEX_RULE,), excerpt=_NO_KEYWORD_EXCERPT,
+    )
+    # Relevant: newly admitted category AND a keyword.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-rel", company="C",
+        matched_rules=(_DART_CAPEX_RULE,),
+        excerpt="Company disclosed a capacity expansion at its new facility.",
+    )
+
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ())
+
+    counts = {m.group(1): int(m.group(2)) for m in re.finditer(r"(\w+)=(\d+)", summary)}
+    assert counts["pairs_gathered"] == 3
+    assert counts["pairs_examined"] == 3
+    assert counts["pairs_malformed"] == 0
+    assert counts["category_rejected"] == 1
+    assert counts["keyword_rejected"] == 1
+    assert counts["constraint_relevant"] == 1
+    # Both identities, read off the real summary line.
+    assert counts["pairs_examined"] - counts["pairs_malformed"] == (
+        counts["category_rejected"] + counts["keyword_rejected"] + counts["constraint_relevant"]
+    )
+    assert counts["clusters_formed"] == (
+        counts["clusters_scope_suppressed"] + counts["clusters_below_threshold"] + counts["clusters_detected"]
+    )
+    # The single relevant pair forms a cluster and is then held back by
+    # the unchanged two-distinct-company threshold: no Theme is created.
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_below_threshold"] == 1
+    assert counts["clusters_detected"] == 0
+    assert counts["themes_created"] == 0
