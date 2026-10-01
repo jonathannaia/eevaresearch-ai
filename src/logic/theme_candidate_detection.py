@@ -177,6 +177,58 @@ def _build_candidate(
     )
 
 
+@dataclass(frozen=True)
+class DetectionDiagnostics:
+    """Counts of decisions this module ALREADY makes, recorded as they
+    are made — never a second evaluation pass, and never a judgment of
+    its own. Integers only: no issuer, slug, excerpt, identifier or
+    source text can travel through this record, so every field is safe
+    to put in a log line.
+
+    Observability only. Nothing here is read by detection, and removing
+    it would not change a single returned candidate.
+
+    `pairs_examined` is pairs the clustering loop actually iterated,
+    which is 0 when the config guard short-circuits before the loop.
+    A caller that knows how many pairs it supplied can therefore tell a
+    config short-circuit (supplied > 0, examined == 0) apart from a
+    relevance wipeout (examined > 0, constraint_relevant == 0).
+
+    The pair stage separates its two rejections rather than conflating
+    them, because they imply different repairs:
+
+        pairs_examined - pairs_malformed - constraint_relevant
+            == pairs that passed the type guard but failed relevance
+
+    `pairs_malformed` counts pairs rejected by the existing
+    ResearchCase/CandidateSignal type check, which runs BEFORE the
+    relevance predicate — so a malformed pair never reaches it and is
+    never counted as relevance-rejected. Without this field the
+    subtraction above would silently attribute malformed pairs to the
+    category/keyword gate, which is the gate this record exists to
+    measure.
+
+    The cluster stage reconciles exactly:
+
+        clusters_formed
+            == clusters_scope_suppressed
+             + clusters_below_threshold
+             + len(returned candidates)
+
+    because the three outcomes are the three mutually exclusive branches
+    of the second loop. `clusters_below_threshold` counts clusters
+    rejected SOLELY for too few distinct companies — the
+    `already_covered` check runs first, so a scope-suppressed cluster
+    is never also counted as below threshold."""
+
+    pairs_examined: int
+    pairs_malformed: int
+    constraint_relevant: int
+    clusters_formed: int
+    clusters_scope_suppressed: int
+    clusters_below_threshold: int
+
+
 def detect_theme_candidates(
     case_candidate_pairs: Sequence[tuple[ResearchCase, CandidateSignal]],
     *,
@@ -194,18 +246,63 @@ def detect_theme_candidates(
     produces one candidate for its lifetime. Never raises for malformed
     input; a candidate/filing missing required fields is simply
     excluded from clustering. Returns candidates deterministically
-    ordered by (theme_slug, subtheme_slug or '')."""
+    ordered by (theme_slug, subtheme_slug or '').
+
+    Unchanged entry point, kept so every existing caller and test sees
+    exactly the same signature and return value. It delegates to
+    `detect_theme_candidates_with_diagnostics` and discards the
+    counts — there is one evaluation, not two."""
+    candidates, _diagnostics = detect_theme_candidates_with_diagnostics(
+        case_candidate_pairs,
+        as_of_date=as_of_date,
+        window_days=window_days,
+        min_distinct_companies=min_distinct_companies,
+        constraint_keywords=constraint_keywords,
+        constraint_rule_categories=constraint_rule_categories,
+        already_covered=already_covered,
+    )
+    return candidates
+
+
+def detect_theme_candidates_with_diagnostics(
+    case_candidate_pairs: Sequence[tuple[ResearchCase, CandidateSignal]],
+    *,
+    as_of_date: str,
+    window_days: int,
+    min_distinct_companies: int,
+    constraint_keywords: Sequence[str],
+    constraint_rule_categories: Sequence[str],
+    already_covered: frozenset[tuple[str, str | None]],
+) -> tuple[tuple[ThemeCandidate, ...], DetectionDiagnostics]:
+    """`detect_theme_candidates` plus the funnel counts, from one pass.
+
+    The returned candidates are byte-for-byte what the entry point above
+    returns; every gate, threshold, suppression and ordering below is
+    the original logic untouched. The only additions are integer
+    increments recorded at decisions the loops already make, which is
+    why this cannot re-evaluate inputs or disagree with itself."""
     as_of = _parse_date(as_of_date)
     if as_of is None or window_days <= 0 or min_distinct_companies <= 0:
-        return ()
+        # Config guard: the loop never runs, so every count is 0. A
+        # caller comparing this against the number of pairs it supplied
+        # sees the short-circuit rather than mistaking it for relevance
+        # rejecting everything.
+        return (), DetectionDiagnostics(0, 0, 0, 0, 0, 0)
     cutoff = as_of - timedelta(days=window_days)
+
+    pairs_examined = 0
+    pairs_malformed = 0
+    constraint_relevant = 0
 
     clusters: dict[tuple[str, str | None], list[tuple[ResearchCase, CandidateSignal]]] = {}
     for case, candidate in case_candidate_pairs:
+        pairs_examined += 1
         if not isinstance(case, ResearchCase) or not isinstance(candidate, CandidateSignal):
+            pairs_malformed += 1
             continue
         if not _is_constraint_relevant(candidate, constraint_keywords, constraint_rule_categories):
             continue
+        constraint_relevant += 1
         filing = getattr(candidate, "filing", None)
         theme_slug = getattr(filing, "theme_slug", None)
         if not isinstance(theme_slug, str) or not theme_slug:
@@ -218,9 +315,13 @@ def detect_theme_candidates(
         key = (theme_slug, subtheme_slug)
         clusters.setdefault(key, []).append((case, candidate))
 
+    clusters_scope_suppressed = 0
+    clusters_below_threshold = 0
+
     results: list[ThemeCandidate] = []
     for key in sorted(clusters.keys(), key=lambda k: (k[0], k[1] or "")):
         if key in already_covered:
+            clusters_scope_suppressed += 1
             continue
         members = clusters[key]
         company_names = tuple(sorted({
@@ -228,7 +329,15 @@ def detect_theme_candidates(
             if isinstance(getattr(candidate.filing, "corp_name", None), str) and candidate.filing.corp_name
         }))
         if len(company_names) < min_distinct_companies:
+            clusters_below_threshold += 1
             continue
         theme_slug, subtheme_slug = key
         results.append(_build_candidate(theme_slug, subtheme_slug, members, company_names, constraint_rule_categories, constraint_keywords))
-    return tuple(results)
+    return tuple(results), DetectionDiagnostics(
+        pairs_examined=pairs_examined,
+        pairs_malformed=pairs_malformed,
+        constraint_relevant=constraint_relevant,
+        clusters_formed=len(clusters),
+        clusters_scope_suppressed=clusters_scope_suppressed,
+        clusters_below_threshold=clusters_below_threshold,
+    )
