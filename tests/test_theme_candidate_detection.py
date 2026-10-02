@@ -128,16 +128,44 @@ def test_missing_keyword_excluded():
     assert _detect(pairs) == ()
 
 
-def test_keyword_match_via_report_name_not_just_excerpt():
-    case, candidate = _pair(company="TSMC", candidate_id="c1", case_id="case-1", excerpt="")
+def test_keyword_match_via_report_name_when_an_excerpt_also_exists():
+    """The report name is still part of the evaluated text for a native-
+    English filing -- but only alongside a real excerpt. This is the
+    half of the former `test_keyword_match_via_report_name_not_just_
+    excerpt` that survives text selection; the other half (title with NO
+    excerpt) is now covered by the title-alone test below, which asserts
+    the opposite outcome."""
     import dataclasses
-    filing = dataclasses.replace(candidate.filing, report_nm="Capacity Expansion Agreement")
-    candidate = dataclasses.replace(candidate, filing=filing)
-    case2, candidate2 = _pair(company="Samsung", candidate_id="c2", case_id="case-2", excerpt="")
-    filing2 = dataclasses.replace(candidate2.filing, report_nm="Capacity Expansion Agreement")
-    candidate2 = dataclasses.replace(candidate2, filing=filing2)
-    result = _detect([(case, candidate), (case2, candidate2)])
+
+    pairs = []
+    for company, cid, kid in (("TSMC", "c1", "case-1"), ("Samsung", "c2", "case-2")):
+        case, candidate = _pair(company=company, candidate_id=cid, case_id=kid,
+                                excerpt="The registrant entered into an agreement.")
+        filing = dataclasses.replace(candidate.filing, report_nm="Capacity Expansion Agreement")
+        pairs.append((case, dataclasses.replace(candidate, filing=filing)))
+    result = _detect(pairs)
     assert len(result) == 1
+
+
+def test_a_native_english_title_alone_is_never_evaluable_evidence():
+    """DELIBERATE NARROWING, decided and retained rather than excepted.
+    Two EDGAR-shaped candidates with NO excerpt and a keyword-rich report
+    name used to cluster and fire a candidate. A title is not evidence --
+    `report_nm` is `primaryDocDescription or form` and is frequently the
+    bare form name -- so admitting on it alone admits a form class on its
+    form name. Both are now `text_unavailable` and nothing fires. No
+    native-English exception exists, by decision."""
+    import dataclasses
+
+    pairs = []
+    for company, cid, kid in (("TSMC", "c1", "case-1"), ("Samsung", "c2", "case-2")):
+        case, candidate = _pair(company=company, candidate_id=cid, case_id=kid, excerpt="")
+        filing = dataclasses.replace(candidate.filing, report_nm="Capacity Expansion Agreement")
+        pairs.append((case, dataclasses.replace(candidate, filing=filing)))
+
+    result, diag = _detect_with_diag(pairs)
+    assert result == ()
+    assert (diag.text_unavailable, diag.keyword_rejected, diag.constraint_relevant) == (2, 0, 0)
 
 
 def test_keyword_case_insensitive():
@@ -852,3 +880,332 @@ def test_pair_stage_identity_holds_for_a_mixed_batch_including_the_new_category(
     assert diag.pairs_examined - diag.pairs_malformed == (
         diag.category_rejected + diag.keyword_rejected + diag.constraint_relevant
     )
+
+
+# ============================================================
+# Text selection: which text the keyword gate may read
+# ============================================================
+
+import dataclasses as _dc  # noqa: E402 — local to this section's fixtures
+
+from src.logic.theme_candidate_detection import (  # noqa: E402
+    RELEVANCE_TEXT_UNAVAILABLE,
+    _combined_text,
+    _evidence_text,
+)
+from src.models.models import ExcerptQuality, Translation, TranslationState  # noqa: E402
+
+# A real-shaped Translation: translate_cached_with_outcome() mints every
+# one with target_lang="en" and source_lang lowercased, and always
+# records a provider. Note what a Translation does NOT carry: a document
+# id. It is tied to a filing only by living in that candidate's own
+# persisted translation column, written by the candidate-specific
+# translation and retry paths.
+def _translation(text, *, target_lang="en", source_lang="ko", provider="deepl"):
+    return Translation(
+        translated_text=text, provider=provider, source_lang=source_lang,
+        target_lang=target_lang, translated_at="2026-08-01T00:00:00+00:00", model=None,
+    )
+
+
+_KOREAN_EXCERPT_WITH_ACRONYM = "회사는 HBM 생산 관련 신규시설투자를 결정하였다."
+_TRANSLATED_WITH_KEYWORD = "The company decided on a new facility investment for HBM capacity."
+_TRANSLATED_WITHOUT_KEYWORD = "The company entered into an agreement."
+
+
+def _non_english_pair(
+    *, company="SK Hynix", candidate_id="k1", case_id="case-k1", language="Korean",
+    excerpt=_KOREAN_EXCERPT_WITH_ACRONYM, report_nm="신규시설투자등",
+    translation_state=TranslationState.NOT_REQUESTED, excerpt_translation=None,
+    title_translation=None, excerpt_quality=ExcerptQuality.USABLE_TEXT,
+):
+    """A DART/EDINET-shaped pair. Defaults deliberately reproduce the
+    pre-translation state: original-language excerpt, no translation."""
+    case, candidate = _pair(company=company, candidate_id=candidate_id, case_id=case_id, excerpt=excerpt)
+    filing = _dc.replace(candidate.filing, original_language=language, report_nm=report_nm)
+    candidate = _dc.replace(
+        candidate, filing=filing, translation_state=translation_state,
+        excerpt_translation=excerpt_translation, title_translation=title_translation,
+        excerpt_quality=excerpt_quality,
+    )
+    return case, candidate
+
+
+def _translated_pair(**overrides):
+    base = dict(
+        translation_state=TranslationState.TRANSLATED,
+        excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD),
+        excerpt_quality=ExcerptQuality.USABLE_TEXT,
+    )
+    base.update(overrides)
+    return _non_english_pair(**base)
+
+
+# --- EDGAR regression: the native-English path does not move ---
+
+def test_native_english_evidence_text_is_byte_identical_to_the_old_combined_text():
+    """The EDGAR regression pin, and it is scoped: for a native-English
+    filing WITH a non-blank excerpt, the text the gate reads is exactly
+    what this module built before text selection existed. A
+    native-English filing with no excerpt is a separate, deliberately
+    changed case -- see the title-alone test below."""
+    _case, candidate = _pair()
+    assert candidate.filing.original_language == "English"
+    assert _evidence_text(candidate) == _combined_text(candidate)
+
+
+def test_native_english_candidate_classifies_exactly_as_before():
+    _case, relevant = _pair()
+    _case2, no_keyword = _pair(excerpt="The registrant entered into an agreement.")
+    assert _classify_constraint_relevance(relevant, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+    assert _classify_constraint_relevance(no_keyword, _KEYWORDS, _CATEGORIES) == RELEVANCE_KEYWORD_REJECTED
+
+
+# --- E2: a verified translation is evaluable ---
+
+def test_a_verified_translated_excerpt_is_evaluated():
+    _case, candidate = _translated_pair()
+    assert _evidence_text(candidate) == _TRANSLATED_WITH_KEYWORD.lower()
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+
+
+def test_a_verified_translation_without_a_keyword_is_keyword_rejected_not_text_unavailable():
+    """Proves the pair was genuinely evaluated rather than skipped."""
+    _case, candidate = _translated_pair(excerpt_translation=_translation(_TRANSLATED_WITHOUT_KEYWORD))
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_KEYWORD_REJECTED
+
+
+# --- The acronym path is closed ---
+
+@pytest.mark.parametrize("excerpt", [
+    "회사는 HBM 생산 관련 신규시설투자를 결정하였다.",          # hbm
+    "당사는 DRAM 라인 증설을 결정하였습니다.",                   # dram
+    "新しいfab投資に関する臨時報告書です。",                     # fab
+    "次世代node向けの設備投資を決定しました。",                   # node
+])
+def test_a_latin_acronym_in_untranslated_text_is_never_evidence(excerpt):
+    """The incidental-acronym negative test. Four of the fifteen keywords
+    are Latin-script and DO occur verbatim in Korean and Japanese
+    filings. Without a translation the gate cannot read the sentence
+    around them, so such a pair must be `text_unavailable` -- never
+    `relevant`, and never `keyword_rejected` either, since no evidence
+    text was ever selected."""
+    _case, candidate = _non_english_pair(excerpt=excerpt)
+    assert _evidence_text(candidate) is None
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+    assert _is_constraint_relevant(candidate, _KEYWORDS, _CATEGORIES) is False
+
+
+def test_the_same_acronym_still_matches_inside_a_verified_translation():
+    """The acronym is not banned -- only reading it out of context is."""
+    _case, candidate = _translated_pair(
+        excerpt=_KOREAN_EXCERPT_WITH_ACRONYM,
+        excerpt_translation=_translation("HBM capacity is constrained at the new fab."),
+    )
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+
+
+# --- Every way a translation can fail to qualify ---
+
+@pytest.mark.parametrize("state", [
+    TranslationState.PENDING, TranslationState.UNAVAILABLE, TranslationState.NOT_REQUESTED,
+])
+def test_a_translation_not_in_the_translated_state_is_not_evidence(state):
+    _case, candidate = _translated_pair(translation_state=state)
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+def test_translated_state_with_no_excerpt_translation_is_not_evidence():
+    """The verified hazard: when a candidate has no extracted excerpt the
+    pipeline drives translation_state from the TITLE attempt, so a
+    successful title translation leaves state TRANSLATED with
+    excerpt_translation still None. State alone must never qualify."""
+    _case, candidate = _translated_pair(
+        excerpt_translation=None, title_translation=_translation("Capacity expansion report"),
+    )
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+@pytest.mark.parametrize("text", [None, "", "   ", 123, b"capacity"])
+def test_a_blank_or_malformed_translated_text_is_not_evidence(text):
+    _case, candidate = _translated_pair(excerpt_translation=_translation(text))
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+@pytest.mark.parametrize("target_lang", [None, "", "ko", "ja", "fr", 7])
+def test_a_translation_whose_target_language_is_not_english_is_not_evidence(target_lang):
+    """Never assumed: the target language is read and verified."""
+    _case, candidate = _translated_pair(
+        excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD, target_lang=target_lang),
+    )
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+def test_english_target_language_is_matched_case_and_whitespace_insensitively():
+    for target_lang in ("EN", " en ", "En"):
+        _case, candidate = _translated_pair(
+            excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD, target_lang=target_lang),
+        )
+        assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+
+
+@pytest.mark.parametrize("field,value", [
+    ("provider", ""), ("provider", "   "), ("provider", None), ("provider", 1),
+    ("source_lang", ""), ("source_lang", None),
+])
+def test_a_translation_without_recorded_metadata_is_not_evidence(field, value):
+    _case, candidate = _translated_pair(
+        excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD, **{field: value}),
+    )
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+@pytest.mark.parametrize("quality", [
+    ExcerptQuality.VERY_SHORT_OR_EMPTY, ExcerptQuality.LIKELY_BOILERPLATE,
+    ExcerptQuality.TABLE_HEAVY, ExcerptQuality.UNKNOWN,
+])
+def test_a_translation_of_a_poor_or_unknown_quality_original_is_not_evidence(quality):
+    """excerpt_quality describes the ORIGINAL the translation was made
+    from. A weak original cannot become strong evidence by being
+    translated."""
+    _case, candidate = _translated_pair(excerpt_quality=quality)
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+def test_a_non_english_title_and_title_translation_are_never_evidence():
+    _case, candidate = _non_english_pair(
+        excerpt="", report_nm="신규시설투자등 capacity",
+        translation_state=TranslationState.TRANSLATED,
+        title_translation=_translation("New facility investment -- capacity expansion"),
+    )
+    assert _evidence_text(candidate) is None
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+def test_the_report_name_is_not_appended_to_a_translated_excerpt():
+    """Appending the untranslated foreign title would reopen the acronym
+    path through the back door."""
+    _case, candidate = _translated_pair(
+        report_nm="HBM 관련 신규시설투자등",
+        excerpt_translation=_translation(_TRANSLATED_WITHOUT_KEYWORD),
+    )
+    assert _evidence_text(candidate) == _TRANSLATED_WITHOUT_KEYWORD.lower()
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_KEYWORD_REJECTED
+
+
+def test_an_unrecognised_original_language_is_treated_as_non_english():
+    """Fail-closed: anything this app does not write as "English" must
+    require a translation rather than fall back to raw text."""
+    for language in ("", "  ", "Englsh", "en"):
+        _case, candidate = _non_english_pair(language=language, excerpt="capacity expansion wafer")
+        assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_TEXT_UNAVAILABLE
+
+
+def test_english_original_language_is_matched_case_and_whitespace_insensitively():
+    for language in ("English", "english", " English "):
+        _case, candidate = _non_english_pair(language=language, excerpt="capacity expansion wafer")
+        assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_RELEVANT
+
+
+# --- Ordering, identity, single evaluation ---
+
+def test_the_category_gate_still_decides_before_text_selection():
+    """A pair failing the category check is `category_rejected` even with
+    a perfect translation, so that bucket's meaning is unchanged."""
+    _case, candidate = _translated_pair()
+    candidate = _dc.replace(candidate, matched_rules=["earnings:earnings_or_results_report:실적"])
+    assert _classify_constraint_relevance(candidate, _KEYWORDS, _CATEGORIES) == RELEVANCE_CATEGORY_REJECTED
+
+
+def test_four_outcome_pair_stage_identity_with_every_bucket_non_zero():
+    pairs = [
+        (None, None),                                                               # malformed
+        _pair(company="A", candidate_id="a", case_id="A",
+              matched_rules=("earnings:earnings_or_results_report:실적",)),          # category
+        _non_english_pair(company="B", candidate_id="b", case_id="B"),              # text_unavailable
+        _translated_pair(company="C", candidate_id="c", case_id="C",
+                         excerpt_translation=_translation(_TRANSLATED_WITHOUT_KEYWORD)),  # keyword
+        _translated_pair(company="D", candidate_id="d", case_id="D"),               # relevant
+    ]
+    _result, diag = _detect_with_diag(pairs)
+    assert (diag.pairs_examined, diag.pairs_malformed) == (5, 1)
+    assert (diag.category_rejected, diag.text_unavailable, diag.keyword_rejected, diag.constraint_relevant) == (1, 1, 1, 1)
+    assert diag.pairs_examined - diag.pairs_malformed == (
+        diag.category_rejected + diag.text_unavailable + diag.keyword_rejected + diag.constraint_relevant
+    )
+
+
+_DECISION_TABLE = [
+    # (label, pair factory, expected bucket attribute)
+    ("edgar usable excerpt, no translation", lambda: _pair(), "constraint_relevant"),
+    ("edgar excerpt without a keyword",
+     lambda: _pair(excerpt="The registrant entered into an agreement."), "keyword_rejected"),
+    ("edgar no excerpt, title only", lambda: _pair(excerpt=""), "text_unavailable"),
+    ("non-english usable original, no translation", lambda: _non_english_pair(), "text_unavailable"),
+    ("non-english verified translation", lambda: _translated_pair(), "constraint_relevant"),
+    ("non-english verified translation, no keyword",
+     lambda: _translated_pair(excerpt_translation=_translation(_TRANSLATED_WITHOUT_KEYWORD)), "keyword_rejected"),
+    ("translation pending", lambda: _translated_pair(translation_state=TranslationState.PENDING), "text_unavailable"),
+    ("translation unavailable",
+     lambda: _translated_pair(translation_state=TranslationState.UNAVAILABLE), "text_unavailable"),
+    ("translation blank", lambda: _translated_pair(excerpt_translation=_translation("")), "text_unavailable"),
+    ("translation malformed", lambda: _translated_pair(excerpt_translation=_translation(123)), "text_unavailable"),
+    ("translation of a poor-quality original",
+     lambda: _translated_pair(excerpt_quality=ExcerptQuality.TABLE_HEAVY), "text_unavailable"),
+    ("non-english title only",
+     lambda: _non_english_pair(excerpt="", title_translation=_translation("capacity")), "text_unavailable"),
+    ("latin acronym, untranslated", lambda: _non_english_pair(), "text_unavailable"),
+    ("category gate fails",
+     lambda: _pair(matched_rules=("earnings:earnings_or_results_report:실적",)), "category_rejected"),
+]
+
+
+@pytest.mark.parametrize("label,factory,expected", _DECISION_TABLE, ids=[r[0] for r in _DECISION_TABLE])
+def test_every_decision_table_row_lands_in_exactly_one_bucket(label, factory, expected):
+    """One row, one pair, one bucket -- and the four-term identity holds
+    for that row on its own, which is what makes the sum hold for any
+    mix of rows."""
+    _result, diag = _detect_with_diag([factory()])
+    buckets = {
+        "category_rejected": diag.category_rejected,
+        "text_unavailable": diag.text_unavailable,
+        "keyword_rejected": diag.keyword_rejected,
+        "constraint_relevant": diag.constraint_relevant,
+    }
+    assert buckets[expected] == 1, (label, buckets)
+    assert sum(buckets.values()) == 1, (label, buckets)
+    assert diag.pairs_examined - diag.pairs_malformed == sum(buckets.values())
+
+
+def test_the_predicate_is_still_evaluated_once_per_pair_with_text_selection(monkeypatch):
+    from src.logic import theme_candidate_detection as mod
+
+    calls = []
+    real = mod._classify_constraint_relevance
+    monkeypatch.setattr(
+        mod, "_classify_constraint_relevance",
+        lambda c, k, r: (calls.append(1), real(c, k, r))[1],
+    )
+    pairs = [
+        _pair(company="A", candidate_id="a", case_id="A"),
+        _non_english_pair(company="B", candidate_id="b", case_id="B"),
+        _translated_pair(company="C", candidate_id="c", case_id="C"),
+        (None, None),
+    ]
+    _result, diag = _detect_with_diag(pairs)
+    assert len(calls) == diag.pairs_examined - diag.pairs_malformed == 3
+
+
+def test_matched_keywords_come_from_the_text_the_gate_actually_read():
+    """A candidate admitted on its translated excerpt must not record
+    keywords drawn from text it never matched on."""
+    pairs = [
+        _translated_pair(company="A", candidate_id="a", case_id="A",
+                         excerpt_translation=_translation("HBM capacity is constrained.")),
+        _translated_pair(company="B", candidate_id="b", case_id="B",
+                         excerpt_translation=_translation("HBM capacity is constrained.")),
+    ]
+    result = _detect(pairs)
+    assert len(result) == 1
+    assert set(result[0].matched_keywords) <= {"hbm", "capacity"}
+    assert "wafer" not in result[0].matched_keywords
