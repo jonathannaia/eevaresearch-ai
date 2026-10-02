@@ -624,3 +624,132 @@ def test_worker_summary_reports_non_zero_counts_at_both_relevance_gates(tmp_path
     assert counts["clusters_below_threshold"] == 1
     assert counts["clusters_detected"] == 0
     assert counts["themes_created"] == 0
+
+
+# ============================================================
+# Text selection through the real worker step
+# ============================================================
+
+import dataclasses as _dc  # noqa: E402
+
+from src.models.models import ExcerptQuality, Translation, TranslationState  # noqa: E402
+
+_KOREAN_EXCERPT_WITH_ACRONYM = "회사는 HBM 생산 관련 신규시설투자를 결정하였다."
+_TRANSLATED_WITH_KEYWORD = "The company decided on a new facility investment for HBM capacity."
+
+
+def _translation(text):
+    return Translation(
+        translated_text=text, provider="deepl", source_lang="ko", target_lang="en",
+        translated_at="2026-08-01T00:00:00+00:00", model=None,
+    )
+
+
+def _seed_text_selection_pair(
+    worker_settings, candidates, *, candidate_id, company, rcept_dt="2026-08-01",
+    language="Korean", excerpt=_KOREAN_EXCERPT_WITH_ACRONYM, report_nm="신규시설투자등",
+    matched_rules=("material_agreement:1.01",), translation_state=TranslationState.NOT_REQUESTED,
+    excerpt_translation=None, excerpt_quality=ExcerptQuality.USABLE_TEXT,
+):
+    candidate = _candidate(candidate_id, company, rcept_dt)
+    filing = _dc.replace(candidate.filing, original_language=language, report_nm=report_nm)
+    candidate = _dc.replace(
+        candidate, filing=filing, matched_rules=list(matched_rules), excerpt_original=excerpt,
+        translation_state=translation_state, excerpt_translation=excerpt_translation,
+        excerpt_quality=excerpt_quality,
+    )
+    _seed_case_and_candidate(worker_settings, candidate, _case(f"case-{candidate_id}", candidate_id, company, rcept_dt))
+    candidates[candidate_id] = candidate
+    return candidates
+
+
+def _counts(summary):
+    import re
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r"(\w+)=(\d+)", summary)}
+
+
+def test_worker_summary_reports_all_four_relevance_outcomes_non_zero(tmp_path, monkeypatch):
+    """The real step, real SQLite, real allowlist and real keyword list --
+    no monkeypatched classifier. One pair per outcome, so every bucket on
+    the summary line is non-zero and both identities are checked against
+    real output rather than a constructed diagnostics object."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    # category gate: not on the allowlist, keyword-rich English excerpt
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-cat", company="A",
+        language="English", excerpt="Company disclosed a capacity expansion and wafer allocation agreement.",
+        report_nm="8-K", matched_rules=("earnings:earnings_or_results_report:실적",),
+    )
+    # text_unavailable: Korean original carrying a Latin acronym, no translation
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-txt", company="B",
+    )
+    # keyword gate: verified translation with no keyword in it
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-kw", company="C",
+        translation_state=TranslationState.TRANSLATED,
+        excerpt_translation=_translation("The company entered into an agreement."),
+    )
+    # relevant: verified translation containing a keyword
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-rel", company="D",
+        translation_state=TranslationState.TRANSLATED,
+        excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD),
+    )
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["pairs_gathered"] == 4
+    assert counts["pairs_examined"] == 4
+    assert counts["pairs_malformed"] == 0
+    assert counts["category_rejected"] == 1
+    assert counts["text_unavailable"] == 1
+    assert counts["keyword_rejected"] == 1
+    assert counts["constraint_relevant"] == 1
+    assert counts["pairs_examined"] - counts["pairs_malformed"] == (
+        counts["category_rejected"] + counts["text_unavailable"]
+        + counts["keyword_rejected"] + counts["constraint_relevant"]
+    )
+    assert counts["clusters_formed"] == (
+        counts["clusters_scope_suppressed"] + counts["clusters_below_threshold"] + counts["clusters_detected"]
+    )
+    # The lone relevant pair is held back by the unchanged two-company
+    # threshold: admitting translated text creates no Theme by itself.
+    assert counts["clusters_below_threshold"] == 1
+    assert counts["clusters_detected"] == 0
+    assert counts["themes_created"] == 0
+
+
+def test_worker_summary_counts_an_untranslated_acronym_pair_as_text_unavailable(tmp_path, monkeypatch):
+    """Through the real step: a Korean excerpt containing HBM, with no
+    translation, must not reach the keyword bucket."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    _seed_text_selection_pair(worker_settings, candidates, candidate_id="edgar-cand-acr", company="A")
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+    assert counts["text_unavailable"] == 1
+    assert counts["keyword_rejected"] == 0
+    assert counts["constraint_relevant"] == 0
+
+
+def test_worker_summary_places_text_unavailable_in_a_fixed_position_as_an_integer(tmp_path):
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    match = re.search(r"text_unavailable=(\S+)", summary)
+    assert match and match.group(1).isdigit(), summary
+    tail = summary.split("pairs_malformed=", 1)[1]
+    assert tail.index("category_rejected=") < tail.index("text_unavailable=") < tail.index("keyword_rejected=")
+    assert tail.index("keyword_rejected=") < tail.index("constraint_relevant=")
+
+
+def test_text_unavailable_degrades_with_the_other_metrics(tmp_path):
+    assert "text_unavailable=unavailable" in radar_worker._DETECTION_METRICS_UNAVAILABLE
+    for bad in (None, object(), "not-diagnostics", 42, []):
+        assert "text_unavailable=unavailable" in radar_worker._format_detection_metrics(bad)

@@ -727,8 +727,9 @@ def _gather_case_candidate_pairs_for_detection(
 
 _DETECTION_METRICS_UNAVAILABLE = (
     "pairs_examined=unavailable pairs_malformed=unavailable category_rejected=unavailable "
-    "keyword_rejected=unavailable constraint_relevant=unavailable clusters_formed=unavailable "
-    "clusters_scope_suppressed=unavailable clusters_below_threshold=unavailable"
+    "text_unavailable=unavailable keyword_rejected=unavailable constraint_relevant=unavailable "
+    "clusters_formed=unavailable clusters_scope_suppressed=unavailable "
+    "clusters_below_threshold=unavailable"
 )
 
 
@@ -748,9 +749,9 @@ def _format_detection_metrics(diagnostics: object) -> str:
         # Fixed order, and the only names this function will ever
         # emit: the field list is a literal here, so a diagnostics
         # object cannot introduce a name of its own.
-        for name in ("pairs_examined", "pairs_malformed", "category_rejected", "keyword_rejected",
-                     "constraint_relevant", "clusters_formed", "clusters_scope_suppressed",
-                     "clusters_below_threshold"):
+        for name in ("pairs_examined", "pairs_malformed", "category_rejected", "text_unavailable",
+                     "keyword_rejected", "constraint_relevant", "clusters_formed",
+                     "clusters_scope_suppressed", "clusters_below_threshold"):
             value = getattr(diagnostics, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 return _DETECTION_METRICS_UNAVAILABLE
