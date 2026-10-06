@@ -647,3 +647,198 @@ def test_no_unexpected_files_touched():
     unexpected = changed - allowed_prefixes_and_files
     unexpected = {c for c in unexpected if not c.startswith("src/ui/pages/theme_workspace.py") and not c.startswith("tests/")}
     assert not unexpected, unexpected
+
+
+# ============================================================
+# INTERNAL -> ARCHIVED: the supported retire path
+# ============================================================
+
+_ARCHIVE_AT = "2026-10-01T00:00:00+00:00"
+
+
+def _settings(tmp_path, backend="json"):
+    """sqlite refuses to fall back to JSON without an explicit path, so
+    both backends are configured the same way the app requires."""
+    return Settings(db_backend=backend, cache_dir=tmp_path, state_db_path=tmp_path / "state.db")
+
+
+def test_internal_theme_can_be_archived_directly():
+    """The new edge. Retiring an internal Theme no longer requires
+    publishing it first."""
+    allowed = theme_workspace._ALLOWED_VISIBILITY_TRANSITIONS[ThemeVisibility.INTERNAL]
+
+    assert ThemeVisibility.ARCHIVED in allowed
+    assert ThemeVisibility.READY_TO_PUBLISH in allowed
+    assert ThemeVisibility.PUBLISHED not in allowed, "archiving must not open a direct publish route"
+
+
+def test_every_other_transition_is_unchanged():
+    """The whole map, pinned. Only INTERNAL gained an edge."""
+    m = theme_workspace._ALLOWED_VISIBILITY_TRANSITIONS
+
+    assert m[ThemeVisibility.INTERNAL] == frozenset({ThemeVisibility.READY_TO_PUBLISH, ThemeVisibility.ARCHIVED})
+    assert m[ThemeVisibility.READY_TO_PUBLISH] == frozenset({ThemeVisibility.PUBLISHED, ThemeVisibility.INTERNAL})
+    assert m[ThemeVisibility.PUBLISHED] == frozenset({ThemeVisibility.ARCHIVED})
+    assert m[ThemeVisibility.ARCHIVED] == frozenset()
+
+
+def test_archiving_an_internal_theme_succeeds_without_any_evidence(tmp_path):
+    """The evidence threshold guards PUBLICATION, not retirement -- it is
+    keyed on INTERNAL -> READY_TO_PUBLISH and must not block archiving a
+    Theme that never had evidence."""
+    curator = backend_factory.get_theme_curator_repository(_settings(tmp_path))
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    assert errors == ()
+    assert updated is not None and updated.visibility is ThemeVisibility.ARCHIVED
+    assert curator.evidence_for_theme(theme.id) == ()
+
+
+def test_the_publication_evidence_threshold_is_still_enforced(tmp_path):
+    """Permission enforcement: the path this change did NOT touch."""
+    curator = backend_factory.get_theme_curator_repository(_settings(tmp_path))
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.publish_transition(
+        curator, theme, ThemeVisibility.READY_TO_PUBLISH, _ARCHIVE_AT,
+    )
+
+    assert updated is None
+    assert any("evidence" in e.lower() for e in errors), errors
+
+
+def test_unpublish_still_refuses_a_theme_that_was_never_published(tmp_path):
+    """`unpublish_theme` writes an audited "Unpublished (archived)"
+    DECISION note. Opening INTERNAL -> ARCHIVED must not make that path
+    reachable for a Theme that was never published, or the note would be
+    a false audit record."""
+    curator = backend_factory.get_theme_curator_repository(_settings(tmp_path))
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+
+    updated, errors = theme_workspace.unpublish_theme(curator, theme, "no longer relevant", _ARCHIVE_AT)
+
+    assert updated is None
+    assert errors
+    assert curator.research_notes_for_theme(theme.id) == (), "no DECISION note may be written"
+    assert curator.get_theme(theme.id).visibility is ThemeVisibility.INTERNAL
+
+
+def test_archiving_an_internal_theme_writes_no_unpublish_note(tmp_path):
+    """The plain transition path records nothing -- correct, because
+    nothing was ever published."""
+    curator = backend_factory.get_theme_curator_repository(_settings(tmp_path))
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+
+    theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    assert curator.research_notes_for_theme(theme.id) == ()
+
+
+@pytest.mark.parametrize("backend", ["json", "sqlite"])
+def test_archiving_removes_the_theme_s_scopes_from_active_matching(tmp_path, backend):
+    """The point of the whole change: archiving is what disables a seed
+    scope. Covers both the matching read AND the Radar detection step's
+    suppression input, which are the same list_active_scopes() call."""
+    settings = _settings(tmp_path, backend)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    matching_repo = backend_factory.get_theme_matching_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+    matching_repo.insert_scope(ThemeMatchingScope(
+        theme_id=theme.id, sector_tags=(), sector_subtags=("hbm",),
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    ))
+    assert len(matching_repo.list_active_scopes()) == 1
+
+    theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    assert matching_repo.list_active_scopes() == ()
+
+
+@pytest.mark.parametrize("backend", ["json", "sqlite"])
+def test_archiving_preserves_the_theme_and_scope_rows(tmp_path, backend):
+    """Archiving disables; it never deletes. No delete path exists for a
+    Theme or a scope, so both rows must survive on every backend."""
+    settings = _settings(tmp_path, backend)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    matching_repo = backend_factory.get_theme_matching_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+    matching_repo.insert_scope(ThemeMatchingScope(
+        theme_id=theme.id, sector_tags=(), sector_subtags=("hbm",),
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    ))
+
+    theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    surviving = curator.get_theme(theme.id)
+    assert surviving is not None and surviving.visibility is ThemeVisibility.ARCHIVED
+    # Only visibility and updated_at move; every other field is intact.
+    assert (surviving.title, surviving.key_question, surviving.hypothesis) == (
+        theme.title, theme.key_question, theme.hypothesis,
+    )
+    assert surviving.created_at == theme.created_at
+    # The scope row still exists -- it is merely inactive now.
+    assert matching_repo.get_scope(theme.id) is not None
+
+
+def test_archiving_preserves_match_rows_written_while_active(tmp_path):
+    """JSON backend only, deliberately: research_case_theme_matches.case_id
+    is a FK to research_cases, and the repository protocol exposes no
+    case-insert seam, so the existing suite seeds cases through
+    research_store -- a JSON-only path. Asserting this on sqlite would
+    require a seeding route that does not exist, and insert_match
+    swallows the resulting IntegrityError, which would make the
+    assertion silently vacuous rather than failing."""
+    from src.data_access import research_store
+
+    settings = _settings(tmp_path)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    matching_repo = backend_factory.get_theme_matching_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+    # A tag scope here: this test is about row preservation, and the
+    # shared candidate fixture carries theme_slug="ai-buildout" with no
+    # subtheme, so only a tag scope produces a real match to preserve.
+    scope = ThemeMatchingScope(
+        theme_id=theme.id, sector_tags=("ai-buildout",), sector_subtags=(),
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    )
+    matching_repo.insert_scope(scope)
+    research_store.append_research_case(settings.cache_dir, _case())
+    match = evaluate_theme_match(_candidate(), "case-1", scope, "2026-09-01T00:00:00+00:00")
+    assert match is not None
+    assert matching_repo.insert_match(match) is True
+
+    theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    assert matching_repo.get_match(match.id) == match
+
+
+@pytest.mark.parametrize("backend", ["json", "sqlite"])
+def test_an_archived_theme_is_absent_from_the_public_published_read(tmp_path, backend):
+    """An archived Theme must never surface on the public Research
+    Theses page, which reads the published-only protocol."""
+    settings = _settings(tmp_path, backend)
+    curator = backend_factory.get_theme_curator_repository(settings)
+    public = backend_factory.get_theme_repository(settings)
+    theme = _theme(visibility=ThemeVisibility.INTERNAL)
+    curator.insert_theme(theme)
+    assert public.list_published_themes() == ()
+
+    theme_workspace.publish_transition(curator, theme, ThemeVisibility.ARCHIVED, _ARCHIVE_AT)
+
+    assert public.list_published_themes() == ()
+    assert public.get_published_theme(theme.id) is None
+    # Still reachable through the private curator seam, so the internal
+    # workspace keeps its history.
+    assert curator.get_theme(theme.id) is not None
