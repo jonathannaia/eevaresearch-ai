@@ -27,6 +27,8 @@ from src.logic.formatting import fmt_datetime_local
 from src.logic.radar_freshness import NO_SCAN_YET_MESSAGE, UNAVAILABLE_MESSAGE, compute_radar_freshness
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
 from src.ui.components.radar_status import RETRIEVAL_FAILURE_NOTE, RadarItem, default_card_status_html
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
 REPO_ROOT = Path(__file__).parent.parent
@@ -93,9 +95,12 @@ def _text(at) -> str:
 
 # ============================== FRESHNESS: EASTERN TIME ==============================
 
-def test_freshness_all_recent_renders_in_eastern_time(tmp_path):
+def test_freshness_all_recent_renders_in_eastern_time(tmp_path, monkeypatch):
     db_path = tmp_path / "state.db"
-    settings = Settings(cache_dir=tmp_path, db_backend="sqlite", state_db_path=db_path, edinet_subscription_key="test-key")
+    block_network(monkeypatch)
+    settings = configured_settings(
+        tmp_path, db_backend="sqlite", state_db_path=db_path,
+    )
     backend_factory.get_scan_status_repository(settings).upsert_scan_status(ProviderScanStatus(
         provider="EDINET", cursor_value=None, started_at=_recent_iso(), completed_at=_recent_iso(),
         last_successful_at=_recent_iso(), items_discovered=1, candidates_created=1,

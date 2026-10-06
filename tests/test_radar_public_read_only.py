@@ -22,15 +22,18 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.config.settings import Settings
 from src.data_access.dart import candidate_store
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 
 
 @pytest.fixture(autouse=True)
 def _guard_against_live_calls(monkeypatch):
+    block_network(monkeypatch)
+
     def _forbidden(*_args, **_kwargs):
         raise AssertionError("Test attempted a live call — this suite must stay network-free.")
 
@@ -86,7 +89,7 @@ def _needs_review_candidate(candidate_id: str, filing: FilingEvent, **overrides)
 
 
 def _run_radar(tmp_path) -> AppTest:
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=15)
         at.run()
