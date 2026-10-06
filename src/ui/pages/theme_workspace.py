@@ -94,7 +94,28 @@ _MIN_DISTINCT_EVIDENCE_COMPANIES_TO_PUBLISH = 2
 # _ALLOWED_VISIBILITY_TRANSITIONS — duplicated, not imported (this app
 # must never import a script).
 _ALLOWED_VISIBILITY_TRANSITIONS: dict[ThemeVisibility, frozenset[ThemeVisibility]] = {
-    ThemeVisibility.INTERNAL: frozenset({ThemeVisibility.READY_TO_PUBLISH}),
+    # INTERNAL -> ARCHIVED is the supported way to retire an internal
+    # Theme that was never published — a seed/experimental Theme, or one
+    # abandoned before it ever had evidence. Without this edge the only
+    # route to ARCHIVED ran INTERNAL -> READY_TO_PUBLISH -> PUBLISHED ->
+    # ARCHIVED, i.e. it required PUBLISHING a Theme purely in order to
+    # retire it. This edge deliberately does NOT weaken publication: the
+    # publish path and its own evidence thresholds are untouched, and
+    # PUBLISHED -> ARCHIVED still runs through unpublish_theme()'s
+    # audited, reason-required branch (see _render_publish_controls'
+    # `is_unpublish`, which keys on the CURRENT visibility being
+    # PUBLISHED — so archiving an INTERNAL Theme takes the plain
+    # transition path and never records an unpublish DECISION note,
+    # which is correct: nothing was ever published).
+    #
+    # What archiving achieves: the Theme's matching scopes stop being
+    # returned by list_active_scopes() in all three backends, which both
+    # ends theme matching for them AND removes their entries from the
+    # Radar detection step's `already_covered` suppression set. It does
+    # NOT undo history — the Theme row, its scope row, and every
+    # research_case_theme_matches row written while it was active are
+    # all preserved, and no delete path exists for any of them.
+    ThemeVisibility.INTERNAL: frozenset({ThemeVisibility.READY_TO_PUBLISH, ThemeVisibility.ARCHIVED}),
     ThemeVisibility.READY_TO_PUBLISH: frozenset({ThemeVisibility.PUBLISHED, ThemeVisibility.INTERNAL}),
     ThemeVisibility.PUBLISHED: frozenset({ThemeVisibility.ARCHIVED}),
     ThemeVisibility.ARCHIVED: frozenset(),
@@ -323,7 +344,21 @@ def unpublish_theme(
     (design/DECISIONS.md, Phase 2 auto-publish policy): reuses the
     already-allowed PUBLISHED -> ARCHIVED transition, but requires a
     non-blank reason and records it as one immutable DECISION
-    ThemeResearchNote."""
+    ThemeResearchNote.
+
+    Restricted to a theme that is CURRENTLY published, checked here
+    rather than inherited from the transition map. Since INTERNAL ->
+    ARCHIVED became a supported edge, the map alone would let this
+    function archive a Theme that was never published and write an
+    "Unpublished (archived)" DECISION note for it — a false audit
+    record. Archiving an unpublished Theme is a plain transition and
+    belongs on publish_transition(), not here."""
+    if theme.visibility is not ThemeVisibility.PUBLISHED:
+        return None, (
+            f"Cannot transition from {theme.visibility.value!r} to "
+            f"{ThemeVisibility.ARCHIVED.value!r} via unpublish — only a published theme "
+            "can be unpublished.",
+        )
     if not reason or not reason.strip():
         return None, ("A reason is required to unpublish (archive) a published theme.",)
     updated, errors = publish_transition(curator, theme, ThemeVisibility.ARCHIVED, updated_at)
