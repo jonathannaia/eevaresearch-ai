@@ -753,3 +753,120 @@ def test_text_unavailable_degrades_with_the_other_metrics(tmp_path):
     assert "text_unavailable=unavailable" in radar_worker._DETECTION_METRICS_UNAVAILABLE
     for bad in (None, object(), "not-diagnostics", 42, []):
         assert "text_unavailable=unavailable" in radar_worker._format_detection_metrics(bad)
+
+
+# ============================================================
+# Scope shape vs. the detection suppression set
+# ============================================================
+
+def _insert_scope(worker_settings, *, sector_tags, sector_subtags, theme_id="theme-scope-shape"):
+    """A scope is only ACTIVE when its parent ResearchTheme exists and is
+    not archived -- a scope whose theme_id resolves to nothing is treated
+    as inactive -- so the parent is seeded here too."""
+    from src.models.theme_research import ResearchTheme, ThemeStatus
+
+    curator = backend_factory.get_theme_curator_repository(worker_settings)
+    created_at = "2026-08-01T00:00:00+00:00"
+    curator.insert_theme(ResearchTheme(
+        id=theme_id, category=ThemeCategory.BOTTLENECK, status=ThemeStatus.NEW,
+        visibility=ThemeVisibility.INTERNAL, title="Scope shape fixture",
+        key_question="q", hypothesis="h", working_thesis="w", why_it_matters="y",
+        what_could_change_the_view="c", what_to_watch_next="n",
+        created_at=created_at, updated_at=created_at,
+    ))
+    repo = backend_factory.get_theme_matching_repository(worker_settings)
+    repo.insert_scope(ThemeMatchingScope(
+        theme_id=theme_id, sector_tags=sector_tags, sector_subtags=sector_subtags,
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    ))
+
+
+def test_suppression_is_exact_tuple_membership_not_whole_theme(tmp_path, monkeypatch):
+    """Baseline for the tests below, and a correction worth pinning: a
+    cluster key is (theme_slug, subtheme_slug) and `already_covered` is
+    tested by exact tuple membership. A TAG-ONLY scope contributes only
+    (tag, None), so it suppresses a cluster that has no subtheme -- and
+    does NOT suppress a cluster under the same theme that has one."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    # Cluster WITH a subtheme: (ai-buildout, compute-accelerators).
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=())
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 0
+    assert counts["clusters_detected"] == 1
+
+
+def test_a_tag_only_scope_suppresses_the_subtheme_less_cluster(tmp_path, monkeypatch):
+    """The (tag, None) entry a tag-only scope does contribute suppresses
+    exactly the cluster whose subtheme_slug is absent."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(
+        worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")], subtheme_slug=None,
+    )
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=())
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 1
+    assert counts["clusters_detected"] == 0
+
+
+def test_a_tag_plus_subtag_scope_suppresses_that_cross_product_entry(tmp_path, monkeypatch):
+    """A scope carrying BOTH fields contributes (tag, None) plus one
+    (tag, subtag) per declared subtag -- which is how a scope can
+    suppress a real, subthemed cluster."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=("compute-accelerators",))
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 1
+    assert counts["clusters_detected"] == 0
+
+
+def test_a_subtag_only_scope_contributes_nothing_to_the_suppression_set(tmp_path, monkeypatch):
+    """The reason the subtag-only form is permitted. The same cluster a
+    tag+subtag scope suppresses above is detected normally here, because
+    the suppression loop iterates sector_tags and a subtag-only scope has
+    none -- even though its subtag names this very cluster."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=(), sector_subtags=("compute-accelerators",))
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 0
+    assert counts["clusters_detected"] == 1
+
+
+def test_the_subtag_only_scope_can_still_match_the_same_candidates(tmp_path, monkeypatch):
+    """Matching remains possible for exactly the candidates the
+    suppression set ignores -- the whole point of the shape."""
+    from src.logic.research_case_theme_matching import evaluate_theme_match
+
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01")])
+    candidate = next(iter(candidates.values()))
+    scope = ThemeMatchingScope(
+        theme_id="theme-scope-shape", sector_tags=(), sector_subtags=("compute-accelerators",),
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    )
+
+    match = evaluate_theme_match(candidate, "case-0", scope, "2026-09-01T00:00:00+00:00")
+
+    assert match is not None
+    assert match.matched_sector_tag == "compute-accelerators"
