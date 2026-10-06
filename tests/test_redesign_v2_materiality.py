@@ -29,6 +29,8 @@ from src.logic.filing_visibility import is_not_material, not_material_rcept_nos
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
 from src.ui.components import recent_theme_activity, regional_brief
 from src.ui.pages import radar_inbox
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 _FILINGS_HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 _DASHBOARD_HARNESS = Path(__file__).parent / "apptest_pages" / "dashboard_page.py"
@@ -49,6 +51,7 @@ def _now_iso() -> str:
 
 @pytest.fixture(autouse=True)
 def _clear_caches_and_guard_live_calls(monkeypatch):
+    block_network(monkeypatch)
     radar_inbox._load_dashboard_snapshot.clear()
     from src.data_access.dart import radar_service
     from src.data_access.edgar import edgar_service
@@ -112,7 +115,7 @@ def _seed(cache_dir: Path) -> tuple[FilingEvent, FilingEvent]:
 
 
 def _settings(cache_dir: Path) -> Settings:
-    return Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=cache_dir)
+    return configured_settings(cache_dir)
 
 
 # --- the gate itself -----------------------------------------------------------
