@@ -28,6 +28,7 @@ from src.models.models import (
     TranslationState,
 )
 from tests.configured_test_settings import configured_settings
+from tests.dart_registry_fixtures import seed_sqlite_identifiers, tracked_dart_companies
 from tests.no_network import block_network
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
@@ -672,25 +673,15 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     # not any filing's own corp_code) — without this, every source would
     # be unready and the page would show its "not configured" state
     # instead of ever reaching _build_items().
-    from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
-
+    # dart_readiness requires EVERY tracked DART company resolved, so the
+    # membership is derived from the registry rather than hand-listed —
+    # a hand-written list fell behind the registry and left this test
+    # rendering the page's "not configured" state instead of a card.
+    # Written through the real sqlite identifier repository (not the JSON
+    # cache), which is the path this test exists to exercise.
     id_repo = backend_factory.get_identifier_repository(settings, "OpenDART / DART")
-    # Core Issuer Expansion batch (2026-09-04) added 8 more DART
-    # companies — dart_readiness requires every tracked DART company
-    # resolved, not just Samsung/SK Hynix, so all ten need an identifier
-    # here for this test to still reach _build_items() rather than the
-    # page's "not configured" state.
-    for krx_code, corp_code, name in [
-        ("005930", "00126380", "삼성전자"), ("000660", "00164779", "SK 하이닉스"),
-        ("011070", "00105961", "LG이노텍"), ("012450", "00126566", "한화에어로스페이스"),
-        ("047810", "00309503", "한국항공우주"), ("454910", "01105153", "두산로보틱스"),
-        ("240810", "01135941", "원익IPS"), ("056190", "00358271", "SFA"),
-        ("036540", "00301246", "SFA반도체"), ("067310", "00445054", "하나마이크론"),
-    ]:
-        upsert_resolved_identifier(
-            id_repo.conn, "OpenDART / DART", krx_code,
-            ResolvedIdentifierRecord(identifier=corp_code, display_name=name, resolution_method="synthetic-test-fixture", retrieved_at=_now_iso()),
-        )
+    written = seed_sqlite_identifiers(id_repo.conn)
+    assert len(written) == len(tracked_dart_companies()), "fixture did not cover the whole registry"
 
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)

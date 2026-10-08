@@ -21,6 +21,11 @@ from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.dart import radar_service
 from src.data_access.dart.client import DisclosureRecord
+from tests.dart_registry_fixtures import (
+    seed_corp_codes,
+    tracked_dart_companies,
+    tracked_dart_name_for,
+)
 
 
 def _settings(cache_dir, dart_key=None, translation_key=None) -> Settings:
@@ -28,6 +33,11 @@ def _settings(cache_dir, dart_key=None, translation_key=None) -> Settings:
 
 
 def _seed_corp_codes(cache_dir, krx_codes: list[str]) -> None:
+    """An explicit, deliberately partial subset — for the corp-code
+    fill-in tests below, which are about the mapping itself and name the
+    krx_codes they care about. Readiness tests seed the whole tracked
+    registry instead, through tests/dart_registry_fixtures.py, because
+    readiness depends on registry membership and so would drift."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         krx: {"corp_code": f"corp-{krx}", "corp_name": "Test Co", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-08-10T00:00:00+00:00"}
@@ -36,28 +46,49 @@ def _seed_corp_codes(cache_dir, krx_codes: list[str]) -> None:
     (cache_dir / "dart_corp_codes.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
-_CORE_EXPANSION_DART_KRX_CODES = ["011070", "012450", "047810", "454910", "240810", "056190", "036540", "067310"]
-_CORE_EXPANSION_DART_NAMES = {
-    "LG Innotek Co., Ltd.", "Hanwha Aerospace Co., Ltd.", "Korea Aerospace Industries, Ltd.",
-    "Doosan Robotics Inc.", "Wonik IPS Co., Ltd.", "SFA Engineering Corporation",
-    "SFA Semicon Co., Ltd", "Hana Micron Inc.",
-}
+# The company this file deliberately leaves unresolved, as explicit
+# literals: the krx_code the fixture omits and the name readiness must
+# then report. Both are literals on purpose — deriving the omission and
+# the expectation from one registry query would make the assertion
+# tautological (it would pass even if readiness reported nothing at
+# all). `_assert_literal_pair_still_matches_registry` only *checks* the
+# pair against the registry, so the test fails loudly if this company is
+# ever renamed or dropped rather than silently asserting nothing.
+_UNRESOLVED_KRX_CODE = "000660"
+_UNRESOLVED_COMPANY_NAME = "SK Hynix"
+
+# Two long-standing DART companies, named literally, as an independent
+# anchor on the derived "every tracked company" set below: if the
+# registry query ever returned an empty or wrong set, the derived
+# comparison alone could still pass vacuously, but these cannot.
+_ANCHOR_DART_NAMES = {"Samsung Electronics", "SK Hynix"}
+
+
+def _assert_literal_pair_still_matches_registry() -> None:
+    assert tracked_dart_name_for(_UNRESOLVED_KRX_CODE) == _UNRESOLVED_COMPANY_NAME
 
 
 def test_readiness_reports_missing_keys_and_unresolved_companies(tmp_path):
+    """Nothing seeded at all, so every tracked DART company must be
+    reported unresolved. The expected set is derived from the registry
+    (it cannot drift), but anchored by literal names and a non-emptiness
+    check so a broken derivation cannot make this pass vacuously."""
     readiness = radar_service.radar_readiness(_settings(tmp_path))
 
     assert not readiness.dart_key_configured
     assert not readiness.translation_key_configured
-    # Core Issuer Expansion batch (2026-09-04) added 8 more DART
-    # companies, all correctly unresolved (corp_code left unset per that
-    # batch's own scope — see tracked_companies.py's own comment).
-    assert set(readiness.unresolved_companies) == {"Samsung Electronics", "SK Hynix"} | _CORE_EXPANSION_DART_NAMES
+    unresolved = set(readiness.unresolved_companies)
+    assert unresolved, "no company reported unresolved despite an empty cache"
+    assert _ANCHOR_DART_NAMES <= unresolved
+    assert unresolved == {c.name for c in tracked_dart_companies()}
     assert not readiness.ready
 
 
 def test_readiness_ready_when_keys_present_and_all_companies_resolved(tmp_path):
-    _seed_corp_codes(tmp_path, ["005930", "000660"] + _CORE_EXPANSION_DART_KRX_CODES)
+    """Fully seeded — every tracked DART company resolved — must produce
+    the ready state. The expectation is the literal `()`."""
+    written = seed_corp_codes(tmp_path)
+    assert len(written) == len(tracked_dart_companies()), "fixture did not cover the whole registry"
 
     readiness = radar_service.radar_readiness(_settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"))
 
@@ -68,11 +99,19 @@ def test_readiness_ready_when_keys_present_and_all_companies_resolved(tmp_path):
 
 
 def test_readiness_flags_partially_resolved_companies(tmp_path):
-    _seed_corp_codes(tmp_path, ["005930"] + _CORE_EXPANSION_DART_KRX_CODES)  # SK Hynix (000660) left unresolved
+    """Every tracked DART company resolved except one, named by literal
+    krx_code; readiness must report exactly that one company's literal
+    name. The omission is a literal and the expectation is a literal, so
+    this cannot pass by both sides sharing one derivation — and the pair
+    is checked against the registry so it cannot go stale silently."""
+    _assert_literal_pair_still_matches_registry()
+    written = seed_corp_codes(tmp_path, omit=(_UNRESOLVED_KRX_CODE,))
+    assert _UNRESOLVED_KRX_CODE not in written
+    assert len(written) == len(tracked_dart_companies()) - 1
 
     readiness = radar_service.radar_readiness(_settings(tmp_path, dart_key="dart-key", translation_key="deepl-key"))
 
-    assert readiness.unresolved_companies == ("SK Hynix",)
+    assert readiness.unresolved_companies == (_UNRESOLVED_COMPANY_NAME,)
     assert not readiness.ready
 
 
