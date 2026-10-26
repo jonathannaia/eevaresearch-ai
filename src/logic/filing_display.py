@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 
 from src.data_access.edgar.edgar_rules import normalize_form_type
+from src.logic import dart_summary
 from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
 
 EDGAR_SOURCE_NAME = "SEC EDGAR"
@@ -323,6 +324,49 @@ _SUMMARY_MAX_CHARS = 320
 # for first.
 _SUMMARY_MAX_SEARCH_CHARS = 640
 
+# A numbered section/list marker — "1.", "12." — standing on its own as a
+# token, not a completed sentence. DART's disclosure bodies are numbered
+# ("1. 제목 ... 2. 내용 ..." / "1. Content ... 2. Media Outlet ..."), and
+# _SENTENCE_END_PATTERN matches the marker's period exactly like a full
+# stop, so a summary could be cut at — and end on — a dangling "1.".
+#
+# Deliberately NARROW, and deliberately not "a digit before a period is
+# never a sentence end":
+#   * the number must be a STANDALONE token (start-of-text or whitespace
+#     before it), so "$4.5", "2026.08.10" and "No. 1" are untouched;
+#   * at most two digits, so a sentence ending in a year ("... August 10,
+#     2026.") still ends a sentence and is still a valid cut point;
+#   * anchored to the END of the candidate cut, so a marker occurring
+#     anywhere inside the retained text is left exactly as it is — this
+#     only decides where a cut may land, never what the text says.
+#
+# Accepted trade-off, stated rather than hidden: a genuine sentence whose
+# final word is a bare one- or two-digit number ("The ratio is 1.") is
+# not used as a cut point either, because no textual signal separates it
+# from a list marker. The effect is only a shorter or absent summary,
+# never altered or invented content.
+_STANDALONE_LIST_MARKER_END_RE = re.compile(r"(?:^|\s)\d{1,2}\.$")
+# Any standalone numbering, anywhere — used ONLY by the substantiveness
+# check below, never to cut displayed text.
+_BARE_NUMBERING_RE = re.compile(r"(?:^|\s)\d{1,2}\.(?=\s|$)")
+
+
+def _drop_trailing_run_marker(result: str, markers: frozenset[int]) -> str:
+    """Final guard: a summary never ends on a dangling FIELD marker.
+
+    `markers` holds the end offsets of an ascending numbered run only, so
+    a sentence genuinely ending in a number ("The ratio is 1.") is never
+    trimmed. Bounded, never an unbounded loop."""
+    cleaned = result.rstrip()
+    for _ in range(3):
+        if len(cleaned) not in markers:
+            break
+        match = _STANDALONE_LIST_MARKER_END_RE.search(cleaned)
+        if not match:
+            break
+        cleaned = cleaned[: match.start()].rstrip()
+    return cleaned
+
 
 def extractive_summary(text: str) -> str:
     """A concise summary grounded ONLY in `text` itself — literally a
@@ -346,20 +390,31 @@ def extractive_summary(text: str) -> str:
     if not normalized:
         return ""
 
+    # Context, not a bare digit test: only periods belonging to an
+    # ASCENDING run starting at 1, with at least two members, are field
+    # markers. "The deadline is 10." in ordinary prose is not in such a
+    # run, so it stays a sentence ending and a valid cut point.
+    markers = dart_summary.marker_end_positions(normalized)
+
     boundary = None
     for match in _SENTENCE_END_PATTERN.finditer(normalized):
         if match.end() > _SUMMARY_MAX_CHARS:
             break
+        if match.start() + 1 in markers:
+            continue
         boundary = match.end()
     if boundary:
-        return normalized[:boundary].strip()
+        return _drop_trailing_run_marker(normalized[:boundary].strip(), markers)
 
     if len(normalized) <= _SUMMARY_MAX_CHARS:
-        return normalized
+        return _drop_trailing_run_marker(normalized, markers)
 
-    match = _SENTENCE_END_PATTERN.search(normalized)
-    if match and match.end() <= _SUMMARY_MAX_SEARCH_CHARS:
-        return normalized[:match.end()].strip()
+    for match in _SENTENCE_END_PATTERN.finditer(normalized):
+        if match.end() > _SUMMARY_MAX_SEARCH_CHARS:
+            break
+        if match.start() + 1 in markers:
+            continue
+        return _drop_trailing_run_marker(normalized[:match.end()].strip(), markers)
 
     return ""
 
@@ -517,6 +572,152 @@ def strip_edinet_machine_artifacts(text: str) -> str:
             break
         cleaned = cleaned[match.end():]
     return cleaned
+
+
+# ============================================================
+# DART cover-page header cleanup (filing-summary quality fix)
+# ============================================================
+#
+# DART's document extractor keeps the cover page whenever a filing has
+# exactly ONE <SECTION-1> element (dart/document_extractor.py's
+# section-skip heuristic drops the first section only when more than one
+# exists). That cover page prints, as running text:
+#
+#   "{issuer}/{title}/({filed date}){title} {title} 1. ... 2. ..."
+#
+# so the stored excerpt — and its translation — begin with the filing's
+# own title repeated two or three times, with the issuer and date. Under
+# the "Filing summary" heading that reads as the title restated, and on
+# a short disclosure it can consume the whole summary window, pushing the
+# issuer's actual statement past the cut.
+#
+# This is display-time cleanup over a local copy only. It never touches
+# a stored record, and the separate "View original/translated filing
+# excerpt" toggles keep showing the stored text exactly as persisted.
+#
+# POSITIVE identification only. The header run must be
+# "<segment>/<segment>/(<parenthesised run containing a 4-digit year>)"
+# at position 0 — a shape a reader's prose does not take. There is no
+# generic slash splitting, no "drop everything before the first
+# sentence", and no global title replacement: a title occurring later in
+# real prose is never removed, and any text that does not match this
+# exact leading shape is returned completely unchanged.
+# The parenthesised run must be an actual FILED DATE in one of the two
+# shapes DART prints — "(2026.08.10)" natively, "(August 10, 2026)" once
+# translated. Requiring merely "a 4-digit year somewhere in brackets" was
+# overbroad: it stripped genuine opening prose such as
+# "Revenue / cost / (margin 2026) analysis follows ...".
+_DART_FILED_DATE = r"\(\s*(?:\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|[A-Z][a-z]+\.?\s+\d{1,2},\s*\d{4})\s*\)"
+_DART_COVER_PAGE_HEADER_RE = re.compile(
+    r"^\s*[^/\n]{1,60}?\s*/\s*(?P<title>[^/\n]{1,120}?)\s*/\s*" + _DART_FILED_DATE + r"\s*"
+)
+_DART_TITLE_REPEAT_MAX_ITERATIONS = 3
+
+
+def _strip_leading_repeat(text: str, phrase: str) -> str | None:
+    """Removes ONE leading occurrence of `phrase` from `text`, comparing
+    with whitespace ignored, and returns None when `text` does not start
+    with it.
+
+    Whitespace-insensitive because the cover page's own repeats are not
+    byte-identical: the translated form of one observed filing renders
+    "... Reports (Unconfirmed) ... Reports(Unconfirmed)" — the same title
+    with and without a space before the bracket. A byte comparison would
+    silently leave the second copy in place."""
+    phrase_chars = [c for c in phrase if not c.isspace()]
+    if not phrase_chars:
+        return None
+    matched = 0
+    for index, char in enumerate(text):
+        if char.isspace():
+            continue
+        if char != phrase_chars[matched]:
+            return None
+        matched += 1
+        if matched == len(phrase_chars):
+            return text[index + 1:].lstrip()
+    return None
+
+
+def strip_dart_cover_page_header(text: str) -> str:
+    """Removes, from the START of `text` only, DART's cover-page
+    "{issuer}/{title}/({date})" run and the title repetitions that
+    immediately follow it. Returns `text` unchanged whenever that exact
+    leading shape is absent — every already-clean excerpt, every text
+    whose first sentence merely contains a slash or a date, and every
+    non-DART provider (the caller decides when to call this; this
+    function has no notion of source, exactly like
+    strip_edinet_machine_artifacts above).
+
+    Only leading repeats are removed, and only while they immediately
+    follow one another, in a small bounded loop. Body content — dates,
+    monetary amounts, numbered sections, the issuer's own statement — is
+    never inspected and never altered."""
+    if not text:
+        return text
+    match = _DART_COVER_PAGE_HEADER_RE.match(text)
+    if not match:
+        return text
+    cleaned = text[match.end():]
+    title = match.group("title").strip()
+    for _ in range(_DART_TITLE_REPEAT_MAX_ITERATIONS):
+        stripped = _strip_leading_repeat(cleaned, title)
+        if stripped is None:
+            break
+        cleaned = stripped
+    # Returned even when empty: a cover page with nothing after it is a
+    # title-only excerpt, and "" is the honest result the caller's own
+    # substantiveness check turns into the unavailable presentation.
+    # Falling back to the raw text here would reinstate the exact defect.
+    return cleaned
+
+
+# ============================================================
+# Honest "no substantive summary" presentation
+# ============================================================
+#
+# Replaces metadata_only_summary() under the "Filing summary" heading.
+# That sentence ("{Company} filed {title} on {date}.") restates the
+# title already displayed directly above the heading, so a reader is
+# shown metadata labelled as a summary. These two lines say plainly that
+# no summary could be produced and point at the filing itself, which
+# stays linked on the card either way.
+#
+# Deliberately makes no claim about WHY — not "extraction failed", not
+# "translation pending". The card cannot distinguish a failed
+# extraction from a filing whose body is only a cover page, and the
+# existing accurate diagnostics (the excerpt toggles, the
+# "Excerpt may be incomplete" notice) are untouched.
+SUMMARY_UNAVAILABLE_TEXT = "Summary unavailable."
+SUMMARY_UNAVAILABLE_ACTION = "Open the original filing for details."
+
+
+def summary_is_substantive(summary: str, display_title_text: str) -> bool:
+    """True when `summary` says something the title does not already say.
+
+    NOT a minimum-length rule: a short real statement ("We are reviewing
+    various measures, but nothing has been determined to date.") is
+    substantive and passes. What fails is content that, once leading
+    title repetitions and bare numbered markers are removed, has nothing
+    left — the title echoed back under a summary heading."""
+    if not summary or not summary.strip():
+        return False
+    remainder = " ".join(summary.split())
+    title = " ".join((display_title_text or "").split())
+    if title:
+        for _ in range(_DART_TITLE_REPEAT_MAX_ITERATIONS + 1):
+            stripped = _strip_leading_repeat(remainder, title)
+            if stripped is None:
+                break
+            remainder = stripped
+    remainder = _drop_trailing_run_marker(remainder, dart_summary.marker_end_positions(remainder))
+    # Whatever survives the title strip is judged on whether it carries
+    # any WORD. Bare numbering left over from a field list is not content.
+    # This only decides substantiveness — it never cuts displayed text, so
+    # a real sentence such as "Revenue rose to 25." still qualifies on its
+    # words alone.
+    remainder = _BARE_NUMBERING_RE.sub(" ", remainder)
+    return bool(remainder.strip())
 
 
 # ============================================================
