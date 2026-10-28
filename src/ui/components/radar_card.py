@@ -175,6 +175,9 @@ def _identity_line(filing: FilingEvent) -> str:
 _EDGAR_SOURCE_NAME = "SEC EDGAR"
 _EDINET_SOURCE_NAME = "EDINET"
 _DART_SOURCE_NAME = "OpenDART / DART"
+# The one category whose filings are issuer responses to a rumour or an
+# exchange inquiry — see filing_display._DART_CATEGORY_TITLES.
+_RUMOR_INQUIRY_CATEGORY = "Rumor Inquiry or Response"
 
 
 def _public_source_url(filing: FilingEvent) -> str:
@@ -524,7 +527,13 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             if summary_source:
                 outcome = dart_summary.OUTCOME_NOT_APPLICABLE
                 if filing.source_name == _DART_SOURCE_NAME:
-                    outcome, selected = dart_summary.select_summary(summary_source)
+                    # Corroboration, not guesswork: the filing's own stored
+                    # classification (the same category chip rendered above)
+                    # is what permits a generically labelled
+                    # "1. Title: / 2. Content:" body to be read as an
+                    # issuer response. Labels alone never establish it.
+                    inquiry_expected = category_label == _RUMOR_INQUIRY_CATEGORY
+                    outcome, selected = dart_summary.select_summary(summary_source, inquiry_expected)
                     summary = selected or ""
                 # OUTCOME_UNSAFE deliberately skips the leading-substring
                 # path: for a recognised rumour clarification that excerpt
@@ -537,7 +546,10 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         # nothing the title does not already say is not shown as a
         # summary. metadata_only_summary() is deliberately NOT used here
         # — it restates the title rendered directly above this heading.
-        summary_unavailable = not filing_display.summary_is_substantive(summary, title)
+        summary_unavailable = not filing_display.summary_is_substantive(
+            summary, title, filing_display.issuer_display_names(filing),
+            dart_header_rules=filing.source_name == _DART_SOURCE_NAME,
+        )
         if summary_unavailable:
             summary = ""
 
