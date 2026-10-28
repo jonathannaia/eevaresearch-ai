@@ -39,6 +39,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.config.settings import Settings
 from src.data_access.dart import candidate_store
+from src.logic import filing_display
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition, Translation
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
@@ -65,7 +66,12 @@ _FORBIDDEN_PUBLIC_STRINGS = (
     # material filings... high-confidence signals.") legitimately
     # contains both words, so a whole-page sweep would false-positive.
     "review", "detected", "potential", "analysis",
-    "metadata-only", "Phase 1", "pending", "unavailable",
+    # "unavailable" as a bare substring was removed from this sweep by the
+    # filing-summary quality fix: the card's own approved honest fallback
+    # is literally "Summary unavailable." The process/status jargon this
+    # entry existed to ban — "Translation unavailable" — is still listed
+    # above, unchanged, and still swept for.
+    "metadata-only", "Phase 1", "pending",
 )
 
 
@@ -347,9 +353,11 @@ def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_s
     _rerun(at, tmp_path)
     all_text = _text(at)
 
-    # Summary must be the honest metadata-only fallback — never the raw
-    # translation, never an ellipsis, never a partial sentence.
-    assert 'ispace, inc. filed Extraordinary Report — <span lang="ja">臨時報告書</span> on Jul 1, 2026.' in all_text
+    # Filing-summary quality fix: the honest "no summary" presentation,
+    # never the raw translation, never an ellipsis, never a partial
+    # sentence — and no longer a metadata sentence restating the title.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
     assert "…" not in all_text
     assert "..." not in all_text
     assert raw_like_translation not in all_text
@@ -403,7 +411,8 @@ def test_edinet_readable_translation_with_no_early_boundary_falls_back_to_metada
     _rerun(at, tmp_path)
     all_text = _text(at)
 
-    assert 'ispace, inc. filed Extraordinary Report — <span lang="ja">臨時報告書</span> on Jul 1, 2026.' in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
     assert "…" not in all_text
     assert "..." not in all_text
     assert late_boundary_translation not in all_text
@@ -1440,10 +1449,11 @@ def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_p
     assert "English translation is being prepared." not in all_text
     assert "Translation unavailable" not in all_text
     assert "rate_limit" not in all_text
-    # No stored translation — Summary falls back to the neutral metadata
-    # sentence; the native excerpt is still reachable, but only behind
-    # its own quality-gated toggle.
-    assert '<span lang="ko">삼성전자</span> filed Earnings or Results Report — <span lang="ko">실적 발표</span> on Aug 12, 2026.' in all_text
+    # No stored translation — Summary shows the honest "no summary"
+    # presentation; the native excerpt is still reachable, but only
+    # behind its own quality-gated toggle.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
     assert "실적 관련 원문." not in all_text
     assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
@@ -1480,7 +1490,8 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert '<span lang="ko">삼성전자</span> filed Earnings or Results Report — <span lang="ko">실적 발표</span> on Aug 12, 2026.' in all_text  # metadata-only Summary, no translation stored
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text  # honest fallback, no translation stored
     assert "실적 관련 원문 종결." not in all_text  # native excerpt collapsed behind its own toggle
     assert "English translation is being prepared." not in all_text
     assert "Translated filing excerpt</strong>" not in all_text
@@ -1670,8 +1681,9 @@ def test_mrvl_style_xbrl_extraction_is_rejected_and_never_shown(tmp_path):
     # Not one byte of the raw extraction ever reaches the rendered page.
     for fragment in ("xbrli:", "us-gaap:", "dei:", "fasb.org", "contextRef", "RevenueFromContractWithCustomer", "1234000000"):
         assert fragment not in all_text, fragment
-    # The neutral, metadata-only Summary instead.
-    assert "MARVELL TECHNOLOGY, INC. filed Quarterly Report — Form 10-Q on Aug 28, 2026." in all_text
+    # The honest "no summary" presentation instead.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
     # No filing-text toggle — the rejected extraction has nothing to reveal.
     assert not any(b.label in ("View filing excerpt", "Hide filing excerpt") for b in at.button)
     for forbidden in _FORBIDDEN_PUBLIC_STRINGS:
@@ -1745,9 +1757,10 @@ def test_unanchored_8k_cover_page_prefers_metadata_fallback_when_evidence_locati
     all_text = _text(at)
 
     assert "QUALCOMM INCORPORATED" in all_text
-    # Neutral, factual fallback — never the raw cover-page prefix, never
-    # an invented event.
-    assert "QUALCOMM INCORPORATED filed Current Report — Form 8-K on Sep 1, 2026." in all_text
+    # Honest fallback — never the raw cover-page prefix, never an
+    # invented event, and never a metadata sentence posing as a summary.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
+    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
     assert cover_page_text not in all_text
     assert "principal executive offices" not in all_text
     # No Item label — evidence_location confirms UNAVAILABLE, not a
