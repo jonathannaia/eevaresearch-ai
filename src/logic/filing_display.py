@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from src.config.tracked_companies import get_tracked_companies
 from src.data_access.edgar.edgar_rules import normalize_form_type
 from src.logic import dart_summary
 from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
@@ -349,6 +350,84 @@ _STANDALONE_LIST_MARKER_END_RE = re.compile(r"(?:^|\s)\d{1,2}\.$")
 # Any standalone numbering, anywhere — used ONLY by the substantiveness
 # check below, never to cut displayed text.
 _BARE_NUMBERING_RE = re.compile(r"(?:^|\s)\d{1,2}\.(?=\s|$)")
+# A trailing alphabetic SUB-marker ("... Investment Decisions a."). Only
+# a-h, only at the very end, and only inside a document that already has a
+# numbered field run — so an initial ("John F.") or an abbreviation in
+# ordinary prose is never touched, and a meaningful enumerated clause in
+# the middle of the text is left alone.
+_TRAILING_ALPHA_MARKER_RE = re.compile(r"(?:^|\s)[a-h]\.$", re.IGNORECASE)
+# A form/version marker such as "6.1" or "6.7" printed on a DART cover
+# heading. Recognised ONLY for the substantiveness judgement below — it is
+# never removed from displayed text, and a real decimal amount keeps its
+# surrounding words, which is what that judgement actually counts.
+_FORM_VERSION_TOKEN_RE = re.compile(r"^\d{1,3}\.\d{1,3}$")
+_PLACEHOLDER_DIGITS_RE = re.compile(r"^0+$|^\d{8}$")
+_WORD_TOKEN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+# A summary whose own opening phrase is printed again later is a repeated
+# document heading, not prose — but only when almost nothing else is
+# there. See summary_is_substantive for why both conditions are required.
+_HEADING_PHRASE_WORDS = 5
+_COLON_LABEL_RE = re.compile(r"[^\W\d_]\s*[:：]")
+
+
+def _repeats_its_opening_phrase(text: str) -> bool:
+    tokens = text.split()
+    if len(tokens) < _HEADING_PHRASE_WORDS * 2:
+        return False
+    opening = " ".join(tokens[:_HEADING_PHRASE_WORDS])
+    return text.count(opening) > 1
+
+
+def _is_numbered_field_document(text: str) -> bool:
+    return bool(dart_summary.marker_end_positions(" ".join(text.split())))
+
+
+def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
+    """True for a DART cover HEADING printed as if it were content.
+
+    Two registry-independent shapes, both observed live:
+
+      a) the heading is printed twice —
+         "Report on Large Holdings ... 6.1 <issuer> 0000 0000
+          Report on Large Holdings of Stocks, etc."
+      b) a form/version marker ("6.7") whose ENTIRE preceding text is
+         words the display title already contains —
+         "Semiannual Report 6.7 <issuer>"
+
+    Neither depends on recognising the issuer, so a company missing from
+    the registry, or filed under a mismatched code, is judged the same
+    way. Both are skipped for a numbered field document and for text
+    carrying colon-delimited field labels, which is what real DART field
+    bodies look like."""
+    normalized = " ".join(text.split())
+    if _is_numbered_field_document(normalized) or _COLON_LABEL_RE.search(normalized):
+        return False
+    if _repeats_its_opening_phrase(normalized):
+        return True
+    for token in normalized.split():
+        bare = token.strip(".,;:()[]{}·—-")
+        if not _FORM_VERSION_TOKEN_RE.match(bare):
+            continue
+        before = normalized[: normalized.find(token)]
+        words = _WORD_TOKEN_RE.findall(before)
+        # "The contract is valued at 4.5 trillion won." keeps words the
+        # title does not contain, so only a pure heading matches here.
+        if words and all(w.lower() in title_words for w in words):
+            return True
+        break
+    return False
+
+
+def _drop_trailing_alpha_marker(result: str, markers: frozenset[int]) -> str:
+    """Removes a dangling alphabetic sub-marker from the END only, and
+    only when the text is a numbered field document (`markers` non-empty).
+    Observed live: "... 4. Other Important Matters Related to Investment
+    Decisions a." """
+    if not markers:
+        return result
+    cleaned = result.rstrip()
+    match = _TRAILING_ALPHA_MARKER_RE.search(cleaned)
+    return cleaned[: match.start()].rstrip() if match else cleaned
 
 
 def _drop_trailing_run_marker(result: str, markers: frozenset[int]) -> str:
@@ -404,17 +483,19 @@ def extractive_summary(text: str) -> str:
             continue
         boundary = match.end()
     if boundary:
-        return _drop_trailing_run_marker(normalized[:boundary].strip(), markers)
+        return _drop_trailing_alpha_marker(
+            _drop_trailing_run_marker(normalized[:boundary].strip(), markers), markers)
 
     if len(normalized) <= _SUMMARY_MAX_CHARS:
-        return _drop_trailing_run_marker(normalized, markers)
+        return _drop_trailing_alpha_marker(_drop_trailing_run_marker(normalized, markers), markers)
 
     for match in _SENTENCE_END_PATTERN.finditer(normalized):
         if match.end() > _SUMMARY_MAX_SEARCH_CHARS:
             break
         if match.start() + 1 in markers:
             continue
-        return _drop_trailing_run_marker(normalized[:match.end()].strip(), markers)
+        return _drop_trailing_alpha_marker(
+            _drop_trailing_run_marker(normalized[:match.end()].strip(), markers), markers)
 
     return ""
 
@@ -672,6 +753,22 @@ def strip_dart_cover_page_header(text: str) -> str:
     return cleaned
 
 
+def issuer_display_names(filing: FilingEvent) -> tuple[str, ...]:
+    """Names this issuer is printed under, for the substantiveness
+    judgement only. The source-native name comes from the filing itself;
+    the English name comes from the tracked registry, because a DART
+    cover heading prints the translated legal name ("Korea Aerospace
+    Industries, Ltd.") while FilingEvent stores the Korean one."""
+    names = [(filing.corp_name or "").strip(), (filing.flr_nm or "").strip()]
+    code = (filing.stock_code or "").strip()
+    if code:
+        for company in get_tracked_companies(active_only=False):
+            if company.krx_code == code:
+                names.append(company.name)
+                break
+    return tuple(n for n in names if n)
+
+
 # ============================================================
 # Honest "no substantive summary" presentation
 # ============================================================
@@ -692,7 +789,12 @@ SUMMARY_UNAVAILABLE_TEXT = "Summary unavailable."
 SUMMARY_UNAVAILABLE_ACTION = "Open the original filing for details."
 
 
-def summary_is_substantive(summary: str, display_title_text: str) -> bool:
+def summary_is_substantive(
+    summary: str,
+    display_title_text: str,
+    issuer_names: tuple[str, ...] = (),
+    dart_header_rules: bool = False,
+) -> bool:
     """True when `summary` says something the title does not already say.
 
     NOT a minimum-length rule: a short real statement ("We are reviewing
@@ -717,7 +819,41 @@ def summary_is_substantive(summary: str, display_title_text: str) -> bool:
     # a real sentence such as "Revenue rose to 25." still qualifies on its
     # words alone.
     remainder = _BARE_NUMBERING_RE.sub(" ", remainder)
-    return bool(remainder.strip())
+    if not remainder.strip():
+        return False
+
+    # Observed live on DART "6.x" cover headings, e.g.
+    #   "Semiannual Report 6.7 Korea Aerospace Industries, Ltd."
+    #   "Report on Large Holdings ... 6.1 Korea Aerospace Industries, Ltd.
+    #    0000 0000 Report on Large Holdings of Stocks, etc."
+    # Both are a heading, the issuer name, a form/version marker and
+    # placeholder digits — nothing the title does not already say.
+    #
+    # This COUNTS tokens; it deletes nothing from displayed text. Only
+    # whole tokens that are exactly a form/version marker ("6.1"), a run
+    # of zeros, or an 8-digit date are discounted, so a real amount such
+    # as "4.5 trillion won" keeps "trillion" and "won" and still counts.
+    title_words = {w.lower() for w in _WORD_TOKEN_RE.findall(title)}
+    issuer_words: set[str] = set()
+    for name in issuer_names:
+        issuer_words |= {w.lower() for w in _WORD_TOKEN_RE.findall(name)}
+    informative = 0
+    for token in remainder.split():
+        bare = token.strip(".,;:()[]{}·—-")
+        if not bare or _FORM_VERSION_TOKEN_RE.match(bare) or _PLACEHOLDER_DIGITS_RE.match(bare):
+            continue
+        for word in _WORD_TOKEN_RE.findall(bare):
+            if word.lower() not in title_words and word.lower() not in issuer_words:
+                informative += 1
+    if informative == 0:
+        return False
+    # DART-only, so EDGAR's item-anchored excerpts and EDINET's Japanese
+    # bodies keep their existing behaviour untouched. The issuer-name
+    # discount above is a refinement; these two shape rules are what
+    # actually carry the judgement, and neither needs the registry.
+    if dart_header_rules and _is_dart_document_header(remainder, title_words):
+        return False
+    return True
 
 
 # ============================================================
