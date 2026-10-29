@@ -505,6 +505,20 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             # touched, and non-DART providers never reach this call.
             summary_translation_text = translation_text
             summary_native_text = native_text
+            if filing.source_name == _EDINET_SOURCE_NAME:
+                # Two further EDINET machine artifacts, observed live and
+                # not reached by strip_edinet_machine_artifacts above: a
+                # whitespace-free CJK document-title-timestamp, and the
+                # exported HTML member's own filename. Removed from the
+                # SUMMARY copies only — translation_text/native_text,
+                # which the excerpt toggles render, are untouched here,
+                # so no excerpt view changes. Removing an artifact proves
+                # nothing about the remainder: summary_is_substantive
+                # still judges it, and an artifact-only text falls back.
+                if summary_translation_text:
+                    summary_translation_text = filing_display.strip_edinet_summary_artifacts(summary_translation_text)
+                if summary_native_text:
+                    summary_native_text = filing_display.strip_edinet_summary_artifacts(summary_native_text)
             if filing.source_name == _DART_SOURCE_NAME:
                 if summary_translation_text:
                     summary_translation_text = filing_display.strip_dart_cover_page_header(summary_translation_text)

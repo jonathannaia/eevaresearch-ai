@@ -361,6 +361,23 @@ _TRAILING_ALPHA_MARKER_RE = re.compile(r"(?:^|\s)[a-h]\.$", re.IGNORECASE)
 # never removed from displayed text, and a real decimal amount keeps its
 # surrounding words, which is what that judgement actually counts.
 _FORM_VERSION_TOKEN_RE = re.compile(r"^\d{1,3}\.\d{1,3}$")
+# The same form/version marker, found in running text rather than tested
+# as a whole token, plus the Korean CORPORATE REGISTRY number that DART's
+# cover-page masthead prints immediately after the issuer's legal name:
+#
+#   "Semiannual Report 6.7 Wonik IPS Co., Ltd. Y 131311-0163174 ..."
+#   "Semiannual Report 6.7 Doosan Robotics Y 110111-5798272 ..."
+#
+# Exactly six digits, a hyphen, exactly seven digits. Deliberately NOT
+# the 3-2-5 business-registration number ("116-81-03693") that appears
+# inside real large-holdings FIELD BODIES, which must keep working.
+_DART_FORM_VERSION_IN_TEXT_RE = re.compile(r"(?<![\w.])\d{1,3}\.\d{1,3}(?![\w.])")
+_DART_CORPORATE_REGISTRY_NO_RE = re.compile(r"(?<!\d)\d{6}-\d{7}(?!\d)")
+# The marker must sit near the very start, and the registry number close
+# behind it — the masthead is "<form name> <version> <issuer> <flag>
+# <registry no>", never a sentence.
+_DART_MASTHEAD_MAX_LEAD_TOKENS = 14
+_DART_MASTHEAD_MAX_GAP_TOKENS = 10
 _PLACEHOLDER_DIGITS_RE = re.compile(r"^0+$|^\d{8}$")
 _WORD_TOKEN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 # A summary whose own opening phrase is printed again later is a repeated
@@ -382,6 +399,26 @@ def _is_numbered_field_document(text: str) -> bool:
     return bool(dart_summary.marker_end_positions(" ".join(text.split())))
 
 
+def _is_dart_cover_page_masthead(normalized: str) -> bool:
+    """The "<form name> <version> <issuer> <flag> <registry no>" masthead
+    DART prints at the head of a report's cover page.
+
+    Issuer-independent, title-independent, registry-independent: it reads
+    only the shape. Both parts are required, the version marker must be
+    near the start, and the registry number must follow close behind it,
+    so an amount ("4.5 trillion won") or a percentage ("2.40") in real
+    prose can never produce a match on its own."""
+    for marker in _DART_FORM_VERSION_IN_TEXT_RE.finditer(normalized):
+        if len(normalized[: marker.start()].split()) > _DART_MASTHEAD_MAX_LEAD_TOKENS:
+            return False
+        registry = _DART_CORPORATE_REGISTRY_NO_RE.search(normalized, marker.end())
+        if registry is None:
+            continue
+        if len(normalized[marker.end(): registry.start()].split()) <= _DART_MASTHEAD_MAX_GAP_TOKENS:
+            return True
+    return False
+
+
 def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
     """True for a DART cover HEADING printed as if it were content.
 
@@ -393,6 +430,11 @@ def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
       b) a form/version marker ("6.7") whose ENTIRE preceding text is
          words the display title already contains —
          "Semiannual Report 6.7 <issuer>"
+      c) the cover-page MASTHEAD: a form/version marker near the start,
+         followed close behind by the Korean corporate registry number —
+         "Semiannual Report 6.7 <issuer legal name> Y 131311-0163174"
+         Shape (c) is checked before the colon guard, since the masthead
+         is always followed by administrative labels ("Fiscal Year:").
 
     Neither depends on recognising the issuer, so a company missing from
     the registry, or filed under a mismatched code, is judged the same
@@ -400,7 +442,18 @@ def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
     carrying colon-delimited field labels, which is what real DART field
     bodies look like."""
     normalized = " ".join(text.split())
-    if _is_numbered_field_document(normalized) or _COLON_LABEL_RE.search(normalized):
+    if _is_numbered_field_document(normalized):
+        return False
+    # Shape (c) FIRST, because it is the one the colon guard below hides:
+    # every observed semiannual cover page carries an administrative
+    # "Fiscal Year:" / "To:" / "Company Name:" label, so the guard made
+    # this class unreachable for most issuers and the outcome depended on
+    # where the summary happened to be cut. This shape needs no issuer
+    # name, no registry lookup and no title spelling, so the same form
+    # now behaves the same way for every issuer.
+    if _is_dart_cover_page_masthead(normalized):
+        return True
+    if _COLON_LABEL_RE.search(normalized):
         return False
     if _repeats_its_opening_phrase(normalized):
         return True
@@ -649,6 +702,69 @@ def strip_edinet_machine_artifacts(text: str) -> str:
         cleaned = cleaned[bom_match.end():]
     for _ in range(_EDINET_ARTIFACT_STRIP_MAX_ITERATIONS):
         match = _EDINET_TITLE_TIMESTAMP_PREFIX_RE.match(cleaned) or _EDINET_ITEM_HEADING_PREFIX_RE.match(cleaned)
+        if not match:
+            break
+        cleaned = cleaned[match.end():]
+    return cleaned
+
+
+# ------------------------------------------------------------
+# EDINET: two further machine artifacts, SUMMARY PATH ONLY
+# ------------------------------------------------------------
+#
+# Observed live (2026-10-28 read-only UI baseline) and NOT matched by
+# strip_edinet_machine_artifacts above:
+#
+#   a) a document-title-timestamp whose title is a single whitespace-free
+#      CJK token carrying full-width parentheses, so the existing
+#      space-separated word-token pattern cannot reach it:
+#        "自己株券買付状況報告書（法24条の６第１項に基づくもの）_20261015090441"
+#   b) the exported HTML member's own FILENAME, left at the head of the
+#      extracted text:
+#        "0101010_honbun_0088405703810.htm"
+#        "0100000_honbun_0596300283810.htm"
+#
+# These are applied to the SUMMARY working copy only — never to the text
+# the excerpt toggles render. strip_edinet_machine_artifacts above keeps
+# its existing, separately-tested reach over both (a live regression
+# fixed earlier required those two shapes to disappear from the card
+# entirely); this function deliberately does not widen that reach, so no
+# excerpt view changes.
+#
+# Removing an artifact establishes NOTHING about what is left:
+# summary_is_substantive still judges the remainder on its own, and a
+# text that was only an artifact collapses to the honest fallback.
+
+# One CJK/kana/Hangul character — enough to mark a token as a native
+# document title rather than ordinary ASCII content.
+_CJK_TITLE_CHAR = "぀-ヿ㐀-䶿一-鿿가-힯"
+# (a) start-anchored, whitespace-free, must contain a native character,
+# and must end on exactly the 14-digit stamp EDINET appends.
+_EDINET_CJK_TITLE_TIMESTAMP_RE = re.compile(
+    rf"^[^\s]{{0,100}}[{_CJK_TITLE_CHAR}][^\s]{{0,100}}_\d{{14}}(?=\s|$)\s*"
+)
+# (b) start-anchored exported-member filename: digits _ word _ digits
+# .htm/.html. Narrow on purpose — every part is required.
+_EDINET_MEMBER_FILENAME_RE = re.compile(
+    r"^\d{4,12}_[A-Za-z][A-Za-z0-9]{0,30}_\d{6,24}\.html?(?=\s|$)\s*"
+)
+_EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS = 3
+
+
+def strip_edinet_summary_artifacts(text: str) -> str:
+    """Removes, from the START of `text` only, the two further EDINET
+    machine artifacts above. For the SUMMARY working copy only — the
+    caller never passes the text an excerpt toggle renders.
+
+    A no-op for every already-clean text, and for any text where a
+    matching shape exists but not at position 0. Bounded loop, never
+    unbounded. No provider knowledge: the caller decides when to call
+    it (EDINET only)."""
+    if not text:
+        return text
+    cleaned = text
+    for _ in range(_EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS):
+        match = _EDINET_CJK_TITLE_TIMESTAMP_RE.match(cleaned) or _EDINET_MEMBER_FILENAME_RE.match(cleaned)
         if not match:
             break
         cleaned = cleaned[match.end():]
