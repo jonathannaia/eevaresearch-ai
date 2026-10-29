@@ -789,6 +789,84 @@ SUMMARY_UNAVAILABLE_TEXT = "Summary unavailable."
 SUMMARY_UNAVAILABLE_ACTION = "Open the original filing for details."
 
 
+# ============================================================
+# Original-language availability
+# ============================================================
+#
+# A filing can have a readable ORIGINAL-language excerpt and no usable
+# ENGLISH translation of it. The card used to show the honest fallback
+# and nothing else in that case — truthful, but needlessly empty: the
+# original text is already stored, already readable, and already one
+# toggle below. What was missing was not the content but the labelling
+# that makes showing it honest.
+#
+# Nothing here translates, generates, paraphrases or infers. The label
+# names the language the FILING ITSELF declares (FilingEvent.
+# original_language, set by each source's own scan service), and the
+# notice states only what the stored artifacts show.
+
+ORIGINAL_LANGUAGE_LABEL_PREFIX = "Original language"
+ENGLISH_TRANSLATION_UNAVAILABLE_TEXT = "English translation not available on this card."
+
+
+def original_language_label(original_language: str | None) -> str:
+    """"Original language — Korean" / "... — Japanese", or the bare
+    prefix when the filing declares no language. Never inferred from the
+    text itself — a language is named only because the filing says so."""
+    language = (original_language or "").strip()
+    if not language:
+        return ORIGINAL_LANGUAGE_LABEL_PREFIX
+    return f"{ORIGINAL_LANGUAGE_LABEL_PREFIX} \u2014 {language}"
+
+
+# What the card may say about WHY no English is shown — and, much more
+# importantly, what it may NOT say.
+#
+# `translation_state` is a SINGLE candidate-level value, and inspecting
+# how it is actually written shows it cannot establish the status of THIS
+# excerpt's translation at render time:
+#
+#   * DART writes it from `primary_attempt = excerpt_attempt if
+#     candidate.excerpt_original else title_attempt`
+#     (dart/radar_pipeline.py). A candidate whose excerpt arrived only
+#     after that write carries a state describing the TITLE attempt, and
+#     nothing re-scopes it when an excerpt later appears.
+#   * EDINET sets PENDING to mean "no provider configured — no call
+#     attempted" (edinet/edinet_pipeline.py), not "an attempt is in
+#     flight".
+#   * NOT_REQUESTED is the dataclass DEFAULT, so it is also what an
+#     object carries when no pipeline ever wrote a state at all. It
+#     cannot distinguish a deliberate decision from an absent one.
+#
+# So "a usable translation is absent" is the only thing the card can
+# actually see, and the primary notice already says exactly that. No
+# state-derived detail is emitted. The ONE detail that is established is
+# read off the rendered object itself, at render time: whether a title
+# translation exists while an excerpt translation does not.
+#
+# No retry, no ETA, no "being prepared", no failure category, no provider
+# name, no state name, no operational detail of any kind reaches the card.
+_TITLE_ONLY_TRANSLATION_DETAIL = "The title was translated; the excerpt was not."
+
+
+def original_language_notice(
+    *,
+    has_title_translation: bool,
+    has_excerpt_translation: bool,
+) -> tuple[str, tuple[str, ...]]:
+    """(primary, details) for a card presenting original-language text.
+
+    The primary line is unconditional and makes no claim about why. The
+    only detail distinguishes a translated title from an untranslated
+    excerpt, because that is visible in the stored artifacts themselves.
+    Deliberately takes no translation state: see the comment above for
+    why a candidate-level state cannot support a per-artifact claim."""
+    details: list[str] = []
+    if has_title_translation and not has_excerpt_translation:
+        details.append(_TITLE_ONLY_TRANSLATION_DETAIL)
+    return ENGLISH_TRANSLATION_UNAVAILABLE_TEXT, tuple(details)
+
+
 def summary_is_substantive(
     summary: str,
     display_title_text: str,
