@@ -353,11 +353,16 @@ def test_edinet_unreadable_translation_hides_toggle_and_falls_back_to_metadata_s
     _rerun(at, tmp_path)
     all_text = _text(at)
 
-    # Filing-summary quality fix: the honest "no summary" presentation,
-    # never the raw translation, never an ellipsis, never a partial
-    # sentence — and no longer a metadata sentence restating the title.
-    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
-    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
+    # Filing-summary quality fix: never the raw translation, never an
+    # ellipsis, never a partial sentence. Original-language availability
+    # then changed WHAT fills the gap: an unreadable stored translation
+    # is not a usable English excerpt, so the readable Japanese original
+    # is shown under an explicit label with a plain statement that no
+    # English is available — rather than an empty Summary. The reader's
+    # English click is answered honestly, never silently.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT not in all_text
+    assert "Original language — Japanese" in all_text
+    assert filing_display.ENGLISH_TRANSLATION_UNAVAILABLE_TEXT in all_text
     assert "…" not in all_text
     assert "..." not in all_text
     assert raw_like_translation not in all_text
@@ -1449,12 +1454,21 @@ def test_no_stored_translation_shows_no_toggle_even_with_a_retry_scheduled(tmp_p
     assert "English translation is being prepared." not in all_text
     assert "Translation unavailable" not in all_text
     assert "rate_limit" not in all_text
-    # No stored translation — Summary shows the honest "no summary"
-    # presentation; the native excerpt is still reachable, but only
-    # behind its own quality-gated toggle.
-    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
-    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text
-    assert "실적 관련 원문." not in all_text
+    # Original-language availability: no stored translation no longer
+    # means an empty Summary. The readable native excerpt IS the summary,
+    # explicitly labelled with the language and accompanied by a plain
+    # statement that no English is available. What this test actually
+    # guards — no toggle for a translation that does not exist, and no
+    # retry/failure wording of any kind — is unchanged and asserted
+    # above and below. Updated with the original-language availability
+    # change; the previous expectation encoded the empty card.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT not in all_text
+    assert "Original language — Korean" in all_text
+    assert "실적 관련 원문." in all_text
+    assert filing_display.ENGLISH_TRANSLATION_UNAVAILABLE_TEXT in all_text
+    # ...and nothing about the stored translation state: a candidate-level
+    # state cannot establish this excerpt's own translation status.
+    assert "did not succeed" not in all_text
     assert not any(b.label in ("View translated filing excerpt", "Hide translated filing excerpt") for b in at.button)
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
@@ -1490,9 +1504,14 @@ def test_terminal_failure_shows_only_original_text_no_error_jargon(tmp_path):
     at = _run_radar(tmp_path)
     assert not at.exception
     all_text = _text(at)
-    assert filing_display.SUMMARY_UNAVAILABLE_TEXT in all_text
-    assert filing_display.SUMMARY_UNAVAILABLE_ACTION in all_text  # honest fallback, no translation stored
-    assert "실적 관련 원문 종결." not in all_text  # native excerpt collapsed behind its own toggle
+    # Original-language availability: the native excerpt is now the
+    # labelled Summary rather than being collapsed away. This test's own
+    # subject — that a TERMINAL translation failure leaks no error
+    # jargon — is unchanged and asserted immediately below.
+    assert filing_display.SUMMARY_UNAVAILABLE_TEXT not in all_text
+    assert "Original language — Korean" in all_text
+    assert "실적 관련 원문 종결." in all_text
+    assert filing_display.ENGLISH_TRANSLATION_UNAVAILABLE_TEXT in all_text
     assert "English translation is being prepared." not in all_text
     assert "Translated filing excerpt</strong>" not in all_text
     assert "Translation unavailable" not in all_text
