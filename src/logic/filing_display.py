@@ -422,7 +422,9 @@ def _is_dart_cover_page_masthead(normalized: str) -> bool:
 def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
     """True for a DART cover HEADING printed as if it were content.
 
-    Two registry-independent shapes, both observed live:
+    THREE registry-independent shapes, all observed live. None depends on
+    recognising the issuer, so a company missing from the tracked
+    registry, or filed under a mismatched code, is judged the same way.
 
       a) the heading is printed twice —
          "Report on Large Holdings ... 6.1 <issuer> 0000 0000
@@ -433,14 +435,28 @@ def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
       c) the cover-page MASTHEAD: a form/version marker near the start,
          followed close behind by the Korean corporate registry number —
          "Semiannual Report 6.7 <issuer legal name> Y 131311-0163174"
-         Shape (c) is checked before the colon guard, since the masthead
-         is always followed by administrative labels ("Fiscal Year:").
 
-    Neither depends on recognising the issuer, so a company missing from
-    the registry, or filed under a mismatched code, is judged the same
-    way. Both are skipped for a numbered field document and for text
-    carrying colon-delimited field labels, which is what real DART field
-    bodies look like."""
+    Order of evaluation, which differs per shape and is deliberate:
+
+      * A NUMBERED FIELD DOCUMENT is excluded first, for every shape.
+        That is what a real DART disclosure body looks like, and no
+        shape below may override it.
+      * Shape (c) is then evaluated BEFORE the colon-label guard. Every
+        observed cover page carries an administrative label ("Fiscal
+        Year:", "To:", "Company Name:"), so the guard made this shape
+        unreachable unless the summary happened to be cut before the
+        first label — which is why the identical form was rejected for
+        one issuer and accepted for another.
+      * Shapes (a) and (b) keep their EXISTING guards unchanged: both
+        are still skipped for text carrying colon-delimited field
+        labels, which is what real DART field bodies look like.
+
+    Shape (c) is a masthead test, not general cover-page detection: it
+    requires a nearby 6-7 corporate registry number, so a cover page
+    without one is not covered by it, and a decimal followed closely by
+    that number can match. A match only suppresses a summary into the
+    honest fallback — it can never produce misleading content — but it
+    can cost a useful one."""
     normalized = " ".join(text.split())
     if _is_numbered_field_document(normalized):
         return False
