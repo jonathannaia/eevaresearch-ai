@@ -13,10 +13,15 @@ research-feed card showing exactly:
      toggle state — see below);
   3) `Filing summary` — a concise extractive summary grounded only in
      stored, quality-gated readable text (original or translated,
-     following the same Original/English toggle state as the title), or
-     (whenever no such text exists) a neutral, factual "{Company} filed
-     {title} on {date}." sentence — see src/logic/filing_display for the
-     exact quality gate and fallback wording. A compact `Item X.XX` label
+     following the same Original/English toggle state as the title). For
+     DART, that text first has its cover-page header removed for the
+     summary only (filing_display.strip_dart_cover_page_header; the
+     excerpt toggles below still show the stored excerpt verbatim).
+     Whenever no substantive summary can be produced — no such text, a
+     failed gate, or content that only restates the title — the card
+     shows filing_display.SUMMARY_UNAVAILABLE_TEXT followed by
+     SUMMARY_UNAVAILABLE_ACTION instead, never a metadata sentence
+     restating the title under a summary heading. A compact `Item X.XX` label
      renders beside the heading only when candidate.evidence_location
      already, reliably records a genuine Item-header anchor for this
      EDGAR excerpt (filing_display.item_anchor_label) — read from
@@ -123,6 +128,7 @@ from datetime import datetime
 
 import streamlit as st
 
+from src.logic import dart_summary
 from src.logic import filing_display
 from src.logic.source_link import public_source_url
 from src.models.models import CandidateSignal, FilingEvent
@@ -134,6 +140,14 @@ from src.ui.components.radar_status import RadarItem
 # machine translation (Translation.provider, e.g. DeepL) — say so wherever
 # translated text is rendered, never only in a drawer.
 MACHINE_TRANSLATION_NOTE = "Translation is machine-generated. Verify figures against the original filing before citing."
+# The same disclosure, scoped to the TITLE. The note under a translated
+# title sits directly above the Filing summary, and that summary is not
+# always a translation — when no usable English excerpt exists it is the
+# filing's own language. An unqualified "Translation is machine-
+# generated" there reads as describing the summary below it. Naming the
+# title removes the ambiguity and is never less accurate: at that
+# position the translated thing is always the title.
+TRANSLATED_TITLE_NOTE = "Title translation is machine-generated. Verify figures against the original filing before citing."
 
 
 def _parse_source_filed_date(raw: str):
@@ -168,6 +182,10 @@ def _identity_line(filing: FilingEvent) -> str:
 
 _EDGAR_SOURCE_NAME = "SEC EDGAR"
 _EDINET_SOURCE_NAME = "EDINET"
+_DART_SOURCE_NAME = "OpenDART / DART"
+# The one category whose filings are issuer responses to a rumour or an
+# exchange inquiry — see filing_display._DART_CATEGORY_TITLES.
+_RUMOR_INQUIRY_CATEGORY = "Rumor Inquiry or Response"
 
 
 def _public_source_url(filing: FilingEvent) -> str:
@@ -402,7 +420,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         if category_label:
             st.markdown(f'<div style="margin-top:0.4rem;">{chip_html(category_label, "theme", mono=is_english)}</div>', unsafe_allow_html=True)
         if title_is_translated:
-            st.markdown(f'<div class="er-mt-note">{html.escape(MACHINE_TRANSLATION_NOTE)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="er-mt-note">{html.escape(TRANSLATED_TITLE_NOTE)}</div>', unsafe_allow_html=True)
 
         # "Review needed" badge (design/DECISIONS.md) — advisory only,
         # never blocks or delays publication; see filing_display.
@@ -420,6 +438,14 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
         may_be_incomplete = filing_display.excerpt_may_be_incomplete(excerpt_original)
 
         item_label = None
+        # Original-language availability: set only on the non-English
+        # path below. `summary_in_original_language` means the Filing
+        # summary that follows is the filing's OWN language and must be
+        # labelled as such; `original_language_only` means this card has
+        # readable original text and no usable English translation of it,
+        # which is what the availability notice states.
+        summary_in_original_language = False
+        original_language_only = False
         if is_english:
             readable_text = excerpt_original
             passes_gate = bool(readable_text) and filing_display.is_readable_extracted_text(readable_text)
@@ -432,8 +458,6 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             evidence_location = candidate.evidence_location if candidate is not None else None
             prefer_fallback = filing_display.prefer_metadata_only_summary(evidence_location)
             summary = filing_display.extractive_summary(readable_text) if (passes_gate and not prefer_fallback) else ""
-            if not summary:
-                summary = filing_display.metadata_only_summary(filing, title, filed_label)
             item_label = filing_display.item_anchor_label(evidence_location)
         else:
             translation_text = (
@@ -471,36 +495,157 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
             # extractive_summary() itself may still return "" (no clean
             # sentence found even within its own bounded search window);
             # that empty-return case, not just an unreadable-source case,
-            # also falls back to metadata_only_summary() here.
+            # reaches the single honest-fallback decision below.
+            # Filing-summary quality fix: DART's cover-page header
+            # ("{issuer}/{title}/({date}){title} {title}") is removed for
+            # the SUMMARY only, on separate local copies. The flags and
+            # text the excerpt toggles below use are left exactly as they
+            # were, so "View original/translated filing excerpt" keeps
+            # showing the stored excerpt verbatim. Nothing persisted is
+            # touched, and non-DART providers never reach this call.
+            summary_translation_text = translation_text
+            summary_native_text = native_text
+            if filing.source_name == _EDINET_SOURCE_NAME:
+                # Two further EDINET machine artifacts, observed live and
+                # not reached by strip_edinet_machine_artifacts above: a
+                # whitespace-free CJK document-title-timestamp, and the
+                # exported HTML member's own filename. Removed from the
+                # SUMMARY copies only — translation_text/native_text,
+                # which the excerpt toggles render, are untouched here,
+                # so no excerpt view changes. Removing an artifact proves
+                # nothing about the remainder: summary_is_substantive
+                # still judges it, and an artifact-only text falls back.
+                if summary_translation_text:
+                    summary_translation_text = filing_display.strip_edinet_summary_artifacts(summary_translation_text)
+                if summary_native_text:
+                    summary_native_text = filing_display.strip_edinet_summary_artifacts(summary_native_text)
+            if filing.source_name == _DART_SOURCE_NAME:
+                if summary_translation_text:
+                    summary_translation_text = filing_display.strip_dart_cover_page_header(summary_translation_text)
+                if summary_native_text:
+                    summary_native_text = filing_display.strip_dart_cover_page_header(summary_native_text)
+
             translation_is_readable = bool(translation_text) and filing_display.is_readable_extracted_text(translation_text)
             native_is_readable = bool(native_text) and filing_display.is_readable_extracted_text(native_text)
-            if not has_any_translation:
-                # No stored translation at all (neither title nor
-                # excerpt) — unchanged pre-existing behavior: the Filing
-                # summary never shows the raw native excerpt directly,
-                # only a translated summary or the neutral fallback (the
-                # native excerpt stays reachable only via its own
-                # separate, explicit "View original filing excerpt"
-                # toggle below). The new native-as-summary preference
-                # only applies once some translation exists and the
-                # toggle is explicitly set to Original.
-                summary_source = None
-            elif show_translated:
-                summary_source = translation_text if translation_is_readable else None
+            summary_translation_readable = bool(summary_translation_text) and filing_display.is_readable_extracted_text(summary_translation_text)
+            summary_native_readable = bool(summary_native_text) and filing_display.is_readable_extracted_text(summary_native_text)
+            # Original-language availability. Previously, "no stored
+            # translation at all" rendered NOTHING under the summary
+            # heading, even though the original excerpt was stored,
+            # readable, and already reachable through its own toggle
+            # directly below. The content was never missing — only the
+            # English was, and only the labelling that makes showing the
+            # original honest.
+            #
+            # Three cases, and only the last one changes:
+            #   * English chosen AND a usable English excerpt exists
+            #     -> the English summary, exactly as before;
+            #   * Original chosen while some translation exists (the
+            #     reader's own toggle, or EDINET's original-first
+            #     default) -> the native summary, exactly as before and
+            #     deliberately NOT relabelled: the reader asked for it;
+            #   * otherwise (no usable English excerpt at all) -> the
+            #     native summary, flagged so the renderer labels it and
+            #     states that no English is available. This is the only
+            #     branch whose output differs, and it replaces an empty
+            #     card, never an English one.
+            english_summary_source = summary_translation_text if summary_translation_readable else None
+            native_summary_source = summary_native_text if summary_native_readable else None
+            english_excerpt_available = bool(translation_text) and translation_is_readable
+            original_language_only = native_is_readable and not english_excerpt_available
+            if show_translated and english_summary_source is not None:
+                summary_source = english_summary_source
+            elif not show_translated and has_any_translation:
+                summary_source = native_summary_source
             else:
-                summary_source = native_text if native_is_readable else None
-            summary = filing_display.extractive_summary(summary_source) if summary_source else ""
-            if not summary:
-                summary = filing_display.metadata_only_summary(filing, title, filed_label)
+                summary_source = native_summary_source
+                summary_in_original_language = native_summary_source is not None
+            # Field-aware selection first, for DART only. These bodies are
+            # numbered FIELD SETS, not prose: a leading substring returns
+            # whichever field comes first, which for a rumour
+            # clarification is the REPORT BEING ADDRESSED — it would read
+            # as though the issuer had confirmed it. dart_summary picks the
+            # field carrying the issuer's own position, whole, and returns
+            # None whenever the structure is not positively recognised, in
+            # which case the previous leading-substring behaviour applies
+            # unchanged.
+            summary = ""
+            if summary_source:
+                outcome = dart_summary.OUTCOME_NOT_APPLICABLE
+                if filing.source_name == _DART_SOURCE_NAME:
+                    # Corroboration, not guesswork: the filing's own stored
+                    # classification (the same category chip rendered above)
+                    # is what permits a generically labelled
+                    # "1. Title: / 2. Content:" body to be read as an
+                    # issuer response. Labels alone never establish it.
+                    inquiry_expected = category_label == _RUMOR_INQUIRY_CATEGORY
+                    outcome, selected = dart_summary.select_summary(summary_source, inquiry_expected)
+                    summary = selected or ""
+                # OUTCOME_UNSAFE deliberately skips the leading-substring
+                # path: for a recognised rumour clarification that excerpt
+                # starts with the ALLEGATION, so falling through would show
+                # the claim without the issuer's answer to it.
+                if not summary and outcome != dart_summary.OUTCOME_UNSAFE:
+                    summary = filing_display.extractive_summary(summary_source)
 
+        # One decision point for both branches: a summary that says
+        # nothing the title does not already say is not shown as a
+        # summary. metadata_only_summary() is deliberately NOT used here
+        # — it restates the title rendered directly above this heading.
+        summary_unavailable = not filing_display.summary_is_substantive(
+            summary, title, filing_display.issuer_display_names(filing),
+            dart_header_rules=filing.source_name == _DART_SOURCE_NAME,
+        )
+        if summary_unavailable:
+            summary = ""
+
+        # The summary heading names the language whenever what follows is
+        # the filing's own, shown because no English is available. A
+        # reader must never have to infer from the script itself which
+        # language they are reading.
+        show_original_language_label = summary_in_original_language and not summary_unavailable
         summary_label_html = '<div class="er-muted" style="margin-top:0.5rem; display:flex; align-items:center; gap:0.4rem;"><strong>Filing summary</strong>'
+        if show_original_language_label:
+            summary_label_html += (
+                f'<span class="er-status-tag er-tag-neutral">'
+                f'{html.escape(filing_display.original_language_label(filing.original_language))}</span>'
+            )
         if item_label:
             summary_label_html += f'<span class="er-status-tag er-tag-neutral">{html.escape(item_label)}</span>'
         summary_label_html += "</div>"
         st.markdown(summary_label_html, unsafe_allow_html=True)
-        summary_attr = lang_attr(filing.original_language) if (not is_english and has_any_translation and not show_translated) else ""
-        summary_html = html.escape(summary) if summary_attr else cjk_html(summary, filing.original_language)
-        st.markdown(f'<div class="er-filing-summary"{summary_attr}>{summary_html}</div>', unsafe_allow_html=True)
+        if summary_unavailable:
+            # Two plain lines, no claim about WHY. The original-filing
+            # action stays on the card below, unchanged.
+            st.markdown(
+                f'<div class="er-filing-summary">{html.escape(filing_display.SUMMARY_UNAVAILABLE_TEXT)}</div>'
+                f'<div class="er-muted">{html.escape(filing_display.SUMMARY_UNAVAILABLE_ACTION)}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            summary_is_native = (not is_english) and (
+                summary_in_original_language or (has_any_translation and not show_translated)
+            )
+            summary_attr = lang_attr(filing.original_language) if summary_is_native else ""
+            summary_html = html.escape(summary) if summary_attr else cjk_html(summary, filing.original_language)
+            st.markdown(f'<div class="er-filing-summary"{summary_attr}>{summary_html}</div>', unsafe_allow_html=True)
+
+        # Availability, stated once, whether or not a summary was
+        # selected: this card holds original-language text and no usable
+        # English translation of it. Deliberately NOT the machine-
+        # translation caveat — nothing shown here was translated — and
+        # deliberately no retry, ETA or failure wording. The original
+        # excerpt's own toggle below is unchanged and stays the way to
+        # read the stored text in full.
+        if original_language_only:
+            notice, notice_details = filing_display.original_language_notice(
+                has_title_translation=has_title_translation,
+                has_excerpt_translation=has_excerpt_translation,
+            )
+            notice_html = f'<div class="er-muted">{html.escape(notice)}</div>'
+            for detail in notice_details:
+                notice_html += f'<div class="er-muted">{html.escape(detail)}</div>'
+            st.markdown(notice_html, unsafe_allow_html=True)
 
         if not is_english and has_any_translation:
             toggle_label = "Original" if show_translated else "English"
