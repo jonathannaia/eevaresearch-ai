@@ -19,7 +19,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.data_access.state_db.scan_status_repository import (
+    SCAN_OUTCOME_INVALID,
+    SCAN_OUTCOME_NO_COVERAGE,
+    SCAN_OUTCOME_NO_WORK,
+    SCAN_OUTCOME_PARTIAL_COVERAGE,
+    SCAN_OUTCOME_RAISED,
+    SCAN_OUTCOME_UNKNOWN,
+    ProviderScanStatus,
+)
 from src.logic.formatting import fmt_datetime_local
 
 DEFAULT_INTERVAL_MINUTES = 60
@@ -27,12 +35,73 @@ STALE_THRESHOLD_MULTIPLIER = 3
 
 UNAVAILABLE_MESSAGE = "Filing data may not be current."
 NO_SCAN_YET_MESSAGE = "No completed scan yet for this source."
+# Latest-ATTEMPT coverage, reported independently of freshness.
+#
+# Freshness answers "how old is the newest data?" from
+# last_successful_at. It cannot answer "did the most recent attempt
+# work?" -- a provider can hold a successful timestamp from minutes ago
+# and have its very next attempt observe nothing at all. Reporting only
+# freshness would show "last refreshed 5 minutes ago" with no sign that
+# the latest attempt failed, so these are separate lines, not a
+# modifier on the freshness message.
+#
+# Phrased in issuer-coverage terms because that is what the counts
+# measure. None of these claims anything about requests: for EDINET a
+# day-keyed scan with one bad day yields no established coverage, which
+# is not the same as every request failing.
+ATTEMPT_PARTIAL_NOTE = "Latest scan attempt covered only some tracked issuers."
+ATTEMPT_NO_COVERAGE_NOTE = "Latest scan attempt established no issuer coverage."
+ATTEMPT_NO_WORK_NOTE = "Latest scan attempt had no eligible issuers to cover."
+ATTEMPT_RAISED_NOTE = "Latest scan attempt did not complete."
+ATTEMPT_UNKNOWN_NOTE = "Latest scan attempt did not record issuer coverage."
+ATTEMPT_INVALID_NOTE = "Latest scan attempt recorded inconsistent issuer coverage."
+
+_ATTEMPT_NOTES = {
+    SCAN_OUTCOME_PARTIAL_COVERAGE: ATTEMPT_PARTIAL_NOTE,
+    SCAN_OUTCOME_NO_COVERAGE: ATTEMPT_NO_COVERAGE_NOTE,
+    SCAN_OUTCOME_NO_WORK: ATTEMPT_NO_WORK_NOTE,
+    SCAN_OUTCOME_RAISED: ATTEMPT_RAISED_NOTE,
+    SCAN_OUTCOME_UNKNOWN: ATTEMPT_UNKNOWN_NOTE,
+    SCAN_OUTCOME_INVALID: ATTEMPT_INVALID_NOTE,
+}
+
+
+def latest_attempt_note(statuses, enabled_sources: tuple[str, ...]) -> str | None:
+    """The single most serious latest-attempt shortfall across enabled
+    sources, or None when every one covered its whole eligible set.
+
+    Derived from the persisted counts only -- no clock, no I/O, no
+    warning text. Ordered by seriousness so one line can stand for the
+    whole panel; a per-source breakdown belongs in the operator panel,
+    not in this one-line summary.
+    """
+    severity = (
+        SCAN_OUTCOME_RAISED, SCAN_OUTCOME_INVALID, SCAN_OUTCOME_NO_COVERAGE,
+        SCAN_OUTCOME_UNKNOWN, SCAN_OUTCOME_NO_WORK, SCAN_OUTCOME_PARTIAL_COVERAGE,
+    )
+    seen = set()
+    for source in enabled_sources:
+        status = (statuses or {}).get(source)
+        if status is not None and status.latest_attempt_fell_short:
+            seen.add(status.outcome)
+    for outcome in severity:
+        if outcome in seen:
+            return _ATTEMPT_NOTES[outcome]
+    return None
 
 
 @dataclass(frozen=True)
 class RadarFreshness:
     state: str  # "all_recent" | "partial" | "all_stale" | "no_scan_yet" | "unavailable"
     message: str
+    # Additive, and INDEPENDENT of `state`/`message`: those describe the
+    # age of the newest data; this describes whether the most recent
+    # attempt established full issuer coverage. Both are needed -- see
+    # the note-constant comments above. None when every enabled source's
+    # latest attempt covered its whole eligible set. Kept off
+    # `state`/`message` so the existing freshness state machine and its
+    # assertions are untouched.
+    attempt_note: str | None = None
 
 
 def effective_interval_minutes(interval_minutes: int | None) -> int:
@@ -101,20 +170,26 @@ def compute_radar_freshness(
             last_success = _parse_utc(status.last_successful_at)  # status is guaranteed non-None here
             (recent if category == "recent" else stale).append((source, last_success))
 
+    # Latest-attempt coverage, computed independently of every freshness
+    # branch below so it is reported even when the newest data is recent.
+    attempt_note = latest_attempt_note(statuses, enabled_sources)
+
     if never_scanned:
-        return RadarFreshness("no_scan_yet", NO_SCAN_YET_MESSAGE)
+        return RadarFreshness("no_scan_yet", NO_SCAN_YET_MESSAGE, attempt_note)
 
     if recent and not stale:
         latest = max(ts for _, ts in recent)
-        return RadarFreshness("all_recent", f"Filing data last refreshed {fmt_datetime_local(latest.isoformat())}.")
+        return RadarFreshness("all_recent", f"Filing data last refreshed {fmt_datetime_local(latest.isoformat())}.", attempt_note)
 
     if stale and not recent:
         latest = max(ts for _, ts in stale)
         return RadarFreshness(
             "all_stale", f"Filing data may be out of date · Last successful update {fmt_datetime_local(latest.isoformat())}.",
+            attempt_note,
         )
 
     latest_recent = max(ts for _, ts in recent)
     return RadarFreshness(
         "partial", f"Some sources refreshed as recently as {fmt_datetime_local(latest_recent.isoformat())}; others are delayed.",
+        attempt_note,
     )

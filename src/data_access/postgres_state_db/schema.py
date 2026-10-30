@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 25
+CURRENT_SCHEMA_VERSION = 26
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -908,6 +908,17 @@ _V25_STATEMENTS: tuple[str, ...] = (
 )
 
 
+# Scan-status truthfulness (V26) -- the Postgres counterpart of
+# state_db/schema.py's V24. Same three additive coverage fields, all
+# NULLABLE with no default, so an existing row reads as `unknown`
+# coverage rather than as a proven `no_work` or a success.
+_V26_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE provider_scan_status ADD COLUMN issuers_eligible INTEGER",
+    "ALTER TABLE provider_scan_status ADD COLUMN issuers_observed INTEGER",
+    "ALTER TABLE provider_scan_status ADD COLUMN coverage_validation_code TEXT",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -934,6 +945,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (23, _V23_STATEMENTS),
     (24, _V24_STATEMENTS),
     (25, _V25_STATEMENTS),
+    (26, _V26_STATEMENTS),
 )
 
 
