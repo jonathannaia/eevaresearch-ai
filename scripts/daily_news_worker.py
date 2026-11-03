@@ -415,7 +415,8 @@ def _log_editorial_completion(report) -> None:
         f"stories_published={report.stories_published} items_stale={report.items_stale} "
         f"items_no_match={report.items_no_match} items_duplicate={report.items_duplicate} "
         f"items_already_seen={report.items_already_seen} items_capped={report.items_capped} "
-        f"items_no_valid_url={report.items_no_valid_url} source_failures={len(report.source_failures)}"
+        f"items_no_valid_url={report.items_no_valid_url} source_failures={len(report.source_failures)} "
+        f"sources_skipped_ineligible={report.sources_skipped_ineligible}"
     )
     if report.source_failures:
         # Reuses editorial_pipeline's own already-imported registry
