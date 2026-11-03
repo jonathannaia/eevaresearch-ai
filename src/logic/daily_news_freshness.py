@@ -40,9 +40,17 @@ The five states, and the persisted facts each one is entitled to claim:
                         rather than just the newer one.
   * `stale`           — the newest recorded completed tick is older
                         than the threshold below.
-  * `unknown`         — no status row exists, or no tick has ever been
-                        recorded as completed. Displayed as unknown
-                        rather than resolved favourably.
+  * `unknown`         — the status was read successfully and holds no
+                        completed run: no row at all, or a row whose
+                        completion has never been recorded. This state
+                        may say that no completed run is recorded,
+                        because that was actually observed.
+  * `unavailable`     — the status could not be read at all. Kept
+                        separate from `unknown` precisely so an
+                        unreadable backend never asserts that no run
+                        exists: nothing was observed, so the only honest
+                        statement is that the status could not be
+                        determined.
 
 What this module deliberately does NOT claim:
 
@@ -58,6 +66,8 @@ What this module deliberately does NOT claim:
     needs a new table or column, which is out of scope here, so
     EDITORIAL_COVERAGE_RECORDED states the gap instead of papering over
     it.
+  * **Never "nothing is recorded" when nothing was read.** See
+    `unavailable` below.
   * **Never "this is a quiet period".** The Signals feed a reader sees
     is both lanes combined, so while the editorial lane's per-source
     results are unrecorded, no ingestion state can establish that an
@@ -124,7 +134,8 @@ STALE_THRESHOLD_MULTIPLIER = 3
 # has to change, and so no caller can quietly assume otherwise.
 EDITORIAL_COVERAGE_RECORDED = False
 
-UNKNOWN_MESSAGE = "No completed ingestion run has been recorded."
+UNKNOWN_MESSAGE = "No completed ingestion run is recorded."
+UNAVAILABLE_MESSAGE = "Ingestion status could not be determined."
 ATTEMPT_FAILED_MESSAGE = "The latest ingestion attempt reported a failure."
 NO_EARLIER_RUN_MESSAGE = "No earlier completed run is on record."
 LAST_SUCCESS_ALSO_STALE_MESSAGE = "That run is itself not recent."
@@ -148,7 +159,7 @@ QUIET_FEED_CONFIRMED_MESSAGE = (
 
 @dataclass(frozen=True)
 class DailyNewsIngestionStatus:
-    state: str  # "current" | "partial" | "attempt_failed" | "stale" | "unknown"
+    state: str  # "current" | "partial" | "attempt_failed" | "stale" | "unknown" | "unavailable"
     message: str
     # True when a completed run exists but is itself beyond the staleness
     # threshold. Set independently of `state`, so an `attempt_failed`
@@ -206,12 +217,17 @@ def classify_ingestion(
     failed_feeds: int = 0,
     now: datetime | None = None,
     editorial_coverage_recorded: bool = EDITORIAL_COVERAGE_RECORDED,
+    read_failed: bool = False,
 ) -> DailyNewsIngestionStatus:
     """`worker_status`/`failed_feeds` come from the Daily News scan-status
     repository, already read by the caller — never re-read or recomputed
-    here. `None` for `worker_status` covers both "no row" and "the row
-    could not be read at all": both are genuinely unknown and are
-    reported as such.
+    here.
+
+    `read_failed=True` means the read itself could not be performed, and
+    is checked before anything else: nothing was observed, so no claim
+    about what is or is not recorded may be made. `None` for
+    `worker_status` after a SUCCESSFUL read is the different fact that no
+    completed run is recorded.
 
     Order matters: a recorded failure is examined before any timestamp,
     so an old success can never present as a current one.
@@ -230,6 +246,9 @@ def classify_ingestion(
             last_success_stale=last_success_stale,
             editorial_coverage_recorded=editorial_coverage_recorded,
         )
+
+    if read_failed:
+        return _status("unavailable", UNAVAILABLE_MESSAGE)
 
     if worker_status is None:
         return _status("unknown", UNKNOWN_MESSAGE)
@@ -268,7 +287,7 @@ def classify_ingestion(
         )
 
     if failed_feeds:
-        return _status("partial", f"Incomplete run: last recorded run completed {when}. {PARTIAL_SUFFIX}")
+        return _status("partial", f"Last recorded run completed {when}. {PARTIAL_SUFFIX}")
 
     # Deliberately about the RUN, not about content: a recorded run is
     # evidence the worker ran, never evidence that anything new arrived

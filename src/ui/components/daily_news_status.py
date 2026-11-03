@@ -28,13 +28,16 @@ configured database happens to contain: another database carrying these
 tables yields that database's rows, which may be current, stale, or
 absent, and absent rows alone are what classify as unknown. The line is
 therefore always a true statement about the database it read, and never
-a claim about a database it did not. "unknown" specifically covers no
-row, no completed run ever recorded, and a read that could not be
-performed at all — including the JSON backend (the default), where these
-tables do not exist for this process and the accessor raises rather than
-returning an empty result. Every failure path resolves there: never a
-crash, never a sanitized-error string shown to a reader, and never a
-healthy-looking line inferred from the absence of a failure.
+a claim about a database it did not. Two different not-knowing cases are kept apart. "unknown" means the
+read succeeded and found no completed run — no row, or a row whose
+completion was never recorded — and may say so. "unavailable" means the
+read could not be performed at all, including on the JSON backend (the
+default), where these tables do not exist for this process and the
+accessor raises rather than returning an empty result; that state says
+only that the status could not be determined, never that no run exists.
+Every failure path resolves to "unavailable": never a crash, never a
+sanitized-error string shown to a reader, and never a healthy-looking
+line inferred from the absence of a failure.
 
 --- Cache contract ---
 
@@ -114,10 +117,16 @@ _STATUS_CACHE_TTL_SECONDS = 60
 class PersistedIngestionFacts:
     """Exactly the persisted facts the classification needs — small,
     picklable, and carrying no connection object, no DSN, and no
-    per-feed detail."""
+    per-feed detail.
+
+    `read_failed` keeps "the read could not be performed" distinct from
+    "the read succeeded and found no completed run". Both leave
+    `worker_status` None, and collapsing them would make an unreadable
+    backend assert that no run exists."""
 
     worker_status: DailyNewsWorkerStatus | None
     failed_feeds: int
+    read_failed: bool = False
 
 
 def _database_identity(settings: Settings) -> tuple[str, str]:
@@ -146,11 +155,12 @@ def read_persisted_facts(settings: Settings) -> PersistedIngestionFacts:
         feed_statuses = repository.get_all_feed_statuses()
     except BackendConfigurationError:
         # The dashboard is not pointed at a backend that holds these
-        # tables (JSON by default). Genuinely unknown from here, not
-        # healthy and not broken.
-        return PersistedIngestionFacts(worker_status=None, failed_feeds=0)
+        # tables (JSON by default), so no read happened at all. Not
+        # healthy, not broken, and specifically not evidence that no run
+        # is recorded somewhere this process cannot see.
+        return PersistedIngestionFacts(worker_status=None, failed_feeds=0, read_failed=True)
     except Exception:  # noqa: BLE001 — never leak a raw connection/driver error to a reader
-        return PersistedIngestionFacts(worker_status=None, failed_feeds=0)
+        return PersistedIngestionFacts(worker_status=None, failed_feeds=0, read_failed=True)
 
     return PersistedIngestionFacts(
         worker_status=worker_status, failed_feeds=failed_feed_count(feed_statuses),
@@ -183,6 +193,7 @@ def current_ingestion_status(settings: Settings, now: datetime | None = None) ->
         failed_feeds=facts.failed_feeds,
         now=now,
         editorial_coverage_recorded=EDITORIAL_COVERAGE_RECORDED,
+        read_failed=facts.read_failed,
     )
 
 

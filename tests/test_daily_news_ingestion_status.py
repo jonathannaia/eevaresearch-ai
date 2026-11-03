@@ -30,6 +30,7 @@ from src.logic.daily_news_freshness import (
     LAST_SUCCESS_ALSO_STALE_MESSAGE,
     MARKET_NEWS_COVERAGE_UNKNOWN_NOTE,
     NO_EARLIER_RUN_MESSAGE,
+    UNAVAILABLE_MESSAGE,
     QUIET_FEED_CONFIRMED_MESSAGE,
     QUIET_FEED_UNCONFIRMABLE_MESSAGE,
     STALE_THRESHOLD_MULTIPLIER,
@@ -94,6 +95,28 @@ def _clear_cache() -> None:
     daily_news_status._persisted_facts_cached.clear()
 
 
+def current_ingestion_status_from(facts) -> DailyNewsIngestionStatus:
+    """Classify already-read facts the way current_ingestion_status()
+    does, without going through the cache."""
+    return classify_ingestion(
+        facts.worker_status, _INTERVAL, failed_feeds=facts.failed_feeds, now=_NOW, read_failed=facts.read_failed,
+    )
+
+
+def _all_states() -> tuple[DailyNewsIngestionStatus, ...]:
+    """One status per reachable state, for the sweeps below."""
+    return (
+        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
+        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
+        classify_ingestion(_worker(last_failure_code="X"), _INTERVAL, now=_NOW),
+        classify_ingestion(_worker(last_tick_completed_at=_iso(10000), last_failure_code="X"), _INTERVAL, now=_NOW),
+        classify_ingestion(_worker(last_tick_completed_at=None, last_failure_code="X"), _INTERVAL, now=_NOW),
+        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
+        classify_ingestion(None, _INTERVAL, now=_NOW),
+        classify_ingestion(None, _INTERVAL, now=_NOW, read_failed=True),
+    )
+
+
 # ============================================================
 # The five states.
 # ============================================================
@@ -133,11 +156,43 @@ def test_recorded_failure_code_is_a_failed_latest_attempt():
     assert ATTEMPT_FAILED_MESSAGE in status.message
 
 
-def test_missing_status_row_is_unknown_not_healthy_and_not_broken():
+def test_a_successful_read_with_no_row_may_say_no_run_is_recorded():
+    """Observed absence: the read worked and found nothing, so saying so
+    is a true statement."""
     status = classify_ingestion(None, _INTERVAL, now=_NOW)
 
     assert status.state == "unknown"
     assert status.message == UNKNOWN_MESSAGE
+    assert "no completed ingestion run is recorded" in status.message.lower()
+
+
+def test_a_read_that_could_not_be_performed_never_asserts_that_no_run_exists():
+    """Nothing was observed, so the only honest statement is that the
+    status could not be determined — never that no run is recorded."""
+    status = classify_ingestion(None, _INTERVAL, now=_NOW, read_failed=True)
+
+    assert status.state == "unavailable"
+    assert status.message == UNAVAILABLE_MESSAGE
+    assert "could not be determined" in status.message.lower()
+    for absence_claim in ("no completed", "has not been recorded", "is recorded", "never"):
+        assert absence_claim not in status.message.lower(), absence_claim
+
+
+def test_the_two_not_knowing_states_are_distinct():
+    read_worked = classify_ingestion(None, _INTERVAL, now=_NOW)
+    read_failed = classify_ingestion(None, _INTERVAL, now=_NOW, read_failed=True)
+
+    assert read_worked.state != read_failed.state
+    assert read_worked.message != read_failed.message
+    assert not read_worked.confirms_quiet_feed
+    assert not read_failed.confirms_quiet_feed
+
+
+def test_an_unreadable_status_outranks_every_other_fact():
+    """read_failed is checked first: whatever rows were handed in, they
+    were not read from anywhere trustworthy."""
+    for worker in (_worker(), _worker(last_failure_code="E"), _worker(last_tick_completed_at=_iso(10000)), None):
+        assert classify_ingestion(worker, _INTERVAL, failed_feeds=3, now=_NOW, read_failed=True).state == "unavailable"
 
 
 def test_a_tick_that_started_but_never_completed_is_unknown():
@@ -148,11 +203,23 @@ def test_a_tick_that_started_but_never_completed_is_unknown():
     assert status.state == "unknown"
 
 
-def test_partial_when_a_company_feed_failed_on_its_own_latest_attempt():
+def test_partial_separates_the_completed_run_from_the_feed_results():
+    """Two statements, not one verdict on the run: the run completed, and
+    separately, some feeds could not be reached. Nothing calls the run
+    itself incomplete."""
     status = classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW)
 
     assert status.state == "partial"
-    assert "Some company feeds could not be reached" in status.message
+    assert status.message.startswith("Last recorded run completed")
+    assert "Some company feeds could not be reached." in status.message
+    for conflation in ("incomplete run", "run was incomplete", "partial run", "failed run"):
+        assert conflation not in status.message.lower()
+
+
+def test_partial_keeps_the_editorial_coverage_limitation():
+    status = classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW)
+
+    assert MARKET_NEWS_COVERAGE_UNKNOWN_NOTE in ingestion_status_html(status)
 
 
 # ============================================================
@@ -309,7 +376,10 @@ def test_classification_never_reads_a_story_publication_date():
     import inspect
 
     params = set(inspect.signature(classify_ingestion).parameters)
-    assert params == {"worker_status", "interval_minutes", "failed_feeds", "now", "editorial_coverage_recorded"}
+    assert params == {
+        "worker_status", "interval_minutes", "failed_feeds", "now", "editorial_coverage_recorded",
+        "read_failed",
+    }
     assert failed_feed_count({"a": _feed(last_story_published_at=_iso(1))}) == failed_feed_count(
         {"a": _feed(last_story_published_at=None)},
     )
@@ -344,15 +414,7 @@ def test_editorial_coverage_is_not_recorded_today():
 
 
 def test_no_state_claims_complete_source_coverage():
-    statuses = [
-        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
-        classify_ingestion(_worker(last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
-        classify_ingestion(None, _INTERVAL, now=_NOW),
-    ]
-
-    for status in statuses:
+    for status in _all_states():
         rendered = ingestion_status_html(status).lower()
         for overclaim in ("all sources", "every source", "all feeds", "every feed", "complete coverage", "up to date"):
             assert overclaim not in rendered, (status.state, overclaim)
@@ -371,13 +433,7 @@ def test_a_recent_tick_does_not_confirm_a_quiet_feed_while_editorial_coverage_is
 
 
 def test_no_state_reachable_today_confirms_a_quiet_feed():
-    for status in (
-        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
-        classify_ingestion(_worker(last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
-        classify_ingestion(None, _INTERVAL, now=_NOW),
-    ):
+    for status in _all_states():
         assert not status.confirms_quiet_feed, status.state
 
 
@@ -411,15 +467,13 @@ def test_a_positive_state_always_carries_the_unrecorded_coverage_caveat():
 def test_no_state_claims_that_new_content_arrived():
     """A recorded run is not arrival. Nothing in any rendered line may
     suggest the feed received something."""
-    for status in (
-        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
-    ):
+    for status in _all_states():
         rendered = ingestion_status_html(status).lower()
         for arrival_claim in ("recently ingested", "newly", "arrived", "fresh", "new item", "new content"):
             assert arrival_claim not in rendered, (status.state, arrival_claim)
-        assert "run" in rendered
+        # Every state that speaks about ingestion at all speaks about
+        # the RUN; "unavailable" deliberately speaks about nothing.
+        assert "run" in rendered or status.state == "unavailable"
 
 
 def test_a_reported_failure_is_not_described_as_a_proven_non_completion():
@@ -449,34 +503,31 @@ def test_no_message_claims_continuous_or_automatic_updating():
     the Radar freshness line (Phase F1), over every message this module
     can produce."""
     prohibited = ("live", "real-time", "automatic", "continuous", "autonomous", "scheduled", "updating")
-    for status in (
-        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
-        classify_ingestion(_worker(last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000), last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=None, last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
-        classify_ingestion(None, _INTERVAL, now=_NOW),
-    ):
+    for status in _all_states():
         rendered = ingestion_status_html(status).lower()
         for word in prohibited:
             assert word not in rendered, (status.state, word)
 
 
-def test_each_state_opens_with_distinct_wording_so_color_is_never_the_signal():
-    """No separate state label exists, so each message must be
-    distinguishable from the others by its own opening words."""
-    openings = []
-    for status in (
-        classify_ingestion(_worker(), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(), _INTERVAL, failed_feeds=1, now=_NOW),
-        classify_ingestion(_worker(last_failure_code="X"), _INTERVAL, now=_NOW),
-        classify_ingestion(_worker(last_tick_completed_at=_iso(10000)), _INTERVAL, now=_NOW),
-        classify_ingestion(None, _INTERVAL, now=_NOW),
-    ):
-        openings.append(status.message.split(".")[0].strip().lower())
+def test_every_state_renders_distinct_wording_so_color_is_never_the_signal():
+    """No separate state label exists, so the states must be
+    distinguishable from one another by their text alone. `current` and
+    `partial` deliberately share an opening sentence — the run completed
+    in both — and are separated by what follows it."""
+    rendered = [ingestion_status_html(s) for s in _all_states()]
 
-    assert len(set(openings)) == len(openings), openings
+    assert len(set(rendered)) == len(rendered)
+
+
+def test_no_state_claims_an_absence_it_did_not_observe():
+    """Only a state that actually read the status may say nothing is
+    recorded."""
+    for status in _all_states():
+        if status.state == "unavailable":
+            assert "recorded" not in status.message.lower()
+        rendered = ingestion_status_html(status).lower()
+        assert "does not exist" not in rendered
+        assert "never ran" not in rendered
 
 
 def test_the_rendered_line_is_the_message_itself_plus_the_coverage_caveat_only():
@@ -633,23 +684,47 @@ def test_the_status_read_is_not_user_or_session_scoped():
 # ============================================================
 
 
-def test_json_backend_resolves_to_unknown_rather_than_raising(tmp_path):
+def test_json_backend_is_reported_as_unreadable_rather_than_raising(tmp_path):
+    """These tables do not exist for the JSON backend, so no read
+    happens — which is not the same as reading and finding nothing."""
     facts = read_persisted_facts(Settings(cache_dir=tmp_path))
 
     assert facts.worker_status is None
-    assert classify_ingestion(facts.worker_status, None, now=_NOW).state == "unknown"
+    assert facts.read_failed
+    assert current_ingestion_status_from(facts).state == "unavailable"
 
 
-def test_a_backend_configuration_error_resolves_to_unknown(tmp_path):
+def test_a_successful_read_of_an_empty_table_is_unknown_not_unavailable(tmp_path):
+    class _Empty:
+        def get_worker_status(self):
+            return None
+
+        def get_all_feed_statuses(self):
+            return {}
+
+    with patch.object(
+        daily_news_status.daily_news_backend, "get_daily_news_scan_status_repository", return_value=_Empty(),
+    ):
+        facts = read_persisted_facts(Settings(cache_dir=tmp_path))
+
+    assert not facts.read_failed
+    assert current_ingestion_status_from(facts).state == "unknown"
+
+
+def test_a_backend_configuration_error_is_reported_as_unreadable_not_as_empty(tmp_path):
     with patch.object(
         daily_news_status.daily_news_backend,
         "get_daily_news_scan_status_repository",
         side_effect=BackendConfigurationError("no"),
     ):
-        assert read_persisted_facts(Settings(cache_dir=tmp_path)).worker_status is None
+        facts = read_persisted_facts(Settings(cache_dir=tmp_path))
+
+    assert facts.worker_status is None
+    assert facts.read_failed
+    assert current_ingestion_status_from(facts).state == "unavailable"
 
 
-def test_an_unexpected_read_error_resolves_to_unknown_without_leaking_it(tmp_path):
+def test_an_unexpected_read_error_is_unreadable_and_leaks_nothing(tmp_path):
     with patch.object(
         daily_news_status.daily_news_backend,
         "get_daily_news_scan_status_repository",
@@ -657,8 +732,9 @@ def test_an_unexpected_read_error_resolves_to_unknown_without_leaking_it(tmp_pat
     ):
         facts = read_persisted_facts(Settings(cache_dir=tmp_path))
 
-    rendered = ingestion_status_html(classify_ingestion(facts.worker_status, None, now=_NOW))
-    assert UNKNOWN_MESSAGE in rendered
+    assert facts.read_failed
+    rendered = ingestion_status_html(current_ingestion_status_from(facts))
+    assert UNAVAILABLE_MESSAGE in rendered
     assert "secret" not in rendered
     assert "internal" not in rendered
 
@@ -682,7 +758,9 @@ def test_a_real_repository_read_is_classified_from_its_rows(tmp_path):
 
 def test_a_cache_failure_still_produces_a_line(tmp_path):
     with patch.object(daily_news_status, "_persisted_facts_cached", side_effect=RuntimeError("no runtime")):
-        assert current_ingestion_status(Settings(cache_dir=tmp_path)).state == "unknown"
+        # Falls back to an uncached read, which on the JSON default is
+        # itself unreadable — a line either way, never an exception.
+        assert current_ingestion_status(Settings(cache_dir=tmp_path)).state == "unavailable"
 
 
 # ============================================================
@@ -748,6 +826,14 @@ def test_the_page_never_shows_an_unknown_status_as_ingested(tmp_path):
     text = _page_text(_run_page(tmp_path, DailyNewsIngestionStatus("unknown", UNKNOWN_MESSAGE)))
 
     assert UNKNOWN_MESSAGE in text
+    assert "Last recorded run completed" not in text
+
+
+def test_the_page_renders_an_unreadable_status_without_claiming_an_absence(tmp_path):
+    text = _page_text(_run_page(tmp_path, DailyNewsIngestionStatus("unavailable", UNAVAILABLE_MESSAGE)))
+
+    assert UNAVAILABLE_MESSAGE in text
+    assert UNKNOWN_MESSAGE not in text
     assert "Last recorded run completed" not in text
 
 
