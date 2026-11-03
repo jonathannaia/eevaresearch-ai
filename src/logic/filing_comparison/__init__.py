@@ -15,8 +15,14 @@ never fetches or parses anything. What it can say is bounded three ways:
   * every statement is scoped to the two excerpts (`ClaimScope` has one
     value, so a filing-level claim is not representable);
   * the strongest absence claim is `NO_DIFFERENCE_IN_COMPARED_FIELDS`,
-    which must name the fields it compared and can only name fields
-    locatable, with their values intact, on both sides;
+    which must name the fields it compared and is licensed only by
+    explicit per-side `FieldEvidence` — field identity, extracted value,
+    the exact supporting span, and any qualifications;
+  * nothing may be narrated as a revision, increase or decrease unless
+    the request carries `RelationshipEvidence`: a verbatim span from one
+    of the excerpts that is not merely the issuer, the form type, a date
+    or a rule category. Otherwise the comparison is `SIDE_BY_SIDE` and
+    `evidenced_changes` must be empty;
   * comparability status is an input gate, never a claim — see
     contracts.py for what `ComparisonStatus` does and does not
     establish.
@@ -49,24 +55,33 @@ investment), rcept `20260722800829` (2026-07-22) and `20260807800613`
 differing values (투자금액 7,093,100,000,000 vs 35,224,600,000,000
 against an identical 자기자본 of 120,666,750,890,698).
 
-That pair is also the sharpest ADVERSARIAL case available, and it is
-why `ComparisonStatus`'s limits are documented so precisely: the two
+That pair is also the NEGATIVE CONTROL this component is now gated
+against, and it is why the relationship contract exists: the two
 filings announce two DIFFERENT capital projects (청주 P&T7 and 용인
 2기 Fab), not two versions of one disclosure. The deterministic layer
 compares rule categories only, so it reports them comparable, and the
 most likely real-model failure on real data is narrating two
 independent filings as one revised figure — "investment increased from
-7.09 to 35.22 trillion won" would be fluent, cite both documents
-correctly, pass every mechanical check in this package, and be false.
-No check here detects it; it is the first case a human adjudicator must
-rule on.
+7.09 to 35.22 trillion won".
+
+Neither excerpt contains any text linking the two projects, so no
+`RelationshipEvidence` can be constructed for them and the request is
+`SIDE_BY_SIDE`. The application then refuses that narrative: a payload
+carrying `evidenced_changes` is rejected
+(`evidenced_change_without_established_revision_relationship`), and a
+payload whose prose says "increased" is rejected
+(`revision_language_without_established_relationship`). This gates the
+APPLICATION, not the model — a model may still produce the false
+sentence, and the claim made here is only that such a sentence does not
+become an accepted result.
 
 Both excerpts also end mid-sentence at exactly `MAX_EXCERPT_CHARS`
 (600), and neither extractor records truncation — `ExtractionResult`
 has no such field. Every existing record must therefore be declared
 `ExcerptCompleteness.UNKNOWN`, which makes
-`NO_DIFFERENCE_IN_COMPARED_FIELDS` reachable on real data only for
-fields that sit clear of the possibly-cut tail.
+`NO_DIFFERENCE_IN_COMPARED_FIELDS` reachable on real data only where
+per-field evidence shows a span that demonstrably ended inside what was
+extracted.
 
 By contrast the local EDGAR cache holds five candidates across five
 distinct issuers — no comparable pair at all — and the EDINET cache
@@ -80,6 +95,10 @@ tests/test_filing_comparison.py is SYNTHETIC: EDGAR-shaped for the
 general contract, and a Latin-script named-field form shaped after the
 DART layout for the scoped-absence rules. They demonstrate the CONTRACT
 and prove nothing about real-world accuracy.
+
+The synthetic fixtures are labelled as such in the test module and in
+the fixture names themselves, and the Latin-script named-field form is
+shaped after the DART layout without reproducing any of its text.
 
 Redistribution of the authentic excerpts is NOT cleared and is not
 claimed here. Authentic examples are referenced by receipt number and

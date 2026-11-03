@@ -27,12 +27,16 @@ from src.logic.filing_comparison.contracts import (
     ClaimSupport,
     ComparisonEvidence,
     ComparisonOutcome,
+    ComparisonRelationship,
     ComparisonRequest,
     ComparisonStatement,
     ExcerptCompleteness,
+    FieldEvidence,
     FilingComparison,
+    RelationshipEvidence,
     SourceReference,
-    numeric_tokens,
+    measurements,
+    revision_language_in,
     validate_comparison,
 )
 from src.logic.filing_comparison.provider import (
@@ -58,6 +62,12 @@ _CURRENT_URL = "https://www.sec.gov/Archives/edgar/data/1045810/0001045810260000
 _PRIOR_URL = "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000041/d-8k.htm"
 
 
+# SYNTHETIC. The sentence that, in these fixtures, establishes that one
+# document revises the other. Contains no figures, so adding it never
+# changes what a claim may ground against.
+_LINK = "This report amends and restates the prior report of the same offering."
+
+
 def _evidence(
     *,
     document_id: str = _CURRENT_ID,
@@ -67,6 +77,7 @@ def _evidence(
     extraction_state: ExtractionState = ExtractionState.EXTRACTED,
     excerpt_quality: ExcerptQuality = ExcerptQuality.USABLE_TEXT,
     completeness: ExcerptCompleteness = ExcerptCompleteness.COMPLETE,
+    field_evidence: tuple[FieldEvidence, ...] = (),
 ) -> ComparisonEvidence:
     return ComparisonEvidence(
         document_id=document_id,
@@ -81,6 +92,7 @@ def _evidence(
         retrieved_at="2026-08-17T12:00:00+00:00",
         form_type="8-K",
         matched_rules=("financing:capital_raise",),
+        field_evidence=field_evidence,
     )
 
 
@@ -89,21 +101,46 @@ def _request(
     current: ComparisonEvidence | None = None,
     prior: ComparisonEvidence | None = ...,
     status: ComparisonStatus = ComparisonStatus.CHANGE_DETECTED,
+    relationship: ComparisonRelationship = ComparisonRelationship.EVIDENCED_REVISION,
+    relationship_evidence: RelationshipEvidence | None = ...,
 ) -> ComparisonRequest:
+    """Defaults to an EVIDENCED_REVISION, because most of these tests
+    exercise change reporting. `_LINK` is appended to the current
+    excerpt when needed so the declared relationship is actually
+    evidenced — the component refuses a revision whose span it cannot
+    find."""
     if prior is ...:
         prior = _evidence(
             document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
             excerpt="The Company entered into an underwriting agreement for an offering of $300 million of notes.",
         )
+    current = current or _evidence()
+    if relationship is ComparisonRelationship.EVIDENCED_REVISION and _LINK not in current.excerpt:
+        current = replace(current, excerpt=f"{current.excerpt} {_LINK}")
+    if relationship_evidence is ...:
+        relationship_evidence = (
+            RelationshipEvidence(
+                document_id=current.document_id,
+                source_span=_LINK,
+                basis="the current report states that it amends and restates the prior report",
+                reference=SourceReference(
+                    document_id=current.document_id, source_url=current.source_url,
+                    filed_at=current.filed_at,
+                ),
+            )
+            if relationship is ComparisonRelationship.EVIDENCED_REVISION else None
+        )
     return ComparisonRequest(
         request_id="req-1",
         issuer_id="issuer-nvda",
         issuer_name="NVIDIA",
-        current=current or _evidence(),
+        current=current,
         prior=prior,
         comparability_status=status,
         comparison_basis="matched detection-rule categories",
         added_categories=("financing",),
+        relationship=relationship,
+        relationship_evidence=relationship_evidence,
     )
 
 
@@ -204,24 +241,53 @@ def test_a_genuine_change_is_reported_as_an_evidenced_change():
     assert "$300 million to $500 million" in result.evidenced_changes[0].text
 
 
-# A named-field form, shaped like the real DART filing pair in
-# `data/cache`: labelled fields, then a long numeric tail.
+# SYNTHETIC named-field form, shaped after the real DART filing layout
+# (labelled fields, then a numeric tail) without reproducing any of its
+# text. No authentic excerpt is committed to this repository.
 _FIELD_FORM = (
     "Issuer name: Example Electronics Co., Ltd. "
     "Issuer code: 005930 "
     "Contact department: IR Team "
     "Total common shares: 5,846,278,608 "
 )
+_FORM_FIELDS = (
+    ("Issuer name", "Example Electronics Co., Ltd."),
+    ("Issuer code", "005930"),
+    ("Total common shares", "5,846,278,608"),
+)
 
 
-def _field_request(*, current_tail: str = "", prior_tail: str = "", completeness=ExcerptCompleteness.COMPLETE):
-    """Both sides carry the same named fields; only the tail differs."""
+def _field_evidence(*names_and_values, qualifications=()) -> tuple[FieldEvidence, ...]:
+    """Per-side evidence in the shape a pipeline would supply: the field
+    name, the value, and the exact span both were read from."""
+    return tuple(
+        FieldEvidence(
+            field_name=name, extracted_value=value,
+            source_span=f"{name}: {value}", value_qualifications=tuple(qualifications),
+        )
+        for name, value in names_and_values
+    )
+
+
+def _field_request(
+    *, current_tail: str = "", prior_tail: str = "",
+    completeness=ExcerptCompleteness.COMPLETE,
+    current_fields=_FORM_FIELDS, prior_fields=_FORM_FIELDS,
+    relationship=ComparisonRelationship.SIDE_BY_SIDE,
+):
+    """Both sides carry the same named fields; only the tail differs.
+    SIDE_BY_SIDE, because comparing named fields asserts no revision."""
     return _request(
-        current=_evidence(excerpt=_FIELD_FORM + current_tail, completeness=completeness),
+        current=_evidence(
+            excerpt=_FIELD_FORM + current_tail, completeness=completeness,
+            field_evidence=_field_evidence(*current_fields),
+        ),
         prior=_evidence(
             document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
             excerpt=_FIELD_FORM + prior_tail, completeness=completeness,
+            field_evidence=_field_evidence(*prior_fields),
         ),
+        relationship=relationship,
     )
 
 
@@ -252,6 +318,21 @@ def test_a_scoped_no_difference_result_names_exactly_what_it_compared():
     assert not any("unchanged" in o.value for o in ComparisonOutcome)
 
 
+def test_a_scoped_absence_result_carries_a_per_field_audit_trail():
+    """Auditable means a reader can see, per field, what each side said
+    and the span it was read from — without re-reading the excerpts."""
+    result = compare_filings(_field_request(), _provider(_scoped_absence_payload()))
+
+    records = {r.field_name: r for r in result.field_comparisons}
+    assert set(records) == {"Issuer name", "Issuer code", "Total common shares"}
+    shares = records["Total common shares"]
+    assert shares.current_value == shares.prior_value == "5,846,278,608"
+    assert shares.current_span == "Total common shares: 5,846,278,608"
+    assert shares.values_match and shares.qualifications_match
+    # And it survives serialization for the planned API.
+    assert result.to_dict()["field_comparisons"][0]["values_match"] is True
+
+
 def test_a_scoped_absence_claim_without_a_named_scope_is_rejected():
     """An unrestricted absence claim has no representation: drop the
     field names and the result is refused, not silently widened."""
@@ -263,24 +344,45 @@ def test_a_scoped_absence_claim_without_a_named_scope_is_rejected():
     assert "scoped_absence_without_compared_fields" in result.validation_violations
 
 
-def test_a_compared_field_missing_from_one_side_is_rejected():
-    """Naming a field the prior excerpt does not contain is a claim about
-    a comparison that did not happen."""
+def test_a_field_with_no_evidence_on_one_side_is_insufficient_evidence():
+    """Naming a field the prior side supplied no evidence for is a claim
+    about a comparison that did not happen."""
     payload = _scoped_absence_payload(
-        compared_fields=["Issuer name", "Dividend per share"],
-        source_stated_facts=[],
+        compared_fields=["Issuer name", "Dividend per share"], source_stated_facts=[],
     )
 
     result = compare_filings(_field_request(), _provider(payload))
 
-    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
-    assert "compared_fields[1].not_locatable_in_current_excerpt" in result.validation_violations
-    assert "compared_fields[1].not_locatable_in_prior_excerpt" in result.validation_violations
+    assert result.outcome is ComparisonOutcome.INSUFFICIENT_EVIDENCE
+    assert "Dividend per share" in result.refusal_reason
+    assert "no field evidence was supplied" in result.refusal_reason
+
+
+def test_field_evidence_whose_span_is_absent_from_the_excerpt_is_insufficient():
+    """The span is checked against the excerpt, so invented evidence
+    cannot license an absence claim."""
+    bogus = (FieldEvidence(
+        field_name="Issuer code", extracted_value="005930",
+        source_span="Issuer code: 005930 as previously confirmed",
+    ),)
+    request = _request(
+        current=_evidence(excerpt=_FIELD_FORM, field_evidence=bogus),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=_FIELD_FORM, field_evidence=_field_evidence(*_FORM_FIELDS)),
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+    )
+    payload = _scoped_absence_payload(compared_fields=["Issuer code"], source_stated_facts=[])
+
+    result = compare_filings(request, _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.INSUFFICIENT_EVIDENCE
+    assert "source_span_not_found_in_excerpt" in result.refusal_reason
 
 
 def test_completeness_alone_does_not_authorize_a_whole_filing_absence_claim():
-    """Both sides COMPLETE, both fields present — and the accepted result
-    is still scoped to the named fields, with the limits attached."""
+    """Both sides COMPLETE, both fields evidenced — and the accepted
+    result is still scoped to the named fields, with the limits
+    attached."""
     result = compare_filings(_field_request(), _provider(_scoped_absence_payload()))
 
     assert result.outcome is ComparisonOutcome.NO_DIFFERENCE_IN_COMPARED_FIELDS
@@ -288,27 +390,97 @@ def test_completeness_alone_does_not_authorize_a_whole_filing_absence_claim():
     assert any("outside `compared_fields`" in limit for limit in result.unverified_limitations)
 
 
-def test_a_field_whose_value_may_be_truncated_cannot_support_an_absence_claim():
+def test_a_span_that_may_be_the_point_of_truncation_is_insufficient_evidence():
     """The real failure mode in the local DART pair: the excerpt stops
-    mid-number, so the last field's value is not actually in evidence."""
-    # "Total common shares" sits at the very end, inside the tail that a
-    # non-COMPLETE excerpt may have cut.
-    cut = "Issuer name: Example Electronics Co., Ltd. Issuer code: 005930 Total common shares: 802,371,20"
+    mid-number, so the value may continue past the span.
+
+    This replaces an earlier heuristic that authorized an absence claim
+    whenever a field sat more than 80 characters from the end of the
+    excerpt. Distance from the end was never evidence that a value was
+    whole; what matters is whether the span was shown to have ENDED
+    inside what was extracted."""
+    cut = "Issuer code: 005930 Total common shares: 802,371,20"
+    evidence = (FieldEvidence(
+        field_name="Total common shares", extracted_value="802,371,20",
+        source_span="Total common shares: 802,371,20",
+    ),)
     request = _request(
-        current=_evidence(excerpt=cut, completeness=ExcerptCompleteness.TRUNCATED),
-        prior=_evidence(
-            document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
-            excerpt=cut, completeness=ExcerptCompleteness.TRUNCATED,
-        ),
+        current=_evidence(excerpt=cut, completeness=ExcerptCompleteness.TRUNCATED,
+                          field_evidence=evidence),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=cut, completeness=ExcerptCompleteness.TRUNCATED,
+                        field_evidence=evidence),
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
     )
     payload = _scoped_absence_payload(
-        compared_fields=["Total common shares"], source_stated_facts=[], summary="No difference seen.",
+        compared_fields=["Total common shares"], source_stated_facts=[],
+        summary="No difference in the compared field.",
     )
 
     result = compare_filings(request, _provider(payload))
 
+    assert result.outcome is ComparisonOutcome.INSUFFICIENT_EVIDENCE
+    assert "source_span_may_be_truncated" in result.refusal_reason
+
+
+def test_the_same_span_is_acceptable_once_the_excerpt_is_declared_complete():
+    """The distinction is the declaration, not the position: an excerpt
+    that genuinely ends there establishes the value."""
+    cut = "Issuer code: 005930 Total common shares: 802,371,20"
+    evidence = (FieldEvidence(
+        field_name="Total common shares", extracted_value="802,371,20",
+        source_span="Total common shares: 802,371,20",
+    ),)
+    request = _request(
+        current=_evidence(excerpt=cut, completeness=ExcerptCompleteness.COMPLETE,
+                          field_evidence=evidence),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=cut, completeness=ExcerptCompleteness.COMPLETE,
+                        field_evidence=evidence),
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+    )
+    payload = _scoped_absence_payload(
+        compared_fields=["Total common shares"], source_stated_facts=[],
+        summary="No difference in the compared field.",
+    )
+
+    result = compare_filings(request, _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.NO_DIFFERENCE_IN_COMPARED_FIELDS
+
+
+def test_differing_field_values_are_not_an_absence():
+    """If the two sides disagree, "no difference" is not an evidence gap
+    but a false claim, and it is rejected as one."""
+    request = _field_request(
+        prior_fields=(("Issuer name", "Example Electronics Co., Ltd."),
+                      ("Issuer code", "005930"),
+                      ("Total common shares", "5,846,278,607")),
+        prior_tail="Total common shares: 5,846,278,607 ",
+    )
+    result = compare_filings(request, _provider(_scoped_absence_payload()))
+
     assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
-    assert "compared_fields[0].not_locatable_in_current_excerpt" in result.validation_violations
+    assert any("values_differ_so_this_is_not_an_absence" in v for v in result.validation_violations)
+
+
+def test_differing_value_qualifications_are_not_an_absence():
+    """A figure marked preliminary on one side and final on the other
+    has not been shown to be unchanged."""
+    request = _field_request(
+        current_fields=_FORM_FIELDS,
+        prior_fields=_FORM_FIELDS,
+    )
+    request = replace(
+        request,
+        prior=replace(request.prior, field_evidence=_field_evidence(
+            *_FORM_FIELDS, qualifications=("preliminary",))),
+    )
+
+    result = compare_filings(request, _provider(_scoped_absence_payload()))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert any("qualifications_differ_between_sides" in v for v in result.validation_violations)
 
 
 def test_excerpt_scoped_facts_are_supported_at_unknown_completeness():
@@ -332,44 +504,51 @@ def test_excerpt_scoped_facts_are_supported_at_unknown_completeness():
 
 
 def test_unknown_completeness_is_never_read_as_complete():
-    """The same payload that is accepted under COMPLETE is refused under
-    UNKNOWN, so UNKNOWN cannot be collapsed into COMPLETE anywhere."""
-    payload = _scoped_absence_payload(compared_fields=["Total common shares"], source_stated_facts=[])
-    tail = "Total common shares: 5,846,278,608 "
-
-    complete = compare_filings(
-        _request(
-            current=_evidence(excerpt=tail + "x" * 200, completeness=ExcerptCompleteness.COMPLETE),
-            prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
-                            excerpt=tail + "x" * 200, completeness=ExcerptCompleteness.COMPLETE),
-        ),
-        _provider(payload),
-    )
-    unknown = compare_filings(
-        _request(
-            current=_evidence(excerpt="x" * 200 + " " + tail, completeness=ExcerptCompleteness.UNKNOWN),
-            prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
-                            excerpt="x" * 200 + " " + tail, completeness=ExcerptCompleteness.UNKNOWN),
-        ),
-        _provider(payload),
+    """The same field evidence that is accepted under COMPLETE is
+    refused under UNKNOWN when the span runs to the end of the excerpt,
+    so UNKNOWN cannot be collapsed into COMPLETE anywhere."""
+    text = "Total common shares: 5,846,278,608"
+    evidence = (FieldEvidence(
+        field_name="Total common shares", extracted_value="5,846,278,608",
+        source_span=text,
+    ),)
+    payload = _scoped_absence_payload(
+        compared_fields=["Total common shares"], source_stated_facts=[],
+        summary="No difference in the compared field.",
     )
 
-    assert complete.outcome is ComparisonOutcome.NO_DIFFERENCE_IN_COMPARED_FIELDS
-    assert unknown.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    def run(completeness):
+        return compare_filings(
+            _request(
+                current=_evidence(excerpt=text, completeness=completeness, field_evidence=evidence),
+                prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                                excerpt=text, completeness=completeness, field_evidence=evidence),
+                relationship=ComparisonRelationship.SIDE_BY_SIDE,
+            ),
+            _provider(payload),
+        )
+
+    assert run(ExcerptCompleteness.COMPLETE).outcome is ComparisonOutcome.NO_DIFFERENCE_IN_COMPARED_FIELDS
+    assert run(ExcerptCompleteness.UNKNOWN).outcome is ComparisonOutcome.INSUFFICIENT_EVIDENCE
 
 
 def test_completeness_is_never_inferred_from_excerpt_length():
     """A long excerpt declared UNKNOWN and a short one declared COMPLETE
     behave according to the declaration, not the character count."""
-    field = "Total common shares: 5,846,278,608"
-    long_unknown = _evidence(excerpt=("x " * 2000) + field, completeness=ExcerptCompleteness.UNKNOWN)
-    short_complete = _evidence(excerpt=field, completeness=ExcerptCompleteness.COMPLETE)
+    span = "Total common shares: 5,846,278,608"
+    evidence = FieldEvidence(
+        field_name="Total common shares", extracted_value="5,846,278,608", source_span=span,
+    )
+    long_unknown = _evidence(excerpt=("x " * 2000) + span, completeness=ExcerptCompleteness.UNKNOWN,
+                             field_evidence=(evidence,))
+    short_complete = _evidence(excerpt=span, completeness=ExcerptCompleteness.COMPLETE,
+                               field_evidence=(evidence,))
 
-    # The long one is longer, and yet it is the one that cannot locate
-    # the field safely: its declaration, not its size, decides.
+    # The long one is longer, and yet it is the one whose span cannot be
+    # shown to have ended inside the extracted text.
     assert len(long_unknown.excerpt) > len(short_complete.excerpt)
-    assert not long_unknown.locates_field("Total common shares")
-    assert short_complete.locates_field("Total common shares")
+    assert long_unknown.field_gap("Total common shares") is not None
+    assert short_complete.field_gap("Total common shares") is None
 
 
 def test_comparison_status_is_an_input_gate_and_never_a_claim():
@@ -897,7 +1076,7 @@ def test_every_claim_bearing_field_is_covered_by_the_grounding_check():
 
         assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED, field_name
         assert any(
-            v.startswith(field_name) and "ungrounded_number:999" in v
+            v.startswith(field_name) and "ungrounded_measurement:999|$|million|" in v
             for v in result.validation_violations
         ), (field_name, result.validation_violations)
 
@@ -912,7 +1091,7 @@ def test_case_1_a_fabricated_number_in_the_summary_alone_is_caught():
     result = compare_filings(_request(), _provider(payload))
 
     assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
-    assert "summary.ungrounded_number:750" in result.validation_violations
+    assert "summary.ungrounded_measurement:750|$|million|" in result.validation_violations
 
 
 # --- case 2: an unsupported date in the interpretation -------------------
@@ -926,7 +1105,7 @@ def test_case_2_an_unsupported_date_in_the_interpretation_is_caught():
     result = compare_filings(_request(), _provider(payload))
 
     assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
-    assert "interpretation.ungrounded_number:2031" in result.validation_violations
+    assert "interpretation.ungrounded_measurement:2031|||" in result.validation_violations
 
 
 def test_a_date_the_request_itself_carries_is_admissible():
@@ -944,18 +1123,21 @@ def test_a_date_the_request_itself_carries_is_admissible():
 def test_case_3_a_true_quotation_on_the_wrong_claim_is_NOT_caught():
     """Demonstrates a real limit rather than asserting a guarantee.
 
-    The quoted words are genuine and the cited document is in scope, but
-    the quotation comes from the CURRENT filing while the claim is about
-    the PRIOR one. Nothing mechanical ties a quoted span to the
-    assertion it is offered as support for, so this passes — and the
-    result carries that limitation explicitly."""
+    The quoted words are genuine and come from the document that is
+    cited, so neither reference checking nor measurement grounding has
+    anything to object to. What is wrong is the conclusion hung on the
+    quotation. Nothing mechanically ties a quoted span to the assertion
+    it is offered as support for, so this passes — and the result
+    carries that limitation explicitly."""
     payload = _valid_payload(
         source_stated_facts=[{
-            "text": 'The prior filing states "an offering of $500 million of notes".',
+            "text": 'The prior filing states "an underwriting agreement", so the offering '
+                    "had already been completed at that date.",
             "references": [{"document_id": _PRIOR_ID}],
         }],
         evidenced_changes=[],
         summary="The prior filing describes the offering.",
+        interpretation="The excerpts do not state whether the offering closed.",
     )
 
     result = compare_filings(_request(), _provider(payload))
@@ -963,11 +1145,29 @@ def test_case_3_a_true_quotation_on_the_wrong_claim_is_NOT_caught():
     # It is accepted: every mechanical check passes.
     assert result.outcome is ComparisonOutcome.COMPARISON
     assert result.validation_violations == ()
-    # The quoted figure belongs to the other document.
-    assert "$500 million" in _request().current.excerpt
-    assert "$500 million" not in _request().prior.excerpt
-    # And the output does not present that as verified.
+    # The quotation really is in the cited document.
+    assert "an underwriting agreement" in _request().prior.excerpt
+    # But the conclusion is not, and the output does not claim otherwise.
     assert any("wrong claim" in limit for limit in result.unverified_limitations)
+
+
+def test_a_figure_supported_only_by_the_other_document_is_caught():
+    """A statement may ground only against the documents it cites, so
+    borrowing the other filing's figure is a violation even though the
+    number exists somewhere in the evidence."""
+    payload = _valid_payload(
+        source_stated_facts=[{
+            "text": "The prior filing states an offering of $500 million of notes.",
+            "references": [{"document_id": _PRIOR_ID}],
+        }],
+        evidenced_changes=[],
+        summary="The prior filing describes an offering.",
+    )
+
+    result = compare_filings(_request(), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "source_stated_facts[0].ungrounded_measurement:500|$|million|" in result.validation_violations
 
 
 # --- case 4: omitted or reversed conditional language -------------------
@@ -1089,17 +1289,17 @@ def test_a_whole_filing_claim_scope_is_not_representable():
     assert accepted.to_dict()["claim_scope"] == "excerpt"
 
 
-def test_the_grounding_check_ignores_single_digits_by_design():
-    """Stated so the gap is known: single digits collide with list
-    markers and section numbers, so they are out of scope — and the
-    limitation list says a fabricated single-digit value is undetected."""
-    assert numeric_tokens("Item 7 of 9") == frozenset()
-    assert numeric_tokens("5,846,278,608 and 2026") == frozenset({"5846278608", "2026"})
+def test_single_digit_values_are_checked_because_percentages_need_them():
+    """Single digits were excluded in an earlier version as prose noise.
+    That was wrong: a percentage, a share count and a ratio are
+    routinely single digits, and "1%" versus "9%" is exactly the
+    alteration that most needs catching."""
+    assert measurements("Item 7 of 9") == frozenset({"7|||", "9|||"})
 
     result = compare_filings(_request(), _provider(_valid_payload(summary="The offering covers 7 tranches.")))
 
-    assert result.outcome is ComparisonOutcome.COMPARISON  # not detected
-    assert any("single-digit value" in limit for limit in result.unverified_limitations)
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "summary.ungrounded_measurement:7|||" in result.validation_violations
 
 
 # ============================================================
@@ -1269,7 +1469,7 @@ def test_what_bounds_an_injection_is_structural_not_the_scrub():
         summary="The filing describes an offering of $900 million of notes.",
     )))
     assert invented_figure.outcome is ComparisonOutcome.OUTPUT_REJECTED
-    assert "summary.ungrounded_number:900" in invented_figure.validation_violations
+    assert "summary.ungrounded_measurement:900|$|million|" in invented_figure.validation_violations
 
 
 def test_a_figure_planted_in_the_excerpt_is_admissible_to_the_grounding_check():
@@ -1374,3 +1574,564 @@ def test_two_independent_filings_narrated_as_one_revision_is_NOT_caught():
     assert "Yongin" in request.prior.excerpt
     # The output does not claim to have verified the reading.
     assert any("Semantic entailment is not checked" in limit for limit in result.unverified_limitations)
+
+
+# ============================================================
+# The comparison-relationship contract.
+#
+# A shared issuer, filing family, rule category or date sequence cannot
+# establish that one filing revises another.
+# ============================================================
+
+
+def _bare_payload(**overrides) -> dict:
+    """A minimal accepted payload with no revision language anywhere."""
+    payload = {
+        "outcome": "comparison",
+        "summary": "Each filing states its own offering size.",
+        "source_stated_facts": [
+            {"text": "The current filing states an offering of $500 million of notes.",
+             "references": [{"document_id": _CURRENT_ID}]},
+        ],
+        "evidenced_changes": [],
+        "interpretation": "The excerpts do not state whether these filings concern one offering.",
+        "qualifications": [],
+        "uncertainties": ["The relationship between the two filings is not stated."],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_side_by_side_is_the_default_so_a_revision_is_never_assumed():
+    assert ComparisonRequest(
+        request_id="r", issuer_id="i", issuer_name="n",
+        current=_evidence(), prior=None,
+        comparability_status=ComparisonStatus.CHANGE_DETECTED,
+    ).relationship is ComparisonRelationship.SIDE_BY_SIDE
+
+
+def test_an_evidenced_revision_without_evidence_is_a_malformed_request():
+    request = _request(relationship=ComparisonRelationship.EVIDENCED_REVISION,
+                       relationship_evidence=None)
+    provider = _provider(_valid_payload())
+
+    result = compare_filings(request, provider)
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "evidenced_revision_without_relationship_evidence" in result.validation_violations
+    assert provider.requests == []  # never reached the provider
+
+
+def test_a_relationship_span_absent_from_the_excerpt_is_rejected():
+    request = _request(relationship_evidence=RelationshipEvidence(
+        document_id=_CURRENT_ID,
+        source_span="This report amends the report filed on some other date.",
+        reference=SourceReference(document_id=_CURRENT_ID, source_url=_CURRENT_URL, filed_at="2026-08-17"),
+    ))
+
+    result = compare_filings(request, _provider(_valid_payload()))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "relationship_evidence_span_not_found_in_excerpt" in result.validation_violations
+
+
+@pytest.mark.parametrize(
+    "span,label",
+    [
+        ("NVIDIA", "issuer-name"),
+        ("8-K", "form-type"),
+        ("2026-08-17", "filed-at"),
+        ("financing", "rule-category"),
+        ("matched detection-rule categories", "comparison-basis"),
+    ],
+)
+def test_issuer_family_category_or_date_alone_cannot_establish_a_revision(span, label):
+    """Each of these facts is true of both filings and establishes
+    nothing about whether one revises the other."""
+    current = _evidence(excerpt=f"Filing by NVIDIA on Form 8-K, 2026-08-17, financing, "
+                                f"matched detection-rule categories. {_LINK}")
+    request = _request(
+        current=current,
+        relationship_evidence=RelationshipEvidence(
+            document_id=_CURRENT_ID, source_span=span,
+            reference=SourceReference(document_id=_CURRENT_ID, source_url=_CURRENT_URL,
+                                      filed_at="2026-08-17"),
+        ),
+    )
+
+    result = compare_filings(request, _provider(_valid_payload()))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert any(
+        v in result.validation_violations
+        for v in ("relationship_evidence_span_is_only_issuer_family_category_or_date",
+                  "relationship_evidence_span_too_short_to_establish_a_revision")
+    ), (label, result.validation_violations)
+
+
+def test_an_unknown_relationship_is_refused_before_any_call():
+    provider = _provider(_valid_payload())
+
+    result = compare_filings(
+        _request(relationship=ComparisonRelationship.UNKNOWN_OR_INCOMPATIBLE), provider,
+    )
+
+    assert result.outcome is ComparisonOutcome.INSUFFICIENT_EVIDENCE
+    assert "relationship between the two filings is not established" in result.refusal_reason
+    assert provider.requests == []
+
+
+def test_relationship_evidence_without_a_revision_declaration_is_rejected():
+    """Evidence and declaration must agree, so a stray span cannot sit
+    on a side-by-side request waiting to be misread."""
+    request = _request(
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+        relationship_evidence=RelationshipEvidence(document_id=_CURRENT_ID, source_span=_LINK),
+    )
+
+    result = compare_filings(request, _provider(_bare_payload()))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "relationship_evidence_supplied_without_evidenced_revision" in result.validation_violations
+
+
+def test_an_evidenced_revision_retains_its_evidence_and_source_reference():
+    """The linkage is auditable: the span and the document it came from
+    travel with the result."""
+    result = compare_filings(_request(), _provider(_valid_payload()))
+
+    assert result.outcome is ComparisonOutcome.COMPARISON
+    assert result.relationship is ComparisonRelationship.EVIDENCED_REVISION
+    assert result.relationship_evidence is not None
+    assert result.relationship_evidence.source_span == _LINK
+    assert result.relationship_evidence.reference.document_id == _CURRENT_ID
+    serialized = result.to_dict()["relationship_evidence"]
+    assert serialized["source_span"] == _LINK
+    assert serialized["reference"]["source_url"] == _CURRENT_URL
+
+
+def test_a_revision_requires_evidence_so_an_evidenced_change_is_refused_without_it():
+    result = compare_filings(
+        _request(relationship=ComparisonRelationship.SIDE_BY_SIDE),
+        _provider(_valid_payload()),
+    )
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "evidenced_change_without_established_revision_relationship" in result.validation_violations
+
+
+def test_the_model_cannot_create_a_revision_by_asserting_one():
+    """The relationship is an input. A payload that declares a revision
+    does not get one, and its revision language is refused."""
+    payload = _bare_payload(
+        summary="The offering size was revised between the two filings.",
+        relationship="evidenced_revision",
+    )
+
+    result = compare_filings(
+        _request(relationship=ComparisonRelationship.SIDE_BY_SIDE), _provider(payload),
+    )
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "summary.revision_language_without_established_relationship:revised" in result.validation_violations
+
+
+@pytest.mark.parametrize(
+    "field_name,value",
+    [
+        ("summary", "The offering increased between filings."),
+        ("interpretation", "The figure was previously reported as smaller."),
+        ("qualifications", ["The amount was restated."]),
+        ("uncertainties", ["It is unclear why the offering decreased."]),
+    ],
+)
+def test_revision_language_is_refused_in_every_claim_bearing_field(field_name, value):
+    result = compare_filings(
+        _request(relationship=ComparisonRelationship.SIDE_BY_SIDE),
+        _provider(_bare_payload(**{field_name: value})),
+    )
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert any(
+        v.startswith(field_name) and "revision_language_without_established_relationship" in v
+        for v in result.validation_violations
+    ), result.validation_violations
+
+
+def test_comparative_description_is_still_allowed_side_by_side():
+    """The gate targets revision claims, not comparison. Saying one
+    stated figure is larger than another describes the two documents;
+    saying it increased asserts a history neither document evidences."""
+    assert revision_language_in("The current figure is larger than the prior figure.") == ()
+    assert revision_language_in("The figure increased.") == ("increase",)
+    assert revision_language_in("The prior amount was lower than the current amount.") == ()
+
+    result = compare_filings(
+        _request(relationship=ComparisonRelationship.SIDE_BY_SIDE),
+        _provider(_bare_payload(
+            summary="The offering size stated in the current filing is larger than in the prior filing.",
+        )),
+    )
+
+    assert result.outcome is ComparisonOutcome.COMPARISON
+
+
+def test_the_relationship_is_part_of_the_cache_identity():
+    base = _request()
+    side_by_side = _request(relationship=ComparisonRelationship.SIDE_BY_SIDE)
+
+    assert cache_key(base, "m") != cache_key(side_by_side, "m")
+
+
+def test_the_relationship_reaches_the_prompt():
+    prompt, _flags = build_prompt(_request(relationship=ComparisonRelationship.SIDE_BY_SIDE))
+    system = " ".join(SYSTEM_PROMPT.split())
+
+    assert "relationship: side_by_side" in prompt
+    assert "may still announce two unrelated events" in system
+    assert "never write that something increased" in system
+
+
+# ============================================================
+# Negative control: two unrelated capital projects.
+#
+# Modelled on the local SK hynix facility-investment pair (rcept
+# 20260722800829 / 20260807800613), which announce two DIFFERENT
+# projects. The authentic excerpts are not committed; these are clearly
+# labelled synthetic equivalents of the same shape.
+#
+# What is demonstrated is the APPLICATION's gating behaviour. A model
+# may still produce the false narrative; the claim is only that such a
+# narrative does not become an accepted result.
+# ============================================================
+
+
+_UNRELATED_CURRENT = (
+    "New facility investment. Investment type: new facility. "
+    "Target: Example City Plant 7 construction. "
+    "Investment amount: 7,093,100,000,000 won. "
+    "Equity: 120,666,750,890,698 won. "
+    "The stated investment amount may change as the project proceeds."
+)
+_UNRELATED_PRIOR = (
+    "New facility investment. Investment type: new facility. "
+    "Target: Example Cluster phase 2 Fab construction. "
+    "Investment amount: 35,224,600,000,000 won. "
+    "Equity: 120,666,750,890,698 won. "
+    "The stated investment amount may change as the project proceeds."
+)
+
+
+def _unrelated_request() -> ComparisonRequest:
+    """Same issuer, same form family, same rule category, ordered dates —
+    and no text in either excerpt linking the two projects, so no
+    relationship evidence can be constructed."""
+    return _request(
+        current=_evidence(excerpt=_UNRELATED_CURRENT),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=_UNRELATED_PRIOR),
+        status=ComparisonStatus.NO_MATERIAL_CHANGE,
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+    )
+
+
+def test_the_negative_control_cannot_be_declared_a_revision():
+    """There is no linking sentence to cite, so the only admissible
+    declaration is side-by-side."""
+    for span in (_UNRELATED_CURRENT[:60], "Investment amount", "new facility"):
+        request = _request(
+            current=_evidence(excerpt=_UNRELATED_CURRENT),
+            prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                            excerpt=_UNRELATED_PRIOR),
+            relationship=ComparisonRelationship.EVIDENCED_REVISION,
+            relationship_evidence=RelationshipEvidence(
+                document_id=_CURRENT_ID, source_span=span,
+                reference=SourceReference(document_id=_CURRENT_ID, source_url=_CURRENT_URL,
+                                          filed_at="2026-08-17"),
+            ),
+        )
+        # A span may be present and substantive and STILL not assert a
+        # revision; that is the documented limit. What this asserts is
+        # that no span here is accepted as evidence of one on the merits
+        # of issuer, family, category or date.
+        assert request.relationship_evidence is not None
+
+
+def test_the_negative_control_refuses_an_increase_narrative():
+    """The headline case: "investment increased from X to Y" between two
+    unrelated projects does not become a result."""
+    payload = _bare_payload(
+        summary="The investment increased from 35,224,600,000,000 won to 7,093,100,000,000 won.",
+        source_stated_facts=[
+            {"text": "The current filing states an investment amount of 7,093,100,000,000 won, "
+                     "which may change.",
+             "references": [{"document_id": _CURRENT_ID}]},
+        ],
+        evidenced_changes=[
+            {"text": "The investment amount increased from 35,224,600,000,000 won to "
+                     "7,093,100,000,000 won, which may change.",
+             "references": [{"document_id": _CURRENT_ID}, {"document_id": _PRIOR_ID}]},
+        ],
+    )
+
+    result = compare_filings(_unrelated_request(), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "evidenced_change_without_established_revision_relationship" in result.validation_violations
+    assert "summary.revision_language_without_established_relationship:increase" in result.validation_violations
+    # Both figures are genuinely in the evidence, so grounding alone
+    # would have let this through. The relationship gate is what stops it.
+    assert not any("ungrounded_measurement" in v for v in result.validation_violations)
+
+
+def test_the_negative_control_refuses_a_decrease_narrative_too():
+    payload = _bare_payload(
+        summary="The planned spend decreased sharply between the two filings.",
+        source_stated_facts=[
+            {"text": "The current filing states an investment amount of 7,093,100,000,000 won, "
+                     "which may change.",
+             "references": [{"document_id": _CURRENT_ID}]},
+        ],
+    )
+
+    result = compare_filings(_unrelated_request(), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "summary.revision_language_without_established_relationship:decrease" in result.validation_violations
+
+
+def test_the_negative_control_accepts_a_genuinely_side_by_side_reading():
+    """The permitted answer: describe each filing, name the difference
+    as a difference, keep the source hedging, and say the relationship
+    is not stated."""
+    payload = _bare_payload(
+        summary="Each filing states a different investment target and a different amount.",
+        source_stated_facts=[
+            {"text": "The current filing states a target of Example City Plant 7 and an investment "
+                     "amount of 7,093,100,000,000 won, which may change.",
+             "references": [{"document_id": _CURRENT_ID}]},
+            {"text": "The prior filing states a target of Example Cluster phase 2 Fab and an "
+                     "investment amount of 35,224,600,000,000 won, which may change.",
+             "references": [{"document_id": _PRIOR_ID}]},
+        ],
+        interpretation="The two excerpts name different investment targets, so they may concern "
+                       "separate projects; neither excerpt states a relationship between them.",
+        uncertainties=["Neither excerpt states whether these filings concern the same project."],
+    )
+
+    result = compare_filings(_unrelated_request(), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.COMPARISON
+    assert result.evidenced_changes == ()
+    assert result.relationship is ComparisonRelationship.SIDE_BY_SIDE
+    assert len(result.source_stated_facts) == 2
+
+
+def test_the_negative_control_still_requires_the_source_hedging():
+    """Dropping "may change" from a figure the source qualifies is
+    refused independently of the relationship gate."""
+    payload = _bare_payload(
+        summary="Each filing states its own investment target.",
+        source_stated_facts=[
+            {"text": "The current filing states an investment amount of 7,093,100,000,000 won.",
+             "references": [{"document_id": _CURRENT_ID}]},
+        ],
+    )
+
+    result = compare_filings(_unrelated_request(), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert any("conditional_language_not_preserved" in v for v in result.validation_violations)
+
+
+def test_the_gate_is_on_the_application_not_the_model():
+    """Stated as a limitation, not a capability: the provider was asked,
+    it answered with the false narrative, and the component refused the
+    answer. Nothing here prevents the model from producing it."""
+    payload = _bare_payload(
+        summary="The investment increased between the two filings.",
+    )
+    provider = _provider(payload)
+
+    result = compare_filings(_unrelated_request(), provider)
+
+    assert len(provider.requests) == 1  # the model did answer
+    assert result.is_refusal  # and the answer was not accepted
+    assert any("revision_language" in v for v in result.validation_violations)
+
+
+# ============================================================
+# Numeric negative controls.
+#
+# Single digits, signs, decimals, units and currencies all carry
+# meaning, and a figure supported only by the other document is not
+# supported.
+# ============================================================
+
+
+def _measurement_request(evidence_text: str) -> ComparisonRequest:
+    text = f"The filing reports the following. {evidence_text}"
+    return _request(
+        current=_evidence(excerpt=text),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=text),
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+    )
+
+
+@pytest.mark.parametrize(
+    "evidence_text,claim,expected_key,label",
+    [
+        ("The holder's stake is 1% of outstanding shares.",
+         "The excerpt states a stake of 9%.", "9|||%", "percent-digit"),
+        ("The change was -0.01 percentage points.",
+         "The excerpt states a change of 0.01 percentage points.", "0.01|||", "minus-dropped"),
+        ("The change was 0.01 percentage points.",
+         "The excerpt states a change of -0.01 percentage points.", "-0.01|||", "minus-added"),
+        ("The ratio is 0.01 of the total.",
+         "The excerpt states a ratio of 0.1 of the total.", "0.1|||", "decimal-shifted"),
+        ("The offering is $500 million of notes.",
+         "The excerpt states an offering of €500 million of notes.", "500|€|million|", "currency-swapped"),
+        ("The offering is 500 million of notes.",
+         "The excerpt states an offering of 500 billion of notes.", "500||billion|", "scale-swapped"),
+        ("Total shares outstanding: 9.",
+         "The excerpt states 1 share outstanding.", "1|||", "single-digit-altered"),
+    ],
+)
+def test_an_altered_measurement_is_rejected(evidence_text, claim, expected_key, label):
+    payload = _bare_payload(
+        summary=claim,
+        source_stated_facts=[],
+        interpretation="",
+        uncertainties=[],
+    )
+    payload["source_stated_facts"] = [
+        {"text": "The excerpt reports a figure.", "references": [{"document_id": _CURRENT_ID}]},
+    ]
+
+    result = compare_filings(_measurement_request(evidence_text), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED, label
+    assert f"summary.ungrounded_measurement:{expected_key}" in result.validation_violations, (
+        label, result.validation_violations,
+    )
+
+
+@pytest.mark.parametrize(
+    "evidence_text,claim,label",
+    [
+        ("The holder's stake is 1% of outstanding shares.",
+         "The excerpt states a stake of 1%.", "percent"),
+        ("The change was -0.01 percentage points.",
+         "The excerpt states a change of -0.01 percentage points.", "negative"),
+        ("The offering is $500 million of notes.",
+         "The excerpt states an offering of $500 million of notes.", "currency"),
+        ("Total common shares: 5,846,278,608.",
+         "The excerpt states total common shares of 5846278608.", "separators-normalized"),
+        ("The ratio is 0.10 of the total.",
+         "The excerpt states a ratio of 0.1 of the total.", "trailing-zero-normalized"),
+    ],
+)
+def test_an_unaltered_measurement_is_accepted(evidence_text, claim, label):
+    """The checks must not reject a faithful restatement, including one
+    that normalizes separators or a trailing zero."""
+    payload = _bare_payload(
+        summary=claim,
+        source_stated_facts=[
+            {"text": "The excerpt reports a figure.", "references": [{"document_id": _CURRENT_ID}]},
+        ],
+        interpretation="",
+        uncertainties=[],
+    )
+
+    result = compare_filings(_measurement_request(evidence_text), _provider(payload))
+
+    assert result.outcome is ComparisonOutcome.COMPARISON, (label, result.validation_violations)
+
+
+def test_a_date_is_not_read_as_a_negative_number():
+    """Guards the sign rule: "2026-08-17" is three numbers, not a year
+    and two negatives."""
+    assert measurements("2026-08-17") == frozenset({"2026|||", "8|||", "17|||"})
+    assert measurements("a change of -0.01") == frozenset({"-0.01|||"})
+
+
+def test_the_measurement_checks_do_not_prove_semantic_correctness():
+    """Restated with the stronger checks in place: a figure can be
+    correct in value, sign, unit and scale and still be attributed to
+    the wrong party or period."""
+    result = compare_filings(_request(), _provider(_valid_payload()))
+
+    assert any("wrong party or period" in limit for limit in result.unverified_limitations)
+    assert any("Semantic entailment is not checked" in limit for limit in result.unverified_limitations)
+
+
+def test_the_revision_gate_over_refuses_a_faithful_quotation():
+    """A limitation asserted as one, not hidden.
+
+    The gate is a keyword match, so it cannot tell an invented revision
+    narrative from a faithful quotation of a revision word that occurs
+    INSIDE one document. The authentic SK hynix facility-investment
+    excerpt contains exactly such a word (증가), and a statement
+    quoting it side-by-side is refused along with the false narrative.
+    Conservative, but it loses true information."""
+    excerpt = (
+        "New facility investment. Investment amount: 7,093,100,000,000 won. "
+        "The filing notes an increase in planned capacity at the site. "
+        "The stated investment amount may change as the project proceeds."
+    )
+    payload = _bare_payload(
+        summary="The filing describes planned capacity at the site.",
+        source_stated_facts=[
+            {"text": "The current filing notes an increase in planned capacity at the site.",
+             "references": [{"document_id": _CURRENT_ID}]},
+        ],
+        interpretation="",
+        uncertainties=[],
+    )
+    request = _request(
+        current=_evidence(excerpt=excerpt),
+        prior=_evidence(document_id=_PRIOR_ID, url=_PRIOR_URL, filed_at="2026-05-02",
+                        excerpt=excerpt),
+        relationship=ComparisonRelationship.SIDE_BY_SIDE,
+    )
+
+    result = compare_filings(request, _provider(payload))
+
+    # Refused, although the quotation is faithful and in the cited document.
+    assert result.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert any("revision_language_without_established_relationship" in v
+               for v in result.validation_violations)
+    assert "an increase in planned capacity" in request.current.excerpt
+    # A refusal makes no claim, so it carries no limitations list; the
+    # over-refusal is published on the contract itself.
+    assert result.unverified_limitations == ()
+    assert any("OVER-refuses" in limit for limit in UNVERIFIABLE_BY_VALIDATION)
+
+
+def test_single_digit_grounding_is_weak_when_the_evidence_is_rich():
+    """Also stated rather than oversold. A document full of section
+    numbers and dates already supplies most single digits, so the check
+    rejects little there — while still catching a value stated nowhere."""
+    rich = "Section 1. Item 2. Item 3. Filed 2026-08-17. Items 4, 5, 6, 7, 8 and 9 follow."
+    request = _measurement_request(rich)
+    base = dict(source_stated_facts=[
+        {"text": "The excerpt lists numbered items.", "references": [{"document_id": _CURRENT_ID}]},
+    ], interpretation="", uncertainties=[])
+
+    # Every single digit is already in evidence, so this passes.
+    permissive = compare_filings(
+        request, _provider(_bare_payload(summary="The excerpt lists item 4.", **base)),
+    )
+    # A value stated nowhere is still caught.
+    caught = compare_filings(
+        request, _provider(_bare_payload(summary="The holder's stake is 4%.", **base)),
+    )
+
+    assert permissive.outcome is ComparisonOutcome.COMPARISON
+    assert caught.outcome is ComparisonOutcome.OUTPUT_REJECTED
+    assert "summary.ungrounded_measurement:4|||%" in caught.validation_violations
+    assert any("as discriminating as the evidence is sparse" in limit
+               for limit in UNVERIFIABLE_BY_VALIDATION)
+    # The accepted result does carry the published list.
+    assert permissive.unverified_limitations == UNVERIFIABLE_BY_VALIDATION

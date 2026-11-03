@@ -60,8 +60,10 @@ from src.logic.filing_comparison.contracts import (
     ClaimSupport,
     ComparisonEvidence,
     ComparisonOutcome,
+    ComparisonRelationship,
     ComparisonRequest,
     ComparisonStatement,
+    FieldComparisonRecord,
     FilingComparison,
     SourceReference,
     allowed_references,
@@ -105,10 +107,18 @@ Rules you must follow:
 - Do not report that a filing is unchanged. If you observe no difference, name
   in compared_fields exactly the fields you compared and use the outcome
   no_difference_in_compared_fields, which claims nothing about any other field.
-  A field whose value is cut off in an excerpt was not compared: leave it out of
-  compared_fields and list it in fields_not_compared.
+  Name only fields for which both excerpts show the field and its full value.
+- The relationship between the two documents is given to you in
+  relationship. When it is side_by_side, the two documents are NOT known to
+  concern the same subject: describe each one and any difference between them,
+  but never write that something increased, decreased, grew, fell, was revised,
+  was amended or was previously reported, and return no evidenced_changes. Two
+  filings by one issuer, of one form type, on consecutive dates may still
+  announce two unrelated events.
+- Only when relationship is evidenced_revision may you describe one document as
+  revising the other.
 """
-PROMPT_VERSION = "filing_comparison/system/v2"
+PROMPT_VERSION = "filing_comparison/system/v3"
 
 
 def _evidence_block(label: str, evidence: ComparisonEvidence) -> tuple[str, tuple[str, ...]]:
@@ -140,6 +150,7 @@ def build_prompt(request: ComparisonRequest) -> tuple[str, tuple[str, ...]]:
     blocks = [
         f"issuer: {request.issuer_name} ({request.issuer_id})",
         f"comparability_status: {request.comparability_status.value}",
+        f"relationship: {request.relationship.value}",
         f"comparison_basis: {request.comparison_basis}",
         f"added_rule_categories: {', '.join(request.added_categories) or '(none)'}",
         f"removed_rule_categories: {', '.join(request.removed_categories) or '(none)'}",
@@ -179,6 +190,10 @@ def cache_key(request: ComparisonRequest, model_id: str) -> str:
             "extraction_state": evidence.extraction_state.value,
             "excerpt_quality": evidence.excerpt_quality.value,
             "completeness": evidence.completeness.value,
+            "field_evidence": [
+                [f.field_name, f.extracted_value, f.source_span, list(f.value_qualifications)]
+                for f in evidence.field_evidence
+            ],
         }
 
     material = {
@@ -186,6 +201,10 @@ def cache_key(request: ComparisonRequest, model_id: str) -> str:
         "issuer_name": request.issuer_name,
         "comparability_status": request.comparability_status.value,
         "comparison_basis": request.comparison_basis,
+        "relationship": request.relationship.value,
+        "relationship_span": (
+            request.relationship_evidence.source_span if request.relationship_evidence else ""
+        ),
         "added": list(request.added_categories),
         "removed": list(request.removed_categories),
         "current": side(request.current),
@@ -244,10 +263,12 @@ def parse_payload(payload: dict, request: ComparisonRequest, model_id: str, usag
     """Provider payload -> typed result. Parsing never decides whether
     the result is acceptable; `validate_comparison` does that next.
 
-    `claim_scope` and `unverified_limitations` are set here rather than
-    read from the payload: the scope is a property of this component,
-    not a choice the model gets to make, and the limitations must appear
-    on the output whether or not the model acknowledged them."""
+    `claim_scope`, `relationship` and `unverified_limitations` are set
+    here rather than read from the payload: the scope and the
+    relationship are properties of the request, not choices the model
+    gets to make, and the limitations must appear on the output whether
+    or not the model acknowledged them. A model that claims a revision
+    cannot create one by saying so."""
     allowed = allowed_references(request)
     raw_outcome = str(payload.get("outcome") or "")
     try:
@@ -269,6 +290,8 @@ def parse_payload(payload: dict, request: ComparisonRequest, model_id: str, usag
         uncertainties=_strings(payload.get("uncertainties")),
         compared_fields=_strings(payload.get("compared_fields")),
         fields_not_compared=_strings(payload.get("fields_not_compared")),
+        relationship=request.relationship,
+        relationship_evidence=request.relationship_evidence,
         claim_scope=ClaimScope.EXCERPT,
         unverified_limitations=UNVERIFIABLE_BY_VALIDATION,
         refusal_reason=str(payload.get("refusal_reason") or ""),
@@ -284,7 +307,12 @@ def precondition_refusal(request: ComparisonRequest) -> FilingComparison | None:
     Usability, not completeness, is the gate: an excerpt of UNKNOWN or
     TRUNCATED completeness can still support excerpt-scoped facts and
     differences, so it is admitted here. What completeness constrains is
-    the scoped-absence outcome, enforced after the call."""
+    per-field evidence, enforced after the call.
+
+    A declared EVIDENCED_REVISION whose evidence does not check out is a
+    malformed request (reported by `request.violations()`), and an
+    UNKNOWN_OR_INCOMPATIBLE relationship is refused here. Neither ever
+    reaches the provider."""
     violations = request.violations()
     if violations:
         return refusal(
@@ -306,7 +334,63 @@ def precondition_refusal(request: ComparisonRequest) -> FilingComparison | None:
             request.request_id, ComparisonOutcome.INSUFFICIENT_EVIDENCE,
             "usable extracted text is not available on both sides",
         )
+    if request.relationship is ComparisonRelationship.UNKNOWN_OR_INCOMPATIBLE:
+        return refusal(
+            request.request_id, ComparisonOutcome.INSUFFICIENT_EVIDENCE,
+            "the relationship between the two filings is not established, so they cannot be "
+            "compared as revisions of one another",
+        )
     return None
+
+
+def scoped_absence_evidence_gap(result: FilingComparison, request: ComparisonRequest) -> str | None:
+    """Why a scoped absence claim cannot be established from the field
+    evidence in hand, or None when it can.
+
+    This is the "insufficient evidence" half of the scoped-absence
+    rules, kept separate from `validate_comparison` on purpose. Failing
+    to ESTABLISH a field's value is an evidence gap and returns
+    INSUFFICIENT_EVIDENCE; asserting something the evidence contradicts
+    is a malformed claim and is rejected by the validator."""
+    if request.prior is None:
+        return "a scoped absence claim needs a prior filing to compare against"
+    if not result.compared_fields:
+        return None  # a shape problem; the validator names it
+    for name in result.compared_fields:
+        if not str(name or "").strip():
+            continue
+        for label, side in (("current", request.current), ("prior", request.prior)):
+            gap = side.field_gap(name)
+            if gap is not None:
+                return (
+                    f"the {label} filing does not establish the field {name!r}: {gap}. "
+                    "No difference can be asserted for a field whose value is not in evidence."
+                )
+    return None
+
+
+def field_comparison_records(result: FilingComparison, request: ComparisonRequest) -> tuple[FieldComparisonRecord, ...]:
+    """The audit trail: for every compared field, what each side said
+    and the span it was read from. Built from the request's own field
+    evidence, never from the model's text."""
+    records: list[FieldComparisonRecord] = []
+    if request.prior is None:
+        return ()
+    for name in result.compared_fields:
+        current = request.current.field_named(name)
+        prior = request.prior.field_named(name)
+        if current is None or prior is None:
+            continue
+        records.append(FieldComparisonRecord(
+            field_name=name,
+            current_value=current.extracted_value,
+            prior_value=prior.extracted_value,
+            current_span=current.source_span,
+            prior_span=prior.source_span,
+            current_qualifications=tuple(current.value_qualifications),
+            prior_qualifications=tuple(prior.value_qualifications),
+        ))
+    return tuple(records)
 
 
 def _from_cache(stored: FilingComparison, request: ComparisonRequest, account: UsageAccount) -> FilingComparison:
@@ -399,6 +483,15 @@ def compare_filings(
     result = parse_payload(response.payload, request, provider.model_id, usage)
     if result.is_refusal and result.outcome is ComparisonOutcome.OUTPUT_REJECTED:
         return result
+
+    if result.outcome is ComparisonOutcome.NO_DIFFERENCE_IN_COMPARED_FIELDS:
+        gap = scoped_absence_evidence_gap(result, request)
+        if gap is not None:
+            return refusal(
+                request.request_id, ComparisonOutcome.INSUFFICIENT_EVIDENCE, gap,
+                usage=usage, provider_model=provider.model_id,
+            )
+        result = dataclasses.replace(result, field_comparisons=field_comparison_records(result, request))
 
     violations = validate_comparison(result, request)
     if violations:
