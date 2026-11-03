@@ -38,6 +38,16 @@ still excluded from this page: ranking/dedup data, internal status,
 technical failures, and any Radar terminology — that detail lives only
 in daily_news_admin.py.
 
+One deliberate exception, added by the reader-facing truthfulness pass:
+a single muted ingestion-status line (src.ui.components.
+daily_news_status), because an empty feed and stopped ingestion were
+previously indistinguishable to a reader. It states only whether what
+they are looking at is current, partly updated, failed, stale, or
+unknown — never a failure code, per-feed name, item count, HTTP status,
+or any other operator detail, so the exclusion above otherwise stands.
+It changes no ingestion, admission, ranking, or publication behavior: it
+reads already-persisted worker status and renders one sentence.
+
 The public page shows only issuer stories published within a rolling,
 inclusive 7*24-hour window (compared in UTC; naive timestamps treated as
 UTC, matching src.logic.formatting.days_ago()'s own convention) in the
@@ -113,6 +123,7 @@ from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, 
 from src.data_access.daily_news.company_aliases import daily_news_company_names
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
+from src.logic.daily_news_freshness import empty_feed_explanation
 from src.logic.formatting import fmt_datetime_local, fmt_day_label, fmt_time_local, local_date, today_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui import render_timing
@@ -121,6 +132,7 @@ from src.ui.components.editorial_coverage import (
     get_visible_editorial_stories,
     render_editorial_card,
 )
+from src.ui.components.daily_news_status import render_ingestion_status
 from src.ui.components.empty_state import empty_state
 from src.ui.components.primitives import chip_html, cjk_html, esc, page_header
 from src.ui.components.section import section_header
@@ -591,6 +603,10 @@ def render() -> None:
         selected_company = st.selectbox("Companies", options=_company_options(), index=0)
     count_slot = count_col.empty()
     st.markdown('<div class="er-muted">Showing tracked coverage from the past 7 days.</div>', unsafe_allow_html=True)
+    # Rendered before the feed itself, and above the early return below,
+    # so it is present on an empty feed too — that is the case it exists
+    # for.
+    ingestion_status = render_ingestion_status(settings)
 
     # Redesign v2: the selection composition lives in build_signals_feed()
     # (same rules, same order, same tier partition — see its docstring);
@@ -603,10 +619,22 @@ def render() -> None:
         # No persisted PUBLISHED story and no qualified editorial
         # coverage at all for this company — a true, honest empty
         # state, never implying older coverage exists.
+        #
+        # Two separate statements, deliberately not merged into one
+        # sentence: the empty_state() message says what matched the
+        # selected company and the time window (a fact about what is
+        # VISIBLE), and the line after it says what ingestion recorded (a
+        # fact about whether the feed was FILLED). Collapsing them would
+        # reintroduce exactly the ambiguity this pass removes. The second
+        # one never claims a quiet period — see empty_feed_explanation().
         if selected_company == _ALL_COMPANIES_OPTION:
             empty_state("No recent company updates in the last 7 days.")
         else:
             empty_state(f"No recent official or qualified market coverage for {selected_company} right now.")
+        st.markdown(
+            f'<div class="er-muted">{html.escape(empty_feed_explanation(ingestion_status))}</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     if feed.fallback_notice:
