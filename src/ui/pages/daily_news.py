@@ -583,11 +583,34 @@ def _grouping_note(items, slots) -> str | None:
     )
 
 
+def _primary_supplies_latest(slot: FeedSlot) -> bool:
+    """Whether the primary item is itself the group's newest member, so
+    its own card already shows the timestamp the group is positioned by.
+    Compared as the raw ISO strings the page's own `_feed_sort_key` and
+    the grouping module's slot ordering already compare, so this can
+    never disagree with where the slot actually sits. A tie counts as
+    the primary supplying it."""
+    primary_at = _item_published_at(*slot.primary)
+    return primary_at >= max(_item_published_at(kind, item) for kind, item in slot.members)
+
+
 def _render_group_position(slot: FeedSlot) -> None:
-    """Where the group sits, and why. The group occupies the slot its
-    newest member already held, which is NOT a claim that the issuer's
-    own release was published then — the primary card above keeps its own
-    timestamp, and this line is explicitly about the coverage."""
+    """Where the group sits, and why — rendered ONLY when a grouped
+    member is newer than the primary release.
+
+    When the primary is itself the newest member, the card above already
+    shows that exact timestamp, and repeating it under a "latest
+    coverage" label would attribute third-party coverage to the
+    release's own publication moment. In that case nothing is rendered:
+    the position needs no disclosure, because it is the primary's own
+    time.
+
+    When a member IS newer, this states the position explicitly. It is
+    not a claim that the release was published then — the primary card
+    keeps its own timestamp, unchanged, and this line is about the
+    coverage."""
+    if _primary_supplies_latest(slot):
+        return
     newest = max(_item_published_at(kind, item) for kind, item in slot.members)
     clock, zone = fmt_time_local(newest)
     st.markdown(

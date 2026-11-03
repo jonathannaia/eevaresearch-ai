@@ -1101,3 +1101,113 @@ def test_the_card_count_is_pluralized_correctly(tmp_path):
 
     assert "High Signals (4)" in text
     assert "Showing 2 cards for 4 source items" in text
+
+
+# ============================================================
+# The ordering disclosure: shown only when a member is newer than the
+# primary release.
+# ============================================================
+
+
+def _group_slot(issuer_hours_ago: float, editorial_hours_ago: float):
+    now = datetime.now(timezone.utc)
+    issuer = _issuer(published_at=(now - timedelta(hours=issuer_hours_ago)).isoformat())
+    editorial = _editorial(published_at=(now - timedelta(hours=editorial_hours_ago)).isoformat())
+    slots = group_feed_slots(_pairs(issuer, editorial))
+    assert len(slots) == 1 and slots[0].is_group
+    return slots[0], issuer, editorial
+
+
+def test_the_position_line_is_suppressed_when_the_release_is_the_newest_member():
+    """The primary card already shows that exact timestamp; repeating it
+    under a "latest coverage" label would attribute coverage to the
+    release's own publication moment."""
+    from src.ui.pages.daily_news import _primary_supplies_latest
+
+    slot, _issuer_story, _editorial_story = _group_slot(issuer_hours_ago=1, editorial_hours_ago=6)
+
+    assert _primary_supplies_latest(slot)
+
+
+def test_the_position_line_is_kept_when_the_editorial_member_is_newer():
+    from src.ui.pages.daily_news import _primary_supplies_latest
+
+    slot, _issuer_story, _editorial_story = _group_slot(issuer_hours_ago=6, editorial_hours_ago=1)
+
+    assert not _primary_supplies_latest(slot)
+
+
+def test_equal_timestamps_count_as_the_release_supplying_the_latest():
+    from src.ui.pages.daily_news import _primary_supplies_latest
+
+    slot, _issuer_story, _editorial_story = _group_slot(issuer_hours_ago=3, editorial_hours_ago=3)
+
+    assert _primary_supplies_latest(slot)
+
+
+def test_the_page_omits_the_position_line_for_a_release_newer_than_its_pickup(tmp_path):
+    from src.ui.pages.daily_news import _LATEST_COVERAGE_PREFIX
+
+    now = datetime.now(timezone.utc)
+    _seed(
+        tmp_path,
+        issuer_stories=(_issuer(published_at=(now - timedelta(hours=1)).isoformat(),
+                                tier=NewsMaterialityTier.HIGH_SIGNAL),),
+        editorial_stories=(_editorial(published_at=(now - timedelta(hours=6)).isoformat(),
+                                      tier=NewsMaterialityTier.HIGH_SIGNAL),),
+    )
+
+    text = _text(_run(tmp_path, tier="high-signals"))
+
+    # Grouped, with the companion attribution...
+    assert f"{_ALSO_COVERED_PREFIX} The Robot Report" in text
+    assert "Showing 1 card for 2 source items" in text
+    # ...and no position line, because the release is the newest member.
+    assert _LATEST_COVERAGE_PREFIX not in text
+
+
+def test_the_page_keeps_the_position_line_for_a_pickup_newer_than_the_release(tmp_path):
+    from src.ui.pages.daily_news import _LATEST_COVERAGE_PREFIX
+
+    now = datetime.now(timezone.utc)
+    _seed(
+        tmp_path,
+        issuer_stories=(_issuer(published_at=(now - timedelta(hours=6)).isoformat(),
+                                tier=NewsMaterialityTier.HIGH_SIGNAL),),
+        editorial_stories=(_editorial(published_at=(now - timedelta(hours=1)).isoformat(),
+                                      tier=NewsMaterialityTier.HIGH_SIGNAL),),
+    )
+
+    text = _text(_run(tmp_path, tier="high-signals"))
+
+    assert _LATEST_COVERAGE_PREFIX in text
+
+
+def test_both_members_keep_their_original_timestamps_in_either_order(tmp_path):
+    """Suppressing or showing the position line must never change what
+    either member's own card reports."""
+    now = datetime.now(timezone.utc)
+    for issuer_hours, editorial_hours in ((1, 6), (6, 1)):
+        cache = tmp_path / f"case-{issuer_hours}-{editorial_hours}"
+        issuer_at = (now - timedelta(hours=issuer_hours)).isoformat()
+        editorial_at = (now - timedelta(hours=editorial_hours)).isoformat()
+        _seed(
+            cache,
+            issuer_stories=(_issuer(published_at=issuer_at, tier=NewsMaterialityTier.HIGH_SIGNAL),),
+            editorial_stories=(_editorial(published_at=editorial_at, tier=NewsMaterialityTier.HIGH_SIGNAL),),
+        )
+
+        markdowns = [m.value for m in _run(cache, tier="high-signals").main.get("markdown")]
+        joined = " ".join(markdowns)
+        issuer_clock, _z1 = fmt_time_local(issuer_at)
+        editorial_clock, _z2 = fmt_time_local(editorial_at)
+
+        assert issuer_clock in joined, (issuer_hours, editorial_hours)
+        assert editorial_clock in joined, (issuer_hours, editorial_hours)
+        # The issuer's own publication line never carries the editorial time.
+        issuer_lines = [m for m in markdowns if "Official company source" in m]
+        assert len(issuer_lines) == 1
+        assert editorial_clock not in issuer_lines[0]
+        # The stored records are untouched either way.
+        assert len(daily_news_store.load_stories(cache)) == 1
+        assert len(editorial_story_store.load_stories(cache)) == 1
