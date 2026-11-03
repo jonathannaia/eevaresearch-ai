@@ -175,7 +175,10 @@ from src.data_access import backend_factory
 from src.data_access.dart import radar_service as dart_radar_service
 from src.data_access.edgar import edgar_service
 from src.data_access.edinet import edinet_service
-from src.data_access.state_db.scan_status_repository import ProviderScanStatus
+from src.data_access.state_db.scan_status_repository import (
+    COVERAGE_VALIDATION_OBSERVED_NOT_SUBSET,
+    ProviderScanStatus,
+)
 from src.data_access.state_db.coverage_status_repository import CoverageEvent, InstrumentLaneCoverage
 from src.data_access.theme_store import build_theme_company_map_id, build_theme_id, build_theme_research_note_id
 from src.logic.research_case_theme_matching import evaluate_theme_match
@@ -391,6 +394,19 @@ def _record_failure(scan_status_repo, display_source: str, previous, started_at:
         skipped_unresolved_count=previous.skipped_unresolved_count if previous else 0,
         failure_code=failure_code,
         updated_at=now,
+        # Coverage is NOT carried over from `previous`. The counts describe
+        # the LATEST attempt, and a raised attempt determined nothing about
+        # coverage -- copying the prior attempt's numbers would make this
+        # row assert that this attempt observed issuers it never reached.
+        # NULL (unknown) is the only honest value here. The prior
+        # cursor/last_successful_at/counters above are still preserved,
+        # because those are explicitly historical.
+        issuers_eligible=None,
+        issuers_observed=None,
+        # Cleared for the same reason: a stale validation code would make
+        # this row report a previous attempt's contradiction as though
+        # this attempt had established it.
+        coverage_validation_code=None,
     ))
 
 
@@ -1399,12 +1415,58 @@ def _run_provider_tick(
         cursor_value = getattr(report, "end_de", None) or getattr(report, "end_date", None)
         skipped_unresolved = sum(1 for w in getattr(report, "warnings", ()) if "not resolved" in w)
 
-        scan_status_repo.upsert_scan_status(ProviderScanStatus(
+        # Scan-status truthfulness. Issuer-COVERAGE counts, taken from the
+        # report's own structured tuples -- never from reading `warnings`,
+        # which is human-readable prose and must not decide whether an
+        # attempt succeeded. These count tracked issuers, not requests.
+        #
+        # `companies` is the issuer set this attempt should have covered;
+        # `observed_companies` is each provider's own "we looked properly"
+        # set, which includes an issuer that legitimately had nothing new
+        # and excludes one whose identity did not resolve or whose fetch
+        # failed. EDINET reports it all-or-nothing because its scan is
+        # day-keyed, so an incomplete day range cannot masquerade as 27
+        # individually-failed issuers.
+        eligible_issuers = tuple(getattr(report, "companies", ()) or ())
+        observed_issuers = tuple(getattr(report, "observed_companies", ()) or ())
+
+        # Invariant: observed issuers are a SUBSET of eligible ones. A
+        # report that violates it is not something we can describe as
+        # coverage, so no count is written -- but the REASON is, as a
+        # fixed code, so the row reads as `invalid` rather than as an
+        # ordinary never-recorded `unknown`. A log line would not survive
+        # the worker's ephemeral disk. The scan outcome itself is
+        # untouched -- this only governs what we claim about it.
+        if set(observed_issuers) <= set(eligible_issuers):
+            issuers_eligible: int | None = len(set(eligible_issuers))
+            issuers_observed: int | None = len(set(observed_issuers))
+            coverage_validation_code: str | None = None
+        else:
+            issuers_eligible = None
+            issuers_observed = None
+            coverage_validation_code = COVERAGE_VALIDATION_OBSERVED_NOT_SUBSET
+            print(
+                f"radar_worker: {display_source} reported observed issuers outside its eligible "
+                f"set — recording coverage as {COVERAGE_VALIDATION_OBSERVED_NOT_SUBSET}."
+            )
+
+        # An attempt that observed no issuer must not move the provider's
+        # last known-good timestamp, even though run_scan returned
+        # normally. Previously this branch wrote last_successful_at
+        # unconditionally, so an attempt in which no issuer was observed
+        # -- or in which nothing was eligible -- recorded a clean success.
+        #
+        # The rule itself lives on the model as `advances_last_successful`
+        # and is applied below to the very row being written, so the
+        # worker cannot drift from the semantics the model tests pin.
+        previous_last_successful_at = previous_status.last_successful_at if previous_status else None
+
+        status = ProviderScanStatus(
             provider=display_source,
             cursor_value=cursor_value,
             started_at=started_at,
             completed_at=completed_at,
-            last_successful_at=completed_at,
+            last_successful_at=previous_last_successful_at,
             # Both of these used to hold a value its column name denied.
             #
             # items_discovered held candidates_detected -- a count taken
@@ -1428,7 +1490,13 @@ def _run_provider_tick(
             skipped_unresolved_count=skipped_unresolved,
             failure_code=None,
             updated_at=completed_at,
-        ))
+            issuers_eligible=issuers_eligible,
+            issuers_observed=issuers_observed,
+            coverage_validation_code=coverage_validation_code,
+        )
+        if status.advances_last_successful:
+            status = dataclasses.replace(status, last_successful_at=completed_at)
+        scan_status_repo.upsert_scan_status(status)
         # Measured coverage, written immediately after the provider-level
         # scan status it complements. In its own guard: a successful scan
         # must never be reported as failed because an observability write

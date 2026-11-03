@@ -610,6 +610,13 @@ def render() -> None:
         enabled_sources, settings.radar_scan_interval_minutes,
     )
     st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{freshness.message}</div>', unsafe_allow_html=True)
+    # Scan-status truthfulness: the latest ATTEMPT's issuer coverage,
+    # rendered on its own line and independently of the freshness
+    # message above. A provider can hold a successful timestamp from
+    # minutes ago and have its most recent attempt cover nothing, so
+    # "last refreshed ..." alone would overstate the current state.
+    if freshness.attempt_note:
+        st.markdown(f'<div class="er-muted">{freshness.attempt_note}</div>', unsafe_allow_html=True)
 
     items = snapshot.items
 

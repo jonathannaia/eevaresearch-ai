@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1070,6 +1070,27 @@ _V23_STATEMENTS: tuple[str, ...] = (
 )
 
 
+# Scan-status truthfulness (V24) -- additive coverage fields on
+# provider_scan_status so a tick's outcome is derived from recorded facts
+# instead of a writer's label.
+#
+# All three are NULLABLE with no default, deliberately. NULL means NOT
+# RECORDED, which is what every row written before this change carries,
+# and it is distinct from 0: an existing row reads as `unknown`
+# coverage, never as a proven `no_work` and never as a success. Nothing
+# re-interprets historical rows, and the next real tick fills them in.
+#   issuers_eligible: tracked issuers this attempt should cover
+#   issuers_observed: tracked issuers it actually observed
+#   coverage_validation_code: why coverage could not be described for
+#       this attempt -- a fixed code from the repository module, never
+#       provider-supplied text
+_V24_STATEMENTS: tuple[str, ...] = (
+    "ALTER TABLE provider_scan_status ADD COLUMN issuers_eligible INTEGER",
+    "ALTER TABLE provider_scan_status ADD COLUMN issuers_observed INTEGER",
+    "ALTER TABLE provider_scan_status ADD COLUMN coverage_validation_code TEXT",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1094,6 +1115,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (21, _V21_STATEMENTS),
     (22, _V22_STATEMENTS),
     (23, _V23_STATEMENTS),
+    (24, _V24_STATEMENTS),
 )
 
 
