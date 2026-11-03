@@ -29,6 +29,8 @@ from src.logic.daily_news_freshness import (
     EDITORIAL_COVERAGE_RECORDED,
     LAST_SUCCESS_ALSO_STALE_MESSAGE,
     MARKET_NEWS_COVERAGE_UNKNOWN_NOTE,
+    COMPLETION_TIME_UNREADABLE_MESSAGE,
+    INDETERMINATE_COMPLETION_MESSAGE,
     NO_EARLIER_RUN_MESSAGE,
     UNAVAILABLE_MESSAGE,
     QUIET_FEED_CONFIRMED_MESSAGE,
@@ -396,7 +398,11 @@ def test_failed_feed_count_only_counts_rows_that_exist():
 
 
 def test_unparseable_and_naive_timestamps_are_handled_without_raising():
-    assert classify_ingestion(_worker(last_tick_completed_at="not-a-date"), _INTERVAL, now=_NOW).state == "unknown"
+    """An unparseable value classifies as `unavailable`, not `unknown` —
+    it is a recorded run whose time cannot be read, not an absence. See
+    the completion-evidence section below for the full contract; this
+    test previously expected `unknown`, which was the defect."""
+    assert classify_ingestion(_worker(last_tick_completed_at="not-a-date"), _INTERVAL, now=_NOW).state == "unavailable"
 
     naive = _worker(last_tick_completed_at=_NOW.replace(tzinfo=None).isoformat())
     assert classify_ingestion(naive, _INTERVAL, now=_NOW).state == "current"
@@ -960,3 +966,104 @@ def test_the_status_read_never_calls_a_write_method(tmp_path):
 
     assert facts.worker_status is not None
     assert calls == ["get_worker_status", "get_all_feed_statuses"]
+
+
+# ============================================================
+# Completion-timestamp evidence: absent, valid, malformed, and
+# malformed alongside an independently valid failure.
+# ============================================================
+
+
+def test_an_absent_completion_timestamp_is_an_observed_absence():
+    for raw in (None, "", "   "):
+        status = classify_ingestion(_worker(last_tick_completed_at=raw), _INTERVAL, now=_NOW)
+
+        assert status.state == "unknown", raw
+        assert status.message == UNKNOWN_MESSAGE
+
+
+def test_a_valid_completion_timestamp_is_used_for_the_age():
+    status = classify_ingestion(_worker(last_tick_completed_at=_iso(5)), _INTERVAL, now=_NOW)
+
+    assert status.state == "current"
+    assert "Last recorded run completed" in status.message
+
+
+def test_a_malformed_completion_timestamp_is_indeterminate_not_an_absence():
+    """A value is present, so a run WAS recorded — only its time is
+    unreadable. Reporting that as "no completed run is recorded" would
+    be an absence claim the evidence does not support."""
+    status = classify_ingestion(_worker(last_tick_completed_at="2026-13-45T99:00:00"), _INTERVAL, now=_NOW)
+
+    assert status.state == "unavailable"
+    assert status.message == INDETERMINATE_COMPLETION_MESSAGE
+    assert "is recorded, but its timestamp could not be read" in status.message
+    # The absence wording must not appear.
+    assert status.message != UNKNOWN_MESSAGE
+    assert "no completed ingestion run is recorded" not in status.message.lower()
+
+
+def test_malformed_and_absent_completions_are_distinguishable():
+    malformed = classify_ingestion(_worker(last_tick_completed_at="not-a-date"), _INTERVAL, now=_NOW)
+    absent = classify_ingestion(_worker(last_tick_completed_at=None), _INTERVAL, now=_NOW)
+
+    assert malformed.state != absent.state
+    assert malformed.message != absent.message
+
+
+def test_a_malformed_completion_claims_no_age_in_either_direction():
+    """Staleness is derived only from a timestamp that parsed, so an
+    unreadable value is neither fresh nor stale — it is undetermined."""
+    status = classify_ingestion(_worker(last_tick_completed_at="not-a-date"), _INTERVAL, now=_NOW)
+
+    assert not status.last_success_stale
+    assert "not recent" not in status.message
+    assert "behind" not in status.message.lower()
+
+
+def test_a_failure_survives_a_malformed_completion_timestamp():
+    """The failure code is independently valid evidence and must still
+    be reported — without any claim about the last completed run's time
+    or its absence."""
+    status = classify_ingestion(
+        _worker(last_tick_completed_at="2026-13-45T99:00:00", last_failure_code="FETCH_FAILED"),
+        _INTERVAL, now=_NOW,
+    )
+
+    assert status.state == "attempt_failed"
+    assert ATTEMPT_FAILED_MESSAGE in status.message
+    assert COMPLETION_TIME_UNREADABLE_MESSAGE in status.message
+    assert NO_EARLIER_RUN_MESSAGE not in status.message        # no absence claim
+    assert "Last recorded run completed" not in status.message  # no time claim
+    assert not status.last_success_stale
+
+
+def test_a_failure_with_an_absent_completion_still_reports_the_absence():
+    """Contrast for the test above: an empty field IS observed absence,
+    so saying so remains correct."""
+    status = classify_ingestion(
+        _worker(last_tick_completed_at=None, last_failure_code="FETCH_FAILED"), _INTERVAL, now=_NOW,
+    )
+
+    assert status.state == "attempt_failed"
+    assert NO_EARLIER_RUN_MESSAGE in status.message
+    assert COMPLETION_TIME_UNREADABLE_MESSAGE not in status.message
+
+
+def test_completion_evidence_classifies_the_three_cases():
+    from src.logic.daily_news_freshness import completion_evidence
+
+    assert completion_evidence(None) == ("absent", None)
+    assert completion_evidence("  ") == ("absent", None)
+    assert completion_evidence("nonsense")[0] == "malformed"
+    assert completion_evidence("nonsense")[1] is None
+    kind, parsed = completion_evidence("2026-11-03T11:05:00+00:00")
+    assert kind == "parsed"
+    assert parsed is not None
+
+
+def test_a_malformed_completion_never_confirms_a_quiet_feed():
+    status = classify_ingestion(_worker(last_tick_completed_at="not-a-date"), _INTERVAL, now=_NOW)
+
+    assert not status.confirms_quiet_feed
+    assert MARKET_NEWS_COVERAGE_UNKNOWN_NOTE not in ingestion_status_html(status)

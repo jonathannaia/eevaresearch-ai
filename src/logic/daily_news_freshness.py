@@ -42,15 +42,20 @@ The five states, and the persisted facts each one is entitled to claim:
                         than the threshold below.
   * `unknown`         — the status was read successfully and holds no
                         completed run: no row at all, or a row whose
-                        completion has never been recorded. This state
-                        may say that no completed run is recorded,
-                        because that was actually observed.
-  * `unavailable`     — the status could not be read at all. Kept
-                        separate from `unknown` precisely so an
-                        unreadable backend never asserts that no run
-                        exists: nothing was observed, so the only honest
-                        statement is that the status could not be
-                        determined.
+                        `last_tick_completed_at` is genuinely EMPTY.
+                        This state may say that no completed run is
+                        recorded, because that was actually observed.
+  * `unavailable`     — the completion evidence could not be read.
+                        Two distinct causes, both indeterminate rather
+                        than absent: the status read itself could not be
+                        performed, or the row holds a completion
+                        timestamp that is PRESENT but unparseable. The
+                        second case matters as much as the first: a
+                        malformed value is evidence that a run WAS
+                        recorded, so reporting it as "no completed run
+                        is recorded" would be exactly the absence claim
+                        this state exists to avoid. Each cause has its
+                        own message; neither claims an absence.
 
 What this module deliberately does NOT claim:
 
@@ -136,6 +141,10 @@ EDITORIAL_COVERAGE_RECORDED = False
 
 UNKNOWN_MESSAGE = "No completed ingestion run is recorded."
 UNAVAILABLE_MESSAGE = "Ingestion status could not be determined."
+INDETERMINATE_COMPLETION_MESSAGE = (
+    "A completed ingestion run is recorded, but its timestamp could not be read."
+)
+COMPLETION_TIME_UNREADABLE_MESSAGE = "The last recorded run's timestamp could not be read."
 ATTEMPT_FAILED_MESSAGE = "The latest ingestion attempt reported a failure."
 NO_EARLIER_RUN_MESSAGE = "No earlier completed run is on record."
 LAST_SUCCESS_ALSO_STALE_MESSAGE = "That run is itself not recent."
@@ -189,6 +198,23 @@ def effective_interval_minutes(interval_minutes: int | None) -> int:
 
 def stale_threshold_minutes(interval_minutes: int | None) -> int:
     return effective_interval_minutes(interval_minutes) * STALE_THRESHOLD_MULTIPLIER
+
+
+def completion_evidence(raw: str | None) -> tuple[str, datetime | None]:
+    """What the stored completion timestamp actually supports:
+
+        ("absent",    None)     the field is empty — nothing was recorded
+        ("malformed", None)     a value is there but cannot be parsed
+        ("parsed",    datetime) a usable timestamp
+
+    Absent and malformed are deliberately NOT collapsed. An empty field
+    is observed absence and may be reported as such; an unparseable
+    value is a recorded run whose time is unknown, and reporting it as
+    absence would be a claim the evidence does not support."""
+    if raw is None or not str(raw).strip():
+        return ("absent", None)
+    parsed = _parse_utc(raw)
+    return ("parsed", parsed) if parsed is not None else ("malformed", None)
 
 
 def _parse_utc(value: str | None) -> datetime | None:
@@ -253,9 +279,11 @@ def classify_ingestion(
     if worker_status is None:
         return _status("unknown", UNKNOWN_MESSAGE)
 
-    last_completed = _parse_utc(worker_status.last_tick_completed_at)
+    evidence, last_completed = completion_evidence(worker_status.last_tick_completed_at)
+    # Staleness is only ever derived from a timestamp that parsed. A
+    # malformed value supports no age claim in either direction.
     last_completed_is_stale = (
-        last_completed is not None and (now - last_completed).total_seconds() / 60 > threshold
+        evidence == "parsed" and (now - last_completed).total_seconds() / 60 > threshold
     )
 
     if worker_status.last_failure_code:
@@ -265,14 +293,28 @@ def classify_ingestion(
         # reader needs is that the latest attempt did not finish, plus
         # when ingestion last genuinely completed and whether that is
         # itself behind.
-        if last_completed is None:
+        # The failure code is independently valid evidence and is
+        # reported in every branch below. What differs is only what may
+        # be said about the last completed run.
+        if evidence == "absent":
             return _status("attempt_failed", f"{ATTEMPT_FAILED_MESSAGE} {NO_EARLIER_RUN_MESSAGE}")
+        if evidence == "malformed":
+            # A run is on record; its time is not readable. Neither an
+            # absence nor an age may be claimed, so `last_success_stale`
+            # stays False — not because the run is recent, but because
+            # staleness is undetermined.
+            return _status("attempt_failed", f"{ATTEMPT_FAILED_MESSAGE} {COMPLETION_TIME_UNREADABLE_MESSAGE}")
         parts = [ATTEMPT_FAILED_MESSAGE, f"Last recorded run completed {fmt_datetime_local(last_completed.isoformat())}."]
         if last_completed_is_stale:
             parts.append(LAST_SUCCESS_ALSO_STALE_MESSAGE)
         return _status("attempt_failed", " ".join(parts), last_success_stale=last_completed_is_stale)
 
-    if last_completed is None:
+    if evidence == "malformed":
+        # A completion IS recorded; only its timestamp is unreadable.
+        # Indeterminate, never absent.
+        return _status("unavailable", INDETERMINATE_COMPLETION_MESSAGE)
+
+    if evidence == "absent":
         # A tick may have started — `last_tick_started_at` can be set —
         # but nothing has ever been recorded as completed, so there is no
         # successful ingestion to report. Started is not finished.
