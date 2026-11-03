@@ -10,11 +10,12 @@ domain, dedup-unit, render-time-translation-purity and
 HOLD-candidate-not-added requirements were already covered elsewhere and
 are deliberately NOT duplicated here.
 
-**The §5.3 set is not fully satisfied by this file.** Requirement 11
-(`localized_duplicate_yaskawa_newsroom_vs_robot_report`) remains
-UNSATISFIED, pending cross-lane story grouping that does not exist yet —
-see that section at the bottom. Nothing here should be read as closing
-it, and no test in this file asserts the behaviour it asks for.
+**Requirement 11 is not satisfied BY THIS FILE.**
+`localized_duplicate_yaskawa_newsroom_vs_robot_report` is addressed by
+presentation grouping, whose behaviour is asserted in
+tests/test_daily_news_cross_lane_grouping.py. What this file pins is the
+persistent half: both lanes keep their own source record for the same
+event. See that section at the bottom.
 
 Discipline, matching the suites this builds on:
   * Every Lane A test drives the REAL `feed_registry.PILOT_FEEDS` entry
@@ -559,7 +560,7 @@ def test_the_same_cohort1_item_dated_today_does_publish(tmp_path, monkeypatch):
 
 # ============================================================
 # §5.3 localized_duplicate_yaskawa_newsroom_vs_robot_report
-# ---------------- REQUIREMENT 11: UNSATISFIED ----------------
+# ------- REQUIREMENT 11: addressed at the presentation layer -------
 #
 # §5.3 states that a same-event item appearing in both Yaskawa's own
 # newsroom feed (Lane A) and The Robot Report (Lane B) is "correctly
@@ -580,12 +581,14 @@ def test_the_same_cohort1_item_dated_today_does_publish(tmp_path, monkeypatch):
 # should discard a real publisher or a real source URL, in either
 # direction, to make the feed look tidier.
 #
-# The test below is therefore a CHARACTERIZATION of current behaviour,
-# not an acceptance test and not a statement that this output is
-# desirable or permanent. It exists so that implementing the grouping
-# above is a deliberate, visible change rather than a silent one, and so
-# the branch report can state the gap factually. It must be updated —
-# not deleted — when grouping lands.
+# Grouping has since landed at the presentation layer, exactly in that
+# shape. The test below therefore no longer characterizes a gap: it pins
+# the PERSISTENT fact that both lanes keep their own source record, which
+# is precisely what makes display-level grouping safe. The display
+# behaviour itself is asserted in
+# tests/test_daily_news_cross_lane_grouping.py. Requirement 11 is
+# addressed in the combined tree; it is not closed in the shipped
+# product until that tree is merged and deployed.
 # ============================================================
 
 
@@ -593,12 +596,24 @@ _SHARED_HEADLINE = "Yaskawa Launches Collaborative Robot MOTOMAN-HC12"
 _SHARED_SUMMARY = "Yaskawa Electric launched the MOTOMAN-HC12 collaborative robot with a 12 kg payload."
 
 
-def test_current_behaviour_the_same_event_in_both_lanes_is_not_grouped(tmp_path, monkeypatch):
-    """CHARACTERIZATION ONLY — see the section comment above. This pins
-    what the two lanes do today (one story each, ungrouped); it does not
-    satisfy §5.3 requirement 11, and the output it records is not the
-    accepted end state. The accepted direction is presentation grouping
-    with every source preserved."""
+def test_both_lanes_retain_separate_source_records_for_the_same_event(tmp_path, monkeypatch):
+    """The persistent fact, which presentation grouping does not change:
+    each lane keeps its OWN source record for the same event — one
+    NewsStory and one EditorialStory, each with its own publisher, URL,
+    excerpt and timestamp — and the editorial lane's dedup never
+    consults the issuer store.
+
+    That is deliberate and is what the grouping work relies on: slots
+    are a display concern, so both records must survive untouched. The
+    presentation side — that the two records occupy ONE feed slot with
+    both publishers and links preserved — is covered in
+    tests/test_daily_news_cross_lane_grouping.py, not here.
+
+    Every assertion below is unchanged from when this test was written
+    as a characterization of ungrouped output; only its name and this
+    docstring were reconciled, because the facts it pins are permanent
+    while the wording "is not grouped" described the display, which has
+    since changed."""
     _mock_fetch({
         _YASKAWA.feed_url: FeedFetchResult(
             entries=(_entry(
