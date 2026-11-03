@@ -377,6 +377,66 @@ def find_registry_violations(entries: tuple[DailyNewsSourceEntry, ...]) -> tuple
     return tuple(violations)
 
 
+# Polling eligibility (design/DAILY_NEWS_SOURCE_ADMISSION_POLICY.md's
+# own source-health/review lifecycle) — the two health states that
+# document explicitly excludes from active polling, and nothing else.
+# FAILING: "Should be excluded from active polling by whatever later
+# step wires this registry into the real pipeline." RETIRED: "Terminal.
+# Never polled again, but the entry stays in the registry (never
+# deleted) for audit/provenance history."
+#
+# Deliberately NOT excluded, because that same document says so
+# explicitly or says nothing at all:
+#   DEGRADED — "Still polled; flagged for review."
+#   PENDING_REVIEW — a newly-admitted entry that is never treated as a
+#     live, TRUSTWORTHY source until it "has actually been fetched and
+#     confirmed working". The policy's own state machine
+#     (pending_review -> verified) requires a real fetch to promote it,
+#     so excluding it from polling would make its only documented exit
+#     unreachable. Lane A agrees: feed_registry.py filters on `enabled`
+#     and format alone, so today's one PENDING_REVIEW issuer entry
+#     (meta-newsroom-rss) is polled. See that module's own filter.
+#
+# No recovery behavior is implied or implemented here: nothing in this
+# module promotes, demotes, or re-enables an entry. A state change is
+# always an explicit, reviewed registry edit.
+_HEALTH_STATES_EXCLUDED_FROM_POLLING: frozenset[SourceHealthState] = frozenset({
+    SourceHealthState.FAILING,
+    SourceHealthState.RETIRED,
+})
+
+
+def is_eligible_for_polling(entry: DailyNewsSourceEntry) -> bool:
+    """Whether a registry entry may be fetched on a discovery run.
+
+    Mirrors Lane A's own long-standing filter (`feed_registry.py`:
+    `entry.enabled and entry.format == SourceFormat.RSS_ATOM`) and adds
+    the health-state exclusion the admission policy already specifies
+    but which no code enforced before. Pure, no I/O, no mutation — the
+    entry itself is never modified, and an ineligible entry stays in
+    the registry exactly as authored, for provenance.
+
+    The format check is not cosmetic: `rss_atom_client.fetch_entries()`
+    is the only fetch client that exists, so an OFFICIAL_API /
+    OFFICIAL_HTML_LISTING / LICENSED_FEED entry is inert by
+    construction (see the admission policy's "Source formats" table)
+    and must never be handed to it."""
+    return (
+        entry.enabled
+        and entry.format == SourceFormat.RSS_ATOM
+        and entry.health_state not in _HEALTH_STATES_EXCLUDED_FROM_POLLING
+    )
+
+
+def eligible_for_polling(
+    entries: tuple[DailyNewsSourceEntry, ...],
+) -> tuple[DailyNewsSourceEntry, ...]:
+    """Order-preserving filter over `entries`, keeping exactly those
+    `is_eligible_for_polling()` admits. Returns a new tuple; the input
+    tuple and every entry in it are left untouched."""
+    return tuple(entry for entry in entries if is_eligible_for_polling(entry))
+
+
 def to_daily_news_feed_source(entry: DailyNewsSourceEntry) -> DailyNewsFeedSource:
     """Adapter proving this registry can represent an existing pilot
     feed with zero behavioral change — see this module's own docstring.

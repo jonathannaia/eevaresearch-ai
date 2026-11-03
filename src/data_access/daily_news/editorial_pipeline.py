@@ -78,7 +78,12 @@ from src.data_access.daily_news import canonical_url, dedup, editorial_story_sto
 from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
-from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, DailyNewsSourceEntry, normalize_source_url
+from src.data_access.daily_news.source_registry import (
+    EDITORIAL_SOURCE_REGISTRY,
+    DailyNewsSourceEntry,
+    eligible_for_polling,
+    normalize_source_url,
+)
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 if TYPE_CHECKING:
@@ -175,6 +180,16 @@ class EditorialScanReport:
     # computes for every item, never a separate/duplicated gate.
     admitted_examples: tuple[str, ...] = ()
     rejected_examples: tuple[tuple[str, str], ...] = ()
+    # Source-lifecycle enforcement (design/DAILY_NEWS_SOURCE_ADMISSION_
+    # POLICY.md) — how many of the entries this run was HANDED were
+    # skipped before any fetch because source_registry.
+    # is_eligible_for_polling() rejected them (disabled, FAILING,
+    # RETIRED, or a format no fetch client implements). Additive with a
+    # default, so every existing construction and assertion is
+    # unaffected; `sources_polled` above continues to mean what its
+    # name says — the number actually polled — so a skipped source is
+    # never silently indistinguishable from a polled one.
+    sources_skipped_ineligible: int = 0
 
 
 def _story_id(canonical_link: str) -> str:
@@ -272,10 +287,18 @@ def run_editorial_discovery(
     editorial_repository: "EditorialStoryRepositoryProtocol | None" = None,
     dry_run: bool = False,
 ) -> EditorialScanReport:
-    """One bounded discovery run across every configured editorial feed.
+    """One bounded discovery run across every ELIGIBLE editorial feed.
     One source's fetch failure is isolated (recorded in source_failures)
     and never blocks the others — same discipline as
     daily_news_pipeline.run_discovery().
+
+    Polling eligibility is enforced here, on whatever `source_entries`
+    this call was given, via source_registry.eligible_for_polling() — a
+    disabled, FAILING, RETIRED, or non-RSS/Atom entry is skipped before
+    any fetch is attempted and counted in `sources_skipped_ineligible`.
+    A caller cannot opt out of that contract by passing its own list.
+    No entry is ever modified: an ineligible source stays in the
+    registry exactly as authored, for audit/provenance history.
 
     `dry_run` (default False — controlled dry-run harness, design/
     DECISIONS.md): when True, every real fetch/match/materiality/
@@ -313,7 +336,20 @@ def run_editorial_discovery(
     admitted_examples: list[str] = []
     rejected_examples: list[tuple[str, str]] = []
 
-    for source in source_entries:
+    # Source-lifecycle enforcement, applied here rather than in the
+    # worker's own source assembly (design/DAILY_NEWS_SOURCE_ADMISSION_
+    # POLICY.md). This function is the single point every real caller
+    # passes through — scripts/daily_news_worker.py (assembled list),
+    # scripts/run_daily_news_discovery.py (no override at all, so it
+    # relies on this function's own EDITORIAL_SOURCE_REGISTRY default),
+    # and both dry-run harnesses — so filtering the worker's assembly
+    # alone would leave the other three able to poll an entry the
+    # registry has disabled or retired. Enforced BEFORE the fetch loop,
+    # so an ineligible source costs exactly zero network calls.
+    eligible_entries = eligible_for_polling(source_entries)
+    sources_skipped_ineligible = len(source_entries) - len(eligible_entries)
+
+    for source in eligible_entries:
         fetch_result = rss_atom_client.fetch_entries(source.canonical_url)
         if fetch_result.failure_code is not None:
             source_failures[source.source_id] = fetch_result.failure_code
@@ -505,7 +541,8 @@ def run_editorial_discovery(
 
     completed_at = datetime.now(timezone.utc).isoformat()
     return EditorialScanReport(
-        scan_id=scan_id, started_at=started_at, completed_at=completed_at, sources_polled=len(source_entries),
+        scan_id=scan_id, started_at=started_at, completed_at=completed_at, sources_polled=len(eligible_entries),
+        sources_skipped_ineligible=sources_skipped_ineligible,
         items_fetched=items_fetched, items_no_valid_url=items_no_valid_url, items_stale=items_stale,
         items_no_match=items_no_match, items_not_subject_relevant=items_not_subject_relevant,
         items_duplicate=items_duplicate, items_already_seen=items_already_seen,
