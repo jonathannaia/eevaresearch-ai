@@ -103,6 +103,7 @@ def test_run_scan_omits_candidate_repository_by_default(tmp_path, monkeypatch):
         candidate_repository=None,
         auto_publish_enabled=False,
         filing_candidate_shadow_enabled=False,
+        **_kwargs,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
@@ -130,6 +131,7 @@ def test_run_scan_passes_through_an_explicitly_supplied_repository(tmp_path, mon
         candidate_repository=None,
         auto_publish_enabled=False,
         filing_candidate_shadow_enabled=False,
+        **_kwargs,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
@@ -153,6 +155,7 @@ def test_process_candidate_now_omits_candidate_repository_by_default(tmp_path, m
         cache_dir,
         candidate_repository=None,
         auto_publish_enabled=False,
+        **_kwargs,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
@@ -177,6 +180,7 @@ def test_process_candidate_now_passes_through_an_explicitly_supplied_repository(
         cache_dir,
         candidate_repository=None,
         auto_publish_enabled=False,
+        **_kwargs,
     ):
         captured["candidate_repository"] = candidate_repository
         captured["auto_publish_enabled"] = auto_publish_enabled
@@ -313,6 +317,7 @@ def test_process_candidate_now_threads_explicit_auto_publish_setting(tmp_path, m
         cache_dir,
         candidate_repository=None,
         auto_publish_enabled=False,
+        **_kwargs,
     ):
         captured["auto_publish_enabled"] = auto_publish_enabled
         return None

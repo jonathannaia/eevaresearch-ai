@@ -106,6 +106,7 @@ from src.data_access.postgres_state_db import user_preferences_repository as pos
 from src.data_access.postgres_state_db import agent_repository as postgres_agent_store
 from src.data_access.postgres_state_db import scan_status_repository as postgres_scan_status
 from src.data_access.postgres_state_db import coverage_status_repository as postgres_coverage_status
+from src.data_access.postgres_state_db import edgar_publication_control_repository as postgres_edgar_publication_control
 from src.data_access.postgres_state_db import schema as postgres_schema
 from src.data_access.postgres_state_db.identifier_repository import (
     ResolvedIdentifierRecord as PostgresResolvedIdentifierRecord,
@@ -126,6 +127,7 @@ from src.data_access.state_db import user_preferences_repository as sqlite_user_
 from src.data_access.state_db import agent_repository as sqlite_agent_store
 from src.data_access.state_db import scan_status_repository as sqlite_scan_status
 from src.data_access.state_db import coverage_status_repository as sqlite_coverage_status
+from src.data_access.state_db import edgar_publication_control_repository as sqlite_edgar_publication_control
 from src.data_access.state_db import schema as state_db_schema
 from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord
 from src.data_access.state_db.scan_status_repository import ProviderScanStatus
@@ -942,6 +944,76 @@ class PostgresCoverageStatusRepository:
 
     def get_coverage_events(self, lane: str | None = None) -> tuple:
         return postgres_coverage_status.get_coverage_events(self.conn, lane)
+
+
+# --- Autonomous EDGAR 424B5 publication control ---
+#
+# Same posture as the coverage factory above: sqlite/postgres only. A
+# caller that cannot construct this must treat that as "publication
+# off", never as "no opinion" — the worker's own resolver does exactly
+# that.
+
+class EdgarPublicationControlRepositoryProtocol(Protocol):
+    def get_control(self) -> object | None: ...
+    def is_publication_enabled(self) -> bool: ...
+    def set_control(self, *, enabled: bool, reason: str | None, updated_by: str | None, now: str) -> None: ...
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class SqliteEdgarPublicationControlRepository:
+    conn: sqlite3.Connection
+
+    def get_control(self):
+        return sqlite_edgar_publication_control.get_control(self.conn)
+
+    def is_publication_enabled(self) -> bool:
+        return sqlite_edgar_publication_control.is_publication_enabled(self.conn)
+
+    def set_control(self, *, enabled: bool, reason: str | None, updated_by: str | None, now: str) -> None:
+        sqlite_edgar_publication_control.set_control(
+            self.conn, enabled=enabled, reason=reason, updated_by=updated_by, now=now,
+        )
+
+    def close(self) -> None:
+        """This repository OWNS its connection — the factory opened it —
+        so closing it here is correct. Matches the
+        UserPreferencesRepository convention already in this module."""
+        sqlite_edgar_publication_control.close(self.conn)
+
+
+@dataclass(frozen=True)
+class PostgresEdgarPublicationControlRepository:
+    conn: psycopg.Connection
+
+    def get_control(self):
+        return postgres_edgar_publication_control.get_control(self.conn)
+
+    def is_publication_enabled(self) -> bool:
+        return postgres_edgar_publication_control.is_publication_enabled(self.conn)
+
+    def set_control(self, *, enabled: bool, reason: str | None, updated_by: str | None, now: str) -> None:
+        postgres_edgar_publication_control.set_control(
+            self.conn, enabled=enabled, reason=reason, updated_by=updated_by, now=now,
+        )
+
+    def close(self) -> None:
+        """This repository OWNS its connection — the factory opened it —
+        so closing it here is correct. Matches the
+        UserPreferencesRepository convention already in this module."""
+        postgres_edgar_publication_control.close(self.conn)
+
+
+def get_edgar_publication_control_repository(settings: Settings) -> EdgarPublicationControlRepositoryProtocol:
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteEdgarPublicationControlRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresEdgarPublicationControlRepository(conn=_require_postgres_connection(settings))
+    raise BackendConfigurationError(
+        "Autonomous EDGAR publication control requires an explicit db_backend of "
+        f'"sqlite" or "postgres" (got {backend!r}).'
+    )
 
 
 def get_coverage_status_repository(settings: Settings) -> CoverageStatusRepositoryProtocol:

@@ -56,10 +56,14 @@ ProviderScanStatus.failure_code (only `type(exc).__name__` — never a raw
 exception message, DSN, or credential), and never prevents the other
 configured providers from scanning in the same tick.
 
-PUBLISHED-safety: this worker's own settings object always forces
-edgar_auto_publish_enabled=False, structurally, regardless of what
-EDGE_EDGAR_AUTO_PUBLISH_ENABLED is set to in this process's own
-environment — see _build_worker_settings()'s own docstring for why.
+PUBLISHED-safety: autonomous publication is confined to one cohort —
+SEC EDGAR, form 424B5, the existing deterministic SignalRoute.PUBLISH —
+and requires BOTH the deployment setting and the database-backed
+control. The control is re-read by edgar_service.run_scan() on every
+tick, never cached in this worker's settings object, so
+`python -m scripts.edgar_publication_control --off` takes effect on the
+next tick without a restart. Every other form, lane and route stays
+exactly as human-gated as before.
 This worker never imports review_actions or signal_promotion, and never
 constructs a SignalRepository — Signals stays strictly PUBLISHED-only,
 entirely gated by the existing human review action, unaffected by
@@ -366,12 +370,26 @@ def _build_worker_settings(ambient: Settings) -> Settings:
             "EDGE_RADAR_WORKER_STATE_DB_URL is required when EDGE_RADAR_WORKER_DB_BACKEND=postgres."
         )
 
+    # Autonomous EDGAR 424B5 cohort. This used to be an unconditional
+    # `edgar_auto_publish_enabled=False`, which was right while nothing
+    # could publish — but unlocking it wholesale would admit EVERY
+    # future SignalRoute.PUBLISH, not just the one cohort anybody
+    # reviewed. It is now narrowed rather than removed: the setting must
+    # be on AND the database control must read enabled, and the pipeline
+    # independently re-checks lane and form. Absent either, this stays
+    # exactly as restrictive as before.
     return dataclasses.replace(
         ambient,
         db_backend=backend,
         state_db_path=ambient.radar_worker_state_db_path,
         state_db_url=ambient.radar_worker_state_db_url,
-        edgar_auto_publish_enabled=False,
+        # The SETTING only. The database-backed control is deliberately
+        # NOT resolved here: this function runs once, before the tick
+        # loop, so a control read here would freeze for the lifetime of
+        # the process and `--off` would need a restart to take effect.
+        # edgar_service.run_scan() resolves it per call instead, and the
+        # worker calls run_scan once per tick.
+        edgar_auto_publish_enabled=bool(ambient.edgar_auto_publish_enabled),
     )
 
 

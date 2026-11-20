@@ -519,3 +519,99 @@ def test_missed_remote_cache_mock_cannot_reach_network(tmp_path):
     settings = _remote_enabled_settings(tmp_path)
     with pytest.raises(AssertionError, match="Network call blocked"):
         run_scan.build_r2_client(settings)
+
+
+# --- autonomous EDGAR publication: the CLI cannot bypass the control -------
+#
+# scripts/run_scan.py binds the real edgar_service module (see its
+# _SERVICE_MODULES), so the one-shot CLI reaches exactly the same control
+# resolution the Radar worker does. Before this was threaded through,
+# EDGE_EDGAR_AUTO_PUBLISH_ENABLED=true plus `python -m scripts.run_scan`
+# published without the database control ever being read.
+
+def _publish_enabled_settings(tmp_path) -> Settings:
+    import dataclasses
+
+    return dataclasses.replace(_disabled_settings(tmp_path), edgar_auto_publish_enabled=True)
+
+
+def test_the_cli_edgar_path_reaches_service_control_resolution(tmp_path, monkeypatch):
+    """Proves the CLI goes through edgar_service, not a parallel helper."""
+    from src.data_access.edgar import edgar_service
+
+    resolved: list[int] = []
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        edgar_service, "resolve_publication_control_enabled",
+        lambda s: resolved.append(1) or False,
+    )
+    monkeypatch.setattr(edgar_service, "_client", lambda s: object())
+    monkeypatch.setattr(edgar_service, "get_edgar_companies", lambda cache_dir, settings=None: ())
+    monkeypatch.setattr(
+        edgar_service.edgar_pipeline, "run_pipeline",
+        lambda *_a, **kwargs: captured.update(kwargs) or _fake_report("edgar"),
+    )
+
+    run_scan._run_one_source("edgar", _publish_enabled_settings(tmp_path))
+
+    assert resolved == [1]                                   # the control was read
+    assert captured["auto_publish_enabled"] is True          # the setting was on
+    assert captured["publication_control_enabled"] is False  # and the control said no
+
+
+def test_the_cli_cannot_publish_when_the_control_is_disabled(tmp_path, monkeypatch):
+    """Feature setting true + control off => the pipeline is told no."""
+    from src.data_access import backend_factory
+    from src.data_access.edgar import edgar_service
+    from src.data_access.state_db import connection, schema
+    from src.data_access.state_db import edgar_publication_control_repository as repo
+
+    db = connection.connect_in_memory()
+    schema.migrate(db)
+    repo.set_control(db, enabled=False, reason="halt", updated_by="ops", now="t0")
+
+    class _Repo:
+        conn = db
+
+        def is_publication_enabled(self):
+            return repo.is_publication_enabled(db)
+
+        def close(self):
+            return None   # the in-memory database must survive this test
+
+    captured: dict = {}
+    monkeypatch.setattr(backend_factory, "get_edgar_publication_control_repository", lambda s: _Repo())
+    monkeypatch.setattr(edgar_service, "_client", lambda s: object())
+    monkeypatch.setattr(edgar_service, "get_edgar_companies", lambda cache_dir, settings=None: ())
+    monkeypatch.setattr(
+        edgar_service.edgar_pipeline, "run_pipeline",
+        lambda *_a, **kwargs: captured.update(kwargs) or _fake_report("edgar"),
+    )
+
+    run_scan._run_one_source("edgar", _publish_enabled_settings(tmp_path))
+
+    assert captured["publication_control_enabled"] is False
+
+
+def test_the_cli_never_reads_the_control_when_the_setting_is_off(tmp_path, monkeypatch):
+    from src.data_access.edgar import edgar_service
+
+    resolved: list[int] = []
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        edgar_service, "resolve_publication_control_enabled",
+        lambda s: resolved.append(1) or True,
+    )
+    monkeypatch.setattr(edgar_service, "_client", lambda s: object())
+    monkeypatch.setattr(edgar_service, "get_edgar_companies", lambda cache_dir, settings=None: ())
+    monkeypatch.setattr(
+        edgar_service.edgar_pipeline, "run_pipeline",
+        lambda *_a, **kwargs: captured.update(kwargs) or _fake_report("edgar"),
+    )
+
+    run_scan._run_one_source("edgar", _disabled_settings(tmp_path))   # setting off
+
+    assert resolved == []
+    assert captured["publication_control_enabled"] is False
