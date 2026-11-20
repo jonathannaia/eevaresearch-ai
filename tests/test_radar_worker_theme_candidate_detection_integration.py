@@ -435,3 +435,438 @@ def test_never_creates_evidence_or_changes_visibility(tmp_path, monkeypatch):
     assert theme_repo.evidence_for_theme(themes[0].id) == ()
     assert theme_repo.list_published_themes() == ()
     assert themes[0].visibility is ThemeVisibility.INTERNAL
+
+
+# ============================================================
+# Funnel counters on the detection summary (observability only)
+# ============================================================
+
+
+def test_detection_summary_carries_the_funnel_counters_in_a_stable_order(tmp_path, monkeypatch, capsys):
+    """Placement and order are fixed so a log reader can rely on them,
+    and the pre-existing counters keep their position and meaning."""
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    assert summary.startswith("EDGAR: theme candidate detection — clusters_detected=0 themes_created=0 ")
+    for field in ("matches_created=", "company_roles_created=", "notes_created=", "creation_errors=",
+                  "pairs_gathered=", "pairs_examined=", "pairs_malformed=",
+                  "category_rejected=", "keyword_rejected=", "constraint_relevant=",
+                  "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="):
+        assert field in summary, field
+    # Stable order: the new block follows creation_errors, in this order.
+    # pairs_malformed sits directly after pairs_examined because it is
+    # subtracted from it to isolate relevance rejections.
+    tail = summary.split("creation_errors=", 1)[1]
+    order = ["pairs_gathered=", "pairs_examined=", "pairs_malformed=",
+             "category_rejected=", "keyword_rejected=", "constraint_relevant=",
+             "clusters_formed=", "clusters_scope_suppressed=", "clusters_below_threshold="]
+    positions = [tail.index(f) for f in order]
+    assert positions == sorted(positions), tail
+
+
+def test_detection_summary_contains_only_integer_metric_values(tmp_path):
+    """No issuer, slug, excerpt, identifier or source text can reach the
+    log line through the new fields."""
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    for field in ("pairs_gathered", "pairs_examined", "pairs_malformed",
+                  "category_rejected", "keyword_rejected", "constraint_relevant",
+                  "clusters_formed", "clusters_scope_suppressed", "clusters_below_threshold"):
+        match = re.search(rf"{field}=(\S+)", summary)
+        assert match and match.group(1).isdigit(), f"{field} -> {match and match.group(1)}"
+
+
+def test_metric_formatting_failure_degrades_to_unavailable_and_changes_nothing_else(tmp_path, monkeypatch):
+    """Observability must never alter a tick. A broken diagnostics
+    object renders a fixed marker; every pre-existing counter keeps its
+    value."""
+    worker_settings = _worker_settings(tmp_path)
+    healthy = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    class _Hostile:
+        @property
+        def pairs_examined(self):
+            raise RuntimeError("metric access exploded")
+
+    real = radar_worker.detect_theme_candidates_with_diagnostics
+    monkeypatch.setattr(
+        radar_worker, "detect_theme_candidates_with_diagnostics",
+        lambda *a, **k: (real(*a, **k)[0], _Hostile()),
+    )
+    degraded = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    assert "clusters_below_threshold=unavailable" in degraded
+    assert "pairs_examined=unavailable" in degraded
+    assert "pairs_malformed=unavailable" in degraded
+    assert "category_rejected=unavailable" in degraded
+    assert "keyword_rejected=unavailable" in degraded
+    # Every pre-existing counter is unchanged.
+    for field in ("clusters_detected=0", "themes_created=0", "matches_created=0",
+                  "company_roles_created=0", "notes_created=0", "creation_errors=0"):
+        assert field in healthy and field in degraded, field
+
+
+def test_formatter_never_raises_for_an_arbitrary_object():
+    f = radar_worker._format_detection_metrics
+    for bad in (None, object(), "not-diagnostics", 42, []):
+        assert "unavailable" in f(bad)
+
+
+def test_worker_summary_reports_both_relevance_gates_as_plain_integers(tmp_path):
+    """The two new fields render through the real worker step, in fixed
+    position, as integers — never as a gate name or candidate value."""
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    for field in ("category_rejected", "keyword_rejected"):
+        match = re.search(rf"{field}=(\S+)", summary)
+        assert match and match.group(1).isdigit(), f"{field} -> {match and match.group(1)}"
+    # Placement: both sit between pairs_malformed and constraint_relevant.
+    tail = summary.split("pairs_malformed=", 1)[1]
+    assert tail.index("category_rejected=") < tail.index("keyword_rejected=") < tail.index("constraint_relevant=")
+
+
+# ============================================================
+# DART facility-investment category admission (category policy)
+# ============================================================
+
+_DART_CAPEX_RULE = "capex_or_facility_investment:facility_investment:신규시설투자"
+# No term from _THEME_CANDIDATE_DETECTION_KEYWORDS occurs here, and the
+# filing's report_nm ("8-K") carries none either -- so a pair built with
+# this excerpt can only ever be rejected at the keyword gate.
+_NO_KEYWORD_EXCERPT = "The registrant entered into an agreement."
+
+
+def test_the_detector_category_allowlist_is_exactly_the_reviewed_set():
+    """A pinned literal. The allowlist is a category POLICY, so widening
+    it must be a deliberate, reviewed edit that fails this test first --
+    never an incidental import or refactor."""
+    assert radar_worker._THEME_CANDIDATE_DETECTION_RULE_CATEGORIES == (
+        "material_agreement", "financing_or_debt", "other_material_event",
+        "capex_or_facility_investment",
+    )
+
+
+def _seed_pair_with_rules(worker_settings, candidates, *, candidate_id, company, matched_rules,
+                          excerpt, rcept_dt="2026-08-01"):
+    """Seeds one Research Case + CandidateSignal whose rule categories and
+    excerpt are chosen to land on a specific gate."""
+    candidate = _candidate(candidate_id, company, rcept_dt)
+    candidate = CandidateSignal(
+        id=candidate.id, filing=candidate.filing, matched_rules=list(matched_rules),
+        confidence=candidate.confidence, status=candidate.status,
+        extraction_state=candidate.extraction_state, excerpt_original=excerpt,
+        state_history=candidate.state_history,
+    )
+    _seed_case_and_candidate(worker_settings, candidate, _case(f"case-{candidate_id}", candidate_id, company, rcept_dt))
+    candidates[candidate_id] = candidate
+    return candidates
+
+
+def test_worker_summary_reports_non_zero_counts_at_both_relevance_gates(tmp_path, monkeypatch):
+    """The real worker step, over a real SQLite backend, with the real
+    allowlist and the real keyword list -- no monkeypatched classifier.
+
+    Three pairs, one per outcome, so the summary line renders a non-zero
+    `category_rejected` AND a non-zero `keyword_rejected` rather than the
+    zeros an empty batch produces. The relevant pair deliberately stands
+    alone, so it is held back by the unchanged distinct-company threshold:
+    admitting a category creates no Theme candidate by itself."""
+    import re
+
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    # Category gate: DART earnings is not on the allowlist, and the
+    # excerpt is keyword-rich, so only the category gate can reject it.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-cat", company="A",
+        matched_rules=("earnings:earnings_or_results_report:실적",),
+        excerpt="Company disclosed a capacity expansion and wafer allocation agreement.",
+    )
+    # Keyword gate: newly admitted category, no keyword anywhere.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-kw", company="B",
+        matched_rules=(_DART_CAPEX_RULE,), excerpt=_NO_KEYWORD_EXCERPT,
+    )
+    # Relevant: newly admitted category AND a keyword.
+    _seed_pair_with_rules(
+        worker_settings, candidates, candidate_id="edgar-cand-rel", company="C",
+        matched_rules=(_DART_CAPEX_RULE,),
+        excerpt="Company disclosed a capacity expansion at its new facility.",
+    )
+
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ())
+
+    counts = {m.group(1): int(m.group(2)) for m in re.finditer(r"(\w+)=(\d+)", summary)}
+    assert counts["pairs_gathered"] == 3
+    assert counts["pairs_examined"] == 3
+    assert counts["pairs_malformed"] == 0
+    assert counts["category_rejected"] == 1
+    assert counts["keyword_rejected"] == 1
+    assert counts["constraint_relevant"] == 1
+    # Both identities, read off the real summary line.
+    assert counts["pairs_examined"] - counts["pairs_malformed"] == (
+        counts["category_rejected"] + counts["keyword_rejected"] + counts["constraint_relevant"]
+    )
+    assert counts["clusters_formed"] == (
+        counts["clusters_scope_suppressed"] + counts["clusters_below_threshold"] + counts["clusters_detected"]
+    )
+    # The single relevant pair forms a cluster and is then held back by
+    # the unchanged two-distinct-company threshold: no Theme is created.
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_below_threshold"] == 1
+    assert counts["clusters_detected"] == 0
+    assert counts["themes_created"] == 0
+
+
+# ============================================================
+# Text selection through the real worker step
+# ============================================================
+
+import dataclasses as _dc  # noqa: E402
+
+from src.models.models import ExcerptQuality, Translation, TranslationState  # noqa: E402
+
+_KOREAN_EXCERPT_WITH_ACRONYM = "회사는 HBM 생산 관련 신규시설투자를 결정하였다."
+_TRANSLATED_WITH_KEYWORD = "The company decided on a new facility investment for HBM capacity."
+
+
+def _translation(text):
+    return Translation(
+        translated_text=text, provider="deepl", source_lang="ko", target_lang="en",
+        translated_at="2026-08-01T00:00:00+00:00", model=None,
+    )
+
+
+def _seed_text_selection_pair(
+    worker_settings, candidates, *, candidate_id, company, rcept_dt="2026-08-01",
+    language="Korean", excerpt=_KOREAN_EXCERPT_WITH_ACRONYM, report_nm="신규시설투자등",
+    matched_rules=("material_agreement:1.01",), translation_state=TranslationState.NOT_REQUESTED,
+    excerpt_translation=None, excerpt_quality=ExcerptQuality.USABLE_TEXT,
+):
+    candidate = _candidate(candidate_id, company, rcept_dt)
+    filing = _dc.replace(candidate.filing, original_language=language, report_nm=report_nm)
+    candidate = _dc.replace(
+        candidate, filing=filing, matched_rules=list(matched_rules), excerpt_original=excerpt,
+        translation_state=translation_state, excerpt_translation=excerpt_translation,
+        excerpt_quality=excerpt_quality,
+    )
+    _seed_case_and_candidate(worker_settings, candidate, _case(f"case-{candidate_id}", candidate_id, company, rcept_dt))
+    candidates[candidate_id] = candidate
+    return candidates
+
+
+def _counts(summary):
+    import re
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r"(\w+)=(\d+)", summary)}
+
+
+def test_worker_summary_reports_all_four_relevance_outcomes_non_zero(tmp_path, monkeypatch):
+    """The real step, real SQLite, real allowlist and real keyword list --
+    no monkeypatched classifier. One pair per outcome, so every bucket on
+    the summary line is non-zero and both identities are checked against
+    real output rather than a constructed diagnostics object."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    # category gate: not on the allowlist, keyword-rich English excerpt
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-cat", company="A",
+        language="English", excerpt="Company disclosed a capacity expansion and wafer allocation agreement.",
+        report_nm="8-K", matched_rules=("earnings:earnings_or_results_report:실적",),
+    )
+    # text_unavailable: Korean original carrying a Latin acronym, no translation
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-txt", company="B",
+    )
+    # keyword gate: verified translation with no keyword in it
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-kw", company="C",
+        translation_state=TranslationState.TRANSLATED,
+        excerpt_translation=_translation("The company entered into an agreement."),
+    )
+    # relevant: verified translation containing a keyword
+    _seed_text_selection_pair(
+        worker_settings, candidates, candidate_id="edgar-cand-rel", company="D",
+        translation_state=TranslationState.TRANSLATED,
+        excerpt_translation=_translation(_TRANSLATED_WITH_KEYWORD),
+    )
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["pairs_gathered"] == 4
+    assert counts["pairs_examined"] == 4
+    assert counts["pairs_malformed"] == 0
+    assert counts["category_rejected"] == 1
+    assert counts["text_unavailable"] == 1
+    assert counts["keyword_rejected"] == 1
+    assert counts["constraint_relevant"] == 1
+    assert counts["pairs_examined"] - counts["pairs_malformed"] == (
+        counts["category_rejected"] + counts["text_unavailable"]
+        + counts["keyword_rejected"] + counts["constraint_relevant"]
+    )
+    assert counts["clusters_formed"] == (
+        counts["clusters_scope_suppressed"] + counts["clusters_below_threshold"] + counts["clusters_detected"]
+    )
+    # The lone relevant pair is held back by the unchanged two-company
+    # threshold: admitting translated text creates no Theme by itself.
+    assert counts["clusters_below_threshold"] == 1
+    assert counts["clusters_detected"] == 0
+    assert counts["themes_created"] == 0
+
+
+def test_worker_summary_counts_an_untranslated_acronym_pair_as_text_unavailable(tmp_path, monkeypatch):
+    """Through the real step: a Korean excerpt containing HBM, with no
+    translation, must not reach the keyword bucket."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates: dict = {}
+    _seed_text_selection_pair(worker_settings, candidates, candidate_id="edgar-cand-acr", company="A")
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+    assert counts["text_unavailable"] == 1
+    assert counts["keyword_rejected"] == 0
+    assert counts["constraint_relevant"] == 0
+
+
+def test_worker_summary_places_text_unavailable_in_a_fixed_position_as_an_integer(tmp_path):
+    import re
+
+    worker_settings = _worker_settings(tmp_path)
+    summary = radar_worker._run_theme_candidate_detection_step(worker_settings, {}, ())
+
+    match = re.search(r"text_unavailable=(\S+)", summary)
+    assert match and match.group(1).isdigit(), summary
+    tail = summary.split("pairs_malformed=", 1)[1]
+    assert tail.index("category_rejected=") < tail.index("text_unavailable=") < tail.index("keyword_rejected=")
+    assert tail.index("keyword_rejected=") < tail.index("constraint_relevant=")
+
+
+def test_text_unavailable_degrades_with_the_other_metrics(tmp_path):
+    assert "text_unavailable=unavailable" in radar_worker._DETECTION_METRICS_UNAVAILABLE
+    for bad in (None, object(), "not-diagnostics", 42, []):
+        assert "text_unavailable=unavailable" in radar_worker._format_detection_metrics(bad)
+
+
+# ============================================================
+# Scope shape vs. the detection suppression set
+# ============================================================
+
+def _insert_scope(worker_settings, *, sector_tags, sector_subtags, theme_id="theme-scope-shape"):
+    """A scope is only ACTIVE when its parent ResearchTheme exists and is
+    not archived -- a scope whose theme_id resolves to nothing is treated
+    as inactive -- so the parent is seeded here too."""
+    from src.models.theme_research import ResearchTheme, ThemeStatus
+
+    curator = backend_factory.get_theme_curator_repository(worker_settings)
+    created_at = "2026-08-01T00:00:00+00:00"
+    curator.insert_theme(ResearchTheme(
+        id=theme_id, category=ThemeCategory.BOTTLENECK, status=ThemeStatus.NEW,
+        visibility=ThemeVisibility.INTERNAL, title="Scope shape fixture",
+        key_question="q", hypothesis="h", working_thesis="w", why_it_matters="y",
+        what_could_change_the_view="c", what_to_watch_next="n",
+        created_at=created_at, updated_at=created_at,
+    ))
+    repo = backend_factory.get_theme_matching_repository(worker_settings)
+    repo.insert_scope(ThemeMatchingScope(
+        theme_id=theme_id, sector_tags=sector_tags, sector_subtags=sector_subtags,
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    ))
+
+
+def test_suppression_is_exact_tuple_membership_not_whole_theme(tmp_path, monkeypatch):
+    """Baseline for the tests below, and a correction worth pinning: a
+    cluster key is (theme_slug, subtheme_slug) and `already_covered` is
+    tested by exact tuple membership. A TAG-ONLY scope contributes only
+    (tag, None), so it suppresses a cluster that has no subtheme -- and
+    does NOT suppress a cluster under the same theme that has one."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    # Cluster WITH a subtheme: (ai-buildout, compute-accelerators).
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=())
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 0
+    assert counts["clusters_detected"] == 1
+
+
+def test_a_tag_only_scope_suppresses_the_subtheme_less_cluster(tmp_path, monkeypatch):
+    """The (tag, None) entry a tag-only scope does contribute suppresses
+    exactly the cluster whose subtheme_slug is absent."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(
+        worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")], subtheme_slug=None,
+    )
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=())
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 1
+    assert counts["clusters_detected"] == 0
+
+
+def test_a_tag_plus_subtag_scope_suppresses_that_cross_product_entry(tmp_path, monkeypatch):
+    """A scope carrying BOTH fields contributes (tag, None) plus one
+    (tag, subtag) per declared subtag -- which is how a scope can
+    suppress a real, subthemed cluster."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=("ai-buildout",), sector_subtags=("compute-accelerators",))
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 1
+    assert counts["clusters_detected"] == 0
+
+
+def test_a_subtag_only_scope_contributes_nothing_to_the_suppression_set(tmp_path, monkeypatch):
+    """The reason the subtag-only form is permitted. The same cluster a
+    tag+subtag scope suppresses above is detected normally here, because
+    the suppression loop iterates sector_tags and a subtag-only scope has
+    none -- even though its subtag names this very cluster."""
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01"), ("Samsung", "2026-08-10")])
+    _insert_scope(worker_settings, sector_tags=(), sector_subtags=("compute-accelerators",))
+
+    counts = _counts(radar_worker._run_theme_candidate_detection_step(worker_settings, candidates, ()))
+
+    assert counts["clusters_formed"] == 1
+    assert counts["clusters_scope_suppressed"] == 0
+    assert counts["clusters_detected"] == 1
+
+
+def test_the_subtag_only_scope_can_still_match_the_same_candidates(tmp_path, monkeypatch):
+    """Matching remains possible for exactly the candidates the
+    suppression set ignores -- the whole point of the shape."""
+    from src.logic.research_case_theme_matching import evaluate_theme_match
+
+    _set_fixed_as_of_date(monkeypatch)
+    worker_settings = _worker_settings(tmp_path)
+    candidates = _seed_cluster(worker_settings, [("TSMC", "2026-08-01")])
+    candidate = next(iter(candidates.values()))
+    scope = ThemeMatchingScope(
+        theme_id="theme-scope-shape", sector_tags=(), sector_subtags=("compute-accelerators",),
+        allowed_matched_rule_categories=("material_agreement",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    )
+
+    match = evaluate_theme_match(candidate, "case-0", scope, "2026-09-01T00:00:00+00:00")
+
+    assert match is not None
+    assert match.matched_sector_tag == "compute-accelerators"

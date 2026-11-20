@@ -5,10 +5,13 @@ inline Retry), not a quieter one — it's the dangerous state (connected but
 behind), and a binary live/not-live indicator can't distinguish it from
 Live otherwise.
 
-This build has zero live data sources connected (foundation phase), so
-every call site in practice renders "demo" — the component supports all
-three states for correctness/forward-compatibility, not because Live/Stale
-are exercised by real logic yet.
+No page calls this today. Its one remaining caller passed a hardcoded
+"live" together with `freshness_chip()`'s own `timestamp` default, which
+is datetime.now() at RENDER time rather than any fetch time, and was
+removed for that reason. A future caller must pass a real persisted
+fetch timestamp, never the default. The worker-derived freshness
+statements live in src/logic/radar_freshness.py and
+src/logic/daily_news_freshness.py.
 """
 from __future__ import annotations
 

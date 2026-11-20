@@ -1,11 +1,10 @@
 # Daily News Source Admission Policy
 
-This document describes the typed, data-driven source-registry
-**foundation** introduced in `src/data_access/daily_news/
-source_registry.py`. It is a foundation only: no source has been added,
-removed, replaced, polled, or fetched as part of this work, and nothing
-in this module is wired into the real pipeline, worker, or UI yet — see
-"Wiring status" below.
+This document describes the typed, data-driven source registry in
+`src/data_access/daily_news/source_registry.py`, and the admission and
+polling rules that govern it. It began as a foundation only; the
+registry is now the live source of truth for both Daily News lanes —
+see "Wiring status" below for what is wired and what still isn't.
 
 ## Source categories
 
@@ -73,9 +72,20 @@ the exact type of each.
 pending_review → verified → (degraded ⇄ verified) → failing → retired
 ```
 
-- **`pending_review`**: a newly-admitted entry. Never treated as a live,
-  trustworthy source until it has actually been fetched and confirmed
-  working — never guessed or assumed working from its URL shape alone.
+- **`pending_review`**: a newly-admitted entry. **Polled**, so that the
+  real fetch this state exists to wait for can actually happen — this
+  is the state's only documented exit (`pending_review → verified`
+  requires a successful fetch), so excluding it from polling would make
+  that exit unreachable. Never treated as a live, *trustworthy* source
+  until it has actually been fetched and confirmed working — never
+  guessed or assumed working from its URL shape alone. Polling is
+  evaluation, not endorsement: it confers neither `verified` nor
+  trusted status (only an explicit, reviewed registry edit changes a
+  health state — nothing promotes, demotes, or re-enables an entry
+  automatically), and it grants a `pending_review` source's items no
+  standing of any kind in admission, materiality, or High Signal
+  ranking. None of those gates read `health_state`; every item from a
+  polled source passes through them identically.
 - **`verified`**: independently confirmed working (a real fetch
   succeeded and returned parseable, on-domain content). `last_verified_at`
   should be set to the real timestamp of that confirmation — never a
@@ -83,12 +93,47 @@ pending_review → verified → (degraded ⇄ verified) → failing → retired
 - **`degraded`**: a previously-`verified` source with intermittent or
   partial fetch failures. Still polled; flagged for review.
 - **`failing`**: a previously-`verified` source now consistently
-  failing to fetch or parse. Should be excluded from active polling by
-  whatever later step wires this registry into the real pipeline.
+  failing to fetch or parse. Excluded from active polling — enforced
+  for the editorial lane; see "Polling eligibility" below.
 - **`retired`**: terminal. Never polled again, but the entry stays in
   the registry (never deleted) for audit/provenance history — matching
   this project's existing "never silently lose a prior state" discipline
   (e.g. `NewsStateTransition`'s own append-only history).
+
+## Polling eligibility
+
+An entry may be fetched on a discovery run only if it is `enabled`, its
+`format` is `rss_atom` (the one format a fetch client implements — see
+"Source formats" above), and its `health_state` is **not** `failing` or
+`retired`. `degraded` and `pending_review` are both polled, per the
+lifecycle section above. `source_registry.is_eligible_for_polling()` is
+the single predicate for this; `eligible_for_polling()` is its
+order-preserving filter over a tuple of entries. Both are pure: an
+ineligible entry is skipped, never modified and never removed from the
+registry, so its provenance history survives in full.
+
+**Editorial lane (issuer-agnostic).** Enforced inside
+`editorial_pipeline.run_editorial_discovery()`, applied to whatever
+`source_entries` that call was handed, before the fetch loop — so an
+ineligible source costs exactly zero network calls, and the count of
+entries skipped this way is reported as
+`EditorialScanReport.sources_skipped_ineligible`. The function is the
+single point every real caller passes through (the worker, both dry-run
+harnesses, and `scripts/run_daily_news_discovery.py`, which passes no
+`source_entries` at all and so relies on this function's own
+`EDITORIAL_SOURCE_REGISTRY` default), which is why the gate lives there
+rather than in the worker's source assembly: filtering the assembly
+alone would leave the other callers able to poll a disabled or retired
+entry. Gated-source allow-lists are unaffected and still apply — they
+decide which entries reach the call, this decides which of those may be
+fetched, and neither can override the other.
+
+**Issuer lane — not yet enforced.** `feed_registry.PILOT_FEEDS` filters
+on `enabled` and `format` only, so a `failing` or `retired` *issuer*
+entry would still be polled today. Deliberately unchanged by the
+editorial-eligibility slice; closing it is a separate, separately
+approved change, for which the shared predicate above is already
+available in the module `feed_registry.py` imports.
 
 ## Attribution and licensing rules
 
@@ -155,17 +200,14 @@ source registry (`tracked_companies.py`, `feed_registry.py`).
 
 ## Wiring status
 
-`source_registry.py` is **not** imported by `daily_news_pipeline.py`,
-`scripts/daily_news_worker.py`, `src/ui/pages/daily_news.py`,
-`src/ui/pages/daily_news_admin.py`, or `feed_registry.py` — enforced by
-`tests/test_daily_news_source_registry.py::
-test_source_registry_module_is_not_imported_by_the_real_pipeline_worker_or_ui`.
-`feed_registry.PILOT_FEEDS` remains the real, unmodified, hand-authored
-source of truth the pipeline actually reads. `source_registry.
-PILOT_SOURCE_REGISTRY` is a parallel, fully-typed, fully-validated
-description of the same 12 sources, proven — by
-`to_daily_news_feed_source()` plus its own equivalence test — to be
-capable of reproducing `PILOT_FEEDS` exactly, field-for-field, in order.
-Actually making `feed_registry.PILOT_FEEDS` be *generated from* this
-registry (or replacing it outright) is a separate, later, explicitly
-approved step — not performed here.
+`source_registry.py` is now imported by `feed_registry.py` (which
+derives the live `PILOT_FEEDS` from `RUNTIME_SOURCE_REGISTRY` via
+`to_daily_news_feed_source()`, as of source-expansion batch 1,
+2026-09-04) and by `editorial_pipeline.py` (for the polling-eligibility
+predicate above). It is still **not** imported directly by
+`daily_news_pipeline.py`, `scripts/daily_news_worker.py`,
+`src/ui/pages/daily_news.py`, or `src/ui/pages/daily_news_admin.py` —
+enforced by `tests/test_daily_news_source_registry.py::
+test_source_registry_module_is_not_imported_directly_by_the_real_pipeline_worker_or_ui`.
+Those files reach the registry only through `feed_registry.PILOT_FEEDS`
+and `editorial_pipeline`, and need no direct knowledge of this module.

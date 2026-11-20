@@ -151,6 +151,53 @@ def _search_with_retry(
             time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
 
 
+_COMPACT_RCEPT_DT_LENGTH = 8
+
+
+def _canonical_rcept_dt(raw: object) -> object:
+    """DART's own compact `YYYYMMDD` receipt date -> the canonical
+    `YYYY-MM-DD` that `FilingEvent.rcept_dt` is documented to hold.
+
+    This is the DTO->domain boundary, and the conversion belongs here
+    rather than in client.py: `DisclosureRecord` is the provider DTO and
+    stays faithful to the wire format, while `FilingEvent` carries the
+    shared domain contract. EDINET already normalizes at exactly this
+    layer (see edinet/scan_service.py::_derive_filing_date).
+
+    Converts ONLY a value that is already a complete, valid compact
+    calendar date: exactly eight ASCII digits that `strptime` accepts.
+    Everything else is returned UNCHANGED, never blanked and never
+    replaced:
+
+      * an already-dashed ISO date passes through untouched, so this is
+        idempotent and safe if DART's format ever changes;
+      * a missing/empty value stays empty, preserving client.py's own
+        `row.get("rcept_dt", "")` behavior;
+      * a malformed, non-calendar (e.g. month 13), non-string,
+        datetime-shaped or timezone-bearing value is left exactly as it
+        arrived.
+
+    Returning the raw value is what preserves today's safe rejection
+    path unchanged: `research_lead_selection._parse_iso_date` already
+    returns None for every one of those shapes, so Research Case
+    selection still records `invalid_receipt_date` for them exactly as
+    before. Blanking instead would change the recorded reason to a
+    blank-field one and destroy the evidence that a value arrived at
+    all. EDINET's precedent of substituting a fallback date is
+    deliberately NOT copied: a query date is a real bound on when EDINET
+    saw a document, whereas inventing one for DART would be fabricating
+    a filing date."""
+    if not isinstance(raw, str):
+        return raw
+    if len(raw) != _COMPACT_RCEPT_DT_LENGTH or not (raw.isascii() and raw.isdigit()):
+        return raw
+    try:
+        return datetime.strptime(raw, "%Y%m%d").date().isoformat()
+    except ValueError:
+        # A real eight-digit non-date, e.g. an impossible day.
+        return raw
+
+
 def _filing_event_from_record(record: DisclosureRecord, company: TrackedCompany, retrieved_at: str) -> FilingEvent:
     return FilingEvent(
         rcept_no=record.rcept_no,
@@ -158,7 +205,7 @@ def _filing_event_from_record(record: DisclosureRecord, company: TrackedCompany,
         corp_name=record.corp_name,
         stock_code=record.stock_code or company.krx_code,
         report_nm=record.report_nm,
-        rcept_dt=record.rcept_dt,
+        rcept_dt=_canonical_rcept_dt(record.rcept_dt),
         flr_nm=record.flr_nm,
         theme_slug=company.themes[0] if company.themes else "",
         subtheme_slug=company.subthemes[0] if company.subthemes else None,

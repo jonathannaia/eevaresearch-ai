@@ -10,8 +10,12 @@ code is touched by this phase, and none of that is exercised here."""
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
+
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
 REPO_ROOT = Path(__file__).parent.parent
@@ -68,11 +72,70 @@ def test_coverage_expander_labels_show_dynamic_counts():
     assert "4 known category conflicts" in labels
 
 
+def _seed_two_theme_candidates(cache_dir) -> None:
+    """Two PUBLISHED candidates on different themes, written through the
+    real candidate store so the signals page builds them exactly as it
+    would in production."""
+    from datetime import datetime, timezone
+
+    from src.data_access.dart import candidate_store
+    from src.models.models import (
+        CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition,
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _candidate(cid: str, corp: str, theme: str, rcept: str, rule: str, confidence: str) -> CandidateSignal:
+        filing = FilingEvent(
+            rcept_no=rcept, corp_code=f"code-{cid}", corp_name=corp, stock_code="X",
+            report_nm="신규시설투자등", rcept_dt="2026-08-12", flr_nm=corp,
+            source_name="OpenDART / DART", source_url="https://example.test/f",
+            retrieved_at=now, theme_slug=theme,
+        )
+        return CandidateSignal(
+            id=cid, filing=filing, matched_rules=[rule], confidence=confidence,
+            status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+            excerpt_original="신규시설투자 결정 공시입니다.",
+            state_history=[StateTransition(status=CandidateStatus.PUBLISHED, at=now)],
+        )
+
+    candidates = {
+        "cand-phase-b-1": _candidate(
+            "cand-phase-b-1", "SK Hynix", "memory", "20260812000301",
+            "capex_or_facility_investment:facility_investment:신규시설투자", "High",
+        ),
+        "cand-phase-b-2": _candidate(
+            "cand-phase-b-2", "Samsung Electronics", "ai-buildout", "20260812000302",
+            "supply_or_sales_contract:supply_or_sales_contract:공급계약", "Moderate",
+        ),
+    }
+    candidate_store.save_candidates(cache_dir, candidates, "dart_candidates.json")
+
+
 # --- Signals: Direction/Time horizon filters hidden at a single option ---
 
-def test_signals_page_hides_single_option_direction_and_horizon_filters():
-    at = AppTest.from_file(str(HARNESS_DIR / "signals_page.py"), default_timeout=10)
-    at.run()
+def test_signals_page_hides_single_option_direction_and_horizon_filters(tmp_path, monkeypatch):
+    """Isolated: seeds its own candidates into a tmp_path cache and
+    patches container.get_settings, so it no longer reads the developer's
+    real data/cache/themes.json + edgar_candidates.json (gitignored, so
+    this previously failed on any fresh checkout). Readiness fields come
+    from configured_settings() rather than Settings() defaults, so none
+    of them is inherited from a local .env; outbound sockets are blocked
+    for the whole test, installed before AppTest is constructed.
+
+    The condition under test is seeded explicitly rather than inherited
+    from whatever real signals happen to exist: TWO candidates on
+    DIFFERENT themes and with different strengths (so Theme and Strength
+    each offer more than one option and render), which under the current
+    signal mapping share a single Direction and a single Time horizon
+    (so those two filters stay hidden)."""
+    block_network(monkeypatch)
+    _seed_two_theme_candidates(tmp_path)
+
+    settings = configured_settings(tmp_path)
+    with patch("src.data_access.container.get_settings", return_value=settings):
+        at = AppTest.from_file(str(HARNESS_DIR / "signals_page.py"), default_timeout=10)
+        at.run()
     assert not at.exception
     multiselect_labels = [m.label for m in at.multiselect]
     assert "Theme" in multiselect_labels

@@ -748,3 +748,139 @@ def test_both_worker_emitters_are_covered_by_these_tests():
     emitters = source.count('research cases — evaluated=')
     assert emitters == 2, f"expected 2 research-case summary emitters, found {emitters}"
     assert source.count("rejection_reasons={rejection_reason_histogram(result)}") == emitters
+
+
+# --- Newest-first evaluation window, through the real worker steps ----------
+#
+# Repair A changes only the ORDER in which eligible NEEDS_REVIEW
+# candidates enter the bounded evaluation window. These exercise
+# radar_worker's own research-case steps against a real in-file SQLite
+# backend so the ordering claim is proven end-to-end, per lane, rather
+# than only at the pure-orchestration layer.
+
+
+def _lane_candidate_dated(provider_key, rcept_no, rcept_dt, *, iso_timestamp_date=None):
+    """Same shape as _lane_candidate, with an explicit receipt date.
+    Dashed ISO here for every lane in the ordering cases: those are about
+    ORDERING, and a lane's own date representation is Repair B's subject,
+    not this patch's. The DART-native case is covered separately below.
+
+    `iso_timestamp_date` supplies the ISO calendar date used for
+    `retrieved_at` and for the CANDIDATE_DETECTED transition, and is
+    required whenever `rcept_dt` is NOT dashed ISO. `_lane_candidate`
+    derives both timestamps from `rcept_dt`, which is convenient while
+    the two shapes coincide but does not mirror production: a scan sets
+    `retrieved_at` and the detection timestamp independently, in ISO,
+    and only `rcept_dt` ever carries a lane's source-native shape. A
+    fixture that let a compact receipt date leak into those two fields
+    would be exercising a record that cannot occur."""
+    candidate = _lane_candidate(provider_key, rcept_no=rcept_no, rcept_dt=rcept_dt)
+    if iso_timestamp_date is None:
+        return candidate
+    return dataclasses.replace(
+        candidate,
+        filing=dataclasses.replace(candidate.filing, retrieved_at=f"{iso_timestamp_date}T01:00:00+00:00"),
+        state_history=[
+            StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=f"{iso_timestamp_date}T00:00:00+00:00"),
+        ],
+    )
+
+
+@pytest.mark.parametrize("provider_key", ["edgar", "edinet"])
+def test_worker_reaches_a_fresh_candidate_ahead_of_stale_ones(tmp_path, provider_key, _fixed_as_of):
+    """The production livelock, end-to-end: five expired candidates would
+    previously have filled the whole window every tick. Newest-first must
+    reach the in-window candidate queued behind them.
+
+    2026-08-19 is inside every lane's lookback (EDGAR/DART 30 days,
+    EDINET 5) relative to the fixed as-of date of 2026-08-20."""
+    worker_settings = _worker_settings(tmp_path)
+    stale = [_lane_candidate_dated(provider_key, f"acc-old-{i}", f"2026-01-{i + 1:02d}") for i in range(5)]
+    fresh = _lane_candidate_dated(provider_key, "acc-fresh", "2026-08-19")
+    _seed(worker_settings, provider_key, *stale, fresh)
+
+    summary, _candidates, cases = _run_lane_step(provider_key, worker_settings)
+
+    assert "created=1" in summary
+    assert len(cases) == 1
+    assert cases[0].trigger_source_id == fresh.id
+    # The safe histogram still renders, and now reports the stale
+    # candidates that shared the window rather than filling it.
+    assert "rejection_reasons=" in summary
+    assert "receipt_date_outside_lookback" in summary
+
+
+@pytest.mark.parametrize("provider_key", ["edgar", "edinet"])
+def test_worker_creates_nothing_when_every_candidate_is_stale(tmp_path, provider_key, _fixed_as_of):
+    """The informative non-success signature: newest-first cannot help
+    when the whole pool is expired. Ordering is not a substitute for
+    fresh input, and this pins that honestly."""
+    worker_settings = _worker_settings(tmp_path)
+    _seed(
+        worker_settings, provider_key,
+        *[_lane_candidate_dated(provider_key, f"acc-old-{i}", f"2026-01-{i + 1:02d}") for i in range(6)],
+    )
+
+    summary, _candidates, cases = _run_lane_step(provider_key, worker_settings)
+
+    assert "created=0" in summary
+    assert "not_qualified=5" in summary
+    assert cases == ()
+    assert "rejection_reasons=receipt_date_outside_lookback:5" in summary
+
+
+def test_dart_native_compact_date_still_reports_invalid_receipt_date(tmp_path, _fixed_as_of):
+    """DART is inside the shared ordering policy, and this patch is NOT
+    its date repair.
+
+    The fixture deliberately carries DART's source-native compact
+    receipt-date shape, which Research Case selection does not accept, so
+    `invalid_receipt_date` remains a valid observed outcome until Repair
+    B. This asserts only what is observed here — it makes no claim about
+    what the production DART pool contains, which may be historically
+    mixed, nor that reordering cannot change DART's histogram.
+
+    Only `rcept_dt` is compact. `retrieved_at` and the detection
+    timestamp stay independently valid ISO, exactly as a real scan builds
+    them — so the rejection is attributable to the receipt date alone and
+    to nothing incidental about the fixture. The compact dates are
+    themselves real calendar days, so the gate under test is the format
+    contract, not an out-of-range value."""
+    worker_settings = _worker_settings(tmp_path)
+    compact = [
+        _lane_candidate_dated(
+            "dart", f"acc-compact-{i}",
+            f"202608{i + 10:02d}",                 # DART-native compact, a real day
+            iso_timestamp_date=f"2026-08-{i + 10:02d}",  # ISO, as a scan would set it
+        )
+        for i in range(5)
+    ]
+    _seed(worker_settings, "dart", *compact)
+
+    summary, _candidates, cases = _run_lane_step("dart", worker_settings)
+
+    assert "created=0" in summary
+    assert cases == ()
+    assert "rejection_reasons=" in summary
+    assert "invalid_receipt_date" in summary
+    # Attribution: the receipt-date format is the only thing wrong with
+    # these records, so no other gate may be claiming them.
+    for incidental in ("excerpt_not_extracted", "blank_original_excerpt", "no_rule_categories",
+                       "missing_candidate_detected_timestamp", "blank_source_url", "other"):
+        assert incidental not in summary
+
+
+def test_dart_ordering_policy_is_shared_not_special_cased(tmp_path, _fixed_as_of):
+    """DART takes the same newest-first window as the other lanes — no
+    lane-specific branch. Proven with dashed-ISO fixtures so the date
+    gate is out of the way and ordering alone is observable."""
+    worker_settings = _worker_settings(tmp_path)
+    stale = [_lane_candidate_dated("dart", f"acc-old-{i}", f"2026-01-{i + 1:02d}") for i in range(5)]
+    fresh = _lane_candidate_dated("dart", "acc-fresh", "2026-08-19")
+    _seed(worker_settings, "dart", *stale, fresh)
+
+    summary, _candidates, cases = _run_lane_step("dart", worker_settings)
+
+    assert "created=1" in summary
+    assert len(cases) == 1
+    assert cases[0].trigger_source_id == fresh.id

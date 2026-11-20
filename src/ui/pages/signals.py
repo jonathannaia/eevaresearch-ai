@@ -28,7 +28,6 @@ from src.models.models import Direction
 from src.ui.components.badges import demo_badge, direction_dot_html
 from src.ui.components.cards import signal_card
 from src.ui.components.empty_state import empty_state
-from src.ui.components.freshness import freshness_chip
 from src.ui.ui import LAST_SEEN_KEY, READ_IDS_KEY, get_page
 
 
@@ -110,13 +109,17 @@ def render(signal_repository: SignalRepository | None = None) -> None:
     prev_last_seen = st.session_state.get(LAST_SEEN_KEY)
     read_ids = st.session_state.setdefault(READ_IDS_KEY, set())
 
-    header_cols = st.columns([4, 2])
-    with header_cols[0]:
-        st.markdown('<div class="er-page-title">Radar Signals</div>', unsafe_allow_html=True)
-    with header_cols[1]:
-        st.markdown('<div style="text-align:right; margin-top:0.8rem;">', unsafe_allow_html=True)
-        freshness_chip("live", key="fresh-signals-head")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Reader-facing truthfulness pass: this header previously rendered
+    # freshness_chip("live"), a hardcoded state whose timestamp came from
+    # freshness_chip()'s own default — datetime.now() at render time, not
+    # any fetch or scan time. It therefore asserted "Live · <now>" on
+    # every load regardless of whether anything had been ingested, which
+    # is the one freshness claim this app must never make. Removed rather
+    # than replaced: a truthful indicator here would have to be derived
+    # from the Radar worker's own persisted scan status, which is a
+    # separate, already-in-flight piece of work. The page's own subtitle
+    # below still says exactly where these items come from.
+    st.markdown('<div class="er-page-title">Radar Signals</div>', unsafe_allow_html=True)
     st.write("Filing-derived evidence promoted from Eeva's Radar monitoring.")
 
     if not signals:

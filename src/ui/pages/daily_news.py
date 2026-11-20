@@ -22,6 +22,16 @@ completely separate and untouched; _merge_feed_items() below only ever
 combines two already-independently-filtered lists in memory, at render
 time, for display order.
 
+Cross-lane grouping (src/logic/daily_news_grouping.py) is layered on top
+of that merge, and is presentation-only in the same sense. An issuer
+release and an editorial write-up of the SAME announcement occupy one
+feed slot instead of two, with both publishers, both source links, both
+timestamps and both excerpts preserved on the card. Grouping happens
+after the tier partition, within one tier bucket, so a grouped card can
+never surface a member the active tier filter excluded; it moves no item
+between tiers and changes no item count. See that module for the full
+matching and ranking contracts.
+
 The issuer card shows exactly six fields, per the approved scope:
 company name; publisher; a visible source-type label (design/
 DECISIONS.md, source-attribution pass — see _SOURCE_CLASS_LABELS below)
@@ -37,6 +47,16 @@ itself is what keeps this honest once/if that ever changes. Deliberately
 still excluded from this page: ranking/dedup data, internal status,
 technical failures, and any Radar terminology — that detail lives only
 in daily_news_admin.py.
+
+One deliberate exception, added by the reader-facing truthfulness pass:
+a single muted ingestion-status line (src.ui.components.
+daily_news_status), because an empty feed and stopped ingestion were
+previously indistinguishable to a reader. It states only whether what
+they are looking at is current, partly updated, failed, stale, or
+unknown — never a failure code, per-feed name, item count, HTTP status,
+or any other operator detail, so the exclusion above otherwise stands.
+It changes no ingestion, admission, ranking, or publication behavior: it
+reads already-persisted worker status and renders one sentence.
 
 The public page shows only issuer stories published within a rolling,
 inclusive 7*24-hour window (compared in UTC; naive timestamps treated as
@@ -113,6 +133,8 @@ from src.data_access.daily_news import daily_news_backend, daily_news_pipeline, 
 from src.data_access.daily_news.company_aliases import daily_news_company_names
 from src.data_access.translation import translation_service
 from src.data_access.translation.deepl_provider import DeepLProvider
+from src.logic.daily_news_freshness import empty_feed_explanation
+from src.logic.daily_news_grouping import FeedSlot, group_feed_slots
 from src.logic.formatting import fmt_datetime_local, fmt_day_label, fmt_time_local, local_date, today_local
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui import render_timing
@@ -121,6 +143,7 @@ from src.ui.components.editorial_coverage import (
     get_visible_editorial_stories,
     render_editorial_card,
 )
+from src.ui.components.daily_news_status import render_ingestion_status
 from src.ui.components.empty_state import empty_state
 from src.ui.components.primitives import chip_html, cjk_html, esc, page_header
 from src.ui.components.section import section_header
@@ -553,19 +576,124 @@ def _item_published_at(kind: str, item: NewsStory | EditorialStory) -> str:
     return item.published_at or ""
 
 
+_ALSO_COVERED_PREFIX = "Also covered by"
+_LATEST_COVERAGE_PREFIX = "Listed by latest coverage"
+
+
+def _grouping_note(items, slots) -> str | None:
+    """States the two different numbers plainly when they differ: how
+    many cards are drawn, and how many source items those cards
+    represent. The section headers and the meta line above both count
+    ITEMS, so without this a reader could not tell why fewer cards
+    appear than the count says."""
+    if len(slots) == len(items):
+        return None
+    cards = "card" if len(slots) == 1 else "cards"
+    return (
+        f"Showing {len(slots)} {cards} for {len(items)} source items — "
+        "matching company and market coverage is grouped."
+    )
+
+
+def _primary_supplies_latest(slot: FeedSlot) -> bool:
+    """Whether the primary item is itself the group's newest member, so
+    its own card already shows the timestamp the group is positioned by.
+    Compared as the raw ISO strings the page's own `_feed_sort_key` and
+    the grouping module's slot ordering already compare, so this can
+    never disagree with where the slot actually sits. A tie counts as
+    the primary supplying it."""
+    primary_at = _item_published_at(*slot.primary)
+    return primary_at >= max(_item_published_at(kind, item) for kind, item in slot.members)
+
+
+def _render_group_position(slot: FeedSlot) -> None:
+    """Where the group sits, and why — rendered ONLY when a grouped
+    member is newer than the primary release.
+
+    When the primary is itself the newest member, the card above already
+    shows that exact timestamp, and repeating it under a "latest
+    coverage" label would attribute third-party coverage to the
+    release's own publication moment. In that case nothing is rendered:
+    the position needs no disclosure, because it is the primary's own
+    time.
+
+    When a member IS newer, this states the position explicitly. It is
+    not a claim that the release was published then — the primary card
+    keeps its own timestamp, unchanged, and this line is about the
+    coverage."""
+    if _primary_supplies_latest(slot):
+        return
+    newest = max(_item_published_at(kind, item) for kind, item in slot.members)
+    clock, zone = fmt_time_local(newest)
+    st.markdown(
+        f'<div class="er-muted">{esc(_LATEST_COVERAGE_PREFIX)} · {esc(clock)} {esc(zone)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_companion(kind: str, item, tier: NewsMaterialityTier | None, render_item) -> None:
+    """The grouped member, under the primary card. Attribution and the
+    outbound link are stated inline — visible, not hidden behind the
+    control — and the member's full card (its own excerpt, timestamp,
+    chips and link) is one expander away, so nothing about it becomes
+    unreachable by being grouped.
+
+    Deliberately NOT called corroboration or verification: a group means
+    these records name the same announcement, never that one confirms
+    the other."""
+    clock, zone = fmt_time_local(_item_published_at(kind, item))
+    # Resolved for either kind rather than assuming the editorial shape:
+    # grouping only ever makes an editorial item the companion today,
+    # and this stays correct if that ever widens.
+    if kind == "editorial":
+        publisher, source_url = item.publisher, item.source_url
+    else:
+        publisher, source_url = item.sources[0].publisher, item.sources[0].url
+    st.markdown(
+        f'<div class="er-muted">{esc(_ALSO_COVERED_PREFIX)} {esc(publisher)} · '
+        f'{esc(clock)} {esc(zone)} · '
+        f'<a href="{esc(source_url)}" target="_blank" rel="noopener noreferrer">Read their report</a></div>',
+        unsafe_allow_html=True,
+    )
+    with st.expander(f"{_ALSO_COVERED_PREFIX} {publisher}"):
+        render_item(kind, item, tier)
+
+
+def _render_slot(slot: FeedSlot, render_item, tier_for) -> None:
+    """The primary first — for an issuer/editorial group that is always
+    the issuer's own release, per the preserve-sources contract — then
+    the ordering disclosure and each grouped member. The primary card
+    renders its own publication time, unchanged, so grouping never makes
+    the release look more recent than it is."""
+    primary_kind, primary_item = slot.primary
+    render_item(primary_kind, primary_item, tier_for(primary_item))
+    if slot.is_group:
+        _render_group_position(slot)
+    for kind, item in slot.secondary:
+        _render_companion(kind, item, tier_for(item), render_item)
+
+
 def _render_grouped(items, render_item, tier_for) -> None:
     """Emits a mono date-group rule whenever the Eastern-time calendar
-    date of an item's own real published_at changes — never a
-    render-time date. An item with an unparseable timestamp renders
-    under no divider rather than an invented one."""
+    date changes — never a render-time date. An item with an unparseable
+    timestamp renders under no divider rather than an invented one.
+
+    `items` is one tier bucket's own (kind, item) pairs; cross-lane
+    grouping is applied here, so the divider now follows each SLOT's
+    position timestamp (its newest member's), which is the same value
+    that decided where the slot sits."""
     today = today_local()
     current = object()
-    for kind, item in items:
-        day = local_date(_item_published_at(kind, item))
+    slots = group_feed_slots(tuple(items))
+    note = _grouping_note(tuple(items), slots)
+    if note is not None:
+        st.markdown(f'<div class="er-muted">{esc(note)}</div>', unsafe_allow_html=True)
+    for slot in slots:
+        day = local_date(max(_item_published_at(kind, item) for kind, item in slot.members))
         if day is not None and day != current:
             current = day
             st.markdown(f'<div class="er-date-group">{esc(_date_group_label(day, today))}</div>', unsafe_allow_html=True)
-        render_item(kind, item, tier_for(item))
+        _render_slot(slot, render_item, tier_for)
 
 def render() -> None:
     """Unified Signals feed (design/DECISIONS.md): one page, one
@@ -591,6 +719,10 @@ def render() -> None:
         selected_company = st.selectbox("Companies", options=_company_options(), index=0)
     count_slot = count_col.empty()
     st.markdown('<div class="er-muted">Showing tracked coverage from the past 7 days.</div>', unsafe_allow_html=True)
+    # Rendered before the feed itself, and above the early return below,
+    # so it is present on an empty feed too — that is the case it exists
+    # for.
+    ingestion_status = render_ingestion_status(settings)
 
     # Redesign v2: the selection composition lives in build_signals_feed()
     # (same rules, same order, same tier partition — see its docstring);
@@ -603,10 +735,22 @@ def render() -> None:
         # No persisted PUBLISHED story and no qualified editorial
         # coverage at all for this company — a true, honest empty
         # state, never implying older coverage exists.
+        #
+        # Two separate statements, deliberately not merged into one
+        # sentence: the empty_state() message says what matched the
+        # selected company and the time window (a fact about what is
+        # VISIBLE), and the line after it says what ingestion recorded (a
+        # fact about whether the feed was FILLED). Collapsing them would
+        # reintroduce exactly the ambiguity this pass removes. The second
+        # one never claims a quiet period — see empty_feed_explanation().
         if selected_company == _ALL_COMPANIES_OPTION:
             empty_state("No recent company updates in the last 7 days.")
         else:
             empty_state(f"No recent official or qualified market coverage for {selected_company} right now.")
+        st.markdown(
+            f'<div class="er-muted">{html.escape(empty_feed_explanation(ingestion_status))}</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     if feed.fallback_notice:
@@ -659,5 +803,14 @@ def render() -> None:
             # (design/DECISIONS.md; design/DAILY_NEWS_HIGH_SIGNALS_
             # WATCHLIST_IMPLEMENTATION_PLAN_2026_09_16.md).
             with st.expander(f"Show Background ({len(background_items)})"):
-                for kind, item in background_items:
-                    _render_item(kind, item, NewsMaterialityTier.BACKGROUND)
+                # Same slot rendering as the primary lists above, so a
+                # grouped pair is one entry here too. The count stays an
+                # ITEM count (see the grouping module's ranking
+                # contract) — grouping changes how many cards are drawn,
+                # not how much material exists.
+                background_slots = group_feed_slots(tuple(background_items))
+                background_note = _grouping_note(tuple(background_items), background_slots)
+                if background_note is not None:
+                    st.markdown(f'<div class="er-muted">{esc(background_note)}</div>', unsafe_allow_html=True)
+                for slot in background_slots:
+                    _render_slot(slot, _render_item, lambda item: NewsMaterialityTier.BACKGROUND)

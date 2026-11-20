@@ -191,8 +191,34 @@ def validate_scope_content(scope: ThemeMatchingScope) -> tuple[str, ...]:
     if not _nonblank(scope.theme_id):
         errors.append("scope.theme_id must not be blank.")
 
-    if not scope.sector_tags:
-        errors.append("scope.sector_tags must not be empty — at least one is required.")
+    # A scope must declare SOME sector surface, but it may be tags only,
+    # subtags only, or both. Subtag-only is deliberately permitted:
+    # evaluate_theme_match's sector gate is
+    # `theme_slug in sector_tags OR subtheme_slug in sector_subtags`, so a
+    # subtag-only scope still matches — and matches ONLY its declared
+    # subtags, since an empty sector_tags is a membership test nothing
+    # satisfies, never a wildcard. It matters because radar_worker.py's
+    # detection step builds its `already_covered` suppression set by
+    # iterating `for tag in scope.sector_tags`, adding `(tag, None)` plus
+    # one `(tag, subtag)` per declared subtag. Suppression is exact-tuple
+    # membership against a cluster's own (theme_slug, subtheme_slug), so
+    # a tag+subtag scope suppresses that whole cross-product. A
+    # subtag-only scope adds NOTHING to that set — the loop never runs
+    # without a tag — so it can open the matching loop without closing
+    # the detection loop anywhere.
+    #
+    # Deliberately CLI-ONLY for now. src/ui/pages/theme_workspace.py
+    # keeps its stricter "at least one sector tag is required" rule
+    # unchanged, so the two authoring paths knowingly disagree about
+    # this one shape: this relaxation exists for a controlled,
+    # operator-run seed-scope experiment, not as a general authoring
+    # contract. Revisit the workspace only if that experiment justifies
+    # making the shape generally available.
+    if not scope.sector_tags and not scope.sector_subtags:
+        errors.append(
+            "scope.sector_tags and scope.sector_subtags must not BOTH be empty — "
+            "at least one sector tag or one sector subtag is required."
+        )
     if not scope.allowed_matched_rule_categories:
         errors.append("scope.allowed_matched_rule_categories must not be empty — at least one is required.")
     if not scope.required_keywords:

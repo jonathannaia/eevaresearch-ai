@@ -22,11 +22,13 @@ def render() -> None:
         "price target."
     )
 
-    section_header("The conversational agent can be wrong")
+    section_header("Automated detection can be wrong")
     st.write(
-        "It can misread a filing, miss context, or state something confidently that turns out to be "
-        "false. Treat its answers as the start of your research, never the end of it. Verify anything "
-        "you intend to act on against the linked source."
+        "Filings are matched, excerpted, and classified by deterministic rules, and news items are "
+        "matched to companies and themes the same way. Those rules miss context, match the wrong "
+        "company, and flag routine material as interesting. Treat anything here as the start of your "
+        "research, never the end of it, and verify anything you intend to act on against the linked "
+        "source. There is no question-answering assistant in this build."
     )
 
     section_header("Not a substitute for the source")
@@ -37,8 +39,11 @@ def render() -> None:
 
     section_header("Data may be delayed or incomplete")
     st.write(
-        "Coverage varies by filing venue and language. Prices are not real-time. Check the freshness "
-        "indicator on each panel before relying on what it shows."
+        "Coverage varies by filing venue, by issuer within a venue, and by language. Filings and "
+        "Signals each carry their own freshness line, computed from what the background worker last "
+        "recorded rather than from how recent the newest item looks — read it before relying on what "
+        "the page shows, and note that it reports an unknown status rather than guessing when the "
+        "stored record cannot support a claim. Other panels carry no freshness indicator of their own."
     )
 
     section_header("Account data")
@@ -47,9 +52,41 @@ def render() -> None:
         "timestamps, and sign-in count solely for private-beta administration."
     )
 
-    section_header("This build (foundation phase)")
+    section_header("What is and is not live in this build")
     st.write(
-        "Application foundation, data model, navigation, UI system, and mock/demo data only. No real "
-        "ticker coverage, no paid APIs, no autonomous research loops, no live news ingestion, no "
-        "trading integrations, and no LLM wiring."
+        "Live: filings are ingested from the connected venues on a schedule, and the Signals feed polls "
+        "company and market-news sources on a schedule. Both run unattended in the background."
+    )
+    st.write(
+        "Not live: market pricing. Every price, breadth, and rotation figure comes from a built-in "
+        "illustrative data provider, not a market data feed."
+    )
+    st.write(
+        "Two different things happen to source text, and they are not the same. A news item's summary "
+        "is extractive: the publisher's own words, stripped of markup, trimmed at a sentence boundary, "
+        "and attributed to them — nothing is rewritten and no model is involved. A translated headline "
+        "is the opposite: it is machine translation, produced by DeepL when a translation key is "
+        "configured, so the English you read there is machine-generated text rather than anyone's own "
+        "wording. The original-language headline stays the authoritative version and remains visible. "
+        "No filing is summarized, interpreted, or analyzed by a language model anywhere in this build."
+    )
+    st.write(
+        "What reaches you unattended, and what does not, differ by path. Signals news items are "
+        "published unattended: the background worker fetches, matches, classifies, and publishes them "
+        "on its own, and there is no human review step anywhere in that path — the rules described on "
+        "the Methodology page are the only gate between a publisher's feed and this app."
+    )
+    st.write(
+        "The filing-derived path is different. Automatic publication there is forced off in the "
+        "background worker regardless of configuration, so detected material is routed to a review "
+        "state instead of being published, and the research agent in this release cannot publish at "
+        "all — a ceiling set in code, not a setting an operator can raise."
+    )
+    st.write(
+        "A review state records one narrow fact: the item has not been marked reviewed. It is not "
+        "evidence that nobody has looked at it, and not evidence that anybody has."
+    )
+    st.write(
+        "No trading integrations of any kind, and no order, position, or brokerage connection exists in "
+        "this build."
     )

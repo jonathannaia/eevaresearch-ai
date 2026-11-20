@@ -27,6 +27,9 @@ from src.models.models import (
     Translation,
     TranslationState,
 )
+from tests.configured_test_settings import configured_settings
+from tests.dart_registry_fixtures import seed_sqlite_identifiers, tracked_dart_companies
+from tests.no_network import block_network
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 
@@ -54,6 +57,8 @@ def _guard_against_live_calls(monkeypatch):
     """No test in this file clicks a scan/process control — this just
     makes that guarantee load-bearing rather than incidental. Requirement
     6e: no scan/process service may be called during any render or test."""
+
+    block_network(monkeypatch)
 
     def _forbidden(*_args, **_kwargs):
         raise AssertionError("Test attempted a live call — this suite must stay network-free.")
@@ -225,7 +230,7 @@ def test_radar_inbox_renders_populated_list_with_expected_statuses(tmp_path):
     )
     candidate_store.save_candidates(tmp_path, {c.id: c for c in (needs_review, deferred, retry_exhausted)})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -266,7 +271,7 @@ def test_radar_inbox_routine_ownership_candidate_shows_no_materiality_label(tmp_
     )
     candidate_store.save_candidates(tmp_path, {routine_candidate.id: routine_candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -322,7 +327,7 @@ def test_radar_inbox_excludes_a_not_material_treasury_disposal_from_the_default_
         suppressed_candidate.id: suppressed_candidate, visible_candidate.id: visible_candidate,
     })
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -419,7 +424,7 @@ def test_radar_inbox_bare_event_shows_native_title_only_no_fabricated_translatio
     bare_filing = _filing("20260812000011", "단순 공시")
     _seed_filing_events(tmp_path, [bare_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -443,7 +448,7 @@ def test_radar_inbox_paginates_at_twenty_cards(tmp_path):
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)  # no candidates — all bare events
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -470,7 +475,7 @@ def test_radar_inbox_filter_change_resets_pagination_to_page_one(tmp_path):
     filings = [_filing(f"2026081200{i:04d}", f"공시 {i}") for i in range(25)]
     _seed_filing_events(tmp_path, filings)
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -503,7 +508,7 @@ def test_radar_inbox_search_filter_narrows_to_matching_company_or_title(tmp_path
     )
     candidate_store.save_candidates(tmp_path, {match_candidate.id: match_candidate, other_candidate.id: other_candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -556,7 +561,7 @@ def test_radar_inbox_source_filter_narrows_across_configured_sources(tmp_path):
     )
     candidate_store.save_candidates(tmp_path, {edgar_candidate.id: edgar_candidate}, "edgar_candidates.json")
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", edgar_user_agent="EevaResearch test@example.com", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -585,7 +590,7 @@ def test_radar_inbox_source_filter_always_offers_edinet_even_when_absent(tmp_pat
     )
     candidate_store.save_candidates(tmp_path, {dart_candidate.id: dart_candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -615,7 +620,7 @@ def test_radar_inbox_clear_all_filters_restores_full_view(tmp_path):
     )
     candidate_store.save_candidates(tmp_path, {match_candidate.id: match_candidate, other_candidate.id: other_candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -668,25 +673,15 @@ def test_radar_inbox_renders_sqlite_backed_candidate_through_full_page_render(tm
     # not any filing's own corp_code) — without this, every source would
     # be unready and the page would show its "not configured" state
     # instead of ever reaching _build_items().
-    from src.data_access.state_db.identifier_repository import ResolvedIdentifierRecord, upsert_resolved_identifier
-
+    # dart_readiness requires EVERY tracked DART company resolved, so the
+    # membership is derived from the registry rather than hand-listed —
+    # a hand-written list fell behind the registry and left this test
+    # rendering the page's "not configured" state instead of a card.
+    # Written through the real sqlite identifier repository (not the JSON
+    # cache), which is the path this test exists to exercise.
     id_repo = backend_factory.get_identifier_repository(settings, "OpenDART / DART")
-    # Core Issuer Expansion batch (2026-09-04) added 8 more DART
-    # companies — dart_readiness requires every tracked DART company
-    # resolved, not just Samsung/SK Hynix, so all ten need an identifier
-    # here for this test to still reach _build_items() rather than the
-    # page's "not configured" state.
-    for krx_code, corp_code, name in [
-        ("005930", "00126380", "삼성전자"), ("000660", "00164779", "SK 하이닉스"),
-        ("011070", "00105961", "LG이노텍"), ("012450", "00126566", "한화에어로스페이스"),
-        ("047810", "00309503", "한국항공우주"), ("454910", "01105153", "두산로보틱스"),
-        ("240810", "01135941", "원익IPS"), ("056190", "00358271", "SFA"),
-        ("036540", "00301246", "SFA반도체"), ("067310", "00445054", "하나마이크론"),
-    ]:
-        upsert_resolved_identifier(
-            id_repo.conn, "OpenDART / DART", krx_code,
-            ResolvedIdentifierRecord(identifier=corp_code, display_name=name, resolution_method="synthetic-test-fixture", retrieved_at=_now_iso()),
-        )
+    written = seed_sqlite_identifiers(id_repo.conn)
+    assert len(written) == len(tracked_dart_companies()), "fixture did not cover the whole registry"
 
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -728,7 +723,7 @@ def test_radar_inbox_renders_stably_when_evidence_packet_fields_are_present(tmp_
     )
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -763,7 +758,7 @@ def test_radar_inbox_escapes_unsafe_characters_in_excerpt_and_title(tmp_path):
     )
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -793,7 +788,7 @@ def test_radar_inbox_date_filter_max_and_default_end_is_today_even_when_latest_f
     old_filing = _filing_on("20260805000001", "August filing", "20260805")
     _seed_filing_events(tmp_path, [old_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -810,7 +805,7 @@ def test_radar_inbox_date_filter_max_is_today_not_tomorrow(tmp_path):
     old_filing = _filing_on("20260805000002", "August filing", "20260805")
     _seed_filing_events(tmp_path, [old_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -831,7 +826,7 @@ def test_radar_inbox_date_filter_today_range_with_no_today_filings_shows_gracefu
     old_filing = _filing_on("20260805000003", "August filing", "20260805")
     _seed_filing_events(tmp_path, [old_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -849,7 +844,7 @@ def test_radar_inbox_date_filter_includes_a_filing_dated_today(tmp_path):
     today_filing = _filing_on("20260905000001", "오늘자 공시", "20260905")
     _seed_filing_events(tmp_path, [today_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -866,7 +861,7 @@ def test_radar_inbox_date_filter_includes_a_filing_on_the_selected_end_date(tmp_
     later_filing = _filing_on("20260825000001", "그 이후 공시", "20260825")
     _seed_filing_events(tmp_path, [end_date_filing, later_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -886,7 +881,7 @@ def test_radar_inbox_date_filter_composes_with_search_filter_when_range_ends_tod
     other_filing = _filing_on("20260905000003", "다른 오늘 공시", "20260905")
     _seed_filing_events(tmp_path, [match_filing, other_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -913,7 +908,7 @@ def test_radar_inbox_date_filter_composes_with_theme_filter_when_range_ends_toda
     ai_filing.theme_slug = "ai-buildout"
     _seed_filing_events(tmp_path, [memory_filing, ai_filing])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         with patch("src.ui.pages.radar_inbox.today_local", return_value=_FROZEN_TODAY):
             at = AppTest.from_file(str(_HARNESS), default_timeout=10)

@@ -179,6 +179,8 @@ def test_proof2_wrong_shaped_candidates_counted_as_skipped_not_not_qualified():
 
 
 def test_proof3_sort_and_cap_select_exact_expected_candidates_from_a_set_larger_than_ten():
+    """Newest-first: the bounded window takes the LAST five of the
+    ascending `(rcept_dt, rcept_no, id)` order, not the first."""
     candidates = []
     for i in range(15):
         rcept_no = f"acc-{i:02d}"
@@ -187,13 +189,15 @@ def test_proof3_sort_and_cap_select_exact_expected_candidates_from_a_set_larger_
             id=f"edgar-cand-{rcept_no}", filing=_filing(rcept_no=rcept_no, rcept_dt=rcept_dt),
             state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=f"{rcept_dt}T00:00:00+00:00")],
         ))
-    expected_order = sorted(candidates, key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no, c.id))
-    expected_capped_ids = {c.id for c in expected_order[:5]}
+    ascending = sorted(candidates, key=lambda c: (c.filing.rcept_dt, c.filing.rcept_no, c.id))
+    expected_capped_ids = {c.id for c in ascending[-5:]}
 
     checker = _RecordingChecker()
     result = prepare_research_case_bundles(candidates, checker, _config(max_candidates=5, lookback_days=60))
     assert result.evaluated_count == 5
     assert {b.case.trigger_source_id for b in result.bundles} == expected_capped_ids
+    # ...and the five oldest are specifically NOT evaluated.
+    assert {c.id for c in ascending[:5]}.isdisjoint({b.case.trigger_source_id for b in result.bundles})
 
 
 def test_proof3_sort_handles_malformed_fields_with_safe_fallback():
@@ -201,7 +205,9 @@ def test_proof3_sort_handles_malformed_fields_with_safe_fallback():
     good = _candidate()
     checker = _RecordingChecker()
     result = prepare_research_case_bundles([malformed, good], checker, _config())
-    # Must not raise; malformed rcept_dt sorts as "" (before any real date).
+    # Must not raise; malformed rcept_dt still sorts as "", which under
+    # newest-first places it LAST rather than first. The fallback shape
+    # is unchanged — only the direction it is read in.
     assert result.evaluated_count == 2
 
 
@@ -411,7 +417,11 @@ def test_proof11_valid_bundles_match_exact_factory_results_and_order():
     b = _candidate(id="edgar-cand-b", filing=_filing(rcept_no="acc-b", rcept_dt="2026-08-12"),
                    state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at="2026-08-12T00:00:00+00:00")])
     result = prepare_research_case_bundles([b, a], _no_existing, _config())
-    assert [bundle.case.trigger_source_id for bundle in result.bundles] == [a.id, b.id]
+    # Bundles still come out in evaluation order, and evaluation order is
+    # now newest-first: `b` (2026-08-12) precedes `a` (2026-08-10)
+    # regardless of input order. Only the direction changed — the
+    # one-bundle-per-evaluated-survivor relationship is unchanged.
+    assert [bundle.case.trigger_source_id for bundle in result.bundles] == [b.id, a.id]
     for bundle in result.bundles:
         assert validate_research_case_bundle(bundle) == ()
         assert bundle.assertions == ()
@@ -598,3 +608,141 @@ def test_config_result_repr_smoke():
     result_b = prepare_research_case_bundles([], _no_existing, _config())
     assert result_a == result_b
     assert isinstance(result_a, ResearchLeadOrchestrationResult)
+
+
+# ============================================================
+# Newest-first Research Case evaluation window (Repair A)
+#
+# Selection evaluates only `max_candidates` per tick and a rejection
+# writes no state, so ordering decides which candidates are reachable at
+# all. Under the previous oldest-first order the same expired candidates
+# were re-evaluated and re-rejected every tick while newer ones queued
+# behind them. These pin the direction and prove nothing else moved with
+# it.
+#
+# HISTORICAL EVIDENCE, not current behavior: a read-only observation of
+# production revision 6b5c0b5 on 2026-09-30 recorded, in aggregate,
+# evaluated=5 created=0 with receipt_date_outside_lookback:5 on both the
+# EDGAR and EDINET lanes. Those figures are expected to stop holding
+# once this ordering takes effect.
+# ============================================================
+
+
+def _dated(candidate_id, rcept_no, rcept_dt):
+    return _candidate(
+        id=candidate_id, filing=_filing(rcept_no=rcept_no, rcept_dt=rcept_dt),
+        state_history=[StateTransition(status=CandidateStatus.CANDIDATE_DETECTED, at=f"{rcept_dt}T00:00:00+00:00")],
+    )
+
+
+def test_newest_candidates_are_evaluated_before_older_ones():
+    candidates = [
+        _dated("c-oldest", "acc-1", "2026-08-01"),
+        _dated("c-middle", "acc-2", "2026-08-10"),
+        _dated("c-newest", "acc-3", "2026-08-19"),
+    ]
+
+    result = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=1, lookback_days=60))
+
+    assert result.evaluated_count == 1
+    assert [b.case.trigger_source_id for b in result.bundles] == ["c-newest"]
+
+
+def test_stale_candidates_outside_the_window_are_not_evaluated_while_newer_ones_exist():
+    """The production livelock, reproduced: expired candidates that would
+    have filled the whole window are now unreachable, and the fresh
+    candidate behind them creates a case."""
+    stale = [_dated(f"c-stale-{i}", f"acc-old-{i}", f"2026-01-{i + 1:02d}") for i in range(5)]
+    fresh = _dated("c-fresh", "acc-new", "2026-08-19")
+
+    result = prepare_research_case_bundles([*stale, fresh], _no_existing, _config(max_candidates=5))
+
+    assert result.evaluated_count == 5
+    assert result.not_qualified_count == 4  # the four stale ones that still fit the window
+    assert [b.case.trigger_source_id for b in result.bundles] == ["c-fresh"]
+
+
+def test_identical_receipt_dates_tie_break_deterministically_through_rcept_no_then_id():
+    same_date = "2026-08-15"
+    candidates = [
+        _dated("c-a", "acc-01", same_date),
+        _dated("c-b", "acc-02", same_date),
+        _dated("c-c", "acc-03", same_date),
+    ]
+
+    result = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=2))
+
+    # Reversing a total order stays total: highest rcept_no wins first.
+    assert {b.case.trigger_source_id for b in result.bundles} == {"c-c", "c-b"}
+
+
+def test_identical_date_and_rcept_no_tie_break_through_candidate_id():
+    same_date, same_no = "2026-08-15", "acc-same"
+    candidates = [_dated("c-aaa", same_no, same_date), _dated("c-zzz", same_no, same_date)]
+
+    result = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=1))
+
+    assert [b.case.trigger_source_id for b in result.bundles] == ["c-zzz"]
+
+
+def test_ordering_is_stable_across_repeated_and_shuffled_input():
+    candidates = [_dated(f"c-{i}", f"acc-{i:02d}", f"2026-08-{i + 1:02d}") for i in range(8)]
+
+    first = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=3, lookback_days=60))
+    again = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=3, lookback_days=60))
+    shuffled = prepare_research_case_bundles(
+        list(reversed(candidates)), _no_existing, _config(max_candidates=3, lookback_days=60),
+    )
+
+    ids = [b.case.trigger_source_id for b in first.bundles]
+    assert ids == [b.case.trigger_source_id for b in again.bundles]
+    assert ids == [b.case.trigger_source_id for b in shuffled.bundles]
+
+
+def test_malformed_sortable_fields_still_fall_back_safely_and_deterministically():
+    malformed_date = dataclasses.replace(
+        _candidate(id="c-bad-date"), filing=dataclasses.replace(_filing(rcept_no="acc-bad"), rcept_dt=None),
+    )
+    malformed_no = dataclasses.replace(
+        _candidate(id="c-bad-no"), filing=dataclasses.replace(_filing(rcept_dt="2026-08-15"), rcept_no=None),
+    )
+    good = _dated("c-good", "acc-good", "2026-08-18")
+
+    a = prepare_research_case_bundles([malformed_date, malformed_no, good], _no_existing, _config())
+    b = prepare_research_case_bundles([good, malformed_no, malformed_date], _no_existing, _config())
+
+    assert a.evaluated_count == b.evaluated_count == 3
+    assert [x.case.trigger_source_id for x in a.bundles] == [x.case.trigger_source_id for x in b.bundles]
+
+
+@pytest.mark.parametrize("pool_size,cap", [(1, 5), (4, 5), (5, 5), (6, 5)])
+def test_cap_semantics_are_unchanged_below_at_and_above_the_cap(pool_size, cap):
+    candidates = [_dated(f"c-{i}", f"acc-{i:02d}", f"2026-08-{i + 1:02d}") for i in range(pool_size)]
+
+    result = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=cap, lookback_days=60))
+
+    assert result.evaluated_count == min(pool_size, cap)
+
+
+def test_every_non_ordering_counter_is_unchanged_for_a_mixed_batch():
+    """Only which candidates enter the window may move. Every aggregate
+    the result reports keeps its existing meaning and value."""
+    candidates = [
+        _dated("c-ok", "acc-ok", "2026-08-19"),
+        _dated("c-stale", "acc-stale", "2026-01-01"),
+        _candidate(id="c-wrong-source", filing=_filing(rcept_no="acc-src", source_name="EDINET")),
+        _candidate(id="c-wrong-status", filing=_filing(rcept_no="acc-st"), status=CandidateStatus.EXTRACTED),
+        "not-a-candidate",
+    ]
+
+    result = prepare_research_case_bundles(candidates, _no_existing, _config(max_candidates=5))
+
+    assert result.evaluated_count == 2
+    assert result.skipped_count == 3
+    assert result.not_qualified_count == 1
+    assert result.already_existing_count == 0
+    assert result.membership_check_failed_count == 0
+    assert result.factory_rejected_count == 0
+    assert result.validation_rejected_count == 0
+    assert result.config_valid is True
+    assert [b.case.trigger_source_id for b in result.bundles] == ["c-ok"]

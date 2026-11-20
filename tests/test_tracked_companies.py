@@ -10,6 +10,7 @@ from src.config.tracked_companies import (
     with_resolved_ciks,
     with_resolved_corp_codes,
 )
+from tests.no_network import block_network
 
 
 def test_registry_contains_all_three_pilot_cohorts():
@@ -288,24 +289,98 @@ def test_active_tracked_company_count_is_exactly_129():
     assert len(get_tracked_companies(active_only=True)) == 129
 
 
-def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call():
-    # Reads the real, already-populated data/cache/edgar_ciks.json left
-    # by the prior, separately-approved bounded live resolution gate —
-    # a plain local file read, zero network calls.
-    from src.config.settings import get_settings
+# The three mappings these two tests assert on, and nothing else. They
+# previously read the developer's real data/cache/edgar_ciks.json via
+# get_settings().cache_dir -- a gitignored artifact, so both tests failed
+# on any fresh checkout.
+#
+# What this fixture does and does not cover. It gives deterministic
+# coverage of the cache *loader*: that cik_resolver reads its own
+# on-disk format and returns what the file actually says. That is
+# pinned by the alternate-CIK control immediately below, which proves
+# the answer tracks the file rather than a hardcoded mapping.
+#
+# Adjacent loader coverage lives elsewhere, and only one half of it
+# exists: tests/test_cik_resolver.py::test_load_cached_ciks_tolerates_corrupt_file
+# covers *invalid JSON* (an unparseable file yields {}). The loader's
+# other tolerance branch -- silently dropping a well-formed record that
+# is missing one of its required keys (cik, company_name, source,
+# retrieved_at) -- has no test, here or there, so nothing in this suite
+# should be read as covering it.
+#
+# None of this independently verifies current external ticker-to-CIK
+# truth: these values are fixture data, so a test passing here says
+# nothing about whether SEC still maps these tickers to these CIKs
+# today. That validation belongs to a separately-approved live
+# resolution run against SEC's own sources, not to this suite. The
+# assertions are byte-unchanged from the version that read a developer
+# machine's cache; only the source of the cache moved.
+_CIK_FIXTURE: dict[str, dict[str, str]] = {
+    "INDI": {"cik": "0001841925", "company_name": "indie Semiconductor, Inc.",
+             "source": "test fixture", "retrieved_at": "2026-01-01T00:00:00+00:00"},
+    "AIP": {"cik": "0001667011", "company_name": "Arteris, Inc.",
+            "source": "test fixture", "retrieved_at": "2026-01-01T00:00:00+00:00"},
+    "CEVA": {"cik": "0001173489", "company_name": "CEVA, Inc.",
+             "source": "test fixture", "retrieved_at": "2026-01-01T00:00:00+00:00"},
+}
+
+
+def _seed_cik_cache(cache_dir, payload=None):
+    """Writes the fixture in cik_resolver's own on-disk shape, so the
+    tests still exercise the real loader rather than a stub."""
+    import json
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "edgar_ciks.json").write_text(
+        json.dumps(_CIK_FIXTURE if payload is None else payload), encoding="utf-8",
+    )
+
+
+def test_edgar_ciks_cache_already_resolves_indi_aip_ceva_with_no_network_call(tmp_path, monkeypatch):
+    """Resolution comes from the on-disk cache alone. Two layers of
+    explicit guard, both retained: the client-level stubs below, which
+    name the exact call sites, plus block_network()'s socket-level block
+    underneath them, which also covers a client these stubs do not name.
+    Either one failing fails the test."""
     from src.data_access.edgar import cik_resolver
 
-    cached = cik_resolver.load_cached_ciks(get_settings().cache_dir)
+    _seed_cik_cache(tmp_path)
+    block_network(monkeypatch)
+
+    def _no_network(*_args, **_kwargs):
+        raise AssertionError("cached CIK resolution must never make a network call")
+
+    monkeypatch.setattr("urllib.request.urlopen", _no_network, raising=False)
+    monkeypatch.setattr("requests.get", _no_network, raising=False)
+    monkeypatch.setattr("requests.Session.request", _no_network, raising=False)
+
+    cached = cik_resolver.load_cached_ciks(tmp_path)
     assert cached["INDI"].cik == "0001841925"
     assert cached["AIP"].cik == "0001667011"
     assert cached["CEVA"].cik == "0001173489"
 
 
-def test_indi_aip_ceva_resolve_via_with_resolved_ciks_using_cached_mapping():
-    from src.config.settings import get_settings
+def test_cached_cik_resolution_reflects_the_cache_rather_than_a_hardcoded_answer(tmp_path):
+    """Pins that the loader really reads the file: a different cache
+    yields a different answer, so the test above cannot pass vacuously."""
     from src.data_access.edgar import cik_resolver
 
-    cached = cik_resolver.load_cached_ciks(get_settings().cache_dir)
+    _seed_cik_cache(tmp_path, payload={
+        "INDI": {"cik": "0009999999", "company_name": "Other", "source": "test fixture",
+                 "retrieved_at": "2026-01-01T00:00:00+00:00"},
+    })
+
+    cached = cik_resolver.load_cached_ciks(tmp_path)
+    assert cached["INDI"].cik == "0009999999"
+    assert "AIP" not in cached
+
+
+def test_indi_aip_ceva_resolve_via_with_resolved_ciks_using_cached_mapping(tmp_path):
+    from src.data_access.edgar import cik_resolver
+
+    _seed_cik_cache(tmp_path)
+
+    cached = cik_resolver.load_cached_ciks(tmp_path)
     resolved_map = {ticker: record.cik for ticker, record in cached.items()}
     edgar_companies = get_tracked_companies_for_source("SEC EDGAR")
     resolved = with_resolved_ciks(edgar_companies, resolved_map)

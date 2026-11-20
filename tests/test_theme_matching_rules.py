@@ -550,3 +550,86 @@ def test_provider_neutral_naming_no_edgar_dart_edinet_reference():
                     if forbidden in lowered:
                         offenders.append((rel_path, name))
         assert not offenders, offenders
+
+
+# ============================================================
+# Sector-gate semantics across all four tag/subtag combinations
+# ============================================================
+
+def _sector_scope(sector_tags, sector_subtags) -> ThemeMatchingScope:
+    """Only the two sector fields vary; every other gate is held open so
+    a result isolates the sector gate alone."""
+    return ThemeMatchingScope(
+        theme_id="theme-sector-semantics", sector_tags=sector_tags, sector_subtags=sector_subtags,
+        allowed_matched_rule_categories=("capex_or_facility_investment",),
+        required_keywords=("capacity",), excluded_keywords=(),
+    )
+
+
+def test_subtag_only_scope_matches_its_declared_subtag():
+    """The whole point of permitting the subtag-only form: the sector
+    gate is `theme_slug in sector_tags OR subtheme_slug in
+    sector_subtags`, so an empty tag list does not prevent a match."""
+    match = _match(scope=_sector_scope((), ("compute-accelerators",)))
+
+    assert match is not None
+    assert match.matched_sector_tag == "compute-accelerators"
+
+
+def test_subtag_only_scope_does_not_match_an_undeclared_subtheme():
+    """An empty sector_tags is a membership test nothing satisfies --
+    never a wildcard. A subtag-only scope must not become a catch-all."""
+    assert _match(scope=_sector_scope((), ("hbm",))) is None
+    assert _match(scope=_sector_scope((), ("power-cooling", "dram"))) is None
+
+
+def test_subtag_only_scope_does_not_match_on_the_theme_slug():
+    """`ai-buildout` is the candidate's theme_slug. A subtag-only scope
+    naming it as a SUBTAG must not match, or the two fields would be
+    silently interchangeable."""
+    assert _match(scope=_sector_scope((), ("ai-buildout",))) is None
+
+
+def test_tag_only_scope_behaviour_is_unchanged():
+    matched = _match(scope=_sector_scope(("ai-buildout",), ()))
+    assert matched is not None
+    assert matched.matched_sector_tag == "ai-buildout"
+
+    assert _match(scope=_sector_scope(("space",), ())) is None
+
+
+def test_tag_plus_subtag_scope_behaviour_is_unchanged():
+    """Both populated is an OR, and the more specific value wins when
+    both sides match -- pre-existing behaviour, pinned here because the
+    validation change sits next to it."""
+    both = _match(scope=_sector_scope(("ai-buildout",), ("compute-accelerators",)))
+    assert both is not None and both.matched_sector_tag == "compute-accelerators"
+
+    tag_only_hit = _match(scope=_sector_scope(("ai-buildout",), ("hbm",)))
+    assert tag_only_hit is not None and tag_only_hit.matched_sector_tag == "ai-buildout"
+
+    subtag_only_hit = _match(scope=_sector_scope(("space",), ("compute-accelerators",)))
+    assert subtag_only_hit is not None and subtag_only_hit.matched_sector_tag == "compute-accelerators"
+
+
+def test_both_sector_fields_empty_never_matches():
+    assert _match(scope=_sector_scope((), ())) is None
+
+
+def test_the_subtag_only_form_still_obeys_every_other_gate():
+    """Permitting subtag-only widened the sector gate's accepted SHAPE,
+    never the category, keyword or exclusion gates."""
+    scope = _sector_scope((), ("compute-accelerators",))
+
+    wrong_category = _candidate(matched_rules=["earnings_or_results:2.02"])
+    assert _match(candidate=wrong_category, scope=scope) is None
+
+    no_keyword = _candidate(excerpt_original="The company filed a routine report.")
+    assert _match(candidate=no_keyword, scope=scope) is None
+
+    excluded = ThemeMatchingScope(
+        theme_id="t", sector_tags=(), sector_subtags=("compute-accelerators",),
+        allowed_matched_rule_categories=("capex_or_facility_investment",),
+        required_keywords=("capacity",), excluded_keywords=("capacity expansion",),
+    )
+    assert _match(scope=excluded) is None

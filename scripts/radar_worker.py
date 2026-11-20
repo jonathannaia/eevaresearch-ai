@@ -189,7 +189,7 @@ from src.logic.research_lead_orchestration import (
     rejection_reason_histogram,
 )
 from src.logic.theme_auto_publish import evaluate_auto_publish_gates
-from src.logic.theme_candidate_detection import detect_theme_candidates
+from src.logic.theme_candidate_detection import detect_theme_candidates_with_diagnostics
 from src.models.research_case import ResearchCase
 from src.models.theme_matching import ThemeMatchingScope
 from src.models.theme_research import (
@@ -675,7 +675,38 @@ def _run_theme_matching_step(
 _THEME_CANDIDATE_DETECTION_WINDOW_DAYS = 90
 _THEME_CANDIDATE_DETECTION_MIN_COMPANIES = 2
 _THEME_CANDIDATE_DETECTION_RULE_CATEGORIES: tuple[str, ...] = (
+    # EDGAR's own category names (8-K items 1.01 / 2.03 and the
+    # registration-and-prospectus forms / 8-K item 8.01). This tuple was
+    # written in EDGAR's vocabulary, so DART's and EDINET's category
+    # vocabularies intersected it at exactly zero: DART names its
+    # capital-raise category `financing`, not `financing_or_debt`, and
+    # EDINET's only real code-mapped categories are
+    # annual_securities_report / share_buyback_status /
+    # extraordinary_report. Nothing those two markets emit could clear
+    # this gate at all.
     "material_agreement", "financing_or_debt", "other_material_event",
+    # DART's statutory new-facility/facility-investment disclosure
+    # (신규시설투자 / 시설투자, dart_rules.KOREAN_KEYWORD_LEXICON) — a
+    # category directly related to capacity formation, and the one the
+    # DART module itself records as observed repeatedly in a real pull
+    # rather than carried as a "standard, not observed" entry.
+    #
+    # Deliberately one category, not a vocabulary alignment: admitting
+    # the category is necessary, never sufficient. The keyword gate still
+    # runs after it, `min_distinct_companies` still requires a cluster to
+    # span two issuers, and autonomous publication stays off — so this
+    # widens what can be EXAMINED for relevance, and promises no Theme
+    # candidate. No EDGAR or EDINET rule can emit this slug, so the
+    # change is market-scoped by construction and cannot alter either of
+    # those markets' detection behavior.
+    #
+    # Known limitation this does NOT address: the keyword gate reads
+    # `excerpt_original` + `report_nm` — original-language text — against
+    # an English keyword list, so an admitted DART pair is still likely
+    # to be rejected at the keyword gate instead. That is a deliberate
+    # outcome to MEASURE via the category_rejected/keyword_rejected
+    # split, not a reason to broaden keywords here.
+    "capex_or_facility_investment",
 )
 _THEME_CANDIDATE_DETECTION_KEYWORDS: tuple[str, ...] = (
     "capacity", "wafer", "fab", "foundry", "packaging", "hbm", "dram", "allocation",
@@ -712,6 +743,42 @@ def _gather_case_candidate_pairs_for_detection(
     return pairs
 
 
+_DETECTION_METRICS_UNAVAILABLE = (
+    "pairs_examined=unavailable pairs_malformed=unavailable category_rejected=unavailable "
+    "text_unavailable=unavailable keyword_rejected=unavailable constraint_relevant=unavailable "
+    "clusters_formed=unavailable clusters_scope_suppressed=unavailable "
+    "clusters_below_threshold=unavailable"
+)
+
+
+def _format_detection_metrics(diagnostics: object) -> str:
+    """The theme-candidate funnel counts, rendered for the worker
+    summary. Integers only -- `DetectionDiagnostics` carries no issuer,
+    slug, excerpt, identifier or source text, so nothing unsafe can
+    reach a log line through here.
+
+    Observability must never change a tick's outcome, so a malformed or
+    missing diagnostics object degrades to a fixed `unavailable` marker
+    for every field rather than raising: detection has already
+    completed and its candidates are already persisted by the time this
+    runs. Never raises."""
+    try:
+        parts = []
+        # Fixed order, and the only names this function will ever
+        # emit: the field list is a literal here, so a diagnostics
+        # object cannot introduce a name of its own.
+        for name in ("pairs_examined", "pairs_malformed", "category_rejected", "text_unavailable",
+                     "keyword_rejected", "constraint_relevant", "clusters_formed",
+                     "clusters_scope_suppressed", "clusters_below_threshold"):
+            value = getattr(diagnostics, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return _DETECTION_METRICS_UNAVAILABLE
+            parts.append(f"{name}={int(value)}")
+        return " ".join(parts)
+    except Exception:  # noqa: BLE001 — a logging aggregate must never affect a provider tick
+        return _DETECTION_METRICS_UNAVAILABLE
+
+
 def _run_theme_candidate_detection_step(
     worker_settings: Settings, candidates: dict[str, CandidateSignal], newly_created_cases: tuple[ResearchCase, ...],
 ) -> str:
@@ -738,7 +805,7 @@ def _run_theme_candidate_detection_step(
                 already_covered.add((tag, subtag))
 
     pairs = _gather_case_candidate_pairs_for_detection(worker_settings, candidates, newly_created_cases)
-    detected = detect_theme_candidates(
+    detected, detection_diagnostics = detect_theme_candidates_with_diagnostics(
         pairs, as_of_date=_current_utc_date(), window_days=_THEME_CANDIDATE_DETECTION_WINDOW_DAYS,
         min_distinct_companies=_THEME_CANDIDATE_DETECTION_MIN_COMPANIES,
         constraint_keywords=_THEME_CANDIDATE_DETECTION_KEYWORDS,
@@ -835,7 +902,8 @@ def _run_theme_candidate_detection_step(
     return (
         f"EDGAR: theme candidate detection — clusters_detected={clusters_detected} themes_created={themes_created} "
         f"matches_created={matches_created} company_roles_created={company_roles_created} notes_created={notes_created} "
-        f"creation_errors={creation_errors}"
+        f"creation_errors={creation_errors} "
+        f"pairs_gathered={len(pairs)} {_format_detection_metrics(detection_diagnostics)}"
     )
 
 

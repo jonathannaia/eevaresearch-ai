@@ -22,9 +22,10 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
-from src.config.settings import Settings
 from src.models.models import FilingEvent
 from src.ui.pages import radar_inbox
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 
@@ -181,14 +182,15 @@ def test_missing_or_malformed_filed_date_sorts_last(tmp_path):
 # ============================================================
 
 
-def test_source_filter_preserves_newest_first_ordering(tmp_path):
+def test_source_filter_preserves_newest_first_ordering(tmp_path, monkeypatch):
     _seed_dart_filing_events(tmp_path, [_dart_filing("dart-old", "2026-08-15")])
     _seed_edgar_filing_events(tmp_path, [
         _edgar_filing("edgar-new", "2026-09-02", report_nm="8-K filing newer"),
         _edgar_filing("edgar-mid", "2026-08-20", report_nm="8-K filing older"),
     ])
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", edgar_user_agent="EevaResearch test@example.com", cache_dir=tmp_path)
+    block_network(monkeypatch)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings):
         at = AppTest.from_file(str(_HARNESS), default_timeout=15)
         at.run()

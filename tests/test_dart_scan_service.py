@@ -290,3 +290,154 @@ def test_load_filing_events_skips_individually_corrupt_entries(tmp_path):
         encoding="utf-8",
     )
     assert scan_service.load_filing_events(tmp_path) == ()
+
+
+# ============================================================
+# Repair B — canonical receipt dates at the DTO -> domain boundary
+#
+# DART's disclosure list returns `rcept_dt` in its own compact YYYYMMDD
+# form, but `FilingEvent.rcept_dt` is documented as an ISO 8601 date and
+# Research Case selection accepts strict YYYY-MM-DD only. Before this
+# repair every DART candidate reached the selector as
+# `invalid_receipt_date` and no case could be created for the lane.
+#
+# The conversion is deliberately narrow: only a complete, valid compact
+# calendar date is rewritten. Everything else passes through untouched
+# so the existing rejection path stays exactly as it was.
+# ============================================================
+
+
+def test_valid_compact_receipt_date_becomes_canonical_iso():
+    assert scan_service._canonical_rcept_dt("20260810") == "2026-08-10"
+    assert scan_service._canonical_rcept_dt("20260101") == "2026-01-01"
+    assert scan_service._canonical_rcept_dt("20261231") == "2026-12-31"
+    assert scan_service._canonical_rcept_dt("20240229") == "2024-02-29"  # real leap day
+
+
+def test_already_canonical_iso_date_is_returned_unchanged():
+    """Idempotent, and safe if DART's own format ever changes."""
+    for value in ("2026-08-10", "2026-01-01"):
+        assert scan_service._canonical_rcept_dt(value) == value
+    # Converting twice is the same as converting once.
+    once = scan_service._canonical_rcept_dt("20260810")
+    assert scan_service._canonical_rcept_dt(once) == once
+
+
+@pytest.mark.parametrize("raw", [
+    "",                       # missing — client.py's own default
+    "2026081",                # too short
+    "202608100",              # too long
+    "2026-8-10",              # not zero-padded
+    "2026/08/10",             # wrong delimiter
+    "20260810T00:00:00",      # datetime-shaped
+    "2026-08-10T00:00:00+00:00",  # timezone-bearing
+    "2026-08-10 09:00",       # timestamp
+    "not-a-date",
+    "abcdefgh",               # eight non-digits
+    "2026081a",               # seven digits and a letter
+    " 2026081",               # padded to eight with whitespace
+    "20260230",               # eight digits, impossible day
+    "20261301",               # eight digits, impossible month
+    "00000000",               # eight digits, no such year
+])
+def test_values_that_are_not_valid_compact_dates_pass_through_untouched(raw):
+    """No fabrication and no blanking: the raw value survives, so
+    `research_lead_selection._parse_iso_date` still rejects it and the
+    selector still records `invalid_receipt_date` exactly as before."""
+    assert scan_service._canonical_rcept_dt(raw) == raw
+
+
+@pytest.mark.parametrize("raw", [None, 20260810, 20260810.0, b"20260810", ["20260810"], object()])
+def test_non_string_values_pass_through_untouched(raw):
+    """Scope: this asserts the private normalizer's own passthrough
+    contract only — that it refuses to invent a date from a non-string.
+
+    It does NOT claim every one of these values can be persisted.
+    `FilingEvent` is a plain dataclass, so its `rcept_dt: str`
+    annotation is not enforced at construction, and some non-strings
+    (e.g. bytes) would fail later at the JSON candidate-store write.
+
+    That is unchanged from before Repair B: the mapping previously read
+    `rcept_dt=record.rcept_dt`, passing the DTO value through verbatim,
+    which is byte-for-byte what the non-string branch does now. It is
+    also unreachable on the production path — client.py sources this
+    value from `json.loads` output, and JSON decoding never yields
+    bytes. Widening or hardening that behavior is deliberately out of
+    this repair's scope."""
+    assert scan_service._canonical_rcept_dt(raw) is raw
+
+
+def test_unicode_digits_are_not_converted():
+    """`str.isdigit()` is true for non-ASCII digit characters; the
+    conversion is gated on ASCII so an exotic value is left alone rather
+    than silently normalized."""
+    arabic_indic = "٢٠٢٦٠٨١٠"  # ٢٠٢٦٠٨١٠
+    assert len(arabic_indic) == 8 and arabic_indic.isdigit()
+    assert scan_service._canonical_rcept_dt(arabic_indic) == arabic_indic
+
+
+def test_filing_event_mapping_emits_a_canonical_receipt_date():
+    """The boundary itself, not just the helper."""
+    record = _record("20260810000001", "단일판매ㆍ공급계약체결")
+    assert record.rcept_dt == "20260810"  # DTO stays faithful to the wire
+
+    filing = scan_service._filing_event_from_record(record, _SAMSUNG, retrieved_at="2026-08-10T01:00:00+00:00")
+
+    assert filing.rcept_dt == "2026-08-10"
+    # Every other mapped field is untouched by this repair.
+    assert filing.rcept_no == record.rcept_no
+    assert filing.corp_code == record.corp_code
+    assert filing.corp_name == record.corp_name
+    assert filing.stock_code == record.stock_code
+    assert filing.report_nm == record.report_nm
+    assert filing.flr_nm == record.flr_nm
+    assert filing.retrieved_at == "2026-08-10T01:00:00+00:00"
+
+
+def test_filing_event_mapping_leaves_an_unconvertible_receipt_date_alone():
+    record = DisclosureRecord(
+        corp_cls="Y", corp_name="삼성전자", corp_code="00126380", stock_code="005930",
+        report_nm="단일판매ㆍ공급계약체결", rcept_no="20260810000002", flr_nm="삼성전자",
+        rcept_dt="20260230", rm="",
+    )
+
+    filing = scan_service._filing_event_from_record(record, _SAMSUNG, retrieved_at="2026-08-10T01:00:00+00:00")
+
+    assert filing.rcept_dt == "20260230"
+
+
+def test_canonical_date_now_satisfies_the_research_case_selector_date_gate():
+    """End of the chain: the selector's own parser accepts what the
+    boundary now produces, and still refuses what DART used to emit.
+    This asserts the selector's contract is MET, never widened."""
+    from src.logic.research_lead_selection import _parse_iso_date
+
+    assert _parse_iso_date(scan_service._canonical_rcept_dt("20260810")) is not None
+    assert _parse_iso_date("20260810") is None  # unchanged: compact is still rejected there
+
+
+def test_dual_format_downstream_consumers_still_parse_the_canonical_date():
+    """The five display helpers strip dashes before parsing %Y%m%d, so
+    they accept both shapes. Normalizing must not break them."""
+    from datetime import date as _date
+
+    from src.ui.pages.radar_inbox import _parse_rcept_date
+
+    canonical = scan_service._canonical_rcept_dt("20260810")
+    assert _parse_rcept_date(canonical) == _date(2026, 8, 10)
+    assert _parse_rcept_date("20260810") == _date(2026, 8, 10)  # legacy rows still parse
+
+
+def test_edgar_and_edinet_sources_already_emit_canonical_dates_and_are_unchanged():
+    """Both lanes' own scan services already produce dashed ISO, which
+    is why only DART needed this repair. Pinned so a future change to
+    either lane that reintroduced a compact date would surface here
+    rather than silently reaching the selector."""
+    from src.logic.research_lead_selection import _parse_iso_date
+
+    # EDGAR takes its date straight from the submissions feed as ISO;
+    # EDINET truncates its real submitDateTime to an ISO date component.
+    for already_canonical in ("2026-08-10", "2026-01-01"):
+        assert _parse_iso_date(already_canonical) is not None
+        # The DART normalizer would be a no-op on them in any case.
+        assert scan_service._canonical_rcept_dt(already_canonical) == already_canonical

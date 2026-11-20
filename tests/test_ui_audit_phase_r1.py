@@ -23,6 +23,7 @@ from streamlit.testing.v1 import AppTest
 from src.config.settings import Settings
 from src.data_access.dart import candidate_store
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
+from tests.dart_registry_fixtures import seed_corp_codes
 
 HARNESS_DIR = Path(__file__).parent / "apptest_pages"
 REPO_ROOT = Path(__file__).parent.parent
@@ -33,24 +34,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _seed_corp_codes(cache_dir: Path) -> None:
-    # Extended (2026-09-04) with the Core Issuer Expansion batch's 8 new
-    # DART companies — every tracked DART company must be resolved for
-    # dart_readiness.ready to be True at all.
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "005930": {"corp_code": "00126380", "corp_name": "삼성전자", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "000660": {"corp_code": "00164779", "corp_name": "SK 하이닉스", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-08-01T00:00:00+00:00"},
-        "011070": {"corp_code": "00105961", "corp_name": "LG이노텍", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "012450": {"corp_code": "00126566", "corp_name": "한화에어로스페이스", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "047810": {"corp_code": "00309503", "corp_name": "한국항공우주", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "454910": {"corp_code": "01105153", "corp_name": "두산로보틱스", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "240810": {"corp_code": "01135941", "corp_name": "원익IPS", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "056190": {"corp_code": "00358271", "corp_name": "SFA", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "036540": {"corp_code": "00301246", "corp_name": "SFA반도체", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-        "067310": {"corp_code": "00445054", "corp_name": "하나마이크론", "source": "OpenDART corpCode.xml", "retrieved_at": "2026-09-04T00:00:00+00:00"},
-    }
-    (cache_dir / "dart_corp_codes.json").write_text(json.dumps(payload), encoding="utf-8")
+def _seed_corp_codes(cache_dir) -> None:
+    """Every tracked DART company, derived from the registry.
+
+    radar_readiness() is fail-closed: one tracked DART company with
+    no resolved corp code leaves .ready False, and the page then
+    renders its "not configured" state instead of any cards, so every
+    content assertion below would fail for a reason unrelated to what
+    it asserts. This used to be a hand-written list and fell behind
+    the registry; deriving it means it cannot. Corp codes are
+    synthetic test data (see tests/dart_registry_fixtures.py)."""
+    seed_corp_codes(cache_dir)
 
 
 def _filing(rcept_no: str, report_nm: str) -> FilingEvent:

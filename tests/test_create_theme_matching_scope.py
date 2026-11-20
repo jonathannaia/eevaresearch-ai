@@ -192,11 +192,37 @@ def test_duplicate_scope_rejected(tmp_path, monkeypatch):
 # ============================================================
 
 
-def test_empty_sector_tags_rejected(monkeypatch):
+def test_subtag_only_scope_is_accepted(monkeypatch):
+    """A scope may declare subtags alone. This is deliberate: a
+    subtag-only scope still matches (evaluate_theme_match's sector gate
+    is an OR), but contributes NOTHING to radar_worker's
+    `already_covered` suppression set, which is built by iterating
+    sector_tags. It opens the matching loop without closing detection."""
     _set_valid_content(monkeypatch, _SCOPE_SECTOR_TAGS=())
     scope = scope_mod.build_authored_scope(True)
+
+    assert scope.sector_tags == ()
+    assert scope.sector_subtags  # non-empty
+    assert scope_mod.validate_scope_content(scope) == ()
+
+
+def test_tag_only_scope_is_still_accepted(monkeypatch):
+    """The pre-existing form is unchanged."""
+    _set_valid_content(monkeypatch, _SCOPE_SECTOR_SUBTAGS=())
+    scope = scope_mod.build_authored_scope(True)
+
+    assert scope.sector_subtags == ()
+    assert scope_mod.validate_scope_content(scope) == ()
+
+
+def test_both_sector_fields_empty_is_still_rejected(monkeypatch):
+    """The rule narrowed from "tags required" to "not BOTH empty" --
+    it was not removed."""
+    _set_valid_content(monkeypatch, _SCOPE_SECTOR_TAGS=(), _SCOPE_SECTOR_SUBTAGS=())
+    scope = scope_mod.build_authored_scope(True)
     errors = scope_mod.validate_scope_content(scope)
-    assert any("sector_tags" in e for e in errors)
+
+    assert any("sector_tags" in e and "sector_subtags" in e for e in errors), errors
 
 
 def test_empty_allowed_rule_categories_rejected(monkeypatch):

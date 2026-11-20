@@ -445,11 +445,16 @@ def test_the_streamlit_app_does_not_serve_the_static_landing_page():
 
 
 def test_the_retained_copy_lives_in_about_and_not_in_the_footer():
+    """The venue names this line used to spell out are no longer a source
+    literal — the reader-facing truthfulness pass derives them from the
+    source registry — so that fragment is checked against the RENDERED
+    page in tests/test_product_claim_accuracy.py instead of as text in
+    this file. The retained prose itself is still asserted here, which is
+    what this test is for."""
     about = _source("src/ui/pages/about.py")
     for fragment in (
         "Evidence-first research across AI infrastructure",
         "what was actually filed and said",
-        "SEC EDGAR, DART, and EDINET",
     ):
         assert fragment in about, fragment
 

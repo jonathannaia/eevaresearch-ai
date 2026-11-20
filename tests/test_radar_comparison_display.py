@@ -19,22 +19,24 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.config.settings import Settings
 from src.data_access import backend_factory
 from src.data_access.comparison_store import ComparisonRecord, build_comparison_record
 from src.data_access.dart import candidate_store
 from src.logic.prior_disclosure_comparison import ComparisonResult, ComparisonStatus
 from src.models.models import CandidateSignal, CandidateStatus, ExtractionState, FilingEvent, StateTransition
 from src.ui.components.radar_status import comparison_status_label
+from tests.configured_test_settings import configured_settings
+from tests.no_network import block_network
 
 _HARNESS = Path(__file__).parent / "apptest_pages" / "radar_inbox_page.py"
 _COMPARISON_CAVEAT = "Deterministic rule-category comparison — not a filing-text, financial, or materiality determination."
 
 
 @pytest.fixture(autouse=True)
-def _clear_dashboard_snapshot_cache():
+def _clear_dashboard_snapshot_cache(monkeypatch):
     from src.ui.pages.radar_inbox import _load_dashboard_snapshot
 
+    block_network(monkeypatch)
     _load_dashboard_snapshot.clear()
     yield
     _load_dashboard_snapshot.clear()
@@ -130,7 +132,7 @@ def test_paginated_render_makes_exactly_one_bulk_comparison_call(tmp_path):
     candidate_store.save_candidates(tmp_path, candidates)
 
     call_log: list[list[str]] = []
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -150,7 +152,7 @@ def test_bulk_request_contains_only_current_page_candidate_ids_not_other_pages(t
 
     all_ids = set(candidates.keys())
     call_log: list[list[str]] = []
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -171,7 +173,7 @@ def test_no_comparison_repository_call_when_page_has_no_candidate_ids(tmp_path):
     candidate_store.save_candidates(tmp_path, {})
 
     call_log: list[list[str]] = []
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -203,7 +205,7 @@ def test_repository_error_is_caught_and_radar_continues_rendering(tmp_path):
     def _raising_get_comparison_repository(settings):
         raise RuntimeError("simulated repository construction failure — must never surface to the user")
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), \
          patch("src.ui.pages.radar_inbox.backend_factory.get_comparison_repository", side_effect=_raising_get_comparison_repository):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
@@ -254,7 +256,7 @@ def _render_single_candidate_page(tmp_path, candidate: CandidateSignal, records_
     candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
 
     call_log: list[list[str]] = []
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory(records_by_candidate_id, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.run()
@@ -312,7 +314,7 @@ def test_candidate_absent_renders_no_comparison_row(tmp_path):
     _seed_filing_events(tmp_path, [filing])
     candidate_store.save_candidates(tmp_path, {})
 
-    settings = Settings(dart_api_key="dart-key", translation_api_key="deepl-key", cache_dir=tmp_path)
+    settings = configured_settings(tmp_path)
     call_log: list[list[str]] = []
     with patch("src.ui.pages.radar_inbox.get_settings", return_value=settings), _patched_factory({}, call_log):
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)

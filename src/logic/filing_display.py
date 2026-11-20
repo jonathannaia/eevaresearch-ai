@@ -27,7 +27,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from src.config.tracked_companies import get_tracked_companies
 from src.data_access.edgar.edgar_rules import normalize_form_type
+from src.logic import dart_summary
 from src.models.models import CandidateSignal, EvidenceLocation, FilingEvent, LocationKind
 
 EDGAR_SOURCE_NAME = "SEC EDGAR"
@@ -323,6 +325,196 @@ _SUMMARY_MAX_CHARS = 320
 # for first.
 _SUMMARY_MAX_SEARCH_CHARS = 640
 
+# A numbered section/list marker — "1.", "12." — standing on its own as a
+# token, not a completed sentence. DART's disclosure bodies are numbered
+# ("1. 제목 ... 2. 내용 ..." / "1. Content ... 2. Media Outlet ..."), and
+# _SENTENCE_END_PATTERN matches the marker's period exactly like a full
+# stop, so a summary could be cut at — and end on — a dangling "1.".
+#
+# Deliberately NARROW, and deliberately not "a digit before a period is
+# never a sentence end":
+#   * the number must be a STANDALONE token (start-of-text or whitespace
+#     before it), so "$4.5", "2026.08.10" and "No. 1" are untouched;
+#   * at most two digits, so a sentence ending in a year ("... August 10,
+#     2026.") still ends a sentence and is still a valid cut point;
+#   * anchored to the END of the candidate cut, so a marker occurring
+#     anywhere inside the retained text is left exactly as it is — this
+#     only decides where a cut may land, never what the text says.
+#
+# Accepted trade-off, stated rather than hidden: a genuine sentence whose
+# final word is a bare one- or two-digit number ("The ratio is 1.") is
+# not used as a cut point either, because no textual signal separates it
+# from a list marker. The effect is only a shorter or absent summary,
+# never altered or invented content.
+_STANDALONE_LIST_MARKER_END_RE = re.compile(r"(?:^|\s)\d{1,2}\.$")
+# Any standalone numbering, anywhere — used ONLY by the substantiveness
+# check below, never to cut displayed text.
+_BARE_NUMBERING_RE = re.compile(r"(?:^|\s)\d{1,2}\.(?=\s|$)")
+# A trailing alphabetic SUB-marker ("... Investment Decisions a."). Only
+# a-h, only at the very end, and only inside a document that already has a
+# numbered field run — so an initial ("John F.") or an abbreviation in
+# ordinary prose is never touched, and a meaningful enumerated clause in
+# the middle of the text is left alone.
+_TRAILING_ALPHA_MARKER_RE = re.compile(r"(?:^|\s)[a-h]\.$", re.IGNORECASE)
+# A form/version marker such as "6.1" or "6.7" printed on a DART cover
+# heading. Recognised ONLY for the substantiveness judgement below — it is
+# never removed from displayed text, and a real decimal amount keeps its
+# surrounding words, which is what that judgement actually counts.
+_FORM_VERSION_TOKEN_RE = re.compile(r"^\d{1,3}\.\d{1,3}$")
+# The same form/version marker, found in running text rather than tested
+# as a whole token, plus the Korean CORPORATE REGISTRY number that DART's
+# cover-page masthead prints immediately after the issuer's legal name:
+#
+#   "Semiannual Report 6.7 Wonik IPS Co., Ltd. Y 131311-0163174 ..."
+#   "Semiannual Report 6.7 Doosan Robotics Y 110111-5798272 ..."
+#
+# Exactly six digits, a hyphen, exactly seven digits. Deliberately NOT
+# the 3-2-5 business-registration number ("116-81-03693") that appears
+# inside real large-holdings FIELD BODIES, which must keep working.
+_DART_FORM_VERSION_IN_TEXT_RE = re.compile(r"(?<![\w.])\d{1,3}\.\d{1,3}(?![\w.])")
+_DART_CORPORATE_REGISTRY_NO_RE = re.compile(r"(?<!\d)\d{6}-\d{7}(?!\d)")
+# The marker must sit near the very start, and the registry number close
+# behind it — the masthead is "<form name> <version> <issuer> <flag>
+# <registry no>", never a sentence.
+_DART_MASTHEAD_MAX_LEAD_TOKENS = 14
+_DART_MASTHEAD_MAX_GAP_TOKENS = 10
+_PLACEHOLDER_DIGITS_RE = re.compile(r"^0+$|^\d{8}$")
+_WORD_TOKEN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+# A summary whose own opening phrase is printed again later is a repeated
+# document heading, not prose — but only when almost nothing else is
+# there. See summary_is_substantive for why both conditions are required.
+_HEADING_PHRASE_WORDS = 5
+_COLON_LABEL_RE = re.compile(r"[^\W\d_]\s*[:：]")
+
+
+def _repeats_its_opening_phrase(text: str) -> bool:
+    tokens = text.split()
+    if len(tokens) < _HEADING_PHRASE_WORDS * 2:
+        return False
+    opening = " ".join(tokens[:_HEADING_PHRASE_WORDS])
+    return text.count(opening) > 1
+
+
+def _is_numbered_field_document(text: str) -> bool:
+    return bool(dart_summary.marker_end_positions(" ".join(text.split())))
+
+
+def _is_dart_cover_page_masthead(normalized: str) -> bool:
+    """The "<form name> <version> <issuer> <flag> <registry no>" masthead
+    DART prints at the head of a report's cover page.
+
+    Issuer-independent, title-independent, registry-independent: it reads
+    only the shape. Both parts are required, the version marker must be
+    near the start, and the registry number must follow close behind it,
+    so an amount ("4.5 trillion won") or a percentage ("2.40") in real
+    prose can never produce a match on its own."""
+    for marker in _DART_FORM_VERSION_IN_TEXT_RE.finditer(normalized):
+        if len(normalized[: marker.start()].split()) > _DART_MASTHEAD_MAX_LEAD_TOKENS:
+            return False
+        registry = _DART_CORPORATE_REGISTRY_NO_RE.search(normalized, marker.end())
+        if registry is None:
+            continue
+        if len(normalized[marker.end(): registry.start()].split()) <= _DART_MASTHEAD_MAX_GAP_TOKENS:
+            return True
+    return False
+
+
+def _is_dart_document_header(text: str, title_words: set[str]) -> bool:
+    """True for a DART cover HEADING printed as if it were content.
+
+    THREE registry-independent shapes, all observed live. None depends on
+    recognising the issuer, so a company missing from the tracked
+    registry, or filed under a mismatched code, is judged the same way.
+
+      a) the heading is printed twice —
+         "Report on Large Holdings ... 6.1 <issuer> 0000 0000
+          Report on Large Holdings of Stocks, etc."
+      b) a form/version marker ("6.7") whose ENTIRE preceding text is
+         words the display title already contains —
+         "Semiannual Report 6.7 <issuer>"
+      c) the cover-page MASTHEAD: a form/version marker near the start,
+         followed close behind by the Korean corporate registry number —
+         "Semiannual Report 6.7 <issuer legal name> Y 131311-0163174"
+
+    Order of evaluation, which differs per shape and is deliberate:
+
+      * A NUMBERED FIELD DOCUMENT is excluded first, for every shape.
+        That is what a real DART disclosure body looks like, and no
+        shape below may override it.
+      * Shape (c) is then evaluated BEFORE the colon-label guard. Every
+        observed cover page carries an administrative label ("Fiscal
+        Year:", "To:", "Company Name:"), so the guard made this shape
+        unreachable unless the summary happened to be cut before the
+        first label — which is why the identical form was rejected for
+        one issuer and accepted for another.
+      * Shapes (a) and (b) keep their EXISTING guards unchanged: both
+        are still skipped for text carrying colon-delimited field
+        labels, which is what real DART field bodies look like.
+
+    Shape (c) is a masthead test, not general cover-page detection: it
+    requires a nearby 6-7 corporate registry number, so a cover page
+    without one is not covered by it, and a decimal followed closely by
+    that number can match. A match only suppresses a summary into the
+    honest fallback — it can never produce misleading content — but it
+    can cost a useful one."""
+    normalized = " ".join(text.split())
+    if _is_numbered_field_document(normalized):
+        return False
+    # Shape (c) FIRST, because it is the one the colon guard below hides:
+    # every observed semiannual cover page carries an administrative
+    # "Fiscal Year:" / "To:" / "Company Name:" label, so the guard made
+    # this class unreachable for most issuers and the outcome depended on
+    # where the summary happened to be cut. This shape needs no issuer
+    # name, no registry lookup and no title spelling, so the same form
+    # now behaves the same way for every issuer.
+    if _is_dart_cover_page_masthead(normalized):
+        return True
+    if _COLON_LABEL_RE.search(normalized):
+        return False
+    if _repeats_its_opening_phrase(normalized):
+        return True
+    for token in normalized.split():
+        bare = token.strip(".,;:()[]{}·—-")
+        if not _FORM_VERSION_TOKEN_RE.match(bare):
+            continue
+        before = normalized[: normalized.find(token)]
+        words = _WORD_TOKEN_RE.findall(before)
+        # "The contract is valued at 4.5 trillion won." keeps words the
+        # title does not contain, so only a pure heading matches here.
+        if words and all(w.lower() in title_words for w in words):
+            return True
+        break
+    return False
+
+
+def _drop_trailing_alpha_marker(result: str, markers: frozenset[int]) -> str:
+    """Removes a dangling alphabetic sub-marker from the END only, and
+    only when the text is a numbered field document (`markers` non-empty).
+    Observed live: "... 4. Other Important Matters Related to Investment
+    Decisions a." """
+    if not markers:
+        return result
+    cleaned = result.rstrip()
+    match = _TRAILING_ALPHA_MARKER_RE.search(cleaned)
+    return cleaned[: match.start()].rstrip() if match else cleaned
+
+
+def _drop_trailing_run_marker(result: str, markers: frozenset[int]) -> str:
+    """Final guard: a summary never ends on a dangling FIELD marker.
+
+    `markers` holds the end offsets of an ascending numbered run only, so
+    a sentence genuinely ending in a number ("The ratio is 1.") is never
+    trimmed. Bounded, never an unbounded loop."""
+    cleaned = result.rstrip()
+    for _ in range(3):
+        if len(cleaned) not in markers:
+            break
+        match = _STANDALONE_LIST_MARKER_END_RE.search(cleaned)
+        if not match:
+            break
+        cleaned = cleaned[: match.start()].rstrip()
+    return cleaned
+
 
 def extractive_summary(text: str) -> str:
     """A concise summary grounded ONLY in `text` itself — literally a
@@ -346,20 +538,33 @@ def extractive_summary(text: str) -> str:
     if not normalized:
         return ""
 
+    # Context, not a bare digit test: only periods belonging to an
+    # ASCENDING run starting at 1, with at least two members, are field
+    # markers. "The deadline is 10." in ordinary prose is not in such a
+    # run, so it stays a sentence ending and a valid cut point.
+    markers = dart_summary.marker_end_positions(normalized)
+
     boundary = None
     for match in _SENTENCE_END_PATTERN.finditer(normalized):
         if match.end() > _SUMMARY_MAX_CHARS:
             break
+        if match.start() + 1 in markers:
+            continue
         boundary = match.end()
     if boundary:
-        return normalized[:boundary].strip()
+        return _drop_trailing_alpha_marker(
+            _drop_trailing_run_marker(normalized[:boundary].strip(), markers), markers)
 
     if len(normalized) <= _SUMMARY_MAX_CHARS:
-        return normalized
+        return _drop_trailing_alpha_marker(_drop_trailing_run_marker(normalized, markers), markers)
 
-    match = _SENTENCE_END_PATTERN.search(normalized)
-    if match and match.end() <= _SUMMARY_MAX_SEARCH_CHARS:
-        return normalized[:match.end()].strip()
+    for match in _SENTENCE_END_PATTERN.finditer(normalized):
+        if match.end() > _SUMMARY_MAX_SEARCH_CHARS:
+            break
+        if match.start() + 1 in markers:
+            continue
+        return _drop_trailing_alpha_marker(
+            _drop_trailing_run_marker(normalized[:match.end()].strip(), markers), markers)
 
     return ""
 
@@ -517,6 +722,348 @@ def strip_edinet_machine_artifacts(text: str) -> str:
             break
         cleaned = cleaned[match.end():]
     return cleaned
+
+
+# ------------------------------------------------------------
+# EDINET: two further machine artifacts, SUMMARY PATH ONLY
+# ------------------------------------------------------------
+#
+# Observed live (2026-10-28 read-only UI baseline) and NOT matched by
+# strip_edinet_machine_artifacts above:
+#
+#   a) a document-title-timestamp whose title is a single whitespace-free
+#      CJK token carrying full-width parentheses, so the existing
+#      space-separated word-token pattern cannot reach it:
+#        "自己株券買付状況報告書（法24条の６第１項に基づくもの）_20261015090441"
+#   b) the exported HTML member's own FILENAME, left at the head of the
+#      extracted text:
+#        "0101010_honbun_0088405703810.htm"
+#        "0100000_honbun_0596300283810.htm"
+#
+# These are applied to the SUMMARY working copy only — never to the text
+# the excerpt toggles render. strip_edinet_machine_artifacts above keeps
+# its existing, separately-tested reach over both (a live regression
+# fixed earlier required those two shapes to disappear from the card
+# entirely); this function deliberately does not widen that reach, so no
+# excerpt view changes.
+#
+# Removing an artifact establishes NOTHING about what is left:
+# summary_is_substantive still judges the remainder on its own, and a
+# text that was only an artifact collapses to the honest fallback.
+
+# One CJK/kana/Hangul character — enough to mark a token as a native
+# document title rather than ordinary ASCII content.
+_CJK_TITLE_CHAR = "぀-ヿ㐀-䶿一-鿿가-힯"
+# (a) start-anchored, whitespace-free, must contain a native character,
+# and must end on exactly the 14-digit stamp EDINET appends.
+_EDINET_CJK_TITLE_TIMESTAMP_RE = re.compile(
+    rf"^[^\s]{{0,100}}[{_CJK_TITLE_CHAR}][^\s]{{0,100}}_\d{{14}}(?=\s|$)\s*"
+)
+# (b) start-anchored exported-member filename: digits _ word _ digits
+# .htm/.html. Narrow on purpose — every part is required.
+_EDINET_MEMBER_FILENAME_RE = re.compile(
+    r"^\d{4,12}_[A-Za-z][A-Za-z0-9]{0,30}_\d{6,24}\.html?(?=\s|$)\s*"
+)
+_EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS = 3
+
+
+def strip_edinet_summary_artifacts(text: str) -> str:
+    """Removes, from the START of `text` only, the two further EDINET
+    machine artifacts above. For the SUMMARY working copy only — the
+    caller never passes the text an excerpt toggle renders.
+
+    A no-op for every already-clean text, and for any text where a
+    matching shape exists but not at position 0. Bounded loop, never
+    unbounded. No provider knowledge: the caller decides when to call
+    it (EDINET only)."""
+    if not text:
+        return text
+    cleaned = text
+    for _ in range(_EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS):
+        match = _EDINET_CJK_TITLE_TIMESTAMP_RE.match(cleaned) or _EDINET_MEMBER_FILENAME_RE.match(cleaned)
+        if not match:
+            break
+        cleaned = cleaned[match.end():]
+    return cleaned
+
+
+# ============================================================
+# DART cover-page header cleanup (filing-summary quality fix)
+# ============================================================
+#
+# DART's document extractor keeps the cover page whenever a filing has
+# exactly ONE <SECTION-1> element (dart/document_extractor.py's
+# section-skip heuristic drops the first section only when more than one
+# exists). That cover page prints, as running text:
+#
+#   "{issuer}/{title}/({filed date}){title} {title} 1. ... 2. ..."
+#
+# so the stored excerpt — and its translation — begin with the filing's
+# own title repeated two or three times, with the issuer and date. Under
+# the "Filing summary" heading that reads as the title restated, and on
+# a short disclosure it can consume the whole summary window, pushing the
+# issuer's actual statement past the cut.
+#
+# This is display-time cleanup over a local copy only. It never touches
+# a stored record, and the separate "View original/translated filing
+# excerpt" toggles keep showing the stored text exactly as persisted.
+#
+# POSITIVE identification only. The header run must be
+# "<segment>/<segment>/(<parenthesised run containing a 4-digit year>)"
+# at position 0 — a shape a reader's prose does not take. There is no
+# generic slash splitting, no "drop everything before the first
+# sentence", and no global title replacement: a title occurring later in
+# real prose is never removed, and any text that does not match this
+# exact leading shape is returned completely unchanged.
+# The parenthesised run must be an actual FILED DATE in one of the two
+# shapes DART prints — "(2026.08.10)" natively, "(August 10, 2026)" once
+# translated. Requiring merely "a 4-digit year somewhere in brackets" was
+# overbroad: it stripped genuine opening prose such as
+# "Revenue / cost / (margin 2026) analysis follows ...".
+_DART_FILED_DATE = r"\(\s*(?:\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|[A-Z][a-z]+\.?\s+\d{1,2},\s*\d{4})\s*\)"
+_DART_COVER_PAGE_HEADER_RE = re.compile(
+    r"^\s*[^/\n]{1,60}?\s*/\s*(?P<title>[^/\n]{1,120}?)\s*/\s*" + _DART_FILED_DATE + r"\s*"
+)
+_DART_TITLE_REPEAT_MAX_ITERATIONS = 3
+
+
+def _strip_leading_repeat(text: str, phrase: str) -> str | None:
+    """Removes ONE leading occurrence of `phrase` from `text`, comparing
+    with whitespace ignored, and returns None when `text` does not start
+    with it.
+
+    Whitespace-insensitive because the cover page's own repeats are not
+    byte-identical: the translated form of one observed filing renders
+    "... Reports (Unconfirmed) ... Reports(Unconfirmed)" — the same title
+    with and without a space before the bracket. A byte comparison would
+    silently leave the second copy in place."""
+    phrase_chars = [c for c in phrase if not c.isspace()]
+    if not phrase_chars:
+        return None
+    matched = 0
+    for index, char in enumerate(text):
+        if char.isspace():
+            continue
+        if char != phrase_chars[matched]:
+            return None
+        matched += 1
+        if matched == len(phrase_chars):
+            return text[index + 1:].lstrip()
+    return None
+
+
+def strip_dart_cover_page_header(text: str) -> str:
+    """Removes, from the START of `text` only, DART's cover-page
+    "{issuer}/{title}/({date})" run and the title repetitions that
+    immediately follow it. Returns `text` unchanged whenever that exact
+    leading shape is absent — every already-clean excerpt, every text
+    whose first sentence merely contains a slash or a date, and every
+    non-DART provider (the caller decides when to call this; this
+    function has no notion of source, exactly like
+    strip_edinet_machine_artifacts above).
+
+    Only leading repeats are removed, and only while they immediately
+    follow one another, in a small bounded loop. Body content — dates,
+    monetary amounts, numbered sections, the issuer's own statement — is
+    never inspected and never altered."""
+    if not text:
+        return text
+    match = _DART_COVER_PAGE_HEADER_RE.match(text)
+    if not match:
+        return text
+    cleaned = text[match.end():]
+    title = match.group("title").strip()
+    for _ in range(_DART_TITLE_REPEAT_MAX_ITERATIONS):
+        stripped = _strip_leading_repeat(cleaned, title)
+        if stripped is None:
+            break
+        cleaned = stripped
+    # Returned even when empty: a cover page with nothing after it is a
+    # title-only excerpt, and "" is the honest result the caller's own
+    # substantiveness check turns into the unavailable presentation.
+    # Falling back to the raw text here would reinstate the exact defect.
+    return cleaned
+
+
+def issuer_display_names(filing: FilingEvent) -> tuple[str, ...]:
+    """Names this issuer is printed under, for the substantiveness
+    judgement only. The source-native name comes from the filing itself;
+    the English name comes from the tracked registry, because a DART
+    cover heading prints the translated legal name ("Korea Aerospace
+    Industries, Ltd.") while FilingEvent stores the Korean one."""
+    names = [(filing.corp_name or "").strip(), (filing.flr_nm or "").strip()]
+    code = (filing.stock_code or "").strip()
+    if code:
+        for company in get_tracked_companies(active_only=False):
+            if company.krx_code == code:
+                names.append(company.name)
+                break
+    return tuple(n for n in names if n)
+
+
+# ============================================================
+# Honest "no substantive summary" presentation
+# ============================================================
+#
+# Replaces metadata_only_summary() under the "Filing summary" heading.
+# That sentence ("{Company} filed {title} on {date}.") restates the
+# title already displayed directly above the heading, so a reader is
+# shown metadata labelled as a summary. These two lines say plainly that
+# no summary could be produced and point at the filing itself, which
+# stays linked on the card either way.
+#
+# Deliberately makes no claim about WHY — not "extraction failed", not
+# "translation pending". The card cannot distinguish a failed
+# extraction from a filing whose body is only a cover page, and the
+# existing accurate diagnostics (the excerpt toggles, the
+# "Excerpt may be incomplete" notice) are untouched.
+SUMMARY_UNAVAILABLE_TEXT = "Summary unavailable."
+SUMMARY_UNAVAILABLE_ACTION = "Open the original filing for details."
+
+
+# ============================================================
+# Original-language availability
+# ============================================================
+#
+# A filing can have a readable ORIGINAL-language excerpt and no usable
+# ENGLISH translation of it. The card used to show the honest fallback
+# and nothing else in that case — truthful, but needlessly empty: the
+# original text is already stored, already readable, and already one
+# toggle below. What was missing was not the content but the labelling
+# that makes showing it honest.
+#
+# Nothing here translates, generates, paraphrases or infers. The label
+# names the language the FILING ITSELF declares (FilingEvent.
+# original_language, set by each source's own scan service), and the
+# notice states only what the stored artifacts show.
+
+ORIGINAL_LANGUAGE_LABEL_PREFIX = "Original language"
+ENGLISH_TRANSLATION_UNAVAILABLE_TEXT = "English translation not available on this card."
+
+
+def original_language_label(original_language: str | None) -> str:
+    """"Original language — Korean" / "... — Japanese", or the bare
+    prefix when the filing declares no language. Never inferred from the
+    text itself — a language is named only because the filing says so."""
+    language = (original_language or "").strip()
+    if not language:
+        return ORIGINAL_LANGUAGE_LABEL_PREFIX
+    return f"{ORIGINAL_LANGUAGE_LABEL_PREFIX} \u2014 {language}"
+
+
+# What the card may say about WHY no English is shown — and, much more
+# importantly, what it may NOT say.
+#
+# `translation_state` is a SINGLE candidate-level value, and inspecting
+# how it is actually written shows it cannot establish the status of THIS
+# excerpt's translation at render time:
+#
+#   * DART writes it from `primary_attempt = excerpt_attempt if
+#     candidate.excerpt_original else title_attempt`
+#     (dart/radar_pipeline.py). A candidate whose excerpt arrived only
+#     after that write carries a state describing the TITLE attempt, and
+#     nothing re-scopes it when an excerpt later appears.
+#   * EDINET sets PENDING to mean "no provider configured — no call
+#     attempted" (edinet/edinet_pipeline.py), not "an attempt is in
+#     flight".
+#   * NOT_REQUESTED is the dataclass DEFAULT, so it is also what an
+#     object carries when no pipeline ever wrote a state at all. It
+#     cannot distinguish a deliberate decision from an absent one.
+#
+# So "a usable translation is absent" is the only thing the card can
+# actually see, and the primary notice already says exactly that. No
+# state-derived detail is emitted. The ONE detail that is established is
+# read off the rendered object itself, at render time: whether a title
+# translation exists while an excerpt translation does not.
+#
+# No retry, no ETA, no "being prepared", no failure category, no provider
+# name, no state name, no operational detail of any kind reaches the card.
+_TITLE_ONLY_TRANSLATION_DETAIL = "The title was translated; the excerpt was not."
+
+
+def original_language_notice(
+    *,
+    has_title_translation: bool,
+    has_excerpt_translation: bool,
+) -> tuple[str, tuple[str, ...]]:
+    """(primary, details) for a card presenting original-language text.
+
+    The primary line is unconditional and makes no claim about why. The
+    only detail distinguishes a translated title from an untranslated
+    excerpt, because that is visible in the stored artifacts themselves.
+    Deliberately takes no translation state: see the comment above for
+    why a candidate-level state cannot support a per-artifact claim."""
+    details: list[str] = []
+    if has_title_translation and not has_excerpt_translation:
+        details.append(_TITLE_ONLY_TRANSLATION_DETAIL)
+    return ENGLISH_TRANSLATION_UNAVAILABLE_TEXT, tuple(details)
+
+
+def summary_is_substantive(
+    summary: str,
+    display_title_text: str,
+    issuer_names: tuple[str, ...] = (),
+    dart_header_rules: bool = False,
+) -> bool:
+    """True when `summary` says something the title does not already say.
+
+    NOT a minimum-length rule: a short real statement ("We are reviewing
+    various measures, but nothing has been determined to date.") is
+    substantive and passes. What fails is content that, once leading
+    title repetitions and bare numbered markers are removed, has nothing
+    left — the title echoed back under a summary heading."""
+    if not summary or not summary.strip():
+        return False
+    remainder = " ".join(summary.split())
+    title = " ".join((display_title_text or "").split())
+    if title:
+        for _ in range(_DART_TITLE_REPEAT_MAX_ITERATIONS + 1):
+            stripped = _strip_leading_repeat(remainder, title)
+            if stripped is None:
+                break
+            remainder = stripped
+    remainder = _drop_trailing_run_marker(remainder, dart_summary.marker_end_positions(remainder))
+    # Whatever survives the title strip is judged on whether it carries
+    # any WORD. Bare numbering left over from a field list is not content.
+    # This only decides substantiveness — it never cuts displayed text, so
+    # a real sentence such as "Revenue rose to 25." still qualifies on its
+    # words alone.
+    remainder = _BARE_NUMBERING_RE.sub(" ", remainder)
+    if not remainder.strip():
+        return False
+
+    # Observed live on DART "6.x" cover headings, e.g.
+    #   "Semiannual Report 6.7 Korea Aerospace Industries, Ltd."
+    #   "Report on Large Holdings ... 6.1 Korea Aerospace Industries, Ltd.
+    #    0000 0000 Report on Large Holdings of Stocks, etc."
+    # Both are a heading, the issuer name, a form/version marker and
+    # placeholder digits — nothing the title does not already say.
+    #
+    # This COUNTS tokens; it deletes nothing from displayed text. Only
+    # whole tokens that are exactly a form/version marker ("6.1"), a run
+    # of zeros, or an 8-digit date are discounted, so a real amount such
+    # as "4.5 trillion won" keeps "trillion" and "won" and still counts.
+    title_words = {w.lower() for w in _WORD_TOKEN_RE.findall(title)}
+    issuer_words: set[str] = set()
+    for name in issuer_names:
+        issuer_words |= {w.lower() for w in _WORD_TOKEN_RE.findall(name)}
+    informative = 0
+    for token in remainder.split():
+        bare = token.strip(".,;:()[]{}·—-")
+        if not bare or _FORM_VERSION_TOKEN_RE.match(bare) or _PLACEHOLDER_DIGITS_RE.match(bare):
+            continue
+        for word in _WORD_TOKEN_RE.findall(bare):
+            if word.lower() not in title_words and word.lower() not in issuer_words:
+                informative += 1
+    if informative == 0:
+        return False
+    # DART-only, so EDGAR's item-anchored excerpts and EDINET's Japanese
+    # bodies keep their existing behaviour untouched. The issuer-name
+    # discount above is a refinement; these two shape rules are what
+    # actually carry the judgement, and neither needs the registry.
+    if dart_header_rules and _is_dart_document_header(remainder, title_words):
+        return False
+    return True
 
 
 # ============================================================
