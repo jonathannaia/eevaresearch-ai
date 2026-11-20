@@ -1,150 +1,104 @@
 # EevaResearch AI
 
-An evidence-first, thematic market-intelligence and research tool covering
-five frontier-technology themes: **AI Buildout, Humanoids, Space, Memory,
-and Photonics**. It is not an autonomous trading agent and does not execute
-trades — every material claim is labeled Fact, Interpretation, Inference, or
-Uncertainty, and the app never says buy/sell/hold or gives a price target.
+An evidence-first, thematic market-intelligence tool for frontier-technology
+sectors. It autonomously ingests regulatory filings from the US (SEC EDGAR),
+Korea (OpenDART) and Japan (EDINET) plus curated news feeds, detects material
+disclosures against a typed theme taxonomy, extracts and translates the
+supporting text, and surfaces the result as reviewable signals, research cases
+and a daily news digest.
 
-**This is the foundation phase.** Everything in this build is demo/mock
-data, clearly labeled as such throughout the UI. There is no real ticker
-universe, no paid APIs, no live news ingestion, no autonomous research
-loops, no trading integrations, and no LLM wiring — see
-`IMPLEMENTATION_NOTES.md` for exactly what's built vs. planned, and
-`MIGRATION_NOTES.md` for what this branch replaced.
+It is **not** a trading agent. It never says buy/sell/hold and never gives a
+price target. Every material claim is labelled **Fact**, **Interpretation**,
+**Inference** or **Uncertainty**, and nothing is published autonomously unless
+it passes a deterministic evidence policy.
 
-## Quickstart
+## Stack
+
+- **Python 3.12** (`runtime.txt`), **Streamlit** UI (19 page modules, routed via `st.navigation`)
+- **PostgreSQL** in production (schema v25); SQLite (v23) and JSON backends also
+  implemented, selected by `EDGE_DB_BACKEND` via
+  `src/data_access/backend_factory.py`
+- **psycopg 3** driver
+- **Google OAuth** sign-in (`st.login`), plus an email allowlist beta gate
+- External: SEC EDGAR, OpenDART, EDINET, DeepL, RSS/Atom feeds
+- Hosted on **Render** — one Streamlit web service, three background workers, a
+  static landing site, and a Postgres datastore
+- No payments or billing of any kind
+
+## Run locally
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app.py          # http://localhost:8501
 ```
 
-To run the full test suite, including the (disabled-by-default)
-autonomous research agent's tests, install the agent-only runtime too:
-`pip install -r requirements-agent.txt` (a superset of `requirements.txt`).
+The app starts with no configuration: `EDGE_DB_BACKEND` defaults to `json` and
+the UI reads `data/seed/`. Live ingestion, Postgres and OAuth all require
+environment variables — see `.env.example` for names, and
+`IMPLEMENTATION_NOTES.md` for which subsystem needs which.
 
-Nothing needs to be configured to run — there are no required environment
-variables in this phase (`.env.example` documents what's reserved for
-later). Open the URL Streamlit prints (typically `http://localhost:8501`).
+The autonomous research agent has its own runtime, deliberately kept out of the
+default install: `pip install -r requirements-agent.txt` (a superset) is needed
+only to run its tests or its worker.
 
-## Running tests
+## Tests
 
 ```bash
 pytest -q
 ```
 
-66 tests: data-model validation, repository/loader behavior, pure logic
-helpers, and `st.testing.v1.AppTest`-based smoke tests covering every page.
-No test makes a real network call.
-
-### Local Postgres tests
-
-A small number of tests (`tests/test_backend_factory_postgres.py`,
-`tests/test_state_db_postgres_*.py`) exercise the isolated Postgres
-backend (`src/data_access/postgres_state_db/`) against a real Postgres
-connection. This is **local, disposable test infrastructure only** — it
-is not Neon, not any hosted database, and not production infrastructure
-of any kind. Without it, these tests skip cleanly and the rest of the
-suite is unaffected.
-
-`scripts/postgres_test_container.sh` starts exactly one loopback-only
-Postgres container (`127.0.0.1:55432`, container name
-`eevaresearch-postgres-test-phase4b`), runs whatever command you give it
-with a fresh, in-memory-only test password available to that command,
-and always removes the container afterward — no persistent volume is
-ever created, and nothing is retained once the wrapped command exits.
-The password is generated fresh on every run and supplied only through
-the `EEVARESEARCH_PG_TEST_PASSWORD` environment variable for the
-duration of the wrapped command; it is never printed, never written to
-a file, and must never be placed in `.env` or committed anywhere.
-
-Running the script — and therefore starting Docker — is a deliberate
-action each time; the script itself does not authorize or automate
-Docker use. Example usage (illustrative only):
+~6,900 tests. A small number require a local Postgres container and skip
+cleanly without one:
 
 ```bash
-scripts/postgres_test_container.sh \
-  .venv/bin/python3 -m pytest tests/test_backend_factory_postgres.py -q
+scripts/postgres_test_container.sh .venv/bin/python -m pytest tests/test_backend_factory_postgres.py -q
 ```
 
-The existing pytest fixtures (`tests/_postgres_test_support.py`) create
-and drop their own isolated schema per test against that one container
-— no separate setup step is needed beyond having the container running
-and the password variable set, both of which the script above handles
-for you.
+That script starts one loopback-only, volume-less container, supplies a
+freshly-generated password through `EEVARESEARCH_PG_TEST_PASSWORD` for the
+duration of the command, and always removes the container afterwards.
 
-## Formatting / linting
+Two things to know before you read a failing run:
 
-No linter is enforced yet in this phase. If you add one, `ruff` (fast,
-zero-config-friendly) is a reasonable default: `pip install ruff && ruff
-check .`. Keep line length and import-sorting rules light — the codebase
-currently has no linter-driven conventions beyond standard PEP 8.
+- **Many tests are diff-scope guards.** They run `git diff --name-only HEAD`
+  and fail if a change touches files outside an approved set. They fail on *any*
+  uncommitted tracked modification and clear once you commit — a dirty tree
+  looks far more broken than it is.
+- **A clean checkout is not currently fully green.** See
+  `IMPLEMENTATION_NOTES.md` for the current list and why each one fails.
 
-## Deploying to Streamlit Community Cloud
+## Deploy
 
-1. Push this repository (or your fork) to GitHub.
-2. At [share.streamlit.io](https://share.streamlit.io), create a new app
-   pointing at this repo, branch, and `app.py` as the entry point.
-3. No secrets are required for this phase — the "Secrets" panel can stay
-   empty.
-4. Streamlit Cloud auto-redeploys on every push to the connected branch.
+Push to `main` and Render auto-deploys. Deployment configuration currently lives
+**only in the Render dashboard** — there is no tracked `render.yaml`, `Procfile`
+or `Dockerfile`.
 
-## Project structure
+| Service | Type | Start command |
+|---|---|---|
+| `eevaresearch-ai` | Web | `bash scripts/render_start.sh` → Streamlit |
+| `eevaresearch-radar-worker` | Worker | `python -m scripts.radar_worker` |
+| `eevaresearch-daily-news-worker` | Worker | `python -m scripts.daily_news_worker` |
+| `eevaresearch-company-discovery` | Worker | `python -u -m scripts.company_discovery_worker` |
+| `eevaresearch-landing` | Static | publishes `landing/` |
 
-```
-app.py                       Entry point — st.navigation setup, page registration
-requirements.txt
-requirements-agent.txt       Agent-only runtime (requirements.txt + claude-agent-sdk, mcp)
-.env.example                 No required vars in this phase; documents Phase 2/3 vars
-MIGRATION_NOTES.md            What the prior product was, what's retired, what's preserved
-IMPLEMENTATION_NOTES.md       Done / mocked / Phase 2 & 3 plans
-data/seed/                    Demo data — see data/seed/README.md
-  README.md
-  *.json                      One file per repository (themes, tickers, evidence, ...)
-src/
-  config/settings.py          App-wide config (no required env vars in this phase)
-  models/models.py            Typed dataclasses — the whole data model
-  data_access/
-    interfaces.py              Repository ABCs — pages depend on these, never on JSON directly
-    loaders.py                  Shared cached seed-JSON loader
-    container.py                 The one place Phase 2 swaps demo -> real implementations
-    demo/                        Phase 1 implementations, backed by data/seed/*.json
-  logic/                       Pure helpers: formatting, theme/signal aggregation, claim-type mapping
-  ui/
-    theme.py                    Thin CSS layer over .streamlit/config.toml
-    chrome.py                    Global status banner + footer, wraps every page
-    components/                  Cards, badges, section headers, tables, filters, empty states, Market Brief
-    pages/                       One module per page (Overview, Themes, Research Chat, ...)
-tests/
-  test_models.py, test_data_access.py, test_theme_metrics.py,
-  test_formatting.py, test_evidence.py, test_app_smoke.py
-  apptest_pages/                Small harness scripts AppTest.from_file runs per page
-```
+`scripts/render_start.sh` generates `.streamlit/secrets.toml` from environment
+variables before starting Streamlit, because `app.py` reads `st.user` on every
+page load and Streamlit raises without an `[auth]` section.
 
-## Where real data integrations will be added later
+Not every service tracks `main` today, and a suspended research-agent worker
+also exists — `IMPLEMENTATION_NOTES.md` records the current drift.
 
-Every page depends on the repository interfaces in
-`src/data_access/interfaces.py` (`ThemeRepository`, `TickerRepository`,
-`EvidenceRepository`, `CatalystRepository`, `SignalRepository`,
-`MarketDataProvider`, `ResearchAnswerProvider`), not on `data/seed/`'s JSON
-files directly. Phase 2 (real evidence/market-data sources) and Phase 3 (a
-curated ticker universe) both mean adding new implementations of these same
-interfaces and repointing `src/data_access/container.py`'s
-`get_repositories()` — no page-rendering code changes required. Full detail
-in `IMPLEMENTATION_NOTES.md`.
+## Where the docs live
 
-## Architecture notes worth knowing
+| File | What it holds |
+|---|---|
+| `design/DECISIONS.md` | **The architectural record.** ~5,000 lines, one section per phase. The authoritative "why" for anything non-obvious. |
+| `design/*.md` | Per-phase design and readiness documents — 18 tracked, plus ~30 written but never committed |
+| `IMPLEMENTATION_NOTES.md` | What is built, what is partial, what is known-broken |
+| `design/HANDOFF.md` | Onboarding summary for a new contributor or assistant |
+| `MIGRATION_NOTES.md` | What the earlier product was and what was retired |
+| `data/seed/README.md` | The demo dataset used when `EDGE_DB_BACKEND=json` |
 
-- **Navigation** uses `st.navigation` with function-based `st.Page` objects
-  (not file-based pages). The ticker-detail template is registered with
-  `visibility="hidden"` so it's routable via `st.page_link`/query params
-  without appearing in the primary seven-item nav.
-- **Every page is wrapped** in `src/ui/chrome.py`'s `with_chrome()`, which
-  renders the demo-data status banner and footer around the page body — a
-  new page added later gets these automatically rather than needing to
-  remember to call them.
-- **No third-party charting library** — `st.bar_chart`/`st.dataframe` only,
-  per the design brief for this phase.
+Module docstrings carry a lot of the reasoning too, and are kept current —
+there are no `TODO`/`FIXME` comments anywhere in `src/`, by convention.
