@@ -131,6 +131,93 @@ def test_region_source_mapping_matches_the_three_real_filing_sources_only():
     assert "China" not in REGION_SOURCE
 
 
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — compact-tier surface:
+# native title + curated type label if available + 4-digit securities
+# code + date. No CandidateSignal/translation cache and no new data
+# path — this component still only ever loads a bare FilingEvent.
+# ============================================================
+
+
+def test_regional_brief_edinet_item_shows_curated_type_label_and_4_digit_code():
+    fake_filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_name="EDINET", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        original_language="Japanese",
+    )
+
+    class _FakeRepo:
+        def load_filing_events(self):
+            return (fake_filing,)
+
+    at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=15)
+    with patch("src.data_access.backend_factory.get_filing_event_repository", return_value=_FakeRepo()):
+        at.run()
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Status Report of Purchase of Own Shares" in all_text  # curated triplet mapping
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in all_text  # native title retained
+    assert "Shin-Etsu Chemical Co., Ltd." in all_text
+    assert "4063" in all_text  # 4-digit public code
+    assert "40630" not in all_text  # never the padded internal representation
+    assert "Sep 4, 2026" in all_text
+
+
+def test_regional_brief_edinet_item_with_unmapped_triplet_shows_native_title_only():
+    fake_filing = FilingEvent(
+        rcept_no="S100ZZZZ", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="四半期報告書", rcept_dt="2026-09-04", flr_nm="信越化学工業株式会社",
+        pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010",
+        source_name="EDINET", source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100ZZZZ",
+        original_language="Japanese",
+    )
+
+    class _FakeRepo:
+        def load_filing_events(self):
+            return (fake_filing,)
+
+    at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=15)
+    with patch("src.data_access.backend_factory.get_filing_event_repository", return_value=_FakeRepo()):
+        at.run()
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "四半期報告書" in all_text
+    assert "4063" in all_text  # the 4-digit code still renders regardless of the type mapping
+    # No invented English type name for an unmapped triplet.
+    for invented in ("Quarterly Report", "Status Report", "Annual Securities Report", "Extraordinary Report"):
+        assert invented not in all_text
+
+
+def test_regional_brief_edgar_and_dart_items_show_no_securities_code_and_unchanged_title():
+    """EDGAR/DART must render byte-identical to before this fix: the raw
+    report_nm title, unmapped and unprefixed, and no appended securities
+    code (edinet_type_label/edinet_display_securities_code are only ever
+    called for source_name == "EDINET")."""
+    fake_edgar = FilingEvent(
+        rcept_no="0000320193-26-000079", corp_code="0000320193", corp_name="NVIDIA",
+        stock_code="NVDA", report_nm="Test 8-K Filing", rcept_dt="2026-08-20",
+        flr_nm="NVIDIA", source_name="SEC EDGAR", source_url="https://example.invalid/filing",
+    )
+
+    class _FakeRepo:
+        def load_filing_events(self):
+            return (fake_edgar,)
+
+    at = AppTest.from_file(str(HARNESS_DIR / "dashboard_page.py"), default_timeout=15)
+    with patch("src.data_access.backend_factory.get_filing_event_repository", return_value=_FakeRepo()):
+        at.run()
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Test 8-K Filing" in all_text  # unchanged, raw title
+    assert "NVDA" not in all_text  # no securities-code addition for a non-EDINET item
+
+
 # ============================== EXISTING MODULES / ROUTES INTACT ==============================
 
 def test_dashboard_has_no_capital_rotation_catalysts_or_todays_read():

@@ -566,6 +566,140 @@ def official_filing_reference(filing: FilingEvent, filed_label: str | None) -> s
     return " · ".join(parts)
 
 
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — a user-facing 4-digit
+# securities code, a bilingual filing-type/title display, and a
+# filing-specific EDINET portal instruction, used wherever a filing's
+# stored source_url is the credentialed EDINET API host and has already
+# been rewritten to the bare public portal root (see
+# src.logic.source_link.public_source_url) with no per-document URL to
+# fall back on. Pure functions only, same discipline as the rest of this
+# module: never a new fetch, never an invented translation or mapping.
+# ============================================================
+
+
+def edinet_display_securities_code(stock_code: str) -> str:
+    """The public, user-facing 4-digit TSE securities code, derived from
+    EDINET's own stored 5-character, zero-padded internal representation
+    (e.g. "40630") by the one documented convention this app already
+    relies on for lookup-matching (src.data_access.edinet.
+    edinet_code_resolver._normalize_lookup_code: a 4-character code
+    normalizes to "<code>0" for matching — confirmed live, e.g.
+    "9984" -> "99840", "285A" -> "285A0"). Defensive, not a blind slice:
+    only strips the trailing character when the stored value is exactly
+    5 characters AND that trailing character is genuinely "0" — any
+    other shape (already 4 characters, an unexpected length, or a
+    5-character value that doesn't end in "0") is returned unchanged
+    rather than guessed at."""
+    code = (stock_code or "").strip()
+    if len(code) == 5 and code.endswith("0"):
+        return code[:-1]
+    return code
+
+
+def edinet_curated_type_label(filing: FilingEvent) -> str | None:
+    """The curated English category phrase for this filing's own
+    ordinance_code/pblntf_ty(formCode)/pblntf_detail_ty(docTypeCode)
+    triplet, when it is one of the few live-verified entries in
+    edinet_rules.DEFAULT_CODE_CATEGORY_MAP — None otherwise, never a
+    guess. Independently recomputes the same routing edinet_rules.
+    evaluate_document() already performs at scan time (the identical
+    function/table scan_service.py used to establish this filing's own
+    category), directly from FilingEvent's own stored fields — unlike
+    _mapped_category_title above (which reads an already-promoted
+    candidate's matched_rules), this needs no CandidateSignal at all, so
+    it works for the two Dashboard surfaces that only ever load a bare
+    FilingEvent."""
+    from src.data_access.edinet import edinet_rules
+
+    evaluation = edinet_rules.evaluate_document(filing.ordinance_code, filing.pblntf_ty, filing.pblntf_detail_ty)
+    if not evaluation.matched_rules:
+        return None
+    category = evaluation.matched_rules[0].split(":", 1)[0]
+    return _EDINET_CATEGORY_TITLES.get(category)
+
+
+def edinet_translated_type_label(native_title: str, translated_title: str | None) -> str:
+    """The native title, with an already-stored translation appended and
+    explicitly labeled as a translation of the TITLE — never presented
+    as a description or summary of the filing's own content, and never
+    invented when no translation is stored. For callers that only carry
+    a bilingual title pair (e.g. Signal.title_native/title_translated)
+    rather than a full FilingEvent/CandidateSignal — see
+    edinet_type_label below for the richer, curated-label-aware version
+    built on top of this."""
+    native = (native_title or "").strip()
+    translated = (translated_title or "").strip() if translated_title else ""
+    if translated and translated != native:
+        return f"{native} (Title translation: {translated})" if native else f"Title translation: {translated}"
+    return native
+
+
+def edinet_type_label(filing: FilingEvent, candidate: CandidateSignal | None = None) -> str:
+    """A concise, source-honest filing-type/title display for EDINET:
+    the curated English category phrase (edinet_curated_type_label)
+    when this filing's own triplet is one of the few live-verified
+    entries, prefixed onto the native title exactly like display_title's
+    own convention; otherwise the native report_nm, with any
+    already-stored title translation appended and explicitly labeled
+    (edinet_translated_type_label) rather than shown bare and
+    unqualified. `candidate` is optional — omit it entirely (the two
+    Dashboard surfaces that only ever load a FilingEvent) and this still
+    returns the curated label when the filing's own triplet supports it,
+    or the bare native title otherwise, since there is then no
+    translation available to label."""
+    native = (filing.report_nm or "").strip()
+    curated = edinet_curated_type_label(filing)
+    if curated:
+        return f"{curated} — {native}" if native and curated.strip() != native else curated
+
+    translated = candidate.title_translation.translated_text if (candidate is not None and candidate.title_translation is not None) else None
+    return edinet_translated_type_label(native, translated)
+
+
+def edinet_source_instruction(
+    filing: FilingEvent, candidate: CandidateSignal | None = None, filed_label: str | None = None,
+) -> str:
+    """A concise, filing-specific instruction for locating this exact
+    filing on the public EDINET disclosure portal
+    (disclosure2.edinet-fsa.go.jp) — used wherever a filing's stored
+    source_url is the credentialed, non-public EDINET API host (see
+    src.logic.source_link.public_source_url) and a reader needs enough
+    context to actually find the filing there themselves, since no
+    derivable per-document public URL exists. Built only from
+    FilingEvent's own already-stored fields (issuer name, the 4-digit
+    securities code, the filing's own type/title via edinet_type_label,
+    and the EDINET document ID) plus the caller's own already-computed
+    filed-date label — never a new fetch, never a guessed or fabricated
+    detail. Any clause whose underlying field is empty/absent is simply
+    omitted, never shown as a placeholder."""
+    clauses: list[str] = []
+    issuer = (filing.corp_name or "").strip()
+    code = edinet_display_securities_code(filing.stock_code)
+    if issuer and code:
+        clauses.append(f"{issuer} (securities code {code})")
+    elif issuer:
+        clauses.append(issuer)
+    elif code:
+        clauses.append(f"securities code {code}")
+
+    type_label = edinet_type_label(filing, candidate)
+    if type_label:
+        clauses.append(type_label)
+
+    if filed_label:
+        clauses.append(f"filed {filed_label}")
+
+    if filing.rcept_no:
+        clauses.append(f"document ID {filing.rcept_no}")
+
+    subject = ", ".join(clauses)
+    if subject:
+        return f"Search EDINET (disclosure2.edinet-fsa.go.jp) for {subject}."
+    return "Search EDINET (disclosure2.edinet-fsa.go.jp) for this filing."
+
+
 def metadata_only_summary(filing: FilingEvent, display_title_text: str, filed_label: str | None) -> str:
     """The neutral, factual fallback Summary used whenever no readable
     source text is available: exactly "{Company} filed {display title}

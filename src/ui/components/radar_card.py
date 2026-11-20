@@ -47,9 +47,11 @@ research-feed card showing exactly:
      live — disclosure2.edinet-fsa.go.jp's per-row PDF action is a
      session-bound JS postback, not a derivable URL), so EDINET cards
      instead render `Search original EDINET filing ↗` linking to the
-     official search portal root, plus (unchanged call site, changed
-     body — see `_edinet_locator_line`'s own docstring) a fixed, concise
-     EDINET lookup-guidance sentence;
+     official search portal root, plus a filing-specific EDINET-portal
+     instruction sentence (issuer, 4-digit securities code, filing
+     type/title, filed date, document ID — see
+     filing_display.edinet_source_instruction and
+     `_edinet_locator_line`'s own docstring);
   7) a compact "Official filing reference" block, for all three
      providers, built by filing_display.official_filing_reference from
      FilingEvent's own already-stored fields with provider-accurate
@@ -123,7 +125,7 @@ import streamlit as st
 
 from src.logic import filing_display
 from src.logic.source_link import public_source_url
-from src.models.models import FilingEvent
+from src.models.models import CandidateSignal, FilingEvent
 from src.ui.components import radar_status
 from src.ui.components.radar_status import RadarItem
 
@@ -207,38 +209,28 @@ def _public_source_url(filing: FilingEvent) -> str:
     return public_source_url(resolved) or resolved
 
 
-_EDINET_LOOKUP_GUIDANCE = (
-    "To find this filing on EDINET, search by EDINET issuer code or "
-    "securities code, then filter by filing date and type."
-)
-
-
-def _edinet_locator_line(filing: FilingEvent, filed_label: str | None) -> str | None:
+def _edinet_locator_line(filing: FilingEvent, filed_label: str | None, candidate: CandidateSignal | None = None) -> str | None:
     """EDINET has no working direct document link (disclosure2.edinet-
     fsa.go.jp's per-row "PDF表示" action is a session-bound JS postback
     keyed to an opaque per-render token, not a derivable URL — verified
     live, see the EDINET original-source-link investigation).
 
-    Filing-card machine-artifact / excerpt-honesty fix: this used to
-    build a field-listing locator line (filer name, native title, EDINET
-    code, securities code, filed date) from `filing` itself. Those code/
-    securities-code/filed-date fields now live in the shared, provider-
-    neutral `official_filing_reference` block instead (rendered
-    separately, for every provider, not just EDINET) — duplicating them
-    here too would be redundant. This function now returns the fixed,
-    concise EDINET lookup-guidance sentence instead: how to actually use
-    those fields on the official search portal. Kept as this same
-    function (name, signature, and `_render_quiet_links`'s one call site
-    below all unchanged) specifically so `_render_quiet_links` itself
-    needed no edit — see that function's own docstring. `filing`/
-    `filed_label` are accepted for signature stability but no longer
-    read; the guidance sentence is a fixed string true for every EDINET
-    filing, not built from this specific filing's own fields."""
-    del filing, filed_label
-    return _EDINET_LOOKUP_GUIDANCE
+    EDINET filing-source usability fix (design/
+    EDINET_FILING_SOURCE_USABILITY_DESIGN.md): the one fixed, generic
+    guidance sentence this used to return unconditionally for every
+    EDINET filing is replaced by filing_display.edinet_source_instruction()
+    — a filing-specific sentence naming the issuer, its 4-digit securities
+    code, the filing's own type/title, the filed date, and the EDINET
+    document ID, built only from FilingEvent's own already-stored fields
+    (plus `candidate`'s already-stored title translation, when supplied)
+    — never a new fetch. `official_filing_reference` (rendered
+    separately, unchanged) still shows the same identifiers in compact,
+    labeled form; this sentence exists so a reader has enough context to
+    actually search for the filing on the public portal themselves."""
+    return filing_display.edinet_source_instruction(filing, candidate, filed_label)
 
 
-def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> None:
+def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None, candidate: CandidateSignal | None = None) -> None:
     """The card's one action: opening the official source URL in a new
     tab (st.link_button's native behavior) — de-emphasized (the same
     cta-tertiary-* ghost treatment used everywhere else in the app for a
@@ -251,18 +243,23 @@ def _render_quiet_links(filing: FilingEvent, filed_label: str | None = None) -> 
     honest action instead: a link to the official public search portal
     root (via `_public_source_url`, which now consolidates the EDINET
     URL-safety rewrite — see that function's own docstring), plus a
-    locator line naming the fields a reader needs to find this exact
-    filing there. `filing.source_url`/api.edinet-fsa.go.jp is never
-    rendered as a clickable EDINET link, and no credential, query
-    parameter, or document token is ever attached to the portal link."""
+    filing-specific locator line naming the fields a reader needs to
+    find this exact filing there. `filing.source_url`/api.edinet-fsa.go.jp
+    is never rendered as a clickable EDINET link, and no credential,
+    query parameter, or document token is ever attached to the portal
+    link. `candidate` is optional and, when supplied, lets the locator
+    line's own filing-type display include an already-stored title
+    translation (see filing_display.edinet_source_instruction) — passing
+    it here does not, on its own, alter the title/summary language
+    toggle above, which stays keyed off its own session-state toggle."""
     if filing.source_name == _EDINET_SOURCE_NAME:
         link_cols = st.columns([2, 7])
         with link_cols[0]:
             with st.container(key=f"cta-tertiary-radar-original-{filing.rcept_no}"):
                 st.link_button("Search original EDINET filing ↗", _public_source_url(filing), use_container_width=True)
-        locator = _edinet_locator_line(filing, filed_label)
+        locator = _edinet_locator_line(filing, filed_label, candidate)
         if locator:
-            st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{locator}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="er-muted" style="margin-top:0.4rem;">{html.escape(locator)}</div>', unsafe_allow_html=True)
         return
 
     link_cols = st.columns([2, 7])
@@ -522,7 +519,7 @@ def candidate_row(item: RadarItem, comparison_record=None) -> None:
                     may_be_incomplete=may_be_incomplete,
                 )
 
-        _render_quiet_links(filing, filed_label)
+        _render_quiet_links(filing, filed_label, candidate)
 
         # Filing-card machine-artifact / excerpt-honesty fix: a compact,
         # provider-neutral reference block for all three providers.

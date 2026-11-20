@@ -267,11 +267,18 @@ def test_japanese_fixture_shows_only_the_approved_fields(tmp_path):
     assert len(edinet_link_buttons) == 1
     assert edinet_link_buttons[0].url == "https://disclosure2.edinet-fsa.go.jp/"
     assert "api.edinet-fsa.go.jp" not in all_text
-    # Filing-card machine-artifact / excerpt-honesty fix: the old field-
-    # listing locator line is gone, replaced by the fixed lookup-guidance
-    # sentence plus the shared, provider-neutral reference block.
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): the old field-listing
+    # locator line and the later fixed generic sentence are both gone,
+    # replaced by a filing-specific EDINET-portal instruction (issuer,
+    # 4-digit securities code, filing type/title, filed date, document
+    # ID) plus the shared, provider-neutral reference block.
     assert "Official EDINET search:" not in all_text
-    assert "To find this filing on EDINET, search by EDINET issuer code or securities code, then filter by filing date and type." in all_text
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" in all_text
+    assert "securities code 9984" in all_text  # 4-digit, never the padded "99840"
+    assert "Annual Securities Report" in all_text  # curated triplet mapping
+    assert "filed Jun 22, 2026" in all_text
+    assert "document ID S100YGH5" in all_text
     assert "Official filing reference" in all_text
     assert "EDINET issuer code: E02778" in all_text
     assert "Securities code: 99840" in all_text
@@ -555,10 +562,17 @@ def test_s100z0ot_leaked_machine_artifacts_never_appear_and_reference_block_is_c
     assert "Securities code: 93480" in all_text
     assert "Document ID: S100Z0OT" in all_text
     assert "Filed: Sep 10, 2026" in all_text
-    assert (
-        "To find this filing on EDINET, search by EDINET issuer code or "
-        "securities code, then filter by filing date and type."
-    ) in all_text
+    # EDINET filing-source usability fix: the locator line is now a
+    # filing-specific EDINET-portal instruction (issuer, 4-digit code,
+    # native title, filed date, document ID) — never the leaked
+    # machine-artifact text, which lives only in excerpt_original/
+    # excerpt_translation, separate fields this instruction never reads.
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" in all_text
+    assert "ispace, inc." in all_text
+    assert "securities code 9348" in all_text  # 4-digit, never the padded "93480"
+    assert "臨時報告書" in all_text
+    assert "filed Sep 10, 2026" in all_text
+    assert "document ID S100Z0OT" in all_text
 
     # Completeness disclosure absent while every toggle is collapsed.
     assert "Excerpt may be incomplete" not in all_text
@@ -1128,37 +1142,32 @@ _render_quiet_links(filing, "Jun 22, 2026")
     all_text = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
     assert "Open original filing ↗" not in all_text
     assert "api.edinet-fsa.go.jp" not in all_text
-    assert "S100YGH5" not in all_text  # docID/private token never leaked into the locator line either
-    # Filing-card machine-artifact / excerpt-honesty fix: the old field-
-    # listing locator line is gone; _edinet_locator_line now returns the
-    # fixed lookup-guidance sentence instead (see its own docstring for
-    # why the field-listing role moved to the shared, provider-neutral
-    # official_filing_reference block, rendered separately).
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): the locator line is now
+    # a filing-specific EDINET-portal instruction — it DOES now include
+    # the document ID (supersedes the earlier design decision, which
+    # deliberately kept the locator field-free); the private,
+    # credentialed api.edinet-fsa.go.jp URL itself is still never shown.
+    assert "S100YGH5" in all_text
     assert "Official EDINET search:" not in all_text
-    assert (
-        "To find this filing on EDINET, search by EDINET issuer code or "
-        "securities code, then filter by filing date and type."
-    ) in all_text
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" in all_text
+    assert "SoftBank Group Corp." in all_text
+    assert "securities code 9984" in all_text  # 4-digit, never the padded "99840"
+    assert "filed Jun 22, 2026" in all_text
+    assert "document ID S100YGH5" in all_text
 
 
-def test_edinet_locator_line_returns_the_fixed_guidance_sentence_regardless_of_filing_fields():
-    """Filing-card machine-artifact / excerpt-honesty fix: the old field-
-    listing locator (filer name, native title, codes, filed date) is
-    replaced by one fixed, concise guidance sentence — the field-listing
-    role now lives in filing_display.official_filing_reference instead
-    (rendered separately, for all three providers, not just EDINET).
-    `_edinet_locator_line` therefore can no longer echo a stored English
-    title_translation (it reads no filing field at all any more, so
-    there is structurally nothing left for it to leak), and it returns
-    the identical sentence whether every field is present or every field
-    is empty/absent — never a placeholder, never an omission decision to
-    get wrong."""
+def test_edinet_locator_line_is_filing_specific_and_degrades_gracefully_when_fields_are_absent():
+    """EDINET filing-source usability fix (design/
+    EDINET_FILING_SOURCE_USABILITY_DESIGN.md): supersedes the former
+    "fixed guidance sentence regardless of filing fields" contract — the
+    locator line is now filing-specific (issuer, 4-digit securities
+    code, filing type/title, filed date, document ID), built by
+    filing_display.edinet_source_instruction. It still never renders a
+    placeholder: when every field is empty/absent, it falls back to one
+    honest, field-free sentence rather than an omission decision to get
+    wrong."""
     from src.ui.components.radar_card import _edinet_locator_line
-
-    expected = (
-        "To find this filing on EDINET, search by EDINET issuer code or "
-        "securities code, then filter by filing date and type."
-    )
 
     full = FilingEvent(
         rcept_no="S100YGH5", corp_code="E02778", corp_name="SoftBank Group Corp.", stock_code="99840",
@@ -1166,16 +1175,58 @@ def test_edinet_locator_line_returns_the_fixed_guidance_sentence_regardless_of_f
         flr_nm="ソフトバンクグループ株式会社", retrieved_at=_now_iso(), source_name="EDINET",
     )
     locator = _edinet_locator_line(full, "Jun 22, 2026")
-    assert locator == expected
-    assert "有価証券報告書" not in locator
-    assert "ソフトバンクグループ株式会社" not in locator
-    assert "Annual Securities Report" not in locator
+    assert "SoftBank Group Corp." in locator
+    assert "securities code 9984" in locator
+    assert "有価証券報告書－第46期(2025/04/01－2026/03/31)" in locator
+    assert "filed Jun 22, 2026" in locator
+    assert "document ID S100YGH5" in locator
 
     empty = FilingEvent(
-        rcept_no="S100YGH7", corp_code="", corp_name="No Codes Corp.", stock_code="",
+        rcept_no="", corp_code="", corp_name="", stock_code="",
         report_nm="", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
     )
-    assert _edinet_locator_line(empty, None) == expected
+    assert _edinet_locator_line(empty, None) == "Search EDINET (disclosure2.edinet-fsa.go.jp) for this filing."
+
+
+def test_edinet_locator_and_reference_block_use_the_real_filing_date_never_retrieved_at_or_render_time(tmp_path):
+    """Identity-integrity guard, end-to-end through the real card render
+    (not just the pure helper): FilingEvent.retrieved_at (when
+    EevaResearch fetched this record) is deliberately set to a real but
+    DIFFERENT date than the filing's own official rcept_dt — the "Filed
+    {date}" header label, the locator instruction's "filed {date}"
+    clause, and the "Official filing reference" block's "Filed:" clause
+    must all show the real filing date, never retrieved_at and never
+    today's actual wall-clock date (this test runs on whatever date it
+    is actually executed, which the fixture's own rcept_dt intentionally
+    does not match)."""
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        # Deliberately a different date than rcept_dt above — proves the
+        # rendered "filed"/"Filed:" dates never come from this field.
+        retrieved_at="2026-09-15T00:00:00+00:00",
+        source_name="EDINET", original_language="Japanese",
+    )
+    _seed_edinet_filing_events(tmp_path, [filing])
+    candidate = CandidateSignal(
+        id="edinet-cand-date-integrity", filing=filing, matched_rules=["share_buyback_status:010:170000:220"],
+        confidence="Moderate", status=CandidateStatus.NEEDS_REVIEW, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="自己株券買付状況報告書の記載内容の抜粋です。",
+        state_history=[StateTransition(status=CandidateStatus.NEEDS_REVIEW, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    at = _run_radar(tmp_path)
+    assert not at.exception
+    all_text = _text(at)
+
+    assert "Filed Sep 4, 2026" in all_text  # top-of-card header label
+    assert "filed Sep 4, 2026" in all_text  # locator instruction clause
+    assert "Filed: Sep 4, 2026" in all_text  # Official filing reference block
+    assert "Sep 15, 2026" not in all_text
+    assert "2026-09-15" not in all_text
 
 
 def test_edgar_and_dart_render_quiet_links_unchanged_by_edinet_fallback():
@@ -1279,15 +1330,20 @@ def test_edinet_with_stored_title_and_excerpt_translation_defaults_to_original_w
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 
-    # Filing-card machine-artifact / excerpt-honesty fix: the locator is
-    # now a fixed guidance sentence, carrying no filing-specific text at
-    # all — it structurally cannot echo the translated title (or the
-    # native one either). The provider-neutral reference block supplies
-    # the actual identifying fields instead.
-    assert (
-        "To find this filing on EDINET, search by EDINET issuer code or "
-        "securities code, then filter by filing date and type."
-    ) in all_text
+    # EDINET filing-source usability fix (design/
+    # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): the locator is now a
+    # filing-specific instruction, carrying the same known-category
+    # label the card title itself already shows (this candidate's
+    # matched_rules establish "share_buyback_status"), the issuer's
+    # 4-digit securities code, filed date, and document ID. The
+    # provider-neutral reference block still supplies the same
+    # identifiers again in compact, labeled form.
+    assert "Search EDINET (disclosure2.edinet-fsa.go.jp) for" in all_text
+    assert "Shin-Etsu Chemical Co., Ltd." in all_text
+    assert "securities code 4063" in all_text  # 4-digit, never the padded "40630"
+    assert "Status Report of Purchase of Own Shares" in all_text
+    assert "filed Sep 4, 2026" in all_text
+    assert "document ID S100Z0ID" in all_text
     assert "Official filing reference" in all_text
     assert "EDINET issuer code: E00776" in all_text
 

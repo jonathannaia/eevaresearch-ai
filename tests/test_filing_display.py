@@ -561,6 +561,166 @@ def test_official_filing_reference_omits_absent_fields():
 
 
 # ============================================================
+# H: EDINET filing-source usability fix — edinet_display_securities_code,
+# edinet_curated_type_label, edinet_translated_type_label,
+# edinet_type_label, edinet_source_instruction
+# ============================================================
+
+
+def test_edinet_display_securities_code_strips_the_trailing_zero_padding():
+    assert filing_display.edinet_display_securities_code("40630") == "4063"
+    assert filing_display.edinet_display_securities_code("99840") == "9984"
+
+
+def test_edinet_display_securities_code_strips_alphanumeric_codes_too():
+    assert filing_display.edinet_display_securities_code("285A0") == "285A"
+
+
+def test_edinet_display_securities_code_leaves_a_4_character_code_unchanged():
+    assert filing_display.edinet_display_securities_code("4063") == "4063"
+
+
+def test_edinet_display_securities_code_never_strips_a_5_character_code_not_ending_in_zero():
+    """Defensive: the trailing-zero convention is documented, not runtime-
+    guaranteed per entry (edinet_code_resolver._normalize_lookup_code's
+    own docstring calls it "a lookup-matching convenience only, not a
+    general identifier transform") — a 5-character code that doesn't
+    actually end in "0" must be returned unchanged, never guessed at."""
+    assert filing_display.edinet_display_securities_code("40631") == "40631"
+
+
+def test_edinet_display_securities_code_handles_empty_and_none():
+    assert filing_display.edinet_display_securities_code("") == ""
+    assert filing_display.edinet_display_securities_code(None) == ""
+
+
+def test_edinet_curated_type_label_returns_the_known_mapping_for_a_verified_triplet():
+    filing = _edinet_filing(
+        "自己株券買付状況報告書（法２４条の６第１項に基づくもの）",
+        pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+    )
+    assert filing_display.edinet_curated_type_label(filing) == "Status Report of Purchase of Own Shares"
+
+
+def test_edinet_curated_type_label_is_none_for_an_unmapped_triplet():
+    filing = _edinet_filing("四半期報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    assert filing_display.edinet_curated_type_label(filing) is None
+
+
+def test_edinet_translated_type_label_labels_a_stored_translation_as_a_title_translation():
+    label = filing_display.edinet_translated_type_label("臨時報告書", "Extraordinary Report")
+    assert label == "臨時報告書 (Title translation: Extraordinary Report)"
+    # Never presented as a business summary/description of the filing.
+    assert "summary" not in label.lower()
+
+
+def test_edinet_translated_type_label_returns_native_alone_when_no_translation_is_stored():
+    assert filing_display.edinet_translated_type_label("臨時報告書", None) == "臨時報告書"
+
+
+def test_edinet_translated_type_label_returns_native_alone_when_translation_equals_native():
+    assert filing_display.edinet_translated_type_label("Extraordinary Report", "Extraordinary Report") == "Extraordinary Report"
+
+
+def test_edinet_type_label_uses_the_curated_mapping_when_the_triplet_is_known():
+    filing = _edinet_filing(
+        "自己株券買付状況報告書（法２４条の６第１項に基づくもの）",
+        pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+    )
+    assert filing_display.edinet_type_label(filing) == (
+        "Status Report of Purchase of Own Shares — 自己株券買付状況報告書（法２４条の６第１項に基づくもの）"
+    )
+
+
+def test_edinet_type_label_falls_back_to_native_title_with_no_invented_english_type():
+    """Unknown filing type (no curated mapping, no candidate/translation
+    supplied at all) — must show only the real native title, never a
+    fabricated or guessed English type name."""
+    filing = _edinet_filing("四半期報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    assert filing_display.edinet_type_label(filing) == "四半期報告書"
+
+
+def test_edinet_type_label_labels_a_stored_translation_when_the_triplet_is_unmapped():
+    filing = _edinet_filing("臨時報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    candidate = _candidate_with_matched_rules(
+        filing, [],
+        title_translation=Translation(
+            translated_text="Extraordinary Report", provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+    )
+    assert filing_display.edinet_type_label(filing, candidate) == "臨時報告書 (Title translation: Extraordinary Report)"
+
+
+def test_edinet_type_label_with_no_candidate_falls_back_to_native_only():
+    filing = _edinet_filing("臨時報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    assert filing_display.edinet_type_label(filing, None) == "臨時報告書"
+
+
+def test_edinet_source_instruction_includes_issuer_code_date_and_document_id():
+    filing = _edinet_filing(
+        "自己株券買付状況報告書（法２４条の６第１項に基づくもの）",
+        pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+    )
+    instruction = filing_display.edinet_source_instruction(filing, None, "Sep 4, 2026")
+    assert "Shin-Etsu Chemical Co., Ltd." in instruction
+    assert "4063" in instruction
+    assert "40630" not in instruction  # the padded internal code is never shown to the reader
+    assert "Status Report of Purchase of Own Shares" in instruction
+    assert "自己株券買付状況報告書（法２４条の６第１項に基づくもの）" in instruction
+    assert "Sep 4, 2026" in instruction
+    assert "S100Z0ID" in instruction
+    assert "disclosure2.edinet-fsa.go.jp" in instruction
+
+
+def test_edinet_source_instruction_omits_absent_fields_rather_than_a_placeholder():
+    filing = FilingEvent(
+        rcept_no="", corp_code="", corp_name="", stock_code="",
+        report_nm="", rcept_dt="", flr_nm="", retrieved_at=_now_iso(), source_name="EDINET",
+    )
+    instruction = filing_display.edinet_source_instruction(filing, None, None)
+    assert instruction == "Search EDINET (disclosure2.edinet-fsa.go.jp) for this filing."
+
+
+def test_edinet_source_instruction_uses_the_callers_filed_label_never_retrieved_at_or_now():
+    """Identity-integrity guard: every clause in the instruction —
+    issuer, 4-digit code, type/title, filed date, document ID — must
+    come from this one FilingEvent, and the filed-date clause
+    specifically must be the caller's own already-computed filed_label
+    (itself always derived from this same filing's rcept_dt/filed_at —
+    see radar_card._filed_label and recently_updated._filing_display_
+    date), never FilingEvent.retrieved_at (a separate ingestion-time
+    capture timestamp, not the official filing date) and never the
+    current wall-clock time. retrieved_at is set here to a real but
+    deliberately DIFFERENT date than the true filing date to prove the
+    two are never confused — edinet_source_instruction doesn't even
+    accept retrieved_at as an input, so this also guards against a
+    future change silently reaching for it."""
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", pblntf_ty="170000", pblntf_detail_ty="220", ordinance_code="010",
+        retrieved_at="2026-09-15T00:00:00+00:00",  # ingestion-time capture — deliberately NOT the filing's own date
+        source_name="EDINET", original_language="Japanese",
+    )
+    instruction = filing_display.edinet_source_instruction(filing, None, "Sep 4, 2026")
+    assert "filed Sep 4, 2026" in instruction
+    assert "Sep 15" not in instruction
+    assert "2026-09-15" not in instruction
+
+
+def test_edinet_source_instruction_uses_the_stored_translation_label_when_no_curated_mapping():
+    filing = _edinet_filing("臨時報告書", pblntf_ty="999999", pblntf_detail_ty="999", ordinance_code="010")
+    candidate = _candidate_with_matched_rules(
+        filing, [],
+        title_translation=Translation(
+            translated_text="Extraordinary Report", provider="DeepL", source_lang="ja", target_lang="en", translated_at=_now_iso(),
+        ),
+    )
+    instruction = filing_display.edinet_source_instruction(filing, candidate, "Jul 1, 2026")
+    assert "臨時報告書 (Title translation: Extraordinary Report)" in instruction
+
+
+# ============================================================
 # G: review_needed — the "Review needed" badge's pure predicate
 # ============================================================
 

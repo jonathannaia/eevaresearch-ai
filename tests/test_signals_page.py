@@ -244,7 +244,12 @@ def test_signals_page_edinet_pending_shows_native_only_honest_status(tmp_path):
         assert filing.report_nm in all_text
         assert candidate.excerpt_original in all_text
         assert "Translation pending" in all_text
-        assert "TSE:99840" in all_text
+        # EDINET filing-source usability fix (design/
+        # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): the exchange symbol
+        # now shows the public 4-digit securities code, never the padded
+        # internal "99840".
+        assert "TSE:9984" in all_text
+        assert "TSE:99840" not in all_text
         # Never invent English text for a pending translation.
         assert "machine translation" not in all_text
         assert ":gray-badge[Sample]" not in all_text
@@ -469,6 +474,61 @@ def test_signals_page_hosted_empty_result_distinct_from_hosted_unavailable():
     all_text = " ".join(m.value for m in at.markdown)
     assert "No eligible Radar Signals yet" in all_text
     assert "Hosted signals are temporarily unavailable." not in all_text
+
+
+# ============================================================
+# EDINET filing-source usability fix (design/
+# EDINET_FILING_SOURCE_USABILITY_DESIGN.md) — "Related:" ticker line
+# ============================================================
+
+
+def test_signals_page_edinet_related_ticker_shows_4_digit_code(tmp_path):
+    filing = FilingEvent(
+        rcept_no="S100Z0ID", corp_code="E00776", corp_name="Shin-Etsu Chemical Co., Ltd.", stock_code="40630",
+        report_nm="自己株券買付状況報告書（法２４条の６第１項に基づくもの）", rcept_dt="2026-09-04",
+        flr_nm="信越化学工業株式会社", theme_slug="ai-buildout",
+        source_url="https://api.edinet-fsa.go.jp/api/v2/documents/S100Z0ID",
+        retrieved_at=_now_iso(), source_name="EDINET", original_language="Japanese",
+    )
+    candidate = CandidateSignal(
+        id="edinet-cand-ticker", filing=filing, matched_rules=["share_buyback_status:010:170000:220"],
+        confidence="Moderate", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="自己株券買付状況報告書の記載内容です。",
+        state_history=[StateTransition(status=CandidateStatus.PUBLISHED, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate}, "edinet_candidates.json")
+
+    settings = Settings(cache_dir=tmp_path)
+    with patch("src.data_access.container.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+        assert not at.exception
+        all_text = " ".join(m.value for m in at.markdown)
+        assert "Related: 4063" in all_text
+        assert "Related: 40630" not in all_text
+
+
+def test_signals_page_dart_related_ticker_unchanged(tmp_path):
+    """DART's related ticker is untouched — the 4-digit conversion is
+    EDINET-only (this task's scope)."""
+    filing = _dart_filing()
+    candidate = CandidateSignal(
+        id="dart-cand-ticker", filing=filing, matched_rules=["market_rumor_response:rumor_answer:조회공시"],
+        confidence="Moderate", status=CandidateStatus.PUBLISHED, extraction_state=ExtractionState.EXTRACTED,
+        excerpt_original="조회공시 관련 답변 원문.",
+        state_history=[StateTransition(status=CandidateStatus.PUBLISHED, at=_now_iso())],
+    )
+    candidate_store.save_candidates(tmp_path, {candidate.id: candidate})
+
+    settings = Settings(cache_dir=tmp_path)
+    with patch("src.data_access.container.get_settings", return_value=settings):
+        at = AppTest.from_file(str(_HARNESS), default_timeout=10)
+        at.run()
+
+        assert not at.exception
+        all_text = " ".join(m.value for m in at.markdown)
+        assert "Related: 000660" in all_text
 
 
 def test_signals_page_hosted_filter_empty_distinct_from_hosted_unavailable_and_empty_result():

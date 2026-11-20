@@ -17,6 +17,7 @@ import streamlit as st
 
 from src.config.settings import Settings
 from src.data_access import backend_factory
+from src.logic import filing_display
 from src.logic.formatting import fmt_date
 from src.logic.market_map import REGION_SOURCE
 from src.logic.source_link import public_source_url
@@ -58,7 +59,19 @@ def _render_filing_item(filing: FilingEvent) -> None:
     company/date/source and "View source document ->" together on one
     tight second line, the link floated to the right rather than
     occupying a separate third line as before — same content, same real
-    URL, no new markup element added beyond a flex wrapper."""
+    URL, no new markup element added beyond a flex wrapper.
+
+    EDINET filing-source usability fix (design/
+    EDINET_FILING_SOURCE_USABILITY_DESIGN.md): stays compact and reads
+    no CandidateSignal (this component only ever loads a bare
+    FilingEvent — see _load_recent_filings) — for an EDINET filing only,
+    the title line gains the curated English category phrase when this
+    filing's own ordinance/form/docType triplet is one of the few
+    live-verified entries (filing_display.edinet_type_label, called with
+    no candidate), and the metadata line gains the 4-digit public
+    securities code (filing_display.edinet_display_securities_code).
+    EDGAR/DART are untouched: edinet_type_label/edinet_display_
+    securities_code are only ever called for source_name == "EDINET"."""
     parsed = _parse_rcept_date(filing.rcept_dt)
     date_label = fmt_date(parsed.isoformat()) if parsed else filing.rcept_dt
     # EDINET-safety fix (design/DECISIONS.md): public_source_url() rewrites
@@ -70,12 +83,21 @@ def _render_filing_item(filing: FilingEvent) -> None:
         f'style="color:var(--text-2); font-size:0.76rem; text-decoration:underline; white-space:nowrap;">'
         "View source document ↗</a>"
     ) if safe_url else ""
+
+    is_edinet = filing.source_name == filing_display.EDINET_SOURCE_NAME
+    title_text = filing_display.edinet_type_label(filing) if is_edinet else filing.report_nm
+    code_html = ""
+    if is_edinet:
+        code = filing_display.edinet_display_securities_code(filing.stock_code)
+        if code:
+            code_html = f" · {code}"
+
     st.markdown(
         f'<div class="er-row" style="border-bottom:none; padding:0 0 var(--space-2) 0;">'
-        f'<div class="er-card-title" style="font-size:0.88rem;">{filing.report_nm}</div>'
+        f'<div class="er-card-title" style="font-size:0.88rem;">{title_text}</div>'
         f'<div style="display:flex; align-items:baseline; justify-content:space-between; gap:var(--space-2); '
         f'flex-wrap:wrap; margin-top:0.1rem;">'
-        f'<div class="er-muted" style="font-size:0.78rem;">{filing.corp_name} · {date_label} · {filing.source_name}</div>'
+        f'<div class="er-muted" style="font-size:0.78rem;">{filing.corp_name}{code_html} · {date_label} · {filing.source_name}</div>'
         f"{link_html}"
         f"</div></div>",
         unsafe_allow_html=True,
