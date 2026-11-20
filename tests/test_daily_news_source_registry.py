@@ -16,12 +16,14 @@ from src.data_access.daily_news.source_registry import (
     EDITORIAL_SOURCE_REGISTRY,
     EDITORIAL_SOURCE_REGISTRY_BATCH_2,
     EDITORIAL_SOURCE_REGISTRY_BATCH_3,
+    EDITORIAL_SOURCE_REGISTRY_BATCH_4,
     EDITORIAL_SOURCE_REGISTRY_V1,
     EXPANSION_BATCH_1_SOURCE_REGISTRY,
     EXPANSION_BATCH_2_SOURCE_REGISTRY,
     EXPANSION_BATCH_3_SOURCE_REGISTRY,
     EXPANSION_BATCH_4_SOURCE_REGISTRY,
     EXPANSION_BATCH_5_SOURCE_REGISTRY,
+    EXPANSION_BATCH_6_SOURCE_REGISTRY,
     PILOT_SOURCE_REGISTRY,
     RUNTIME_SOURCE_REGISTRY,
     DailyNewsSourceEntry,
@@ -409,14 +411,17 @@ def test_runtime_source_registry_is_the_twelve_then_the_seven_then_the_one_in_or
     # 2 (2026-09-04) appended exactly one more entry (19 + 1 = 20); batch
     # 3 (2026-09-11) appended exactly four more (20 + 4 = 24); batch 4
     # (2026-09-13) appended exactly three more (24 + 3 = 27); batch 5
-    # (2026-09-13) appended exactly one more (27 + 1 = 28).
-    assert len(RUNTIME_SOURCE_REGISTRY) == 28
+    # (2026-09-13) appended exactly one more (27 + 1 = 28); the Daily
+    # News Cohort 1 batch (2026-09-15) appended exactly four more
+    # (28 + 4 = 32).
+    assert len(RUNTIME_SOURCE_REGISTRY) == 32
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[20:24] == EXPANSION_BATCH_3_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[24:27] == EXPANSION_BATCH_4_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[27:] == EXPANSION_BATCH_5_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[27:28] == EXPANSION_BATCH_5_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[28:] == EXPANSION_BATCH_6_SOURCE_REGISTRY
 
 
 def test_pilot_source_registry_has_zero_validation_violations():
@@ -434,7 +439,7 @@ def test_runtime_source_registry_has_zero_validation_violations():
 
 def test_runtime_source_registry_source_ids_are_all_unique():
     ids = [e.source_id for e in RUNTIME_SOURCE_REGISTRY]
-    assert len(ids) == len(set(ids)) == 28
+    assert len(ids) == len(set(ids)) == 32
 
 
 def test_pilot_source_registry_covers_the_same_twelve_companies_as_pilot_feeds():
@@ -450,7 +455,7 @@ def test_adapted_original_twelve_pilot_feeds_are_unchanged_and_first_in_order():
     field-for-field equal to adapting PILOT_SOURCE_REGISTRY directly,
     and are the first 12 entries of the real, live PILOT_FEEDS."""
     adapted_original_twelve = tuple(to_daily_news_feed_source(e) for e in PILOT_SOURCE_REGISTRY)
-    assert len(feed_registry.PILOT_FEEDS) == 28
+    assert len(feed_registry.PILOT_FEEDS) == 32
     assert feed_registry.PILOT_FEEDS[:12] == adapted_original_twelve
     assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[:12]) == _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER
 
@@ -460,8 +465,10 @@ def test_final_runtime_feed_list_has_exactly_twenty_entries():
     # appended exactly one more entry (19 + 1 = 20); batch 3
     # (2026-09-11) appended exactly four more (20 + 4 = 24); batch 4
     # (2026-09-13) appended exactly three more (24 + 3 = 27); batch 5
-    # (2026-09-13) appended exactly one more (27 + 1 = 28).
-    assert len(feed_registry.PILOT_FEEDS) == 28
+    # (2026-09-13) appended exactly one more (27 + 1 = 28); the Daily
+    # News Cohort 1 batch (2026-09-15) appended exactly four more
+    # (28 + 4 = 32).
+    assert len(feed_registry.PILOT_FEEDS) == 32
 
 
 def test_final_runtime_feed_list_appends_expansion_batch_1_after_the_original_twelve():
@@ -493,9 +500,18 @@ def test_final_runtime_feed_list_appends_expansion_batch_4_after_batch_3():
 
 def test_final_runtime_feed_list_appends_expansion_batch_5_after_batch_4():
     adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_5_SOURCE_REGISTRY)
-    assert feed_registry.PILOT_FEEDS[27:] == adapted_expansion
-    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[27:]) == (
+    assert feed_registry.PILOT_FEEDS[27:28] == adapted_expansion
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[27:28]) == (
         "Hewlett Packard Enterprise Company",
+    )
+
+
+def test_final_runtime_feed_list_appends_daily_news_cohort1_batch_after_batch_5():
+    adapted_expansion = tuple(to_daily_news_feed_source(e) for e in EXPANSION_BATCH_6_SOURCE_REGISTRY)
+    assert feed_registry.PILOT_FEEDS[28:] == adapted_expansion
+    assert tuple(f.company_name for f in feed_registry.PILOT_FEEDS[28:]) == (
+        "Equinix, Inc.", "L3Harris Technologies, Inc.", "Firefly Aerospace Inc.",
+        "YASKAWA Electric Corporation",
     )
 
 
@@ -504,6 +520,10 @@ def test_final_runtime_feed_list_company_order_is_exactly_the_twenty_expected():
         _EXPECTED_ORIGINAL_TWELVE_COMPANY_ORDER + _EXPECTED_EXPANSION_BATCH_1_COMPANY_ORDER
         + ("Meta Platforms, Inc.",) + _EXPECTED_EXPANSION_BATCH_3_COMPANY_ORDER
         + _EXPECTED_EXPANSION_BATCH_4_COMPANY_ORDER + ("Hewlett Packard Enterprise Company",)
+        + (
+            "Equinix, Inc.", "L3Harris Technologies, Inc.", "Firefly Aerospace Inc.",
+            "YASKAWA Electric Corporation",
+        )
     )
 
 
@@ -609,13 +629,14 @@ def test_meta_ir_rss_remains_present_enabled_and_unchanged():
 
 
 def test_runtime_source_registry_is_nineteen_then_the_one_new_entry():
-    assert len(RUNTIME_SOURCE_REGISTRY) == 28
+    assert len(RUNTIME_SOURCE_REGISTRY) == 32
     assert RUNTIME_SOURCE_REGISTRY[:12] == PILOT_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[12:19] == EXPANSION_BATCH_1_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[19:20] == EXPANSION_BATCH_2_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[20:24] == EXPANSION_BATCH_3_SOURCE_REGISTRY
     assert RUNTIME_SOURCE_REGISTRY[24:27] == EXPANSION_BATCH_4_SOURCE_REGISTRY
-    assert RUNTIME_SOURCE_REGISTRY[27:] == EXPANSION_BATCH_5_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[27:28] == EXPANSION_BATCH_5_SOURCE_REGISTRY
+    assert RUNTIME_SOURCE_REGISTRY[28:] == EXPANSION_BATCH_6_SOURCE_REGISTRY
 
 
 def test_runtime_source_registry_has_zero_violations_after_batch_2():
@@ -920,11 +941,14 @@ def test_editorial_source_registry_has_exactly_thirty_six_entries_v1_then_batch_
     # batch 3, Phase 1 activation (2026-09-15) appended 1 more (Data
     # Center Dynamics — METI was re-verified and excluded for staleness,
     # see source_registry.py's own EDITORIAL_SOURCE_REGISTRY_BATCH_3
-    # comment) (12 + 23 + 1 = 36), never interleaved.
-    assert len(EDITORIAL_SOURCE_REGISTRY) == 36
+    # comment) (12 + 23 + 1 = 36); the Daily News Cohort 1 batch
+    # (2026-09-15) appended 2 more (SpaceNews, The Robot Report)
+    # (36 + 2 = 38), never interleaved.
+    assert len(EDITORIAL_SOURCE_REGISTRY) == 38
     assert EDITORIAL_SOURCE_REGISTRY[:12] == EDITORIAL_SOURCE_REGISTRY_V1
     assert EDITORIAL_SOURCE_REGISTRY[12:35] == EDITORIAL_SOURCE_REGISTRY_BATCH_2
-    assert EDITORIAL_SOURCE_REGISTRY[35:] == EDITORIAL_SOURCE_REGISTRY_BATCH_3
+    assert EDITORIAL_SOURCE_REGISTRY[35:36] == EDITORIAL_SOURCE_REGISTRY_BATCH_3
+    assert EDITORIAL_SOURCE_REGISTRY[36:] == EDITORIAL_SOURCE_REGISTRY_BATCH_4
 
 
 def test_editorial_source_registry_has_zero_validation_violations():
@@ -1004,9 +1028,11 @@ def test_editorial_source_registry_never_appears_in_runtime_source_registry():
     runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
     assert not (editorial_ids & runtime_ids)
     # Daily News source-expansion batch 5 (2026-09-13) added 1 more
-    # issuer-lane entry (27 -> 28) — this test's own point (editorial
-    # and runtime source_ids never collide) is unaffected by that count.
-    assert len(RUNTIME_SOURCE_REGISTRY) == 28
+    # issuer-lane entry (27 -> 28); the Daily News Cohort 1 batch
+    # (2026-09-15) added 4 more (28 -> 32) — this test's own point
+    # (editorial and runtime source_ids never collide) is unaffected by
+    # that count.
+    assert len(RUNTIME_SOURCE_REGISTRY) == 32
 
 
 # ============================================================
@@ -1295,3 +1321,194 @@ def test_contains_excluded_source_name_returns_false_for_a_clean_name():
     assert not contains_excluded_source_name("NVIDIA")
     assert not contains_excluded_source_name("")
     assert not contains_excluded_source_name(None)
+
+
+# ============================================================
+# Daily News Cohort 1 batch (2026-09-15) — 4 issuer-linked sources
+# (Equinix, L3Harris, Firefly Aerospace, Yaskawa Electric) appended to
+# RUNTIME_SOURCE_REGISTRY, 2 independent trade-press sources (SpaceNews,
+# The Robot Report) appended to EDITORIAL_SOURCE_REGISTRY. See design/
+# DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md.
+# ============================================================
+
+_COHORT1_ISSUER_SOURCE_IDS_TO_COMPANIES = {
+    "equinix-ir-rss": "Equinix, Inc.",
+    "l3harris-newsroom-rss": "L3Harris Technologies, Inc.",
+    "firefly-aerospace-news-rss": "Firefly Aerospace Inc.",
+    "yaskawa-newsroom-rss": "YASKAWA Electric Corporation",
+}
+_COHORT1_EDITORIAL_SOURCE_IDS_TO_LABELS = {
+    "spacenews-rss": "SpaceNews",
+    "robot-report-rss": "The Robot Report",
+}
+
+
+def test_expansion_batch_6_has_exactly_four_entries_in_the_given_order():
+    assert len(EXPANSION_BATCH_6_SOURCE_REGISTRY) == 4
+    assert tuple(e.issuer_name for e in EXPANSION_BATCH_6_SOURCE_REGISTRY) == (
+        "Equinix, Inc.", "L3Harris Technologies, Inc.", "Firefly Aerospace Inc.",
+        "YASKAWA Electric Corporation",
+    )
+
+
+def test_expansion_batch_6_has_zero_validation_violations():
+    assert find_registry_violations(EXPANSION_BATCH_6_SOURCE_REGISTRY) == ()
+
+
+def test_expansion_batch_6_source_classes_and_domains_match_the_approved_design():
+    by_id = {e.source_id: e for e in EXPANSION_BATCH_6_SOURCE_REGISTRY}
+    assert by_id["equinix-ir-rss"].category == SourceCategory.OFFICIAL_IR
+    assert by_id["equinix-ir-rss"].domains == ("investor.equinix.com",)
+    assert by_id["equinix-ir-rss"].jurisdiction == "United States"
+    assert by_id["l3harris-newsroom-rss"].category == SourceCategory.OFFICIAL_NEWSROOM
+    assert by_id["l3harris-newsroom-rss"].domains == ("www.l3harris.com",)
+    assert by_id["firefly-aerospace-news-rss"].category == SourceCategory.OFFICIAL_NEWSROOM
+    assert by_id["firefly-aerospace-news-rss"].domains == ("fireflyspace.com",)
+    assert by_id["yaskawa-newsroom-rss"].category == SourceCategory.OFFICIAL_NEWSROOM
+    assert by_id["yaskawa-newsroom-rss"].domains == ("www.yaskawa-global.com",)
+    assert by_id["yaskawa-newsroom-rss"].jurisdiction == "Japan"
+    for entry in EXPANSION_BATCH_6_SOURCE_REGISTRY:
+        assert entry.format == SourceFormat.RSS_ATOM
+        assert entry.enabled is True
+        assert entry.health_state == SourceHealthState.VERIFIED
+
+
+def test_yaskawa_newsroom_language_is_english_not_feed_metadata():
+    # Deliberate curation override (design/
+    # DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md) — the real
+    # feed's own <channel><language> tag declares "ja", but every
+    # observed item is genuinely English-language content. The curated
+    # registry value must reflect observed content, never the feed's
+    # own possibly-mislabeled metadata.
+    yaskawa = next(e for e in RUNTIME_SOURCE_REGISTRY if e.source_id == "yaskawa-newsroom-rss")
+    assert yaskawa.language == "English"
+
+
+def test_other_expansion_batch_6_entries_default_to_english_language():
+    by_id = {e.source_id: e for e in EXPANSION_BATCH_6_SOURCE_REGISTRY}
+    for source_id in ("equinix-ir-rss", "l3harris-newsroom-rss", "firefly-aerospace-news-rss"):
+        assert by_id[source_id].language == "English"
+
+
+def test_editorial_batch_4_has_exactly_two_entries_in_the_given_order():
+    assert len(EDITORIAL_SOURCE_REGISTRY_BATCH_4) == 2
+    assert tuple(e.source_id for e in EDITORIAL_SOURCE_REGISTRY_BATCH_4) == (
+        "spacenews-rss", "robot-report-rss",
+    )
+
+
+def test_editorial_batch_4_has_zero_validation_violations():
+    assert find_registry_violations(EDITORIAL_SOURCE_REGISTRY_BATCH_4) == ()
+
+
+def test_editorial_batch_4_entries_are_issuer_agnostic_allowlisted_independent_news():
+    for entry in EDITORIAL_SOURCE_REGISTRY_BATCH_4:
+        assert entry.category == SourceCategory.INDEPENDENT_NEWS
+        assert entry.issuer_agnostic is True
+        assert entry.issuer_name is None
+        assert entry.allowlisted is True
+        assert entry.format == SourceFormat.RSS_ATOM
+        assert entry.enabled is True
+        assert entry.health_state == SourceHealthState.VERIFIED
+        assert entry.language == "English"
+
+
+def test_spacenews_domain_and_jurisdiction():
+    spacenews = next(e for e in EDITORIAL_SOURCE_REGISTRY_BATCH_4 if e.source_id == "spacenews-rss")
+    assert spacenews.domains == ("spacenews.com",)
+    assert spacenews.jurisdiction == "United States"
+    assert spacenews.attribution_label == "SpaceNews"
+
+
+def test_robot_report_domain_and_jurisdiction():
+    robot_report = next(e for e in EDITORIAL_SOURCE_REGISTRY_BATCH_4 if e.source_id == "robot-report-rss")
+    assert robot_report.domains == ("www.therobotreport.com",)
+    assert robot_report.jurisdiction == "United States"
+    assert robot_report.attribution_label == "The Robot Report"
+
+
+def test_cohort1_sources_present_exactly_once_each_across_the_correct_registry():
+    runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
+    editorial_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY}
+    for source_id in _COHORT1_ISSUER_SOURCE_IDS_TO_COMPANIES:
+        assert source_id in runtime_ids
+        assert source_id not in editorial_ids
+    for source_id in _COHORT1_EDITORIAL_SOURCE_IDS_TO_LABELS:
+        assert source_id in editorial_ids
+        assert source_id not in runtime_ids
+
+
+def test_cohort1_no_source_id_or_canonical_url_collision_with_existing_registry():
+    all_entries = RUNTIME_SOURCE_REGISTRY + EDITORIAL_SOURCE_REGISTRY
+    ids = [e.source_id for e in all_entries]
+    assert len(ids) == len(set(ids))
+    urls = [normalize_source_url(e.canonical_url) for e in all_entries]
+    assert len(urls) == len(set(urls))
+
+
+def test_cohort1_issuer_sources_resolve_to_a_real_tracked_company():
+    # Every Lane A Cohort 1 entry's issuer_name must resolve via
+    # feed_registry.tracked_company_for() — the same lookup the real
+    # pipeline already performs; no DISCOVERY_STUBS entry is needed or
+    # used for any of these 4 (unlike HPE/Quanta/nVent/Arista/Cisco),
+    # since all 4 are already real TrackedCompany entries (PR #59).
+    for source_id, company_name in _COHORT1_ISSUER_SOURCE_IDS_TO_COMPANIES.items():
+        entry = next(e for e in RUNTIME_SOURCE_REGISTRY if e.source_id == source_id)
+        assert entry.issuer_name == company_name
+        resolved = feed_registry.tracked_company_for(company_name)
+        assert resolved is not None
+        assert resolved.source in ("SEC EDGAR", "EDINET")
+
+
+def test_cohort1_hold_candidates_never_added_to_any_registry():
+    # Negative fixture: none of the 7 explicit HOLD candidates from the
+    # approved design gained a Lane A or Lane B entry as a side effect
+    # of this batch.
+    all_entries = RUNTIME_SOURCE_REGISTRY + EDITORIAL_SOURCE_REGISTRY
+    labels = {e.attribution_label.lower() for e in all_entries}
+    issuer_names = {(e.issuer_name or "").lower() for e in all_entries}
+    hold_fragments = (
+        "ge vernova", "digital realty", "nabtesco", "harmonic drive",
+        "hanmi semiconductor", "hd hyundai electric", "korea exchange", "krx",
+    )
+    for fragment in hold_fragments:
+        assert not any(fragment in label for label in labels), f"{fragment} must not appear as attribution_label"
+        assert not any(fragment in name for name in issuer_names), f"{fragment} must not appear as issuer_name"
+
+
+def test_cohort1_dormant_gated_sources_remain_untouched_and_still_gated():
+    # Negative fixture: this batch does not activate, modify, or remove
+    # any of the 4 dormant env-gated sources — they remain exactly
+    # where they were, in their own separate, still-gated registries,
+    # never merged into RUNTIME_SOURCE_REGISTRY or EDITORIAL_SOURCE_
+    # REGISTRY by this batch.
+    from src.data_access.daily_news.source_registry import (
+        GATED_JP_KR_SOURCE_REGISTRY,
+        GATED_MARKET_NEWS_SOURCE_REGISTRY,
+    )
+
+    gated_ids = {e.source_id for e in GATED_MARKET_NEWS_SOURCE_REGISTRY + GATED_JP_KR_SOURCE_REGISTRY}
+    assert gated_ids == {
+        "light-reading-rss", "japan-times-business-rss",
+        "businesskorea-industries-rss", "businesskorea-science-tech-rss",
+    }
+    runtime_ids = {e.source_id for e in RUNTIME_SOURCE_REGISTRY}
+    editorial_ids = {e.source_id for e in EDITORIAL_SOURCE_REGISTRY}
+    assert gated_ids.isdisjoint(runtime_ids)
+    assert gated_ids.isdisjoint(editorial_ids)
+
+
+def test_l3harris_has_no_per_item_space_segment_filter_by_design():
+    # Documents, does not fix: L3Harris's own newsroom feed mixes
+    # space-segment and much larger non-space defense-electronics
+    # content, and this registry entry (like every other issuer feed)
+    # has no per-item segment/topic filter — a story is never rejected
+    # at the source-registry level based on its own content. Whether a
+    # non-space L3Harris item should still become a "Space" Signal is a
+    # materiality/theme-tagging question for editorial_matching.py and
+    # materiality_classification.py, not something a DailyNewsSourceEntry
+    # field can express — this test documents that today's registry
+    # entry itself carries no such filter, confirming the design's own
+    # "known, accepted characteristic, not a defect" framing.
+    l3harris = next(e for e in RUNTIME_SOURCE_REGISTRY if e.source_id == "l3harris-newsroom-rss")
+    assert l3harris.allowed_event_filters == ()

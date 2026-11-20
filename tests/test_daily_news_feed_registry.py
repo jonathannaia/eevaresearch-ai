@@ -460,8 +460,10 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
     # company (20 + 4 = 24). Expansion batch 4 (2026-09-13) then
     # appended 3 more entries, each a genuinely new company (24 + 3 = 27).
     # Expansion batch 5 (2026-09-13) then appended 1 more entry, a
-    # genuinely new company (27 + 1 = 28).
-    assert len(PILOT_FEEDS) == 28
+    # genuinely new company (27 + 1 = 28). The Daily News Cohort 1 batch
+    # (2026-09-15) then appended 4 more entries, each a genuinely new
+    # company (28 + 4 = 32).
+    assert len(PILOT_FEEDS) == 32
     assert {s.company_name for s in PILOT_FEEDS} == {
         "NVIDIA", "Intel Corp.", "Advanced Micro Devices", "Bloom Energy Corp",
         "Marvell Technology, Inc.", "MaxLinear, Inc.", "Rockwell Automation", "SK Hynix",
@@ -471,6 +473,8 @@ def test_pilot_feeds_now_has_exactly_twenty_sources():
         "Qualcomm Incorporated", "Corning Inc.", "Synopsys, Inc.", "Cadence Design Systems, Inc.",
         "Samsung Electronics", "Murata Manufacturing Co., Ltd.", "Microchip Technology Incorporated",
         "Hewlett Packard Enterprise Company",
+        "Equinix, Inc.", "L3Harris Technologies, Inc.", "Firefly Aerospace Inc.",
+        "YASKAWA Electric Corporation",
     }
 
 
@@ -504,3 +508,212 @@ def test_all_other_sources_have_no_approved_image_host():
     for source in PILOT_FEEDS:
         if source.company_name in other_companies:
             assert source.image_host is None
+
+
+# --- Daily News Cohort 1 batch (2026-09-15): Equinix, L3Harris,
+# Firefly Aerospace, Yaskawa Electric — see design/
+# DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md ---
+
+
+def _equinix_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Equinix, Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_equinix_is_registered_with_the_exact_approved_fields():
+    source = _equinix_source()
+    assert source.feed_url == "https://investor.equinix.com/news-events/press-releases/rss"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("investor.equinix.com",)
+    assert source.language == "English"
+
+
+def test_equinix_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("Equinix, Inc.")
+    assert company is not None
+    assert company.krx_code == "EQIX"
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
+    assert "ai-buildout" in company.themes
+
+
+def test_equinix_item_url_validates_against_its_exact_canonical_domain():
+    source = _equinix_source()
+    url = "https://investor.equinix.com/news-events/press-releases/detail/1123/cpp-investments-and-equinix-complete-atnorth-acquisition"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_equinix_rejects_bare_domain_www_other_subdomain_and_lookalike_hostnames():
+    source = _equinix_source()
+    for other_url in (
+        "https://equinix.com/news-events/press-releases/detail/1123/some-release",
+        "https://www.equinix.com/news-events/press-releases/detail/1123/some-release",
+        "https://blog.equinix.com/news-events/press-releases/detail/1123/some-release",
+        "https://investor.equinix.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_equinix_off_domain_url_is_rejected():
+    source = _equinix_source()
+    assert not validate_canonical_url("https://www.l3harris.com/newsroom/press-release/2026/some-release", source.canonical_domains, source.feed_url)
+
+
+def _l3harris_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "L3Harris Technologies, Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_l3harris_is_registered_with_the_exact_approved_fields():
+    source = _l3harris_source()
+    assert source.feed_url == "https://www.l3harris.com/feeds/newsroom/rss.xml"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("www.l3harris.com",)
+    assert source.language == "English"
+
+
+def test_l3harris_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("L3Harris Technologies, Inc.")
+    assert company is not None
+    assert company.krx_code == "LHX"
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
+    assert "space" in company.themes
+
+
+def test_l3harris_item_url_validates_against_its_exact_canonical_domain():
+    source = _l3harris_source()
+    url = "https://www.l3harris.com/newsroom/press-release/2026/09/l3harris-advances-production-proximity-sensors-us-air-force"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_l3harris_editorial_item_url_also_validates_same_domain_different_path():
+    # L3Harris's feed mixes /newsroom/press-release/ and /newsroom/
+    # editorial/ paths — both are real, on-domain item links; the
+    # registry entry has no per-item segment filter (see design/
+    # DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md — a non-
+    # space L3Harris item is not rejected at this layer; that is a
+    # materiality/theme-matching question, not a source-registry one).
+    source = _l3harris_source()
+    url = "https://www.l3harris.com/newsroom/editorial/2026/09/modernizing-kc-135-decades-mission-readiness"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_l3harris_rejects_bare_domain_www_investor_subdomain_and_lookalike_hostnames():
+    source = _l3harris_source()
+    for other_url in (
+        "https://l3harris.com/newsroom/press-release/2026/some-release",
+        "https://investor.l3harris.com/news-events/press-releases/some-release",
+        "https://www.l3harris.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_l3harris_off_domain_url_is_rejected():
+    source = _l3harris_source()
+    assert not validate_canonical_url("https://investor.equinix.com/news-events/press-releases/detail/1123/some-release", source.canonical_domains, source.feed_url)
+
+
+def _firefly_aerospace_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "Firefly Aerospace Inc."]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_firefly_aerospace_is_registered_with_the_exact_approved_fields():
+    source = _firefly_aerospace_source()
+    assert source.feed_url == "https://fireflyspace.com/feed/"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("fireflyspace.com",)
+    assert source.language == "English"
+
+
+def test_firefly_aerospace_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("Firefly Aerospace Inc.")
+    assert company is not None
+    assert company.krx_code == "FLY"
+    assert company.source == "SEC EDGAR"
+    assert company.active is True
+    assert "space" in company.themes
+
+
+def test_firefly_aerospace_item_url_validates_against_its_exact_canonical_domain():
+    source = _firefly_aerospace_source()
+    url = "https://fireflyspace.com/news/firefly-aerospace-signs-contract-with-ssc-space-for-two-alpha-launches-from-esrange-space-center/"
+    assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_firefly_aerospace_rejects_bare_domain_www_and_lookalike_hostnames():
+    source = _firefly_aerospace_source()
+    for other_url in (
+        "https://www.fireflyspace.com/news/some-release/",
+        "https://ir.fireflyspace.com/news-events/press-releases/some-release",
+        "https://fireflyspace.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_firefly_aerospace_off_domain_url_is_rejected():
+    source = _firefly_aerospace_source()
+    assert not validate_canonical_url("https://spacenews.com/some-article/", source.canonical_domains, source.feed_url)
+
+
+def _yaskawa_source():
+    matches = [s for s in PILOT_FEEDS if s.company_name == "YASKAWA Electric Corporation"]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_yaskawa_is_registered_with_the_exact_approved_fields():
+    source = _yaskawa_source()
+    assert source.feed_url == "https://www.yaskawa-global.com/feed/"
+    assert source.feed_format == "rss"
+    assert source.canonical_domains == ("www.yaskawa-global.com",)
+
+
+def test_yaskawa_language_is_curated_english_not_the_feeds_own_ja_metadata():
+    # The real feed's own <channel><language> tag declares "ja" — the
+    # curated registry value must still be "English", reflecting every
+    # observed item's genuinely English-language content, never copied
+    # blindly from the feed's own metadata. See design/
+    # DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md.
+    source = _yaskawa_source()
+    assert source.language == "English"
+
+
+def test_yaskawa_resolves_to_the_real_tracked_company():
+    company = tracked_company_for("YASKAWA Electric Corporation")
+    assert company is not None
+    assert company.krx_code == "65060"
+    assert company.source == "EDINET"
+    assert company.active is True
+    assert "humanoids" in company.themes
+
+
+def test_yaskawa_item_urls_validate_across_its_multiple_real_subpaths():
+    # The feed mixes /newsrelease/product/, /newsrelease/news/, and
+    # /ir/news/ item paths — all on the same www.yaskawa-global.com
+    # domain, so a single-domain allowlist correctly covers all three.
+    source = _yaskawa_source()
+    for url in (
+        "https://www.yaskawa-global.com/newsrelease/product/179972",
+        "https://www.yaskawa-global.com/newsrelease/news/179855",
+        "https://www.yaskawa-global.com/ir/news/179741",
+    ):
+        assert validate_canonical_url(url, source.canonical_domains, source.feed_url)
+
+
+def test_yaskawa_rejects_bare_domain_and_lookalike_hostnames():
+    source = _yaskawa_source()
+    for other_url in (
+        "https://yaskawa-global.com/newsrelease/product/179972",
+        "https://www.yaskawa-global.com.evil-example.com/fake-release/",
+    ):
+        assert not validate_canonical_url(other_url, source.canonical_domains, source.feed_url)
+
+
+def test_yaskawa_off_domain_url_is_rejected():
+    source = _yaskawa_source()
+    assert not validate_canonical_url("https://www.therobotreport.com/some-article/", source.canonical_domains, source.feed_url)

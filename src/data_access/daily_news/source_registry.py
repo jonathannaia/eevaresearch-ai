@@ -905,16 +905,99 @@ EXPANSION_BATCH_5_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News Cohort 1 batch (2026-09-15) — 4 official issuer IR/
+# newsroom RSS feeds, each independently live-verified this batch (real
+# fetch, HTTP 200, parseable RSS 2.0, on-domain per-article item links),
+# closing coverage gaps for 4 of the 10 Tier 1 Cohort 1 supply-chain
+# issuers added to tracked_companies.py in PR #59 (Equinix, L3Harris
+# Technologies, Firefly Aerospace, Yaskawa Electric) and, for L3Harris/
+# Firefly specifically, giving the `space` theme its first-ever
+# issuer-linked Daily News source (previously zero) — see design/
+# DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md for the full
+# evidence record, including the deliberate Yaskawa `language="English"`
+# curation override (that feed's own metadata declares Japanese; every
+# observed item is genuinely English-language content).
+EXPANSION_BATCH_6_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="equinix-ir-rss", category=SourceCategory.OFFICIAL_IR, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://investor.equinix.com/news-events/press-releases/rss",
+        domains=("investor.equinix.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Equinix, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Equinix, Inc.", last_verified_at="2026-09-15",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified official IR RSS feed, HTTP "
+            "200, RSS 2.0, channel title 'Equinix, Inc. (EQIX) Press Releases', dated items "
+            "(newest 2026-09-10), each with a real per-article "
+            "investor.equinix.com/news-events/press-releases/detail/... link, on-domain."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="l3harris-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.l3harris.com/feeds/newsroom/rss.xml",
+        domains=("www.l3harris.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="L3Harris Technologies, Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="L3Harris Technologies, Inc.", last_verified_at="2026-09-15",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified official newsroom RSS feed, "
+            "HTTP 200, RSS 2.0, channel title 'L3Harris Technologies', dated items (newest "
+            "2026-09-15), each with a real per-article www.l3harris.com/newsroom/... link, "
+            "on-domain. First-ever issuer-linked `space`-theme Daily News source. Multi-segment "
+            "company — this feed mixes space-segment and much larger non-space defense-"
+            "electronics content; no per-item segment filter exists, matching every other issuer "
+            "feed in this registry — a known, accepted characteristic, not a defect."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="firefly-aerospace-news-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://fireflyspace.com/feed/",
+        domains=("fireflyspace.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="Firefly Aerospace Inc.", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="Firefly Aerospace Inc.", last_verified_at="2026-09-15",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified official news RSS feed, HTTP "
+            "200, RSS 2.0, channel title 'Firefly Aerospace', dated items (newest 2026-09-09), "
+            "each with a real per-article fireflyspace.com/news/... link, on-domain. Second "
+            "issuer-linked `space`-theme Daily News source, pairing with L3Harris."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="yaskawa-newsroom-rss", category=SourceCategory.OFFICIAL_NEWSROOM, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.yaskawa-global.com/feed/",
+        domains=("www.yaskawa-global.com",),
+        jurisdiction="Japan", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="YASKAWA Electric Corporation", licensing_classification=_PILOT_LICENSING_CLASSIFICATION,
+        priority=1, issuer_name="YASKAWA Electric Corporation", last_verified_at="2026-09-15",
+        language="English",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified official newsroom RSS feed, "
+            "HTTP 200, RSS 2.0, dated items (newest 2026-09-13), each with a real per-article "
+            "www.yaskawa-global.com/newsrelease/.../ir/news/... link, on-domain. Second "
+            "issuer-linked `humanoids`-theme Daily News source (after Rockwell Automation). "
+            "`language=\"English\"` is a DELIBERATE curation override, not a default or an "
+            "oversight — the feed's own <channel><language> tag declares 'ja', but every "
+            "observed item's real title/content is plain English (Yaskawa's own English-"
+            "language global site); per DailyNewsSourceEntry.language's own field discipline "
+            "('a human-verified fact about the source, never derived from text'), the curated "
+            "value reflects observed content, never blindly-copied feed metadata."
+        ),
+    ),
+)
+
 # The real, live runtime feed list — original 12 pilot sources first
 # (byte-identical, same order), then expansion batch 1's 7 sources,
 # then expansion batch 2's 1 source, then expansion batch 3's 4
 # sources, then expansion batch 4's 3 sources, then expansion batch 5's
-# 1 source, in the exact order given (19 + 1 + 4 + 3 + 1 = 28).
+# 1 source, then the Daily News Cohort 1 batch's 4 sources, in the
+# exact order given (19 + 1 + 4 + 3 + 1 + 4 = 32).
 # feed_registry.PILOT_FEEDS is generated from this tuple via
 # to_daily_news_feed_source(); see that module's own updated docstring.
 RUNTIME_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     PILOT_SOURCE_REGISTRY + EXPANSION_BATCH_1_SOURCE_REGISTRY + EXPANSION_BATCH_2_SOURCE_REGISTRY
     + EXPANSION_BATCH_3_SOURCE_REGISTRY + EXPANSION_BATCH_4_SOURCE_REGISTRY + EXPANSION_BATCH_5_SOURCE_REGISTRY
+    + EXPANSION_BATCH_6_SOURCE_REGISTRY
 )
 
 _EDITORIAL_LICENSING_CLASSIFICATION = (
@@ -1538,13 +1621,57 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_3: tuple[DailyNewsSourceEntry, ...] = (
     ),
 )
 
+# Daily News Cohort 1 batch (2026-09-15) — 2 independent trade-press
+# sources, each independently live-verified this batch (real fetch,
+# HTTP 200, parseable RSS 2.0, on-domain dated per-article item links),
+# closing the `space` and `humanoids` themes' dedicated-trade-press gap
+# (previously zero for both) — see design/
+# DAILY_NEWS_COHORT1_IMPLEMENTATION_DESIGN_2026_09_15.md for the full
+# evidence record. Both issuer-agnostic (category=INDEPENDENT_NEWS,
+# allowlisted=True, required by validate_source_entry()) — matched to
+# tracked companies/themes at item-match time via editorial_matching.py,
+# never by a stored theme field on the source itself.
+EDITORIAL_SOURCE_REGISTRY_BATCH_4: tuple[DailyNewsSourceEntry, ...] = (
+    DailyNewsSourceEntry(
+        source_id="spacenews-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://spacenews.com/feed/",
+        domains=("spacenews.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="SpaceNews", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified independent space-industry "
+            "trade-press RSS feed, HTTP 200, RSS 2.0, channel title 'SpaceNews', dated items "
+            "(newest 2026-09-15), all on-domain (spacenews.com/...). First dedicated space-"
+            "industry trade-press source in this registry — closes a real, previously-zero gap "
+            "(the existing general-tech sources — TechCrunch, Ars Technica, The Verge — carry "
+            "only incidental space coverage)."
+        ),
+    ),
+    DailyNewsSourceEntry(
+        source_id="robot-report-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.therobotreport.com/feed/",
+        domains=("www.therobotreport.com",),
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Robot Report", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
+        priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-15",
+        notes=(
+            "Daily News Cohort 1 batch (2026-09-15) — live-verified independent robotics trade-"
+            "press RSS feed, HTTP 200, RSS 2.0, channel title 'The Robot Report', dated items "
+            "(newest 2026-09-15), all on-domain (www.therobotreport.com/...). First dedicated "
+            "robotics trade-press source in this registry — closes a real, previously-zero gap."
+        ),
+    ),
+)
+
 # The real, live editorial feed list — v1's 12 sources first (unchanged,
-# same order), then batch 2's 23 sources, then batch 3's 1 source, in
-# the exact order given (12 + 23 + 1 = 36). Never merged into
-# RUNTIME_SOURCE_REGISTRY — read only by editorial_pipeline.py; see that
-# module's own docstring.
+# same order), then batch 2's 23 sources, then batch 3's 1 source, then
+# the Daily News Cohort 1 batch's 2 sources, in the exact order given
+# (12 + 23 + 1 + 2 = 38). Never merged into RUNTIME_SOURCE_REGISTRY —
+# read only by editorial_pipeline.py; see that module's own docstring.
 EDITORIAL_SOURCE_REGISTRY: tuple[DailyNewsSourceEntry, ...] = (
     EDITORIAL_SOURCE_REGISTRY_V1 + EDITORIAL_SOURCE_REGISTRY_BATCH_2 + EDITORIAL_SOURCE_REGISTRY_BATCH_3
+    + EDITORIAL_SOURCE_REGISTRY_BATCH_4
 )
 
 # Gated market-news source expansion (design/DECISIONS.md) — deliberately
