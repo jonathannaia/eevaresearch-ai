@@ -103,6 +103,29 @@ def match_companies(text: str) -> tuple[str, ...]:
     return tuple(matched)
 
 
+def company_mention_spans(text: str, company_name: str) -> tuple[tuple[int, int], ...]:
+    """Every (start, end) character span in `text` where this specific
+    company's own name is mentioned — via either its mechanical alias
+    (case-insensitive) or its curated brand alias (case-sensitive), the
+    exact same two sources and case rules match_companies() itself
+    already uses for the same company. Returns () when the company
+    isn't in the Daily News universe or isn't mentioned in `text` at
+    all. Exposed so a caller needing WHERE a company is named (not
+    merely whether it is) — e.g. editorial_admission.py's grammatical-
+    actor proximity check, Signals admission precision fix — reuses
+    this module's own single source of truth for alias resolution
+    rather than re-deriving it."""
+    entry = next((e for e in _company_alias_entries() if e.company_name == company_name), None)
+    if entry is None:
+        return ()
+    spans: list[tuple[int, int]] = []
+    for alias in entry.aliases:
+        spans.extend((m.start(), m.end()) for m in _boundary_pattern(alias, case_sensitive=False).finditer(text))
+    for alias in entry.brand_aliases:
+        spans.extend((m.start(), m.end()) for m in _boundary_pattern(alias, case_sensitive=True).finditer(text))
+    return tuple(sorted(spans))
+
+
 def match_themes(text: str) -> tuple[str, ...]:
     """Every theme with at least one approved compound phrase present
     in `text` with a real word boundary. Order matches THEME_KEYWORDS'

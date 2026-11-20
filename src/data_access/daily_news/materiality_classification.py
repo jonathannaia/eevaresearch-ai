@@ -191,6 +191,26 @@ TAXONOMY_KEYWORDS: dict[str, tuple[str, ...]] = {
         "tariff", "supply chain constraint", "supply chain disruption",
         "capital allocation", "capex guidance", "financing round",
     ),
+    # Space taxonomy route (Signals admission/materiality precision
+    # fix, design/SIGNALS_ADMISSION_MATERIALITY_CALIBRATION_2026_09_15.md
+    # Rule/P2) — a deliberate, separate bucket from editorial_matching.
+    # THEME_KEYWORDS' own `space` theme list (same "own, separate table"
+    # discipline this module's docstring already establishes — see
+    # TAXONOMY_KEYWORDS' own comment above). Narrow, multi-word compound
+    # phrases only — never a bare "space"/"satellite" — so this can
+    # never fire on routine personnel/leadership text or broad aerospace
+    # commentary on its own; Gate C still requires a co-occurring
+    # materiality anchor (contract/order/capacity/financing/expansion/
+    # etc. — see _TAXONOMY_PAIRING_ANCHOR_KEYWORDS), so a bare mission/
+    # spacecraft mention with no anchor still lands at Watchlist at
+    # most, exactly like every other taxonomy bucket.
+    "space_missions_and_launch": (
+        "satellite launch", "rocket launch", "orbital launch", "launch vehicle",
+        "spacecraft", "spacecraft platform", "space station", "satellite constellation",
+        "ground segment", "satellite capacity", "launch contract",
+        "mission award", "mission selection", "space procurement",
+        "launch license", "orbital slot", "payload integration",
+    ),
 }
 
 # --- Materiality anchors (Gates B & C) — the change-type vocabulary the
@@ -382,6 +402,156 @@ _REPORTING_VERB_KEYWORDS: tuple[str, ...] = (
     "reported exclusively",
 )
 
+# --- Negation-aware confirmation / rumor-hedge guard (Signals admission/
+# materiality precision fix, design/SIGNALS_ADMISSION_MATERIALITY_
+# CALIBRATION_2026_09_15.md, P0) — suppresses Gates C and D only, the
+# same two "no number required" gates the existing survey-statistics
+# guard above already suppresses, via the identical mechanism (a
+# suppression flag checked alongside survey_content, never a rewrite of
+# either gate's own qualifying condition). Two independent sub-checks:
+#
+# 1. Rumor/hedge vocabulary — a curated, narrow phrase list naming the
+#    real, distinctive vocabulary unconfirmed/tipster-sourced reporting
+#    uses (never a bare "unconfirmed"/"rumor" substring search alone;
+#    every entry here is checked with the same word-boundary discipline
+#    as every other phrase table in this module).
+# 2. Negated-confirmation proximity — "confirmed"/"confirms"/"confirm"
+#    preceded, within a bounded word window, by a negation marker
+#    ("not", "cannot", "has not", "denied", etc.) — the literal defect
+#    this fix targets: "has not officially confirmed" previously
+#    satisfied the exact same _REPORTING_VERB_KEYWORDS "confirmed" hit
+#    as a genuine confirmation, with no negation awareness at all.
+#
+# Explicit override, mirroring the existing "Earnings vs. scheduling"
+# _UNAMBIGUOUS_ACTUAL_RESULT_KEYWORDS pattern exactly: an unambiguous,
+# non-negated strong-confirmation phrase ("officially confirmed",
+# "the company confirmed", "confirmed in a statement/filing") is
+# NEVER suppressed by rumor vocabulary appearing elsewhere in the same
+# text (e.g. a piece that both recaps earlier speculation AND reports
+# the company's own subsequent confirmation) — a genuine confirmation
+# must remain eligible regardless of what led up to it. This override
+# checks only for the ABSENCE of a negation marker immediately before
+# the confirmation phrase; it never re-enables Gate C/D on rumor
+# vocabulary alone.
+_RUMOR_HEDGE_KEYWORDS: tuple[str, ...] = (
+    "reportedly", "rumored", "rumor", "rumour", "said to", "purportedly",
+    "allegedly", "according to a tipster", "according to tipster",
+    "according to leaks", "the leaker", "a leaker", "leaked documents",
+    "speculated", "speculation",
+)
+_CONFIRMATION_WORD_PATTERN = re.compile(r"\bconfirm(?:ed|s|ing)?\b", re.IGNORECASE)
+_NEGATION_MARKER_PATTERN = re.compile(
+    r"\b(not|never|cannot|can't|hasn't|has\s+not|hadn't|had\s+not|didn't|did\s+not|"
+    r"doesn't|does\s+not|won't|will\s+not|unable\s+to|declined\s+to|yet\s+to)\b",
+    re.IGNORECASE,
+)
+_DENIAL_PATTERN = re.compile(r"\bdeni(?:ed|es|al)\b", re.IGNORECASE)
+_UNCONFIRMED_PATTERN = re.compile(r"\bunconfirmed\b", re.IGNORECASE)
+# How far back (characters) a negation marker is still considered to be
+# negating a "confirm(ed/s/ing)" occurrence — bounded, never a whole-
+# document scan, so a negation elsewhere in a long article can never
+# taint an unrelated, later confirmation.
+_NEGATION_LOOKBACK_CHARS = 30
+
+
+def _has_rumor_or_negated_confirmation_language(text: str) -> bool:
+    """True when the text carries rumor/hedge vocabulary, a denial, a
+    bare "unconfirmed," or every "confirm(ed/s/ing)" occurrence in the
+    text is itself negated within a short preceding window ("has not
+    officially confirmed," "cannot confirm," ...).
+
+    Checked per-occurrence, not as a single whole-text override: a
+    piece that both recaps earlier rumor-negated language AND separately
+    reports a genuine, non-negated confirmation ("...had not confirmed
+    the deal as of Monday; the company confirmed the acquisition
+    today") is correctly NOT suppressed by this function on the
+    confirmation-negation check alone — at least one clean, non-negated
+    "confirm" occurrence is enough. Rumor/hedge vocabulary (reportedly,
+    tipster, leaker, ...) and an explicit denial/"unconfirmed" are each
+    independently sufficient to mark the text uncertain regardless of
+    any confirmation wording elsewhere, since those signals describe
+    the REPORTING itself, not one specific negatable claim."""
+    if _contains_any(text, _RUMOR_HEDGE_KEYWORDS):
+        return True
+    if _DENIAL_PATTERN.search(text):
+        return True
+    if _UNCONFIRMED_PATTERN.search(text):
+        return True
+    confirm_matches = list(_CONFIRMATION_WORD_PATTERN.finditer(text))
+    if not confirm_matches:
+        return False
+    for match in confirm_matches:
+        window_start = max(0, match.start() - _NEGATION_LOOKBACK_CHARS)
+        preceding = text[window_start:match.start()]
+        if not _NEGATION_MARKER_PATTERN.search(preceding):
+            return False  # at least one clean, non-negated confirmation
+    return True  # every confirm(ed/s/ing) occurrence found was negated
+
+
+# --- Interview/podcast-format guard (Signals admission/materiality
+# precision fix, P1) — suppresses Gate C only (never Gate B, Gate D, or
+# any of the A gates): an interview/podcast item may still reach High
+# Signal via a genuine quantified disclosure (Gate B) or, for
+# independent-news content, its own fact-attribution language (Gate D)
+# — this guard exists solely to stop a purely topical, no-new-fact
+# taxonomy+anchor co-occurrence (Gate C's own "no number required"
+# shape) from qualifying an executive restating industry narrative in
+# conversation. Narrow, curated title-shape/format markers only —
+# never a bare "interview"/"podcast" ban on admission itself (that
+# remains editorial_admission.py's own, separate concern). ---
+_INTERVIEW_FORMAT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"^[A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+){0,2},\s+"
+        r"(CEO|CTO|CFO|COO|President|Founder|Co-Founder|Chairman|Chairwoman)\s+of\s+",
+    ),
+    re.compile(r"\bpodcast\b", re.IGNORECASE),
+    re.compile(r"\binterview\b", re.IGNORECASE),
+    re.compile(r"\bq\s*&\s*a\s+with\b", re.IGNORECASE),
+    re.compile(r"\bin\s+conversation\s+with\b", re.IGNORECASE),
+)
+
+
+def _is_interview_or_podcast_format(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _INTERVIEW_FORMAT_PATTERNS)
+
+
+# --- Gate C sentence-locality requirement (Signals admission/
+# materiality precision fix, P1 — "first-party launch calibration") —
+# a taxonomy phrase and a materiality anchor must co-occur in the same
+# sentence, or in one of two immediately adjacent sentences, not merely
+# "anywhere in the combined title+excerpt text." Closes the gap where a
+# generic, boilerplate AI-infrastructure/capex paragraph elsewhere in a
+# first-party release (unrelated to the specific event the piece is
+# actually announcing) could pair with an anchor word anywhere else in
+# the same piece to manufacture materiality for an unrelated, lower-
+# materiality event. Reuses the same "require real proximity, not mere
+# co-occurrence anywhere in the document" discipline editorial_
+# admission.py's own _company_has_nearby_action_language() already
+# established for the identical class of problem on the attribution
+# side. The GLOBAL, whole-text taxonomy_hits computation in
+# _classify_core is deliberately left unchanged and still drives the
+# Watchlist "on_taxonomy_no_anchor" fallback — only Gate C's own
+# HIGH_SIGNAL-qualifying condition is tightened to local co-occurrence.
+def _sentences(text: str) -> tuple[str, ...]:
+    pieces = re.split(r"(?<=[.!?])\s+", text)
+    return tuple(p for p in pieces if p.strip())
+
+
+def _taxonomy_anchor_local_hits(text: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    sentences = _sentences(text)
+    windows = list(sentences) + [
+        f"{sentences[i]} {sentences[i + 1]}" for i in range(len(sentences) - 1)
+    ]
+    for window in windows:
+        window_taxonomy_hits = _matched_taxonomy_buckets(window)
+        window_anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(
+            window, _contains_any(window, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS),
+        )
+        if window_taxonomy_hits and window_anchor_hits:
+            return window_taxonomy_hits, window_anchor_hits
+    return None
+
+
 # Below this, an excerpt is treated as a one-line blurb, not substantive
 # reporting — a deliberately conservative, documented threshold, not a
 # precise measure of journalistic depth.
@@ -479,17 +649,31 @@ def _classify_core(
     # _TAXONOMY_PAIRING_ANCHOR_KEYWORDS' own comment. A deploy-family
     # anchor still reaches High Signal here indirectly whenever it also
     # satisfies Gate B above (a real number is present).
-    taxonomy_pairing_anchor_hits = _strip_consumer_pricing_anchors_if_deal_framed(
-        text, _contains_any(text, _TAXONOMY_PAIRING_ANCHOR_KEYWORDS),
-    )
+    #
+    # Signals admission/materiality precision fix (P0/P1): Gate C's own
+    # qualifying condition now requires (a) the taxonomy phrase and
+    # anchor to co-occur locally (same sentence or one of two adjacent
+    # sentences — see _taxonomy_anchor_local_hits' own comment), (b) no
+    # rumor/negated-confirmation language, and (c) no interview/podcast-
+    # format marker. The GLOBAL, whole-text taxonomy_hits computation
+    # below is deliberately UNCHANGED and still drives the Watchlist
+    # "on_taxonomy_no_anchor" fallback further down — only whether Gate
+    # C itself qualifies for HIGH_SIGNAL is tightened.
+    uncertain_reporting = _has_rumor_or_negated_confirmation_language(text)
+    interview_format = _is_interview_or_podcast_format(text)
     taxonomy_hits = _matched_taxonomy_buckets(text)
-    if taxonomy_hits and taxonomy_pairing_anchor_hits and not survey_content:
-        reasons.append(f"taxonomy_anchored_consequence:{taxonomy_hits[0]}:{taxonomy_pairing_anchor_hits[0]}")
+    local_hit = _taxonomy_anchor_local_hits(text)
+    if local_hit and not survey_content and not uncertain_reporting and not interview_format:
+        local_taxonomy_hits, local_anchor_hits = local_hit
+        reasons.append(f"taxonomy_anchored_consequence:{local_taxonomy_hits[0]}:{local_anchor_hits[0]}")
 
     if is_independent_news:
         reporting_hit = _contains_any(text, _REPORTING_VERB_KEYWORDS)
         substantive = len((text or "").strip()) >= _SUBSTANTIVE_EXCERPT_MIN_CHARS
-        if reporting_hit and substantive and (taxonomy_hits or anchor_hits):
+        if (
+            reporting_hit and substantive and (taxonomy_hits or anchor_hits)
+            and not uncertain_reporting and not interview_format
+        ):
             reasons.append(f"credible_editorial_reporting:{reporting_hit[0]}")
 
     if reasons:

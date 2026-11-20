@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.data_access.daily_news.editorial_matching import (
     THEME_KEYWORDS,
+    company_mention_spans,
     match_companies,
     match_themes,
     matched_companies_and_themes,
@@ -216,3 +217,49 @@ def test_description_is_also_checked_when_title_alone_has_no_match():
 def test_none_description_does_not_raise():
     companies, themes = matched_companies_and_themes("Oracle Corporation news", None)
     assert companies == ("Oracle Corporation",)
+
+
+# --- company_mention_spans (Signals admission precision fix, P0) ----
+# Exposes WHERE a company is mentioned — the grammatical-agency
+# proximity check in editorial_admission.py's own _company_is_
+# grammatical_actor() is this function's one real caller.
+
+
+def test_company_mention_spans_finds_mechanical_alias_occurrence():
+    # "Oracle Corporation" has two mechanical aliases (company_aliases.py):
+    # the full legal name, and "Oracle" (the suffix-stripped short form —
+    # the exact reason this company is in editorial_admission's own
+    # _AMBIGUOUS_ALIAS_COMPANIES list). Both spans are real, correct
+    # matches for the same one mention.
+    text = "Oracle Corporation reported strong AI cloud demand this quarter."
+    spans = company_mention_spans(text, "Oracle Corporation")
+    assert spans == ((0, 6), (0, 18))
+    assert text[0:6] == "Oracle"
+    assert text[0:18] == "Oracle Corporation"
+
+
+def test_company_mention_spans_finds_every_occurrence_case_insensitively():
+    text = "oracle corporation and Oracle Corporation both refer to the same company."
+    spans = company_mention_spans(text, "Oracle Corporation")
+    # 2 mechanical aliases ("Oracle" + "Oracle Corporation") x 2 real
+    # occurrences in the text = 4 spans total.
+    assert len(spans) == 4
+    for start, end in spans:
+        assert text[start:end].lower() in ("oracle", "oracle corporation")
+
+
+def test_company_mention_spans_finds_brand_alias_case_sensitively():
+    text = "Amazon Web Services (AWS) is a cloud platform; aws is also a lowercase unrelated word here."
+    spans = company_mention_spans(text, "Amazon.com, Inc.")
+    matched_text = {text[start:end] for start, end in spans}
+    assert "Amazon Web Services" in matched_text
+    assert "AWS" in matched_text
+    assert "aws" not in matched_text  # case-sensitive brand alias — lowercase "aws" never matches
+
+
+def test_company_mention_spans_returns_empty_for_unmentioned_company():
+    assert company_mention_spans("A totally unrelated sentence.", "Oracle Corporation") == ()
+
+
+def test_company_mention_spans_returns_empty_for_untracked_company_name():
+    assert company_mention_spans("Some text here.", "Not A Real Tracked Company") == ()
