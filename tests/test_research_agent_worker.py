@@ -31,6 +31,24 @@ from src.models.models import (
     TranslationState,
 )
 
+import pytest
+
+# The autonomous research agent's runtime lives in requirements-agent.txt,
+# not requirements.txt: the dashboard and the three workers never import
+# it, and claude-agent-sdk bundles a large platform-specific binary. A
+# checkout following README's quickstart therefore does NOT have it.
+#
+# Without this guard those absent packages are a COLLECTION ERROR, which
+# aborts the whole run — `pytest -q` exits 2 and reports nothing about
+# the thousands of tests that would otherwise pass. Skipping is the same
+# fail-soft contract tests/_postgres_test_support.py already uses for the
+# Postgres backend: the dependency is optional, so its absence skips its
+# tests and leaves the rest of the suite meaningful.
+#
+# Install requirements-agent.txt to actually run these.
+pytest.importorskip("claude_agent_sdk", reason="agent runtime not installed (requirements-agent.txt)")
+pytest.importorskip("mcp", reason="agent runtime not installed (requirements-agent.txt)")
+
 import scripts.research_agent_worker as worker
 
 NOW = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
