@@ -5,7 +5,11 @@ separation, stub scan-ineligibility, filtering (including against
 incomplete optional fields), and known-decision metadata visibility."""
 from __future__ import annotations
 
-from src.config.issuer_registry import DISCOVERY_STUBS, SEED_ISSUERS
+from src.config.issuer_registry import (
+    DISCOVERY_STUBS,
+    SEED_ISSUERS,
+    source_name_for_seed_issuer,
+)
 from src.config.ontology import KNOWN_CATEGORY_CONFLICTS
 from src.logic.issuer_coverage import (
     CoverageSummary,
@@ -107,21 +111,38 @@ def test_layer_filter_returns_expected_subset():
 
 
 def test_source_filter_returns_expected_subset():
-    # Was 2 (Samsung + SK Hynix) through the INDI/AIP/CEVA batch; the
-    # Core Issuer Expansion batch (2026-09-04) added 8 more DART issuers
-    # (2 + 8 = 10).
+    """The filter must return exactly the registry's DART issuers.
+
+    This asserted a hardcoded 10, with a comment narrating the batches
+    that had moved it from 2. Every DART issuer added to the registry
+    then broke the test, and the literal fell behind the registry.
+
+    Counting the registry directly asserts the property actually meant —
+    the filter selects all and only the matching issuers — and makes
+    adding an issuer a non-event. The non-empty check keeps it from
+    passing vacuously if the registry fails to load, and the
+    jurisdiction assertion is what proves the filter is selective rather
+    than returning everything."""
+    expected = [i for i in SEED_ISSUERS if source_name_for_seed_issuer(i) == "OpenDART / DART"]
     dart_only = filter_seed_issuers(sources=("OpenDART / DART",))
-    assert len(dart_only) == 10
+
+    assert expected, "no DART issuers in the registry — this check would be vacuous"
+    assert len(dart_only) == len(expected)
+    assert len(dart_only) < len(SEED_ISSUERS), "the filter selected everything"
     assert all(i.country_or_jurisdiction.startswith("South Korea") for i in dart_only)
 
 
 def test_country_filter_returns_expected_subset():
-    # Was 5 through Gate 7; the Core Issuer Expansion batch (2026-09-04)
-    # added 8 more EDINET issuers (5 + 8 = 13). The EDINET Filings Radar
-    # issuer-expansion batch (2026-09-04) then added 5 more still
-    # (13 + 5 = 18).
+    """Registry-derived for the same reason as the source filter above."""
+    expected = [
+        i for i in SEED_ISSUERS
+        if i.country_or_jurisdiction == "Japan (listing exchange)"
+    ]
     japan_only = filter_seed_issuers(countries=("Japan (listing exchange)",))
-    assert len(japan_only) == 18
+
+    assert expected, "no Japanese issuers in the registry — this check would be vacuous"
+    assert len(japan_only) == len(expected)
+    assert len(japan_only) < len(SEED_ISSUERS), "the filter selected everything"
 
 
 def test_combined_filters_are_intersected_not_unioned():

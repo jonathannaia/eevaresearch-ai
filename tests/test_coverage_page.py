@@ -32,31 +32,46 @@ def test_coverage_page_shows_title_and_static_view_note():
 
 
 def test_coverage_page_summary_metrics_match_registry_counts():
-    # Was 32 active seed issuers through the INDI/AIP/CEVA batch; the
-    # Core Issuer Expansion batch (2026-09-04) added 30 more (32 + 30 =
-    # 62). The Filings Radar issuer-expansion batch (2026-09-04) then
-    # added 19 more SEC EDGAR issuers (62 + 19 = 81), Filings Radar
-    # issuer-expansion batch 2 (2026-09-04) added 19 more still
-    # (81 + 19 = 100), and the EDINET Filings Radar issuer-expansion
-    # batch (2026-09-04) added 5 more EDINET issuers (100 + 5 = 105).
-    # DISCOVERY_STUBS itself was untouched by any of these batches
-    # (stayed 25) until Daily News source-expansion batch 5 (2026-09-13)
-    # added one more Daily-News-only stub (Hewlett Packard Enterprise
-    # Company), bringing it to 26.
+    """The page's tiles must equal the registry, whatever the registry
+    currently holds.
+
+    These counts were hardcoded (105 seed issuers, 26 discovery stubs)
+    with a comment narrating each expansion batch that had moved them.
+    That made every issuer added to the registry a test failure, and the
+    numbers duly drifted out of date — the registry now holds a
+    different count and the literals did not follow.
+
+    Derived from SEED_ISSUERS/DISCOVERY_STUBS instead, so the assertion
+    is the one that was actually meant: the page reports what the
+    registry contains. Adding an issuer is no longer a test change.
+
+    The counts are still asserted non-zero, so a registry that failed to
+    load cannot make this pass vacuously."""
+    from src.config.issuer_registry import DISCOVERY_STUBS, SEED_ISSUERS
+
+    expected_seed = len(SEED_ISSUERS)
+    expected_discovery = len(DISCOVERY_STUBS)
+    assert expected_seed > 0 and expected_discovery > 0
+
     at = _run()
     metrics = {m.label: m.value for m in at.metric}
-    assert metrics["Active seed issuers"] == "105"
-    assert metrics["Discovery proposals"] == "26"
-    assert metrics["Scan-eligible"] == "105"
-    assert metrics["Unverified / excluded"] == "26"
+    assert metrics["Active seed issuers"] == str(expected_seed)
+    assert metrics["Discovery proposals"] == str(expected_discovery)
+    assert metrics["Scan-eligible"] == str(expected_seed)
+    assert metrics["Unverified / excluded"] == str(expected_discovery)
 
 
 def test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_counts():
+    """Row counts derived from the registry, for the same reason as the
+    metrics test above."""
+    from src.config.issuer_registry import DISCOVERY_STUBS, SEED_ISSUERS
+
     at = _run()
     assert len(at.dataframe) == 2
     seed_table, discovery_table = at.dataframe[0].value, at.dataframe[1].value
-    assert len(seed_table) == 105
-    assert len(discovery_table) == 26
+    assert len(seed_table) == len(SEED_ISSUERS)
+    assert len(discovery_table) == len(DISCOVERY_STUBS)
+    assert len(seed_table) > 0 and len(discovery_table) > 0
 
 
 def test_coverage_page_seed_table_never_contains_a_discovery_stub_name():
