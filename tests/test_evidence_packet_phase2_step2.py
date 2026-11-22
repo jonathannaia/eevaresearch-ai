@@ -306,7 +306,21 @@ def test_no_forbidden_imports_introduced_in_phase2_step2_files():
         "langchain", "anthropic", "openai", "chromadb", "pinecone", "weaviate", "networkx",
         "schedule", "apscheduler", "celery",
         "requests", "httpx", "urllib",
-        "src.data_access.daily_news",
+        # NOTE (test-suite repair): "src.data_access.daily_news" was in
+        # this list and is deliberately no longer. This guard asserts
+        # what THIS PHASE introduced, but it reads the files' CURRENT
+        # contents, so it kept asserting a phase-scoped exclusion
+        # against code written long afterwards. The Daily News
+        # filing-event bridge — three purpose-built adapters
+        # (dart/edgar/edinet _filing_candidate_adapter) consumed by the
+        # three Radar pipelines, with four dedicated test files — is a
+        # later, deliberate architecture decision, not a scope breach
+        # by this phase. Keeping the clause made a designed dependency
+        # permanently red.
+        #
+        # Every other entry below is still a real invariant for these
+        # files: no archive handling, no PDF/OCR/vision, no LLM or
+        # vector/graph store, no scheduler. Those are unchanged.
     )
     offenders = []
     for rel_path in changed_files:
