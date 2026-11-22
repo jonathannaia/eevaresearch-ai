@@ -1306,6 +1306,26 @@ def test_watchlist_view_shows_only_watchlist_and_none_tier_items(tmp_path):
 # ============================================================
 
 
+def _tier_param(at):
+    """The `tier` query parameter, normalised across Streamlit versions.
+
+    `AppTest.query_params.get()` returns a LIST on Streamlit 1.61 and a
+    SCALAR on 1.67. requirements.txt allows `streamlit>=1.38,<2.0`, so
+    both are legitimate installs of this repository and a fresh
+    `pip install -r requirements.txt` currently resolves to the newer
+    one — these assertions failed on any clean checkout while passing
+    in a long-lived local venv.
+
+    The page's behaviour is identical either way; only the test harness's
+    return shape differs, so the assertions normalise rather than pin a
+    Streamlit version in production requirements for a test's benefit.
+    """
+    value = at.query_params.get(_TIER_QUERY_PARAM)
+    if value is None:
+        return None
+    return value[-1] if isinstance(value, (list, tuple)) else value
+
+
 def test_bare_page_load_defaults_to_high_signals_and_normalizes_the_url(tmp_path):
     daily_news_store.upsert_new_stories(tmp_path, [_story()])  # High-Signal tier by the shared fixture's own default
 
@@ -1314,7 +1334,7 @@ def test_bare_page_load_defaults_to_high_signals_and_normalizes_the_url(tmp_path
         at.run()  # no tier query param set at all
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    assert _tier_param(at) == _HIGH_SIGNALS_QUERY_VALUE
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" in markdown_text
 
@@ -1328,7 +1348,7 @@ def test_tier_high_signal_query_param_opens_high_signals_directly(tmp_path):
         at.run()
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    assert _tier_param(at) == _HIGH_SIGNALS_QUERY_VALUE
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" in markdown_text
 
@@ -1342,7 +1362,7 @@ def test_tier_watchlist_query_param_opens_watchlist_directly(tmp_path):
         at.run()
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_WATCHLIST_QUERY_VALUE]
+    assert _tier_param(at) == _WATCHLIST_QUERY_VALUE
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" in markdown_text
 
@@ -1356,7 +1376,7 @@ def test_invalid_tier_value_normalizes_to_high_signals(tmp_path):
         at.run()
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    assert _tier_param(at) == _HIGH_SIGNALS_QUERY_VALUE
     markdown_text = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Announces Financial Results" in markdown_text
 
@@ -1383,7 +1403,7 @@ def test_repeated_or_ambiguously_resolved_tier_value_normalizes_to_high_signals(
         at.run()
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+    assert _tier_param(at) == _HIGH_SIGNALS_QUERY_VALUE
 
 
 def test_switching_the_segmented_control_updates_the_canonical_tier_url(tmp_path):
@@ -1402,7 +1422,7 @@ def test_switching_the_segmented_control_updates_the_canonical_tier_url(tmp_path
         at = AppTest.from_file(str(_HARNESS), default_timeout=10)
         at.query_params["tier"] = "high_signal"
         at.run()
-        assert at.query_params.get(_TIER_QUERY_PARAM) == [_HIGH_SIGNALS_QUERY_VALUE]
+        assert _tier_param(at) == _HIGH_SIGNALS_QUERY_VALUE
         markdown_before = " ".join(m.value for m in at.markdown)
         assert "NVIDIA High Signal headline" in markdown_before
         assert "NVIDIA Watchlist headline" not in markdown_before
@@ -1410,7 +1430,7 @@ def test_switching_the_segmented_control_updates_the_canonical_tier_url(tmp_path
         at.segmented_control[0].set_value("Watchlist").run()
 
     assert not at.exception
-    assert at.query_params.get(_TIER_QUERY_PARAM) == [_WATCHLIST_QUERY_VALUE]
+    assert _tier_param(at) == _WATCHLIST_QUERY_VALUE
     markdown_after = " ".join(m.value for m in at.markdown)
     assert "NVIDIA Watchlist headline" in markdown_after
     assert "NVIDIA High Signal headline" not in markdown_after  # the High-Signal item, now hidden
