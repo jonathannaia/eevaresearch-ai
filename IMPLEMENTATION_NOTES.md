@@ -1,125 +1,192 @@
-# Implementation Notes — Foundation Phase
+# Implementation Notes
 
-## What is complete
+What is built, what is partial, and what is known-broken, as of 2026-11-19
+(`main` at `e827320`). The authoritative "why" for any decision here is
+`design/DECISIONS.md`; this file is the index to current state.
 
-- **Data model** (`src/models/models.py`): typed dataclasses for Theme,
-  Subtheme, Ticker, EvidenceItem, ResearchClaim, Catalyst, Signal,
-  CapitalRotationMetric, ChatMessage/ChatAnswer, WatchlistEntry, plus the
-  ClaimType/Direction/Strength/Horizon/Exposure enums. Every claim-bearing
-  model carries a `claim_type`; `EvidenceItem` carries a full provenance set
-  (id, source_name, source_type, published_at, retrieved_at, a derived
-  `freshness_label`, `is_demo`, optional `ticker_symbol`/`theme_slug`) built
-  to need zero migration when real evidence replaces demo evidence.
-- **Repository interfaces + AppContext container** (`src/data_access/`):
-  seven ABCs (`ThemeRepository`, `TickerRepository`, `EvidenceRepository`,
-  `CatalystRepository`, `SignalRepository`, `MarketDataProvider`,
-  `ResearchAnswerProvider`) with one demo implementation each, wired up in
-  `container.py`'s `get_repositories()` — the single place Phase 2 changes.
-  Every page depends on these interfaces, never on a seed filename.
-- **Logic layer** (`src/logic/`): pure, Streamlit-free helpers for
-  formatting, theme/signal aggregation (leaders/laggards, breadth), and
-  claim-type/freshness badge mapping — independently unit-tested.
-- **UI system**: a thin CSS layer over the existing `.streamlit/config.toml`
-  dark theme, a global chrome wrapper (status banner + footer applied to
-  every page via `with_chrome`), and a reusable component library (cards,
-  badges, section headers, filterable tables, empty states, the Market Brief
-  module) built on Streamlit's native widgets (`st.container(border=True)`,
-  `st.badge`, `st.dataframe`, `st.bar_chart`) rather than custom HTML/CSS
-  where a native widget already does the job.
-- **Navigation**: `st.navigation` + function-based `st.Page` objects, seven
-  visible primary pages plus one hidden ticker-detail template
-  (`visibility="hidden"`), reachable only via `st.page_link`/query params
-  from Themes and the Market Brief — never a nav-menu entry, never a
-  typed-only URL. Validated against the installed Streamlit version
-  (1.61.1) before writing any routing code.
-- **All seven primary pages** (Overview with Market Brief, Themes, Research
-  Chat, Capital Rotation, Signal Board, Watchlists, Methodology) plus the
-  ticker-detail template, all reading from `data/seed/` through the
-  repository interfaces.
-- **Tests**: 66 passing — data-model validation, repository/loader
-  behavior (including a missing/malformed seed file degrading to empty
-  results rather than raising), pure logic helpers, and 18
-  `st.testing.v1.AppTest`-based smoke tests covering every registered page
-  (including the hidden ticker-detail page's query-param handling) for
-  exceptions, the global chrome, and demo-evidence labeling.
+> This document previously described a demo-data "foundation phase" with 66
+> tests, no live ingestion and no persistence. That has been wrong for a long
+> time and is rewritten here. If you find other docs making foundation-phase
+> claims, distrust them and check the code.
 
-## What is intentionally mocked
+## Built and running
 
-- Every number, timestamp, signal, catalyst, and evidence item in
-  `data/seed/` (see `data/seed/README.md` for the full inventory and the
-  no-fabricated-realism conventions followed there).
-- Research Chat's answers — canned responses to the five suggested
-  questions plus a generic demo-mode fallback for anything else. No LLM
-  call anywhere in this build.
-- Rotation/RS-vs-benchmark figures, positioning/short-interest (explicitly
-  marked "not built" rather than faked), and the ticker-detail template's
-  fundamental/technical snapshot fields (rendered as literal `—`
-  placeholders, never an invented number).
-- Watchlist add/remove — session-state only, not persisted across a reload.
+**Ingestion.** Three independent regulator pipelines, each with its own client,
+scan service, rule module, document extractor and orchestration:
 
-## Two real bugs found and fixed during manual verification
+- `src/data_access/edgar/` — SEC EDGAR, incl. discovery rules and CIK resolution
+- `src/data_access/dart/` — Korea OpenDART, incl. corp-code resolution,
+  ownership/equity-transaction materiality, low-value filing rules, retry policy
+- `src/data_access/edinet/` — Japan EDINET, incl. annual-report materiality
 
-Both were caught by actually clicking through the running app in a browser,
-not by reading the code:
+Each pipeline is **bounded and idempotent**: only candidates above a confidence
+threshold are eligible for retrieval, only a per-run budget are processed, and
+everything else is left as `CANDIDATE_DETECTED` or `PROCESSING_DEFERRED` for the
+next run. Nothing is dropped or silently overwritten.
 
-1. `ticker_filter_bar`'s `st.multiselect` widgets had no explicit `key`.
-   Since `st.tabs` renders every tab's content in the same script run (not
-   lazily), calling the filter bar once per theme tab produced five
-   identical widget IDs and a `StreamlitDuplicateElementId` crash. Fixed by
-   threading a `key_prefix` (the theme slug) through every widget key.
-2. Research Chat's typed `st.chat_input` sits below the messages
-   read/render block in script order (the fixed-composer convention), so
-   appending the new message to `st.session_state` there didn't show up
-   until a second rerun. Fixed with an explicit `st.rerun()` on that path
-   specifically — the suggested-question buttons above don't need it, since
-   their append happens before that same read.
+**Persistence.** `src/data_access/state_db/` (SQLite, schema v23) and
+`src/data_access/postgres_state_db/` (Postgres, schema v25) are *independent*
+implementations — deliberately no shared dialect abstraction. Selection is via
+`Settings.db_backend` through `src/data_access/backend_factory.py`. The core
+tables are `candidates` ⋈ `filing_events` joined on
+`(source_name, corp_code, rcept_no)`; `rcept_dt` is the authoritative filing
+date on every source (`filed_at` is EDINET-only).
 
-## Phase 2 — Data integration plan
+**Workers.** Four standalone entry points, none imported by `app.py` or any UI
+page — the dashboard never scans on page render:
 
-Real sources slot in entirely behind the existing interfaces, with no
-page-rendering code changes:
+- `scripts/radar_worker.py` — continuous filing scans
+- `scripts/daily_news_worker.py` — feed discovery, requires Postgres
+- `scripts/company_discovery_worker.py` — passive candidate ledger
+- `scripts/research_agent_worker.py` — dormant by default
 
-1. Add a `src/data_access/live/` package alongside `demo/`, one
-   implementation per interface, backed by whatever real source is chosen
-   per domain (e.g. SEC EDGAR/filings for `EvidenceRepository`, a licensed
-   market-data provider for `MarketDataProvider`, a retrieval-augmented LLM
-   call for `ResearchAnswerProvider`).
-2. Repoint `container.py`'s `get_repositories()` to the new implementations
-   — behind a `Settings.data_mode` switch (already a field on `Settings`,
-   currently always `"demo"`), so demo mode stays available for local dev
-   and tests.
-3. Extend `EvidenceItem`/`Ticker` population to real values — the fields
-   already exist (`source_url`, `published_at`, real financials), so this is
-   data population, not a schema change.
-4. Re-run the existing test suite against a `live` fixture in addition to
-   `demo` — the interface-based design means the same tests in
-   `test_data_access.py` (adapted to assert real-shape invariants instead
-   of demo-specific ones) should mostly carry over.
-5. Only after Phase 2's evidence pipeline exists does it make sense to wire
-   Research Chat to a real LLM call — answering research questions well
-   depends on having real evidence to retrieve against, not the other way
-   around.
+Each builds its own scoped `Settings` via a private `_build_worker_settings()`
+that reads worker-specific variables and overrides `db_backend` /
+`state_db_url`. **The generic `EDGE_DB_BACKEND` / `EDGE_STATE_DB_URL` are
+therefore ignored by the workers for database selection.**
 
-## Phase 3 — Curated ticker-universe plan
+**Daily News.** Curated feed registry, URL quality gate, canonicalisation,
+deduplication, extractive-only grounding, materiality tiering, cross-lane
+grouping, plus its own admin page.
 
-1. Replace `data/seed/tickers_demo.json`'s single `DEMO` row with a real,
-   curated ticker list — populated through the same `TickerRepository`
-   interface (a `live/ticker_repository.py`, or a CSV/DB-backed one; the
-   interface doesn't care).
-2. Re-populate `EvidenceRepository`, `CatalystRepository`, and
-   `SignalRepository` per real ticker, using the same shapes already
-   validated in Phase 1 — no `Ticker`/`Signal`/`Catalyst` field changes
-   anticipated, since Phase 1 modeled these deliberately generically.
-3. `ticker_filter_bar`'s filters (market cap, liquidity, subcategory,
-   exposure, technical strength, catalyst type, risk level) already derive
-   their options from whatever data is loaded — they'll start actually
-   narrowing results once there's more than one ticker to filter, with no
-   code change required.
-4. Capital Rotation's `leaders`/`laggards` fields on `CapitalRotationMetric`
-   already accept ticker lists — Phase 1 deliberately left these empty
-   rather than fabricate plausible-looking ticker symbols; Phase 3 populates
-   them for real.
-5. Revisit `EDGE_RADAR_MAX_SNAPSHOT_TICKERS_PER_RUN`-style cost controls
-   (a pattern from the retired product, see `MIGRATION_NOTES.md`) if/when
-   any per-ticker refresh job is reintroduced — not needed while the
-   universe is manually curated and small.
+**Themes.** `config/eevaresearch_theme_registry.yaml` — a typed, fail-closed
+taxonomy of 13 themes with matching policy, entity roles, geographies,
+materiality keywords and an output contract. Loaded with `yaml.safe_load` only.
+
+**Universe.** `src/config/tracked_companies.py` — 129 issuers (90 EDGAR,
+27 EDINET, 12 DART).
+
+**Decision and publication policy** (`src/logic/`, pure and Streamlit-free):
+`signal_decision_policy.py` routes an extracted filing to PUBLISH / TIMELINE /
+REVIEW / ARCHIVE; `publication_policy.py` is the only thing that can turn a
+candidate into a published item; `quote_verification.py` checks that a stored
+excerpt actually supports the claim; `research_case_validation.py` validates
+case structure; `agent_write_guard.py` confines shadow-mode writes.
+
+**UI.** 19 page modules under `src/ui/pages/` including Dashboard, Signals, Radar
+Inbox, Daily News, Research Cases, Coverage, Theme Workspace, Verified Updates,
+Agent Review, and four admin pages. `with_chrome()` (in `src/ui/ui.py`) wraps
+every page.
+
+**Auth.** Google OAuth through Streamlit's native `st.user` / `st.login`, with
+an email allowlist decision layer in `src/ui/beta_gate.py` (pure, no I/O).
+`EEVA_ADMIN_EMAILS` gates admin pages. The allowlist is authorization only —
+it cannot verify that an email belongs to the caller.
+
+## Partial, dormant, or parked
+
+| Thing | State |
+|---|---|
+| **Autonomous Research Agent** (`src/mcp_agent/`, `scripts/research_agent_worker.py`) | Fully built, **dormant by default** behind `EDGE_RESEARCH_AGENT_MODE` plus a publication kill switch and a shadow write-guard. Its Render service is **suspended**. Runtime deps isolated in `requirements-agent.txt`; the SDK's Linux wheel has **never been verified** on Render's runtime. |
+| **Read-only filing API** | Complete on the unmerged branch `feat/filing-read-api` (4 commits, unpushed): digest-based bearer auth, three projection policies, SQLite + Postgres adapters, gunicorn hosting, rate limiting, readiness gate. Verified locally end-to-end against a disposable Postgres. **Never deployed.** Needs a least-privilege DB role and restricted network access first. |
+| **LLM filing comparison** | Parked on `feat/llm-filing-comparison`. A synthetic-only smoke test ran; use against real filings is not cleared. |
+| **R2 remote cache** (`src/data_access/remote_cache/`) | Code exists, explicitly dormant. Nothing imports it at runtime; `boto3` is only reached through a lazy import that never fires. |
+| **Demo backend** (`src/data_access/demo/`, `data/seed/`) | Still the default when `EDGE_DB_BACKEND` is unset. Used by local dev and a large part of the test suite. |
+| **Unmerged work** | ~12 active worktrees and dozens of branches; 30 uncommitted design documents in `design/`. |
+
+There are **no `TODO`/`FIXME`/`XXX`/`HACK` comments** anywhere in `src/`,
+`scripts/` or `app.py`. Incomplete work is tracked in `design/` and in module
+docstrings instead — if you want to know what is unfinished, that is where to
+look, not a grep.
+
+## Known issues
+
+### Clean-checkout test failures (12 on `main` at `e827320`)
+
+`pytest -q` on a pristine checkout: **12 failed, 6615 passed, 287 skipped**
+out of 6,914 collected.
+
+- `test_backend_factory_phase2b.py::test_phase2b_files_never_reference_real_local_state_or_real_signal_ids`
+- `test_candidate_persistence_phase3a.py::test_phase3a_files_never_reference_real_local_state_or_real_signal_ids`
+- `test_state_db_candidate_repository.py::test_phase3b0_files_never_reference_real_local_state_or_real_signal_ids`
+- `test_coverage_page.py::test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_counts`
+- `test_coverage_page.py::test_coverage_page_summary_metrics_match_registry_counts`
+- `test_evidence_packet_phase1.py::test_no_new_document_fetch_or_forbidden_dependency_introduced`
+- `test_evidence_packet_phase2_step2.py::test_no_forbidden_imports_introduced_in_phase2_step2_files`
+- `test_issuer_coverage.py::test_country_filter_returns_expected_subset`
+- `test_issuer_coverage.py::test_source_filter_returns_expected_subset`
+- `test_radar_public_read_only.py::test_radar_card_shows_only_the_approved_public_fields`
+- `test_ui_audit_phase_r1.py::test_card_shows_original_and_english_translation`
+- `test_ui_audit_phase_t1.py::test_phase_t1_does_not_add_a_dependency_other_than_tzdata`
+
+These are long-standing, not new regressions. Diagnosis per test is pending.
+
+The exact set is base-dependent: at `f803dca` (24 commits earlier) it is 11,
+without `test_radar_public_read_only`. Measure before citing a number.
+
+### Diff-scope guards
+
+Many tests run `git diff --name-only HEAD` and fail on any *tracked*
+modification outside an approved file set. They clear on commit. Untracked
+files do not trip them. Consequence: a dirty working tree produces ~13–20 extra
+failures that say nothing about correctness.
+
+### Documentation drift
+
+A recurring pattern, not a one-off. This file and `README.md` were both years
+out of date. `signal_decision_policy.py`'s docstring contains a correction of
+its own earlier false claim about "shadow mode". Treat prose as needing
+verification against code.
+
+### Deployment configuration
+
+- **No tracked `render.yaml`, `Procfile` or `Dockerfile`.** Every service
+  setting exists only in the Render dashboard.
+- **`eevaresearch-company-discovery` deploys from `feat/issuer-registry-foundation`**,
+  not `main` — merging to `main` does not update it. A review web service runs
+  from `review/ui-3d1e4a870f` similarly.
+- **Two Postgres datastores exist; only one is used.** All live services point
+  at the same database; the second is referenced by nothing.
+- **Four independently-settable DSN variables point at the same database**, so
+  changing one silently repoints only that service. The radar worker also
+  carries a generic `EDGE_STATE_DB_URL` that is dead configuration (see above).
+- **Three of four services connect over the external database hostname** rather
+  than Render's internal one.
+- **Secrets are generated at boot** by `scripts/render_start.sh` because
+  `app.py` touches `st.user` on every page load — a fragile startup coupling.
+
+## Environment variables
+
+Names only; see `.env.example`. Grouped by the subsystem that reads them.
+
+- **Core** — `EDGE_DB_BACKEND`, `EDGE_STATE_DB_URL`, `EDGE_STATE_DB_PATH`,
+  `EDGE_DATA_MODE`, `EDGE_APP_VERSION`
+- **Source APIs** — `EDGE_DART_API_KEY`, `EDGE_EDGAR_USER_AGENT`,
+  `EDGE_EDGAR_DISCOVERY_ENABLED`, `EDGE_EDINET_SUBSCRIPTION_KEY`,
+  `EDGE_TRANSLATION_API_KEY`
+- **Auth** — `EDGE_PRIVATE_BETA_AUTH_ENABLED`,
+  `EDGE_PRIVATE_BETA_ALLOWED_EMAILS`, `EDGE_AUTH_COOKIE_SECRET`,
+  `EDGE_AUTH_REDIRECT_URI`, `EDGE_GOOGLE_CLIENT_ID`,
+  `EDGE_GOOGLE_CLIENT_SECRET`, `EDGE_GOOGLE_SERVER_METADATA_URL`,
+  `EEVA_ADMIN_EMAILS`
+- **Radar worker** — `EDGE_RADAR_WORKER_DB_BACKEND`,
+  `EDGE_RADAR_WORKER_STATE_DB_URL`, `EDGE_RADAR_WORKER_STATE_DB_PATH`,
+  `EDGE_RADAR_LIVE_SCAN_ENABLED`, `EDGE_RADAR_LIVE_SCAN_PROVIDERS`,
+  `EDGE_RADAR_SCAN_INTERVAL_MINUTES`, `EDGE_THEME_CANDIDATE_DETECTION_ENABLED`
+- **Daily News worker** — `EDGE_DAILY_NEWS_WORKER_DB_BACKEND`,
+  `EDGE_DAILY_NEWS_WORKER_STATE_DB_URL`, `EDGE_DAILY_NEWS_ENABLED_SOURCES`,
+  `EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR`, `EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED`,
+  `EDGE_DAILY_NEWS_SCAN_INTERVAL_MINUTES`, `EDGE_DAILY_NEWS_ADMIN_ENABLED`
+- **Company Discovery worker** — `EDGE_COMPANY_DISCOVERY_WORKER_DB_BACKEND`,
+  `EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_URL`,
+  `EDGE_COMPANY_DISCOVERY_LIVE_ENABLED`,
+  `EDGE_COMPANY_DISCOVERY_ADMIN_ENABLED`,
+  `EDGE_COMPANY_DISCOVERY_SCAN_INTERVAL_MINUTES`,
+  `EDGE_COMPANY_DISCOVERY_STALE_DAYS`
+- **Research agent** — `EDGE_RESEARCH_AGENT_MODE`,
+  `EDGE_RESEARCH_AGENT_SERVICE_TOKEN`,
+  `EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED`
+- **Dormant** — `EDGE_R2_*` (5), `EDGE_REMOTE_CACHE_ENABLED`,
+  `EDGE_MARKET_DATA_API_KEY`, `EDGE_EVIDENCE_SOURCE_API_KEY`
+- **Test-only** — `EEVARESEARCH_PG_TEST_PASSWORD`
+
+## Conventions worth knowing
+
+- **The dashboard never performs a recurring external scan on page render.**
+  All scanning lives in the standalone workers.
+- **Policy logic in `src/logic/` is pure** — no Streamlit import, no I/O, no
+  network. That is what makes it unit-testable, and it is enforced by tests.
+- **The two database backends are independent by design.** Do not introduce a
+  shared dialect abstraction without reading the Phase 4B decision record.
+- **Claim typing is load-bearing**, not decoration. Every claim-bearing model
+  carries a `claim_type`, and the UI renders it.

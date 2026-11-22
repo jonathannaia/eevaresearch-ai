@@ -27,24 +27,61 @@ AGENT_TABLES = (
 
 # --- registration ---------------------------------------------------------------
 
-def test_sqlite_v22_is_registered_after_v21_and_v24_is_current():
-    assert schema.CURRENT_SCHEMA_VERSION == 24
+def test_sqlite_v25_is_registered_after_v24_and_is_current():
+    assert schema.CURRENT_SCHEMA_VERSION == 25
     versions = [v for v, _ in schema._MIGRATIONS]
     assert versions == sorted(versions) and len(set(versions)) == len(versions)
-    assert versions[-4:] == [21, 22, 23, 24]
+    assert versions[-4:] == [22, 23, 24, 25]
     assert dict(schema._MIGRATIONS)[22] is schema._V22_STATEMENTS
     assert dict(schema._MIGRATIONS)[23] is schema._V23_STATEMENTS
+    # Scan-status truthfulness (V24): provider_scan_status gains the two
+    # counts the tick outcome is derived from.
     assert dict(schema._MIGRATIONS)[24] is schema._V24_STATEMENTS
+    # EDGAR 424B5 publication control (V25).
+    assert dict(schema._MIGRATIONS)[25] is schema._V25_STATEMENTS
 
 
-def test_postgres_v24_is_registered_after_v23_and_v26_is_current():
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 26
+def test_postgres_v27_is_registered_after_v26_and_is_current():
+    assert postgres_schema.CURRENT_SCHEMA_VERSION == 27
     versions = [v for v, _ in postgres_schema._MIGRATIONS]
     assert versions == sorted(versions) and len(set(versions)) == len(versions)
-    assert versions[-4:] == [23, 24, 25, 26]
+    assert versions[-4:] == [24, 25, 26, 27]
     assert dict(postgres_schema._MIGRATIONS)[24] is postgres_schema._V24_STATEMENTS
     assert dict(postgres_schema._MIGRATIONS)[25] is postgres_schema._V25_STATEMENTS
     assert dict(postgres_schema._MIGRATIONS)[26] is postgres_schema._V26_STATEMENTS
+    assert dict(postgres_schema._MIGRATIONS)[27] is postgres_schema._V27_STATEMENTS
+
+
+def test_the_publication_control_migration_was_renumbered_not_merged_into_v24():
+    """WHY THIS EXISTS. Both this branch and the scan-status work
+    originally defined a migration under the same version number —
+    SQLite V24 / Postgres V26 — with entirely different statements.
+    Scan-status reached main first and its version is ALREADY APPLIED in
+    production (verified: Postgres schema_version = 26, with all three
+    provider_scan_status columns present and edgar_publication_control
+    absent).
+
+    Had this branch kept that number, the migration would never have run
+    anywhere already at it: the table would silently never be created,
+    while the code reading it expects it to exist. Renumbering to
+    SQLite V25 / Postgres V27 is what makes the deploy actually apply
+    it.
+
+    This test pins the separation so the two can never be collapsed
+    back into one version."""
+    sqlite_v24 = " ".join(schema._V24_STATEMENTS).upper()
+    sqlite_v25 = " ".join(schema._V25_STATEMENTS).upper()
+    assert "PROVIDER_SCAN_STATUS" in sqlite_v24
+    assert "EDGAR_PUBLICATION_CONTROL" not in sqlite_v24
+    assert "EDGAR_PUBLICATION_CONTROL" in sqlite_v25
+    assert "PROVIDER_SCAN_STATUS" not in sqlite_v25
+
+    postgres_v26 = " ".join(postgres_schema._V26_STATEMENTS).upper()
+    postgres_v27 = " ".join(postgres_schema._V27_STATEMENTS).upper()
+    assert "PROVIDER_SCAN_STATUS" in postgres_v26
+    assert "EDGAR_PUBLICATION_CONTROL" not in postgres_v26
+    assert "EDGAR_PUBLICATION_CONTROL" in postgres_v27
+    assert "PROVIDER_SCAN_STATUS" not in postgres_v27
 
 
 def test_both_backends_create_the_same_seven_tables_and_only_create():
@@ -91,7 +128,7 @@ def test_sqlite_v21_upgrades_to_v22_without_touching_existing_tables():
         table: [tuple(r) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
         for table in ("candidates", "user_accounts", "user_preferences")
     }
-    assert schema.migrate(conn) == 24
+    assert schema.migrate(conn) == 25
     after = {
         table: [tuple(r) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
         for table in ("candidates", "user_accounts", "user_preferences")
@@ -100,7 +137,7 @@ def test_sqlite_v21_upgrades_to_v22_without_touching_existing_tables():
     assert conn.execute("SELECT theme_preference FROM user_preferences").fetchone()["theme_preference"] == "dark"
     for table in AGENT_TABLES:
         assert conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"] == 0
-    assert schema.migrate(conn) == 24  # idempotent
+    assert schema.migrate(conn) == 25  # idempotent
 
 
 @pytest.mark.parametrize("sql,label", [
@@ -176,7 +213,7 @@ def test_postgres_v23_upgrades_to_v24_without_touching_existing_tables(pg_isolat
                "WHERE table_schema = current_schema() AND table_name = ANY(%s) ORDER BY table_name, ordinal_position")
     existing = ["candidates", "user_accounts", "user_preferences"]
     before = conn.execute(columns, (existing,)).fetchall()
-    assert postgres_schema.migrate(conn) == 26
+    assert postgres_schema.migrate(conn) == 27
     assert conn.execute(columns, (existing,)).fetchall() == before
     assert conn.execute("SELECT theme_preference FROM user_preferences").fetchone()["theme_preference"] == "light"
     present = {r["table_name"] for r in conn.execute(
@@ -184,7 +221,7 @@ def test_postgres_v23_upgrades_to_v24_without_touching_existing_tables(pg_isolat
         (list(AGENT_TABLES),),
     ).fetchall()}
     assert present == set(AGENT_TABLES)
-    assert postgres_schema.migrate(conn) == 26  # idempotent
+    assert postgres_schema.migrate(conn) == 27  # idempotent
 
 
 def test_postgres_agent_audit_events_id_is_generated(pg_isolated_connection):
