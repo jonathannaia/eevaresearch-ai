@@ -190,6 +190,11 @@ class Signal:
     source_name: str = ""
     source_url: str = ""
     excerpt: str | None = None
+    # Publication provenance, carried from CandidateSignal.published_by.
+    # Empty for demo signals and for anything a human published, so the
+    # public automation label can never appear on a human-reviewed item
+    # by default — it is opt-in by provenance, not opt-out.
+    published_by: str = ""
     # Bilingual display — additive, real Radar promotion only. `title`/
     # `excerpt` above stay exactly as-is (collapsed native-or-translated)
     # for existing callers (the drawer's dialog title bar, Fact-chip
@@ -290,6 +295,15 @@ class CandidateStatus(str, Enum):
     # processing-budget concept, unrelated to human review). Never
     # eligible for Signal promotion — see signal_promotion.py.
     MONITORING = "Monitoring"
+    # Autonomous EDGAR 424B5 cohort — a PUBLISHED item taken back off the
+    # public surface. Deliberately its own terminal status rather than a
+    # flag on PUBLISHED: signal_promotion promotes an explicit allowlist
+    # of statuses, so a withdrawn candidate stops being a public Signal
+    # by falling out of that allowlist, with no query anywhere needing to
+    # remember to exclude it. The candidate row, its evidence and its
+    # full state_transitions history are retained — withdrawal is a
+    # status change, never a delete.
+    WITHDRAWN = "Withdrawn"
     # Autonomous Research Agent (design/AUTONOMOUS_EVIDENCE_FIRST_
     # RESEARCH_AGENT_DESIGN_2026_09_17.md, §5.1) — every deterministic
     # evidence-completeness/contradiction check in

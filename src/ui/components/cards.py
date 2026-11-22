@@ -160,6 +160,29 @@ def _infer_direction(relative_performance_pct: float):
     return Direction.MIXED
 
 
+# Autonomous EDGAR 424B5 cohort — the public disclosure label.
+#
+# Rendered on every path a real Signal reaches a reader: the full card
+# (Signals page), the compact row, and the Dashboard priority row. One
+# helper so the three cannot drift, and so the wording lives beside the
+# provenance check that decides whether to show it.
+#
+# It carries no rule name, form type, confidence, internal id, database
+# detail or exception text — only the fixed phrase. A reader learns that
+# the item was published automatically; nothing about how.
+
+def automated_disclosure_html(signal) -> str:
+    """The label markup, or "" for anything a human published."""
+    from src.logic.signal_promotion import AUTOMATED_DISCLOSURE_LABEL, is_autonomously_published
+
+    if not is_autonomously_published(signal):
+        return ""
+    return (
+        '<div class="er-muted" style="margin:0.15rem 0 0.1rem 0; font-size:0.78rem;">'
+        f"{AUTOMATED_DISCLOSURE_LABEL}</div>"
+    )
+
+
 def signal_card(
     signal: Signal, theme_page=None, evidence_repository=None, unread: bool = False, theme_name: str | None = None,
 ) -> None:
@@ -179,6 +202,9 @@ def signal_card(
         with top[0]:
             dot = '<span class="er-unread-dot"></span>' if unread else ""
             st.markdown(f'<div class="er-card-title">{dot}{cjk_html(signal.title, signal.original_language)}</div>', unsafe_allow_html=True)
+            label_html = automated_disclosure_html(signal)
+            if label_html:
+                st.markdown(label_html, unsafe_allow_html=True)
             if signal.title_translated:
                 # signal.title above is already the translation (see
                 # signal_promotion._title) — this retains the original
@@ -321,6 +347,9 @@ def compact_signal_row(signal: Signal) -> None:
     key = f"card-compact-signal-{signal.id}"
     with st.container(border=True, key=key):
         st.markdown(f'<div class="er-card-title" style="font-size:0.95rem;">{signal.title}</div>', unsafe_allow_html=True)
+        compact_label_html = automated_disclosure_html(signal)
+        if compact_label_html:
+            st.markdown(compact_label_html, unsafe_allow_html=True)
         st.markdown(
             f"""
             <div class="er-muted" style="margin: 0.2rem 0;">
@@ -377,7 +406,8 @@ def priority_signal_row(signal: Signal, order: int | None = None) -> None:
             tag_line = signal.theme_slug + (f" / {signal.subtheme_slug}" if signal.subtheme_slug else "")
             title_html = (
                 f'<div class="er-card-title" style="font-size:0.88rem;">{direction_dot_html(signal.direction)} · {cjk_html(signal.title, signal.original_language)}</div>'
-                f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>'
+                + automated_disclosure_html(signal)
+                + f'<div class="er-muted" style="font-size:0.76rem; margin-top:var(--space-1);">{_esc(tag_line)}</div>'
             )
             # EDINET filing-source usability fix (design/
             # EDINET_FILING_SOURCE_USABILITY_DESIGN.md): signal.title

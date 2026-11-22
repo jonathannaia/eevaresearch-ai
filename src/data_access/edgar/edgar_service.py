@@ -65,11 +65,71 @@ def _client(settings: Settings) -> EdgarClient:
     return EdgarClient(settings.edgar_user_agent)
 
 
+
+def _effective_publication_control(settings: Settings, supplied: bool | None) -> bool:
+    """The control value a publishing-capable pipeline should receive.
+
+    Ordered so the cheapest and most restrictive check comes first: when
+    the deployment setting is off, publication is impossible whatever the
+    control says, so there is no reason to open a connection to ask.
+    That keeps a disabled feature from paying a per-tick database cost --
+    and from widening the blast radius of a database problem into a code
+    path that cannot publish anyway.
+
+    A supplied value is honoured only when the setting is on, and only
+    exists so tests can inject a control state without a database. It can
+    never widen permission past the setting."""
+    if not settings.edgar_auto_publish_enabled:
+        return False
+    if supplied is not None:
+        return bool(supplied)
+    return resolve_publication_control_enabled(settings)
+
+
+def resolve_publication_control_enabled(settings: Settings) -> bool:
+    """The database-backed EDGAR publication control, read fresh.
+
+    Every EDGAR entry point that can reach a publishing-capable pipeline
+    resolves the control through here, so there is exactly ONE place a
+    database problem could be mistaken for permission -- and here it
+    cannot be. A missing table, absent row, malformed value, unsupported
+    backend, unreachable database or repository error all return False.
+
+    Called per invocation, never cached. The Radar worker calls run_scan
+    once per tick, so `python -m scripts.edgar_publication_control --off`
+    takes effect on the very next tick with no restart or redeploy."""
+    from src.data_access import backend_factory
+
+    repository = None
+    try:
+        repository = backend_factory.get_edgar_publication_control_repository(settings)
+        return bool(repository.is_publication_enabled())
+    except Exception:  # noqa: BLE001 - a control that cannot be read is a control that is off
+        return False
+    finally:
+        # The factory opened this connection, so this function owns it.
+        # Closing in `finally` covers every outcome -- enabled, absent
+        # row, missing table, malformed value, unsupported backend, a
+        # factory that raised before returning (repository stays None),
+        # and any unexpected error. Without this the worker would leak
+        # one connection per tick, idle-in-transaction on Postgres.
+        if repository is not None:
+            try:
+                repository.close()
+            except Exception:  # noqa: BLE001 - cleanup never changes the answer
+                pass
+
+
 def run_scan(
     settings: Settings,
     lookback_days: int = scan_service.DEFAULT_LOOKBACK_DAYS,
     max_candidates: int = edgar_pipeline.DEFAULT_MAX_CANDIDATES_PER_SCAN,
     candidate_repository: CandidatePersistence | None = None,
+    # None means "resolve the database control here". A caller may pass
+    # an explicit bool ONLY to narrow it further in a test; there is no
+    # value a caller can pass that publishes without the real control
+    # having been read, because False is the fallback everywhere below.
+    publication_control_enabled: bool | None = None,
 ) -> edgar_pipeline.ScanReport:
     """`candidate_repository` (Durable-State Phase 4A) is additive and
     optional, threaded straight through to edgar_pipeline.run_pipeline's
@@ -108,12 +168,16 @@ def run_scan(
         lookback_days=lookback_days, max_candidates_to_process=max_candidates,
         candidate_repository=candidate_repository,
         auto_publish_enabled=settings.edgar_auto_publish_enabled,
+        publication_control_enabled=_effective_publication_control(
+            settings, publication_control_enabled,
+        ),
         filing_candidate_shadow_enabled=settings.edgar_filing_candidate_shadow_enabled,
     )
 
 
 def process_candidate_now(
     settings: Settings, candidate_id: str, candidate_repository: CandidatePersistence | None = None,
+    publication_control_enabled: bool | None = None,
 ) -> CandidateSignal | None:
     """`candidate_repository` (Durable-State Phase 4A) — same additive,
     optional, synthetic/local-test-only seam as run_scan above."""
@@ -121,4 +185,7 @@ def process_candidate_now(
         _client(settings), candidate_id, settings.cache_dir,
         candidate_repository=candidate_repository,
         auto_publish_enabled=settings.edgar_auto_publish_enabled,
+        publication_control_enabled=_effective_publication_control(
+            settings, publication_control_enabled,
+        ),
     )

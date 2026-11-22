@@ -378,6 +378,10 @@ def test_complete_424b5_is_published_when_auto_publish_is_enabled(tmp_path):
         [_NVDA],
         tmp_path,
         auto_publish_enabled=True,
+        # Both are now required. The setting alone no longer publishes —
+        # the database-backed control has to agree, and it defaults to
+        # False at every boundary so an omitting caller cannot publish.
+        publication_control_enabled=True,
     )
 
     candidate = next(
@@ -393,3 +397,86 @@ def test_complete_424b5_is_published_when_auto_publish_is_enabled(tmp_path):
         transition.detail.startswith("Shadow policy: PUBLISH")
         for transition in candidate.state_history
     )
+
+
+def test_a_complete_424b5_is_not_published_when_the_control_is_disabled(tmp_path):
+    """The mirror of the test above, and the BLOCKER-2 regression: the
+    deployment setting alone must never publish. A caller supplying
+    auto_publish_enabled=True while the database control is off — or
+    simply omitting the control, which defaults to False — gets the
+    human-gated status instead."""
+    from src.logic.signal_promotion import is_eligible_for_signal
+
+    client = _make_client(
+        {
+            "0001045810": {
+                "filings": {
+                    "recent": _recent(
+                        ["0001045810-26-000051"],
+                        forms=["424B5"],
+                        primary_docs=["offering.htm"],
+                    )
+                }
+            }
+        },
+        {
+            "0001045810-26-000051": (
+                b"<html><body><p>"
+                b"We priced the public offering of 10,000,000 shares of common stock. "
+                b"The offering is expected to result in gross proceeds of $125 million."
+                b"</p></body></html>"
+            )
+        },
+    )
+
+    edgar_pipeline.run_pipeline(
+        client,
+        [_NVDA],
+        tmp_path,
+        auto_publish_enabled=True,
+        publication_control_enabled=False,
+    )
+
+    candidate = next(
+        iter(candidate_store.load_candidates(
+            tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME,
+        ).values())
+    )
+
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
+    assert is_eligible_for_signal(candidate) is False
+
+
+def test_a_complete_424b5_is_not_published_when_the_control_is_omitted(tmp_path):
+    """Omission is denial: publication_control_enabled defaults to False."""
+    client = _make_client(
+        {
+            "0001045810": {
+                "filings": {
+                    "recent": _recent(
+                        ["0001045810-26-000051"],
+                        forms=["424B5"],
+                        primary_docs=["offering.htm"],
+                    )
+                }
+            }
+        },
+        {
+            "0001045810-26-000051": (
+                b"<html><body><p>"
+                b"We priced the public offering of 10,000,000 shares of common stock. "
+                b"The offering is expected to result in gross proceeds of $125 million."
+                b"</p></body></html>"
+            )
+        },
+    )
+
+    edgar_pipeline.run_pipeline(client, [_NVDA], tmp_path, auto_publish_enabled=True)
+
+    candidate = next(
+        iter(candidate_store.load_candidates(
+            tmp_path, edgar_pipeline.CANDIDATE_STORE_FILENAME,
+        ).values())
+    )
+
+    assert candidate.status == CandidateStatus.NEEDS_REVIEW
