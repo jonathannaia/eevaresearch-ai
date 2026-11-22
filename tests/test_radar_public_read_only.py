@@ -260,9 +260,24 @@ def test_radar_card_shows_only_the_approved_public_fields(tmp_path):
     assert "Material · new facility investment" not in all_text
     assert candidate.filing.corp_name in all_text
     assert candidate.filing.stock_code in all_text
-    # Filing-quality pass: no translation stored, so Summary is the
-    # neutral metadata fallback — the native excerpt is reachable only
-    # behind its own quality-gated "View original filing excerpt" toggle.
-    assert candidate.excerpt_original not in all_text
+    # Original-language availability (9f98d70, "expose labelled
+    # original-language filing content"): when readable original text
+    # is stored and no usable English translation exists, the card now
+    # shows the original INLINE rather than only the neutral fallback.
+    #
+    # This assertion used to be `excerpt_original not in all_text`,
+    # which encoded the pre-9f98d70 behaviour. That commit updated
+    # tests/test_radar_card_public_contract.py but not this sibling
+    # guard, so this file kept asserting the opposite of a deliberate
+    # product decision.
+    #
+    # The invariant worth guarding is not absence — it is HONESTY: if
+    # the original is shown, it must carry its language tag and say
+    # plainly that no English translation is available, so a reader can
+    # never mistake untranslated source text for a translation.
+    assert 'lang="ko"' in all_text
+    assert "English translation not available on this card." in all_text
+    # The dedicated toggle remains, so the full excerpt is still
+    # reachable separately from whatever the card surfaces inline.
     assert any(b.label == "View original filing excerpt" for b in at.button)
     assert "Filed Aug 12, 2026" in all_text  # candidate.filing.rcept_dt == "20260812"
