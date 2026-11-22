@@ -5,6 +5,10 @@ convention. Uses a real temp cache_dir (pytest's tmp_path), never the
 production data/cache/ directory."""
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from datetime import datetime, timedelta, timezone
 
 from src.data_access.daily_news import editorial_pipeline
@@ -1701,15 +1705,35 @@ def test_bk_duplicate_within_one_run_is_deduplicated(tmp_path, monkeypatch):
     assert report.items_duplicate == 1
 
 
+@pytest.mark.skipif(
+    not os.environ.get("EEVARESEARCH_RUN_LIVE_NETWORK_TESTS"),
+    reason=(
+        "makes a real network call and asserts a third party's response to THIS "
+        "caller; set EEVARESEARCH_RUN_LIVE_NETWORK_TESTS=1 to run it"
+    ),
+)
 def test_japan_times_business_real_worker_fetch_signature_returns_403(tmp_path):
-    """Documents this session's own real, reproduced finding: under the
-    exact rss_atom_client the real worker uses, this specific feed
-    returns HTTPError:403 (the already-live general japan-times-rss
-    does not, under the identical header — see this source's own
-    registry notes). Not mocked here on purpose — a real, live network
-    call, matching how this exact failure was originally found. Skipped
-    automatically if network access is unavailable in this environment,
-    never treated as a hard CI dependency."""
+    """Records a real, reproduced finding: under the exact
+    rss_atom_client the worker uses, this specific feed returned
+    HTTPError:403 while the already-live general japan-times-rss did
+    not, under an identical header.
+
+    OPT-IN, because what it asserts is not a property of this
+    repository. The 403 is Japan Times' response to the network the
+    request comes from: reproducible from the author's connection, and
+    NOT from GitHub's runners, which receive 200. Left on by default it
+    fails CI for a reason no change here can fix, and it would also
+    make the suite's result depend on who is running it and from where.
+
+    The previous guard only caught RequestException — "no network at
+    all". It could not catch the case that actually bites: a working
+    network that gets a DIFFERENT answer. Hence an explicit opt-in
+    rather than a broader try/except, which would have quietly turned a
+    real finding into a test that passes however the server replies.
+
+    The finding itself is preserved in the source registry notes, which
+    is where a per-feed quirk belongs; this test reproduces it on
+    demand."""
     import requests
 
     try:
@@ -1717,7 +1741,6 @@ def test_japan_times_business_real_worker_fetch_signature_returns_403(tmp_path):
             _jp_times_business.canonical_url, timeout=15, headers={"User-Agent": "EevaResearch-DailyNews/1.0"},
         )
     except requests.RequestException:
-        import pytest
         pytest.skip("no network access available in this environment")
     assert response.status_code == 403
 
