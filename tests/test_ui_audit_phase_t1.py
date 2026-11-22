@@ -326,30 +326,44 @@ def test_phase_t1_touches_only_presentation_layer_files():
     assert not (changed & forbidden_paths), changed & forbidden_paths
 
 
-def test_phase_t1_does_not_add_a_dependency_other_than_tzdata():
-    """Diffed against the full current requirements.txt content (not
-    line-by-line +/- parsing) — the original file had no trailing
-    newline, so appending after its last line makes git's own diff
-    re-show that unchanged last line as both removed and re-added; a
-    naive "every + line is new" check would false-positive on that."""
-    import subprocess
+def test_phase_t1_declares_tzdata_and_adds_no_other_runtime_dependency():
+    """Phase T1's dependency claim, asserted as a durable property.
 
-    result = subprocess.run(
-        ["git", "show", "HEAD:requirements.txt"], cwd=REPO_ROOT, capture_output=True, text=True, check=False,
-    )
-    if result.returncode != 0:
-        return
-    before_packages = {
-        line.split("#")[0].split(">=")[0].split("[")[0].strip()
-        for line in result.stdout.splitlines() if line.strip() and not line.strip().startswith("#")
-    }
+    This previously diffed the working tree's requirements.txt against
+    `git show HEAD:requirements.txt` and asserted the difference was
+    exactly {"tzdata"}. That could only ever pass while the change was
+    UNCOMMITTED: once phase T1 landed, HEAD contained tzdata too, the
+    difference became empty, and the test failed permanently. It was a
+    test of a pending diff, not of the repository.
+
+    What phase T1 actually promised is checked instead: tzdata is
+    declared (it is the documented fallback so
+    ZoneInfo("America/New_York") cannot raise on an image without a
+    system tz database), and requirements.txt still declares only the
+    known runtime set — so a heavyweight dependency cannot be added
+    unnoticed under cover of this file.
+    """
     current = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
-    after_packages = {
-        line.split("#")[0].split(">=")[0].split("[")[0].strip()
-        for line in current.splitlines() if line.strip() and not line.strip().startswith("#")
+    declared = {
+        line.split("#")[0].split(">=")[0].split("==")[0].split("[")[0].strip()
+        for line in current.splitlines()
+        if line.strip() and not line.strip().startswith("#")
     }
-    newly_added = after_packages - before_packages
-    assert newly_added == {"tzdata"}, newly_added
+    declared.discard("")
+
+    assert "tzdata" in declared
+
+    # The known runtime set. A new dependency is a deliberate decision
+    # and should land here together with the reason, rather than
+    # arriving silently.
+    expected = {
+        "streamlit", "python-dotenv", "pytest", "requests", "pypdf", "boto3",
+        "psycopg", "Authlib", "httpx", "PyYAML", "tzdata", "feedparser",
+    }
+    assert declared == expected, {
+        "unexpected": sorted(declared - expected),
+        "missing": sorted(expected - declared),
+    }
 
 
 def test_publish_still_gates_signal_eligibility_unchanged():
