@@ -395,6 +395,47 @@ _FORBIDDEN_REAL_STATE_REFERENCES = (
 )
 
 
+def _phase_section_only(text: str, marker: str) -> str:
+    """The marker's own level-2 section of DECISIONS.md: from its heading
+    line to the next `## ` heading at the same level, or EOF.
+
+    Why bounded. This used to be `text[text.index(marker):]` — marker to
+    end of file. That was correct only while this phase's section was the
+    last one in the document. DECISIONS.md is append-only, so every later
+    section was silently swallowed into the slice, and later sections
+    legitimately discuss the real cache directory and secrets file as
+    established project fact. The guard then failed against content this
+    phase never wrote.
+
+    Level-aware on purpose: the scan stops at `"## "` and therefore skips
+    deeper headings like `"### "`, so a subsection added inside this
+    phase's own section would not truncate the slice. (DECISIONS.md has
+    no level-3 headings today; this keeps the boundary correct if one is
+    added.)
+
+    Fails loudly rather than vacuously. A marker that is missing, or that
+    matches more than one place, raises AssertionError — never an empty
+    or arbitrary slice that would make the caller's forbidden-reference
+    assertions pass while checking nothing.
+    """
+    occurrences = text.count(marker)
+    assert occurrences == 1, (
+        f"expected exactly one {marker!r} in DECISIONS.md, found {occurrences} — "
+        "the phase marker is missing or ambiguous, so this guard cannot identify "
+        "the section it is supposed to check"
+    )
+    start = text.index(marker)
+    rest = text[start + len(marker):]
+    # The next level-2 heading ends this section; -1 means this section
+    # runs to EOF. `"\n## "` cannot match a deeper `"\n### "` heading,
+    # because the character after the second `#` is `#`, not a space.
+    offset = rest.find("\n## ")
+    section = text[start:] if offset == -1 else text[start:start + len(marker) + offset + 1]
+    assert section.startswith(marker), "sliced section does not begin at its own marker"
+    assert section.strip(), "sliced section is empty"
+    return section
+
+
 def _source_excluding_this_guards_own_string_list(path: Path) -> str:
     """Returns the text this guard actually checks for `path`:
 
@@ -416,8 +457,7 @@ def _source_excluding_this_guards_own_string_list(path: Path) -> str:
         end = text.index(")\n", start) + len(")\n")
         return text[:start] + text[end:]
     if path.name == "DECISIONS.md":
-        marker = "## Durable-State Phase 2B"
-        return text[text.index(marker):]
+        return _phase_section_only(text, "## Durable-State Phase 2B")
     return text
 
 
