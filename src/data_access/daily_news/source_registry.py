@@ -1358,12 +1358,10 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
         source_id="the-register-headlines-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
         canonical_url="https://www.theregister.com/headlines.atom",
         domains=("www.theregister.com",),
-        # FAILING since 2026-11-23 — blocked in the deployed environment,
-        # not here. See notes: the feed, the URL and the worker's own
-        # client all still work from a developer machine; only the
-        # deployed worker gets a non-feed 200. Excluded from polling by
-        # is_eligible_for_polling() until re-verified from Render itself.
-        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.FAILING,
+        # DEGRADED since 2026-11-23 — intermittently blocked in the
+        # deployed environment, not here. Still polled: see notes for why
+        # the first disposition (FAILING, never polled) was wrong.
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.DEGRADED,
         attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
         notes=(
@@ -1372,18 +1370,28 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
             "2026-09-13, all 50 items on-domain. Shares attribution_label 'The Register' with "
             "the-register-on-prem-rss below (same real-world publisher, two sections) — see this "
             "batch's own module-level comment for why. "
-            "REGRESSED 2026-11-23: the deployed Daily News worker records "
-            "source_failures={'the-register-headlines-rss': 'MalformedFeed'} on every tick, "
-            "persistently across consecutive ticks. MalformedFeed means HTTP 200 plus a "
-            "feedparser bozo with zero entries (rss_atom_client.fetch_entries) — so the worker is "
-            "being served a 200 that is not this feed. Re-verified from a developer machine with "
-            "the identical client and the identical 'EevaResearch-DailyNews/1.0' User-Agent: "
-            "HTTP 200, application/xml, 291,021 bytes, bozo=False, 50 entries. The URL, the "
-            "publisher and the worker's fetch signature are therefore all fine; what differs is "
-            "the egress IP (inferred: theregister.com's edge serves an interstitial to Render's "
-            "datacenter range). Marked FAILING rather than RETIRED because nothing is wrong with "
-            "the source. Exit condition: a real fetch from inside the deployed service returning "
-            "a parseable feed — a developer-machine fetch cannot resolve this, exactly as the "
+            "REGRESSED 2026-11-23: the deployed Daily News worker intermittently records "
+            "source_failures={'the-register-headlines-rss': 'MalformedFeed'}. MalformedFeed means "
+            "HTTP 200 plus a feedparser bozo with zero entries (rss_atom_client.fetch_entries) — "
+            "so the worker is sometimes served a 200 that is not this feed. Re-verified from a "
+            "developer machine with the identical client and the identical "
+            "'EevaResearch-DailyNews/1.0' User-Agent: HTTP 200, application/xml, 291,021 bytes, "
+            "bozo=False, 50 entries. The URL, the publisher and the worker's fetch signature are "
+            "therefore all fine; what differs is the egress IP (inferred: theregister.com's edge "
+            "serves an interstitial to some requests from Render's datacenter range). "
+            "FREQUENCY, CORRECTED: this entry first said the failure was persistent across "
+            "consecutive ticks. That was what two observed ticks showed and it was not the whole "
+            "picture — the 05:04 tick on 2026-11-23 polled this feed successfully while only the "
+            "FTC failed. The block is INTERMITTENT. "
+            "DISPOSITION, CORRECTED: first marked FAILING, which excludes it from polling "
+            "entirely. Wrong for an intermittent failure: it removed roughly 99 items per tick "
+            "that this publisher contributes whenever the fetch does succeed (items_fetched fell "
+            "1171 -> 1072 on the deploy that applied it), to silence a log line. DEGRADED keeps "
+            "the source polled and still records that its health has regressed, which is what "
+            "this state is for. Expect an occasional source_failures entry for it; that is the "
+            "cost of keeping the coverage, and it is the cheaper side of the trade. "
+            "Exit condition unchanged: consistently parseable fetches from inside the deployed "
+            "service. A developer-machine fetch cannot establish that, exactly as the "
             "japan-times-business-rss entry's own notes establish for the mirror-image case."
         ),
     ),
@@ -1391,12 +1399,12 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
         source_id="the-register-on-prem-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
         canonical_url="https://www.theregister.com/on_prem/headlines.atom",
         domains=("www.theregister.com",),
-        # FAILING since 2026-11-23 — same environment-specific block as
-        # the-register-headlines-rss above, same evidence, same exit
-        # condition. Both sections of one publisher fail together, which
-        # is itself evidence the cause is the publisher's edge and not
-        # either path.
-        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.FAILING,
+        # DEGRADED since 2026-11-23 — same intermittent environment
+        # block as the-register-headlines-rss above, same evidence, same
+        # exit condition. Both sections of one publisher fail and recover
+        # together, which is itself evidence the cause is the publisher's
+        # edge and not either path.
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.DEGRADED,
         attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
         notes=(
@@ -1406,11 +1414,14 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
             "real-world publisher, two sections, not two independent publishers) — see this "
             "batch's own module-level comment for why. "
             "REGRESSED 2026-11-23: identical finding to the-register-headlines-rss above — "
-            "'MalformedFeed' on every deployed tick, while a developer-machine fetch with the "
-            "identical client and User-Agent returns HTTP 200, application/xml, 233,071 bytes, "
-            "bozo=False, 50 entries. Both of this publisher's sections regressed at the same "
-            "time and recover identically, which is consistent with an edge/IP block rather "
-            "than anything path-specific. Marked FAILING, not RETIRED; same exit condition."
+            "intermittent 'MalformedFeed' on deployed ticks, while a developer-machine fetch with "
+            "the identical client and User-Agent returns HTTP 200, application/xml, 233,071 "
+            "bytes, bozo=False, 50 entries. Both of this publisher's sections fail and recover "
+            "together, which is consistent with an edge/IP block rather than anything "
+            "path-specific. Same correction as that entry: first marked FAILING (never polled), "
+            "which was the wrong disposition for an intermittent failure because it traded real "
+            "coverage for a quieter log. Now DEGRADED — still polled, still recorded as "
+            "regressed. Same exit condition."
         ),
     ),
     DailyNewsSourceEntry(
@@ -1560,6 +1571,10 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
         # FAILING since 2026-11-23 — ftc.gov blocks this client across
         # the whole site, not just this path, so there is no corrected
         # URL to switch to. See notes for how that was established.
+        # Unlike The Register's pair above, this one is NOT intermittent:
+        # it has never once succeeded, so polling it can only ever cost
+        # a request and a log line. That is the difference between
+        # FAILING here and DEGRADED there.
         jurisdiction="United States", enabled=True, health_state=SourceHealthState.FAILING,
         attribution_label="Federal Trade Commission (FTC)", licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
