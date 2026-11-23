@@ -27,11 +27,26 @@ AGENT_TABLES = (
 
 # --- registration ---------------------------------------------------------------
 
-def test_sqlite_v25_is_registered_after_v24_and_is_current():
-    assert schema.CURRENT_SCHEMA_VERSION == 25
+def test_sqlite_v25_is_registered_in_order_after_v24():
+    """Originally also asserted CURRENT_SCHEMA_VERSION == 25 and that
+    these were the LAST four migrations. Both were true the day this was
+    written and became false with the next migration — this
+    repository's recurring pattern of a point-in-time claim written as a
+    permanent assertion.
+
+    What must hold forever: the list stays ordered and unique,
+    CURRENT_SCHEMA_VERSION is genuinely the highest registered step, and
+    each version this file is ABOUT still maps to its own statements."""
     versions = [v for v, _ in schema._MIGRATIONS]
     assert versions == sorted(versions) and len(set(versions)) == len(versions)
-    assert versions[-4:] == [22, 23, 24, 25]
+    assert schema.CURRENT_SCHEMA_VERSION == max(versions), (
+        "CURRENT_SCHEMA_VERSION must be the highest registered migration, or migrate() stops "
+        "short of the schema the code expects"
+    )
+    assert schema.CURRENT_SCHEMA_VERSION >= 25, "v25 must not be unregistered by a later change"
+    assert versions[versions.index(22):versions.index(25) + 1] == [22, 23, 24, 25], (
+        "v22-v25 must remain consecutive and in order"
+    )
     assert dict(schema._MIGRATIONS)[22] is schema._V22_STATEMENTS
     assert dict(schema._MIGRATIONS)[23] is schema._V23_STATEMENTS
     # Scan-status truthfulness (V24): provider_scan_status gains the two
@@ -41,11 +56,15 @@ def test_sqlite_v25_is_registered_after_v24_and_is_current():
     assert dict(schema._MIGRATIONS)[25] is schema._V25_STATEMENTS
 
 
-def test_postgres_v27_is_registered_after_v26_and_is_current():
-    assert postgres_schema.CURRENT_SCHEMA_VERSION == 27
+def test_postgres_v27_is_registered_in_order_after_v26():
+    """Same correction as the SQLite sibling above: the "and is current"
+    half of the original name was a claim about the latest migration,
+    not about this one."""
     versions = [v for v, _ in postgres_schema._MIGRATIONS]
     assert versions == sorted(versions) and len(set(versions)) == len(versions)
-    assert versions[-4:] == [24, 25, 26, 27]
+    assert postgres_schema.CURRENT_SCHEMA_VERSION == max(versions)
+    assert postgres_schema.CURRENT_SCHEMA_VERSION >= 27
+    assert versions[versions.index(24):versions.index(27) + 1] == [24, 25, 26, 27]
     assert dict(postgres_schema._MIGRATIONS)[24] is postgres_schema._V24_STATEMENTS
     assert dict(postgres_schema._MIGRATIONS)[25] is postgres_schema._V25_STATEMENTS
     assert dict(postgres_schema._MIGRATIONS)[26] is postgres_schema._V26_STATEMENTS
@@ -128,7 +147,7 @@ def test_sqlite_v21_upgrades_to_v22_without_touching_existing_tables():
         table: [tuple(r) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
         for table in ("candidates", "user_accounts", "user_preferences")
     }
-    assert schema.migrate(conn) == 25
+    assert schema.migrate(conn) == schema.CURRENT_SCHEMA_VERSION
     after = {
         table: [tuple(r) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
         for table in ("candidates", "user_accounts", "user_preferences")
@@ -137,7 +156,7 @@ def test_sqlite_v21_upgrades_to_v22_without_touching_existing_tables():
     assert conn.execute("SELECT theme_preference FROM user_preferences").fetchone()["theme_preference"] == "dark"
     for table in AGENT_TABLES:
         assert conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"] == 0
-    assert schema.migrate(conn) == 25  # idempotent
+    assert schema.migrate(conn) == schema.CURRENT_SCHEMA_VERSION  # idempotent
 
 
 @pytest.mark.parametrize("sql,label", [
@@ -213,7 +232,7 @@ def test_postgres_v23_upgrades_to_v24_without_touching_existing_tables(pg_isolat
                "WHERE table_schema = current_schema() AND table_name = ANY(%s) ORDER BY table_name, ordinal_position")
     existing = ["candidates", "user_accounts", "user_preferences"]
     before = conn.execute(columns, (existing,)).fetchall()
-    assert postgres_schema.migrate(conn) == 27
+    assert postgres_schema.migrate(conn) == postgres_schema.CURRENT_SCHEMA_VERSION
     assert conn.execute(columns, (existing,)).fetchall() == before
     assert conn.execute("SELECT theme_preference FROM user_preferences").fetchone()["theme_preference"] == "light"
     present = {r["table_name"] for r in conn.execute(
@@ -221,7 +240,7 @@ def test_postgres_v23_upgrades_to_v24_without_touching_existing_tables(pg_isolat
         (list(AGENT_TABLES),),
     ).fetchall()}
     assert present == set(AGENT_TABLES)
-    assert postgres_schema.migrate(conn) == 27  # idempotent
+    assert postgres_schema.migrate(conn) == postgres_schema.CURRENT_SCHEMA_VERSION  # idempotent
 
 
 def test_postgres_agent_audit_events_id_is_generated(pg_isolated_connection):

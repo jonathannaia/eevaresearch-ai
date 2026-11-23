@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 27
+CURRENT_SCHEMA_VERSION = 28
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -942,6 +942,66 @@ _V27_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V28_STATEMENTS: tuple[str, ...] = (
+    # Paid professional access, phase 1 — entitlements (design/
+    # DECISIONS.md). Two tables, deliberately separate from
+    # user_accounts: that table records who signed in and its own
+    # docstring promises no role or status, which is what lets the admin
+    # page claim it cannot render what the table does not hold. Access
+    # is a different concern with a different lifecycle, so it lives
+    # apart.
+    #
+    # ABSENCE MEANS NO ACCESS. There is no default row and no default
+    # entitlement. An account with no row is not entitled, and a read
+    # failure is treated the same way. Access is affirmative here, not
+    # inferred from an empty allowlist the way the open beta does it.
+    #
+    # NOTHING ENFORCES THIS YET. The gate is behind
+    # EDGE_ACCESS_ENFORCEMENT_ENABLED, off by default, so this migration
+    # changes no behaviour on the deploy that applies it. Turning it on
+    # before existing users have rows would lock them all out, so the
+    # order is: migrate, backfill, verify, then enable.
+    #
+    # NO PAYMENT DATA. No card details, no Stripe identifiers, no
+    # amounts. Billing is a later phase and brings its own schema;
+    # guessing its shape now would mean migrating a live table twice.
+    # Request fields hold only what somebody voluntarily typed.
+    """
+    CREATE TABLE account_entitlements (
+        email TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        tier TEXT,
+        requested_at TEXT,
+        decided_at TEXT,
+        decided_by TEXT,
+        expires_at TEXT,
+        request_reason TEXT,
+        request_organisation TEXT,
+        request_role TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_account_entitlements_status ON account_entitlements (status)",
+    # Append-only: written on every status change, never updated or
+    # deleted, so "why does this account have access" is answerable from
+    # the record instead of reconstructed. Same shape and discipline as
+    # state_transitions.
+    """
+    CREATE TABLE account_access_events (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        email TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        tier TEXT,
+        at TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    "CREATE INDEX idx_account_access_events_email ON account_access_events (email, at)",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -970,6 +1030,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (25, _V25_STATEMENTS),
     (26, _V26_STATEMENTS),
     (27, _V27_STATEMENTS),
+    (28, _V28_STATEMENTS),
 )
 
 

@@ -5047,3 +5047,160 @@ previously-passing test failed because of this phase's changes.
 - **Not committed as of this entry** — awaiting explicit approval before
   any commit.
 
+
+## Paid Professional Access — Phase 1: Entitlements (2026-11-23)
+
+Access to EevaResearch becomes affirmative: a row grants it, and nothing
+else does. This is the foundation the trial/paid tiers and Stripe billing
+sit on, and it ships **dormant**.
+
+### The problem with the open beta's gate
+
+`src/ui/beta_gate.py` is a sound, tested, pure function. Its contract
+says an empty allowlist means *deny*, and `app.py`'s call site
+deliberately overrides that to *allow*, because the product decision was
+that an empty allowlist must never lock out an authenticated user. That
+is correct for an open beta and exactly wrong for paid access:
+authorization is inferred from the absence of a restriction.
+
+Two consequences, both load-bearing in what follows. Adding a user means
+editing `EDGE_PRIVATE_BETA_ALLOWED_EMAILS` in the Render dashboard, which
+redeploys four services to admit one person. And there is nowhere to put
+a tier, because `src/models/user_account.py` deliberately holds no role
+or status.
+
+### Why entitlements are a separate table, not columns on `user_accounts`
+
+The initial plan was to add status and tier to `user_accounts`. That was
+wrong. Its docstring promises no role or status, and
+`src/ui/pages/admin_users.py` relies on that promise when it says it
+"cannot render what the underlying table doesn't have". Reversing a
+documented restraint to save a table is a bad trade.
+
+So: `account_entitlements` (current state, one row per email) and
+`account_access_events` (append-only history). A `user_accounts` row says
+somebody signed in; an `account_entitlements` row says somebody may.
+Different lifecycles, different audit requirements, different reasons to
+exist.
+
+- **SQLite V26 / Postgres V28**, one migration carrying both tables.
+  Combined deliberately: every migration is applied at service boot and a
+  push to `main` redeploys four services, so two migrations is two
+  four-service events for one feature.
+- **No payment data.** No card details, no Stripe identifiers, no
+  amounts. Billing is a later phase with its own schema; guessing its
+  shape now would mean migrating a live production table twice.
+- **No new personal data.** Request fields hold only what somebody
+  voluntarily typed. Same minimum `user_accounts` already holds itself
+  to: no IP, no fingerprint, no page-view history.
+
+### Absence means no access, and a read failure is not absence
+
+`get_entitlement` returns `None` for an unknown account, no read path
+creates a row, and an empty store denies everyone. That inversion is the
+whole point.
+
+The distinction the feature would be dishonest without:
+`entitlement=None` means *we looked and there is nothing*, which is a
+real answer about a real account. A read failure means *we do not know*.
+Both deny, and they say different things — answering a read failure with
+"no entitlement" tells somebody their request was never received when in
+fact a database query failed. `evaluate_account_access` takes
+`entitlement_read_failed` as a separate argument for exactly this, and
+the UI shows "Access check unavailable… this is a problem on our side",
+never the request form.
+
+### Why it ships off, and why that is not timidity
+
+`EDGE_ACCESS_ENFORCEMENT_ENABLED` defaults to off. On the deploy that
+applies the migration, every existing account has no entitlement row —
+so enabling enforcement in the same change would lock out every user at
+the moment of deploy. Dormant-by-default makes it four reversible steps
+instead of one irreversible one: **migrate, backfill, verify, enable.**
+Same pattern as the research-agent worker and the EDGAR publication gate.
+
+Dormant also means free: `app.py` does not construct the repository at
+all while the flag is off, so a disabled feature costs no connection and
+no query. Asserted in
+`tests/test_app_access_entitlement_gate.py`.
+
+### Administrators bypass everything, on purpose
+
+`admin_emails` is checked before enforcement, before the allowlist, and
+before the store is consulted. It comes from the environment, so it
+resolves when the database does not — which means the one person who can
+repair a broken entitlement store can always reach the page that repairs
+it. Without this, enforcement plus a database incident locks the operator
+out of their own remedy. The environment allowlist survives for the same
+reason, demoted to break-glass: a way to restore one person's access
+without a database write, for when the database write is what is broken.
+
+### Denial reasons are not interchangeable
+
+"We are reviewing your request", "your trial ended" and "this account was
+removed" are three different things to tell somebody, and flattening them
+into one refusal is how a product teaches people it is broken.
+`AccessReason` has 13 members and each denial has its own screen. Only
+`NO_ENTITLEMENT`, `REQUEST_DENIED` and `ENTITLEMENT_EXPIRED` re-offer the
+request form — a pending request or a deliberate revocation does not,
+because re-offering it invites spam or lets a removed account rejoin the
+queue immediately.
+
+`AccessDecision.__post_init__` refuses to construct a decision whose
+`allowed` contradicts its reason. An `AccessDecision(True,
+NO_ENTITLEMENT)` would be a silent security bug, so it is not
+representable.
+
+### Expiry is evaluated at decision time
+
+Nothing sweeps expiries on a schedule, so a trial would otherwise end
+whenever a job next ran rather than when it ran out. Comparison is
+between parsed datetimes, not ISO strings: string ordering breaks
+silently on a trailing `Z` versus `+00:00`, and `09:00-05:00` sorts
+before `12:00Z` while being an hour later. An unparseable `expires_at`
+counts as expired — treating a corrupt timestamp as "never expires"
+would turn a data problem into indefinite free access.
+
+### Writes refuse to clobber a decision
+
+`set_status` takes `expected_status`, so two admins working the same
+queue cannot both apply a decision; the second gets a conflict. A request
+arriving over an active entitlement is refused outright, because
+resetting a live account to `REQUESTED` would remove access somebody is
+paying for. `EntitlementConflictError` lives in the model layer, not in
+either repository: the three backends share no SQL, but a caller writing
+`except EntitlementConflictError` cannot know which backend is
+configured, and a per-backend class would mean the admin page's conflict
+handling silently stopped working the day production moved from SQLite to
+Postgres.
+
+Approval writes `ACTIVE`, not `APPROVED`. `APPROVED` exists in the model
+for the state between "may buy" and "has bought", which has no meaning
+until billing does — using it now would leave people approved and still
+locked out.
+
+### Verification
+
+- 42 decision tests, including an exhaustive parametrize over
+  `AccessStatus` so adding a status without deciding what it means
+  denies rather than grants.
+- 21 repository tests on SQLite and the same 21 against a real
+  disposable Postgres container, which is what proves V28 and both write
+  paths work where they will actually run.
+- 14 three-backend parity tests. The JSON store is held to the same
+  contract rather than trusted: a local backend that admitted everyone
+  while Postgres denied them would make local testing actively
+  misleading.
+- 13 end-to-end tests through `AppTest` against a real SQLite store,
+  covering the full request → approve → revoke cycle and asserting that
+  no connection string, exception text or backend detail reaches the UI
+  on a store failure.
+
+### Deliberately not in this phase
+
+Stripe, prices, invoices and tax; tier-differentiated features (tier is
+recorded and returned, but no page reads it yet); self-service
+cancellation; automated expiry sweeps; and the legal pages — drafted as
+templates under `design/legal/` with 58 marked decisions, not wired into
+the app, because shipping unreviewed legal text for a paid financial
+information product is worse than shipping none.
