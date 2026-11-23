@@ -173,6 +173,8 @@ def _render_access_requests(settings) -> None:
         st.info("Could not read access requests. Please try again later.")
         return
 
+    _render_direct_grant(settings, repository, actor)
+
     if not pending:
         st.write("No pending access requests.")
     for entitlement in pending:
@@ -266,3 +268,62 @@ def _render_access_requests(settings) -> None:
                     else:
                         st.success(f"Revoked {entitlement.email}.")
                     st.rerun()
+
+
+def _render_direct_grant(settings, repository, actor: str) -> None:
+    """Granting access to an account that never filled in the form.
+
+    Needed for more than convenience: the rollout for enforcement is
+    migrate, backfill, verify, enable, and the BACKFILL step is exactly
+    this. Every existing open-beta account has no entitlement row, and
+    the approve/deny queue above only shows accounts that asked. Without
+    this form, backfilling would mean running SQL by hand against
+    production — so enabling enforcement would be gated on shell access
+    to the database, which is the worst possible dependency for the one
+    step that decides whether everybody keeps working.
+
+    The resulting row carries no request, which is how a direct grant
+    stays distinguishable from an approval in the audit trail."""
+    with st.expander("Grant access directly", expanded=False):
+        st.caption(
+            "For an account that has not asked — you, an advisor, or an existing user being "
+            "backfilled before access enforcement is switched on."
+        )
+        with st.form("direct_grant_form", clear_on_submit=True):
+            email_raw = st.text_input("Email", placeholder="name@example.com")
+            tier_label = st.selectbox(
+                "Tier",
+                options=[AccessTier.COMPLIMENTARY.value, AccessTier.TRIAL.value, AccessTier.PAID.value],
+                help=f"A trial expires after {settings.access_trial_days} days. Paid and complimentary do not expire.",
+            )
+            note = st.text_input("Note (recorded in the audit trail)", placeholder="e.g. existing beta user")
+            granted = st.form_submit_button("Grant access")
+
+        if not granted:
+            return
+
+        email = (email_raw or "").strip().lower()
+        if "@" not in email or email.startswith("@") or email.endswith("@"):
+            # Not an attempt at real address validation — only enough to
+            # stop an obvious typo becoming an entitlement row nobody
+            # can sign in as, which would look granted and never work.
+            st.error("Enter a full email address.")
+            return
+
+        tier = AccessTier(tier_label)
+        now = datetime.now(timezone.utc)
+        expires_at = (
+            (now + timedelta(days=settings.access_trial_days)).isoformat()
+            if tier is AccessTier.TRIAL else None
+        )
+        try:
+            repository.set_status(
+                email=email, status=AccessStatus.ACTIVE, tier=tier, actor=actor,
+                now=now.isoformat(), expires_at=expires_at,
+                detail=(note or "").strip() or "granted directly from admin users page",
+            )
+        except Exception:  # noqa: BLE001 — never leak a raw storage error into the UI
+            st.error("Could not grant access. Please try again.")
+        else:
+            st.success(f"Granted {tier.value} access to {email}.")
+            st.rerun()
