@@ -1358,7 +1358,12 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
         source_id="the-register-headlines-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
         canonical_url="https://www.theregister.com/headlines.atom",
         domains=("www.theregister.com",),
-        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        # FAILING since 2026-11-23 — blocked in the deployed environment,
+        # not here. See notes: the feed, the URL and the worker's own
+        # client all still work from a developer machine; only the
+        # deployed worker gets a non-feed 200. Excluded from polling by
+        # is_eligible_for_polling() until re-verified from Render itself.
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.FAILING,
         attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
         notes=(
@@ -1366,14 +1371,32 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
             "HTTP 200, real Atom/RSS content despite the .atom extension, 50 dated items, newest "
             "2026-09-13, all 50 items on-domain. Shares attribution_label 'The Register' with "
             "the-register-on-prem-rss below (same real-world publisher, two sections) — see this "
-            "batch's own module-level comment for why."
+            "batch's own module-level comment for why. "
+            "REGRESSED 2026-11-23: the deployed Daily News worker records "
+            "source_failures={'the-register-headlines-rss': 'MalformedFeed'} on every tick, "
+            "persistently across consecutive ticks. MalformedFeed means HTTP 200 plus a "
+            "feedparser bozo with zero entries (rss_atom_client.fetch_entries) — so the worker is "
+            "being served a 200 that is not this feed. Re-verified from a developer machine with "
+            "the identical client and the identical 'EevaResearch-DailyNews/1.0' User-Agent: "
+            "HTTP 200, application/xml, 291,021 bytes, bozo=False, 50 entries. The URL, the "
+            "publisher and the worker's fetch signature are therefore all fine; what differs is "
+            "the egress IP (inferred: theregister.com's edge serves an interstitial to Render's "
+            "datacenter range). Marked FAILING rather than RETIRED because nothing is wrong with "
+            "the source. Exit condition: a real fetch from inside the deployed service returning "
+            "a parseable feed — a developer-machine fetch cannot resolve this, exactly as the "
+            "japan-times-business-rss entry's own notes establish for the mirror-image case."
         ),
     ),
     DailyNewsSourceEntry(
         source_id="the-register-on-prem-rss", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
         canonical_url="https://www.theregister.com/on_prem/headlines.atom",
         domains=("www.theregister.com",),
-        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.VERIFIED,
+        # FAILING since 2026-11-23 — same environment-specific block as
+        # the-register-headlines-rss above, same evidence, same exit
+        # condition. Both sections of one publisher fail together, which
+        # is itself evidence the cause is the publisher's edge and not
+        # either path.
+        jurisdiction="United Kingdom", enabled=True, health_state=SourceHealthState.FAILING,
         attribution_label="The Register", licensing_classification=_EDITORIAL_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, allowlisted=True, last_verified_at="2026-09-13",
         notes=(
@@ -1381,7 +1404,13 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
             "HTTP 200, 50 dated items, newest 2026-09-10, all 50 items on-domain. Shares "
             "attribution_label 'The Register' with the-register-headlines-rss above (same "
             "real-world publisher, two sections, not two independent publishers) — see this "
-            "batch's own module-level comment for why."
+            "batch's own module-level comment for why. "
+            "REGRESSED 2026-11-23: identical finding to the-register-headlines-rss above — "
+            "'MalformedFeed' on every deployed tick, while a developer-machine fetch with the "
+            "identical client and User-Agent returns HTTP 200, application/xml, 233,071 bytes, "
+            "bozo=False, 50 entries. Both of this publisher's sections regressed at the same "
+            "time and recover identically, which is consistent with an edge/IP block rather "
+            "than anything path-specific. Marked FAILING, not RETIRED; same exit condition."
         ),
     ),
     DailyNewsSourceEntry(
@@ -1528,12 +1557,34 @@ EDITORIAL_SOURCE_REGISTRY_BATCH_2: tuple[DailyNewsSourceEntry, ...] = (
         source_id="ftc-press-releases-rss", category=SourceCategory.REGULATOR, format=SourceFormat.RSS_ATOM,
         canonical_url="https://www.ftc.gov/feeds/press-release.xml",
         domains=("www.ftc.gov",),
-        jurisdiction="United States", enabled=True, health_state=SourceHealthState.VERIFIED,
+        # FAILING since 2026-11-23 — ftc.gov blocks this client across
+        # the whole site, not just this path, so there is no corrected
+        # URL to switch to. See notes for how that was established.
+        jurisdiction="United States", enabled=True, health_state=SourceHealthState.FAILING,
         attribution_label="Federal Trade Commission (FTC)", licensing_classification=_GOVERNMENT_LICENSING_CLASSIFICATION,
         priority=1, issuer_agnostic=True, last_verified_at="2026-09-13",
         notes=(
             "Daily News source-expansion batch 2, editorial lane (2026-09-13) — live-verified, "
-            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-10, all 10 items on-domain."
+            "HTTP 200, RSS 2.0, 10 dated items, newest 2026-09-10, all 10 items on-domain. "
+            "REGRESSED 2026-11-23: the deployed worker records "
+            "source_failures={'ftc-press-releases-rss': 'HTTPError:404'} on every tick. The "
+            "obvious reading is that the feed moved, and that reading is wrong. Probed with the "
+            "worker's own client and User-Agent: this path returns 404 with a 1,301-byte HTML "
+            "body, five plausible replacement paths all return the same 404, and "
+            "https://www.ftc.gov/ ITSELF returns the same 404 — while "
+            "https://www.ftc.gov/robots.txt returns 200. A site whose root 404s to one client "
+            "and serves robots.txt to it is blocking the client, not missing the page; curl from "
+            "the same machine gets HTTP 403 with the body 'The request resembles an abusive "
+            "automated request'. So this is a site-wide WAF block of our fetch signature, and "
+            "changing canonical_url would be guessing at a URL that was never the problem. "
+            "robots.txt is permissive for this path (User-agent: *, Crawl-delay: 5) — the edge "
+            "block is stricter than the publisher's own stated policy. Marked FAILING, not "
+            "RETIRED: FTC press releases remain a legitimate and wanted REGULATOR source. Exit "
+            "condition: a fetch signature the FTC's edge accepts, obtained by asking rather than "
+            "by impersonating a browser, or an alternate official distribution (e.g. a "
+            "data.gov/api.gov feed). Deliberately NOT resolved by spoofing a browser User-Agent: "
+            "this registry's whole discipline is that the worker's real signature is what counts, "
+            "and japan-times-business-rss's own notes set the same precedent."
         ),
     ),
     # --- Japan ---

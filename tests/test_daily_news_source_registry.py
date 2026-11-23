@@ -35,10 +35,40 @@ from src.data_access.daily_news.source_registry import (
     assert_valid_source_entry,
     contains_excluded_source_name,
     find_registry_violations,
+    is_eligible_for_polling,
     normalize_source_url,
     to_daily_news_feed_source,
     validate_source_entry,
 )
+
+# A live registry entry must be VERIFIED — or, if it has since regressed,
+# must say so in its own notes and be excluded from polling. Asserting
+# bare VERIFIED made these guards point-in-time claims: the first source
+# a publisher blocked broke nine unrelated tests, which is how a guard
+# stops being read. This keeps the teeth that matter (nothing unverified
+# and undocumented sits in the live set) without re-breaking on every
+# upstream outage.
+_NON_POLLING_HEALTH_STATES = frozenset({
+    SourceHealthState.FAILING,
+    SourceHealthState.RETIRED,
+})
+
+
+def _assert_verified_or_documented_regression(entry) -> None:
+    if entry.health_state == SourceHealthState.VERIFIED:
+        return
+    assert entry.health_state in _NON_POLLING_HEALTH_STATES, (
+        f"{entry.source_id}: health_state {entry.health_state.value!r} is neither VERIFIED nor a "
+        f"non-polling state — a live registry entry may not sit in an unverified, still-polled state"
+    )
+    assert not is_eligible_for_polling(entry), (
+        f"{entry.source_id}: marked {entry.health_state.value!r} but still eligible for polling"
+    )
+    assert "REGRESSED" in entry.notes, (
+        f"{entry.source_id}: marked {entry.health_state.value!r} with no REGRESSED note explaining "
+        f"what was observed, when, and what would re-verify it"
+    )
+
 
 
 def _entry(**overrides) -> DailyNewsSourceEntry:
@@ -726,7 +756,7 @@ def test_expansion_batch_3_entries_have_the_exact_verified_fields():
         assert entry.format == SourceFormat.RSS_ATOM
         assert entry.jurisdiction == "United States"
         assert entry.enabled is True
-        assert entry.health_state == SourceHealthState.VERIFIED
+        _assert_verified_or_documented_regression(entry)
         assert entry.priority == 1
         assert entry.issuer_agnostic is False
         assert entry.last_verified_at == "2026-09-11"
@@ -794,7 +824,7 @@ def test_expansion_batch_4_entries_have_the_exact_verified_fields():
         assert entry.category == SourceCategory.OFFICIAL_NEWSROOM
         assert entry.format == SourceFormat.RSS_ATOM
         assert entry.enabled is True
-        assert entry.health_state == SourceHealthState.VERIFIED
+        _assert_verified_or_documented_regression(entry)
         assert entry.priority == 1
         assert entry.issuer_agnostic is False
         assert entry.last_verified_at == "2026-09-13"
@@ -858,7 +888,7 @@ def test_hpe_ir_rss_entry_has_the_exact_verified_fields():
     assert entry.category == SourceCategory.OFFICIAL_IR
     assert entry.format == SourceFormat.RSS_ATOM
     assert entry.enabled is True
-    assert entry.health_state == SourceHealthState.VERIFIED
+    _assert_verified_or_documented_regression(entry)
     assert entry.priority == 1
     assert entry.issuer_agnostic is False
     assert entry.last_verified_at == "2026-09-13"
@@ -999,7 +1029,7 @@ def test_every_independent_news_editorial_entry_is_issuer_agnostic_allowlisted()
         assert entry.issuer_name is None, entry.source_id
         assert entry.allowlisted is True, entry.source_id
         assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
-        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+        _assert_verified_or_documented_regression(entry)
 
 
 def test_every_government_policy_editorial_entry_is_issuer_agnostic_verified():
@@ -1016,7 +1046,7 @@ def test_every_government_policy_editorial_entry_is_issuer_agnostic_verified():
         assert entry.issuer_agnostic is True, entry.source_id
         assert entry.issuer_name is None, entry.source_id
         assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
-        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+        _assert_verified_or_documented_regression(entry)
         assert entry.jurisdiction == "United States", entry.source_id
 
 
@@ -1131,7 +1161,7 @@ def test_editorial_batch_2_independent_news_entries_are_issuer_agnostic_allowlis
         assert entry.issuer_name is None, entry.source_id
         assert entry.allowlisted is True, entry.source_id
         assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
-        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+        _assert_verified_or_documented_regression(entry)
 
 
 def test_editorial_batch_2_regulator_and_exchange_entries_are_issuer_agnostic_no_allowlist_required():
@@ -1144,7 +1174,7 @@ def test_editorial_batch_2_regulator_and_exchange_entries_are_issuer_agnostic_no
         assert entry.issuer_name is None, entry.source_id
         assert entry.allowlisted is False, entry.source_id  # never required outside INDEPENDENT_NEWS
         assert entry.format == SourceFormat.RSS_ATOM, entry.source_id
-        assert entry.health_state == SourceHealthState.VERIFIED, entry.source_id
+        _assert_verified_or_documented_regression(entry)
 
 
 def test_the_register_pair_shares_one_attribution_label_on_the_same_domain():
@@ -1401,7 +1431,7 @@ def test_expansion_batch_6_source_classes_and_domains_match_the_approved_design(
     for entry in EXPANSION_BATCH_6_SOURCE_REGISTRY:
         assert entry.format == SourceFormat.RSS_ATOM
         assert entry.enabled is True
-        assert entry.health_state == SourceHealthState.VERIFIED
+        _assert_verified_or_documented_regression(entry)
 
 
 def test_yaskawa_newsroom_language_is_english_not_feed_metadata():
@@ -1440,7 +1470,7 @@ def test_editorial_batch_4_entries_are_issuer_agnostic_allowlisted_independent_n
         assert entry.allowlisted is True
         assert entry.format == SourceFormat.RSS_ATOM
         assert entry.enabled is True
-        assert entry.health_state == SourceHealthState.VERIFIED
+        _assert_verified_or_documented_regression(entry)
         assert entry.language == "English"
 
 

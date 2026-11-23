@@ -756,7 +756,7 @@ def test_source_with_no_source_id_never_gets_a_source_status_row(tmp_path, monke
 # ============================================================
 
 from src.data_access.daily_news import editorial_pipeline
-from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY
+from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, eligible_for_polling
 
 _CNBC_TOP_NEWS_URL = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
 _KOREA_HERALD_URL = "https://www.koreaherald.com/rss/kh_Business"
@@ -934,7 +934,7 @@ def test_one_editorial_source_failure_reported_with_correct_aggregate_and_does_n
 
     output = capsys.readouterr().out
     assert "Daily News worker: editorial discovery completed with source failures" in output
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY))}" in output
     assert "source_failures=1" in output
     assert "Daily News worker: editorial source failed — cnbc-top-news-rss (CNBC): HTTPError:503" in output
     # The Space Force item still published despite CNBC's failure.
@@ -1226,7 +1226,7 @@ def test_issuer_source_additions_do_not_change_the_registry_derived_editorial_ag
     # Proves the editorial aggregate's sources_polled is derived from
     # EDITORIAL_SOURCE_REGISTRY alone (unchanged by this batch), not from
     # PILOT_FEEDS/RUNTIME_SOURCE_REGISTRY (which grew by 3 in this batch).
-    from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY
+    from src.data_access.daily_news.source_registry import EDITORIAL_SOURCE_REGISTRY, eligible_for_polling
 
     _mock_fetch({}, monkeypatch)
     monkeypatch.setattr(daily_news_worker, "PILOT_FEEDS", (_SAMSUNG_SOURCE, _MURATA_SOURCE, _MICROCHIP_SOURCE))
@@ -1236,7 +1236,7 @@ def test_issuer_source_additions_do_not_change_the_registry_derived_editorial_ag
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY))}" in output
 
 # ============================================================
 # Gated market-news source expansion (design/DECISIONS.md) — the
@@ -1251,7 +1251,7 @@ from src.data_access.daily_news.source_registry import GATED_MARKET_NEWS_SOURCE_
 
 def test_gated_market_news_source_dormant_by_default(tmp_path, monkeypatch, capsys):
     """Default (empty) allow-list: sources_polled stays exactly
-    len(EDITORIAL_SOURCE_REGISTRY) — no gated source is ever added, and
+    the eligible editorial count — no gated source is ever added, and
     no network call to the gated source's own URL occurs."""
     call_urls: list[str] = []
 
@@ -1268,7 +1268,7 @@ def test_gated_market_news_source_dormant_by_default(tmp_path, monkeypatch, caps
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY))}" in output
     gated_urls = {e.canonical_url for e in GATED_MARKET_NEWS_SOURCE_REGISTRY}
     assert not (gated_urls & set(call_urls))
 
@@ -1294,7 +1294,7 @@ def test_gated_market_news_source_included_when_explicitly_allow_listed(tmp_path
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 1}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)) + 1}" in output
     light_reading = next(e for e in GATED_MARKET_NEWS_SOURCE_REGISTRY if e.source_id == "light-reading-rss")
     assert light_reading.canonical_url in call_urls
 
@@ -1312,7 +1312,7 @@ def test_gated_market_news_allow_list_does_not_affect_unlisted_gated_sources(tmp
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY))}" in output
 
 
 # ============================================================
@@ -1329,7 +1329,7 @@ from src.data_access.daily_news.source_registry import GATED_JP_KR_SOURCE_REGIST
 
 def test_gated_jp_kr_source_dormant_by_default(tmp_path, monkeypatch, capsys):
     """Default (empty) allow-list: sources_polled stays exactly
-    len(EDITORIAL_SOURCE_REGISTRY) — no gated JP/KR source is ever
+    the eligible editorial count — no gated JP/KR source is ever
     added, and no network call to any of their URLs occurs."""
     call_urls: list[str] = []
 
@@ -1346,7 +1346,7 @@ def test_gated_jp_kr_source_dormant_by_default(tmp_path, monkeypatch, capsys):
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY)}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY))}" in output
     gated_urls = {e.canonical_url for e in GATED_JP_KR_SOURCE_REGISTRY}
     assert not (gated_urls & set(call_urls))
 
@@ -1373,7 +1373,7 @@ def test_gated_jp_kr_sources_included_when_explicitly_allow_listed(tmp_path, mon
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 2}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)) + 2}" in output
     industries = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-industries-rss")
     sci_tech = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-science-tech-rss")
     assert industries.canonical_url in call_urls
@@ -1397,7 +1397,7 @@ def test_gated_jp_kr_allow_list_is_independent_of_the_gated_market_news_allow_li
 
     output = capsys.readouterr().out
     # +1 for light-reading-rss only, never +1 for any JP/KR source too.
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 1}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)) + 1}" in output
 
 
 def test_kr_and_light_reading_rollout_combination_enables_exactly_the_three_intended_sources(
@@ -1430,7 +1430,7 @@ def test_kr_and_light_reading_rollout_combination_enables_exactly_the_three_inte
     daily_news_worker.run_one_tick(worker_settings, scan_status_repository)
 
     output = capsys.readouterr().out
-    assert f"sources_polled={len(EDITORIAL_SOURCE_REGISTRY) + 3}" in output
+    assert f"sources_polled={len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)) + 3}" in output
     light_reading = next(e for e in GATED_MARKET_NEWS_SOURCE_REGISTRY if e.source_id == "light-reading-rss")
     industries = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-industries-rss")
     sci_tech = next(e for e in GATED_JP_KR_SOURCE_REGISTRY if e.source_id == "businesskorea-science-tech-rss")

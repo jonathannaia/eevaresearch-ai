@@ -265,11 +265,31 @@ def test_default_source_entries_are_gated_by_the_same_contract(tmp_path, recordi
 
 # --- no behavior change for today's real registries ----------------------
 
-def test_every_editorial_registry_entry_is_eligible_today(tmp_path):
-    """This patch disables nothing: the shipped editorial registry is
-    entirely eligible, so sources_polled is unchanged for every
-    existing caller and assertion."""
-    assert len(eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)) == len(EDITORIAL_SOURCE_REGISTRY)
+def test_only_documented_regressions_are_excluded_from_the_editorial_registry(tmp_path):
+    """Originally asserted that the whole editorial registry is eligible.
+    That was true the day it was written and is a claim about the world,
+    not about this code: the first publisher to block the worker made it
+    false. What must hold permanently is that an entry is excluded only
+    deliberately — a non-polling health state plus a note saying what
+    was observed — and never silently."""
+    eligible = eligible_for_polling(EDITORIAL_SOURCE_REGISTRY)
+    excluded = [e for e in EDITORIAL_SOURCE_REGISTRY if e not in eligible]
+
+    for entry in excluded:
+        assert entry.health_state in (SourceHealthState.FAILING, SourceHealthState.RETIRED), (
+            f"{entry.source_id}: excluded from polling by something other than its health state"
+        )
+        assert "REGRESSED" in entry.notes, (
+            f"{entry.source_id}: excluded from polling with no REGRESSED note recording what was "
+            f"observed, when, and what would re-verify it"
+        )
+
+    # The live set must stay a live set. If this ever trips, sources are
+    # being disabled faster than they are being fixed or replaced.
+    assert len(eligible) >= len(EDITORIAL_SOURCE_REGISTRY) * 0.8, (
+        f"only {len(eligible)} of {len(EDITORIAL_SOURCE_REGISTRY)} editorial sources are still "
+        f"eligible — more than a fifth of the registry is switched off"
+    )
 
 
 def test_gated_registries_remain_controlled_by_their_own_allow_lists():

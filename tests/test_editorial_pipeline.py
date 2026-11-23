@@ -5,6 +5,8 @@ convention. Uses a real temp cache_dir (pytest's tmp_path), never the
 production data/cache/ directory."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 import os
 
 import pytest
@@ -907,8 +909,13 @@ def test_the_register_pair_shares_attribution_and_cross_feed_deduplicates(tmp_pa
     # test_same_title_different_publisher_is_not_a_duplicate above gives
     # for two genuinely DIFFERENT publishers, mirrored here for the
     # SAME publisher across two feeds.
-    headlines = _batch_2_source("the-register-headlines-rss")
-    on_prem = _batch_2_source("the-register-on-prem-rss")
+    # Both of The Register's feeds are marked FAILING in the registry
+    # (the publisher's edge blocks the deployed worker, 2026-11-23), so
+    # the real entries would be skipped before any fetch. This test is
+    # about shared-attribution deduplication, not eligibility, so it
+    # restores VERIFIED on the fixtures and leaves the registry alone.
+    headlines = replace(_batch_2_source("the-register-headlines-rss"), health_state=SourceHealthState.VERIFIED)
+    on_prem = replace(_batch_2_source("the-register-on-prem-rss"), health_state=SourceHealthState.VERIFIED)
     assert headlines.attribution_label == on_prem.attribution_label == "The Register"
 
     shared_title = "Oracle Corporation expands AI cloud datacenter footprint"
