@@ -339,14 +339,109 @@ def test_relationship_context_is_unavailable_on_main_and_never_invented(tmp_path
     assert result.error.kind is ToolErrorKind.REGISTRY_UNAVAILABLE and "not merged" in result.detail
 
 
-def test_relationship_context_maps_edges_once_the_registry_loader_exists(tmp_path, monkeypatch):
-    edge = SimpleNamespace(subject_issuer_id="fabrinet", object_issuer_id="coherent", relationship_type=SimpleNamespace(value="competitor"),
+def _rel_edge():
+    return SimpleNamespace(subject_issuer_id="fabrinet", object_issuer_id="coherent", relationship_type=SimpleNamespace(value="competitor"),
                            status=SimpleNamespace(value="active"), confidence="high", evidence_ids=("rel-ev-1",))
-    fake_loader = SimpleNamespace(load_relationship_registry_or_none=lambda: SimpleNamespace(edges=[edge]))
-    monkeypatch.setattr(get_validated_relationship_context, "importlib", SimpleNamespace(util=SimpleNamespace(find_spec=lambda n: object()), import_module=lambda n: fake_loader))
+
+
+def _patch_loader(monkeypatch, tmp_path, load_fn):
+    """Present a loader module to the tool and a seed file on disk, so
+    only the loader's own return value is under test."""
+    seed = tmp_path / "eevaresearch_relationship_seed.yaml"
+    seed.write_text("registry_version: 1\n", encoding="utf-8")
+    monkeypatch.setattr(get_validated_relationship_context, "_SEED_PATH", seed)
+    monkeypatch.setattr(get_validated_relationship_context, "importlib", SimpleNamespace(
+        util=SimpleNamespace(find_spec=lambda n: object()),
+        import_module=lambda n: SimpleNamespace(load_relationship_registry_or_none=load_fn),
+    ))
+
+
+def test_relationship_context_maps_edges_once_the_registry_loader_exists(tmp_path, monkeypatch):
+    """The loader's real contract, taken from the seed branch itself:
+    it takes the seed path and returns (registry | None, error | None).
+    This test previously stubbed `lambda: SimpleNamespace(edges=[...])` —
+    no path, registry returned bare — which is not the contract the
+    branch actually ships, so it proved the tool worked against an
+    invented loader."""
+    _patch_loader(monkeypatch, tmp_path, lambda path: (SimpleNamespace(edges=[_rel_edge()]), None))
     result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet", "coherent")
     assert result.status is RelationshipContextStatus.AVAILABLE and len(result.edges) == 1
     assert (result.edges[0].relationship_type, result.edges[0].direction, result.edges[0].counterparty_issuer_id) == ("competitor", "issuer_to_counterparty", "coherent")
+
+
+def test_relationship_context_passes_the_seed_path_the_loader_requires(tmp_path, monkeypatch):
+    """The branch's loader has no default path and raises TypeError
+    without one. Calling it with no argument is what made the old call
+    site fail on merge."""
+    seen = {}
+
+    def loader(path):
+        seen["path"] = path
+        return SimpleNamespace(edges=[]), None
+
+    _patch_loader(monkeypatch, tmp_path, loader)
+    result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+    assert result.status is RelationshipContextStatus.AVAILABLE
+    assert seen["path"].name == "eevaresearch_relationship_seed.yaml"
+
+
+def test_relationship_context_is_unavailable_when_the_loader_returns_a_bare_registry(tmp_path, monkeypatch):
+    """The trap this tool exists to avoid. A loader that returns the
+    registry bare instead of a 2-tuple must not read as "no
+    relationships": a non-None object passed the old None-check, and
+    `getattr(obj, "edges", ())` then produced AVAILABLE with zero edges —
+    the agent concluding an issuer has no validated relationships when
+    twelve exist and we simply failed to read them."""
+    _patch_loader(monkeypatch, tmp_path, lambda path: SimpleNamespace(edges=[_rel_edge()]))
+    result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+    assert result.status is RelationshipContextStatus.UNAVAILABLE and result.edges == ()
+    assert result.error.kind is ToolErrorKind.REGISTRY_UNAVAILABLE
+
+
+def test_relationship_context_is_unavailable_when_the_registry_has_no_edges_attribute(tmp_path, monkeypatch):
+    """Same invariant one level deeper: an object that is not a registry
+    must be rejected, not silently treated as an empty one."""
+    _patch_loader(monkeypatch, tmp_path, lambda path: (SimpleNamespace(relationships=[]), None))
+    result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+    assert result.status is RelationshipContextStatus.UNAVAILABLE and result.edges == ()
+
+
+def test_relationship_context_reports_the_loaders_own_error_when_it_fails_closed(tmp_path, monkeypatch):
+    _patch_loader(monkeypatch, tmp_path, lambda path: (None, "relationship_edges.orphaned_evidence_id:r-1:e-9"))
+    result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+    assert result.status is RelationshipContextStatus.UNAVAILABLE
+    assert "orphaned_evidence_id" in result.detail
+
+
+def test_relationship_context_is_unavailable_when_the_seed_file_is_absent(tmp_path, monkeypatch):
+    """A present loader with an absent seed is still UNAVAILABLE, never
+    an empty registry."""
+    monkeypatch.setattr(get_validated_relationship_context, "_SEED_PATH", tmp_path / "nope.yaml")
+    monkeypatch.setattr(get_validated_relationship_context, "importlib", SimpleNamespace(
+        util=SimpleNamespace(find_spec=lambda n: object()),
+        import_module=lambda n: SimpleNamespace(load_relationship_registry_or_none=lambda path: (SimpleNamespace(edges=[]), None)),
+    ))
+    result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+    assert result.status is RelationshipContextStatus.UNAVAILABLE and "seed file absent" in result.detail
+
+
+def test_relationship_context_never_returns_available_with_zero_edges_on_any_loader_fault(tmp_path, monkeypatch):
+    """The single invariant that matters, asserted across every fault
+    shape at once: AVAILABLE means "we read the registry". An empty
+    edge list is only ever a real answer about a real registry."""
+    faults = (
+        lambda path: SimpleNamespace(edges=[]),                 # bare registry, not a tuple
+        lambda path: (SimpleNamespace(edges=[]), None, "extra"),  # wrong tuple arity
+        lambda path: (object(), None),                          # no edges attribute
+        lambda path: (SimpleNamespace(edges="not-a-sequence"), None),
+        lambda path: (None, "load failed"),
+        lambda path: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    for fault in faults:
+        _patch_loader(monkeypatch, tmp_path, fault)
+        result = get_validated_relationship_context.run(_context(tmp_path, issuer_id="fabrinet"), "fabrinet")
+        assert result.status is RelationshipContextStatus.UNAVAILABLE, fault
+        assert result.edges == (), fault
 
 
 def test_official_sources_come_only_from_the_registered_ir_domain_and_regulator_allowlist(tmp_path, registry):
