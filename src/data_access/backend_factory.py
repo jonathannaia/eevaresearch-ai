@@ -101,6 +101,7 @@ from src.data_access.postgres_state_db import research_repository as postgres_re
 from src.data_access.postgres_state_db import theme_matching_repository as postgres_theme_matching
 from src.data_access.postgres_state_db import theme_repository as postgres_themes
 from src.data_access.postgres_state_db import feedback_repository as postgres_feedback
+from src.data_access.postgres_state_db import account_entitlement_repository as postgres_entitlements
 from src.data_access.postgres_state_db import user_account_repository as postgres_user_accounts
 from src.data_access.postgres_state_db import user_preferences_repository as postgres_user_preferences
 from src.data_access.postgres_state_db import agent_repository as postgres_agent_store
@@ -122,6 +123,7 @@ from src.data_access.state_db import research_repository as sqlite_research
 from src.data_access.state_db import theme_matching_repository as sqlite_theme_matching
 from src.data_access.state_db import theme_repository as sqlite_themes
 from src.data_access.state_db import feedback_repository as sqlite_feedback
+from src.data_access.state_db import account_entitlement_repository as sqlite_entitlements
 from src.data_access.state_db import user_account_repository as sqlite_user_accounts
 from src.data_access.state_db import user_preferences_repository as sqlite_user_preferences
 from src.data_access.state_db import agent_repository as sqlite_agent_store
@@ -149,6 +151,14 @@ from src.models.feedback_submission import (
     FeedbackRole,
     FeedbackSubmission,
     FeedbackTrackingWorkflow,
+)
+from src.models.account_access import (
+    AccessEvent,
+    AccessRequest,
+    AccessStatus,
+    AccessTier,
+    AccountEntitlement,
+    EntitlementConflictError,
 )
 from src.models.user_account import UserAccount
 from src.models.user_preferences import UserPreferences, is_theme_preference
@@ -1800,6 +1810,243 @@ def get_user_account_repository(settings: Settings) -> UserAccountRepositoryProt
     if backend == "postgres":
         return PostgresUserAccountRepository(conn=_require_postgres_connection(settings))
     return JsonUserAccountRepository(cache_dir=settings.cache_dir)
+
+
+# --- Account entitlement repository — paid professional access, phase 1.
+# Who may use EevaResearch and on what basis. Same three-backend shape
+# and ambient backend selection as UserAccountRepository above.
+#
+# ABSENCE MEANS NO ACCESS, in all three backends. get_entitlement
+# returns None for an unknown account and no read path ever creates a
+# row, so an empty store denies everyone rather than admitting everyone
+# — the opposite of the open beta's empty-allowlist behaviour, and the
+# reason this is a separate mechanism rather than a new allowlist.
+#
+# The JSON backend exists for local development, same as every
+# repository above, and is NOT a supported production store for this
+# table: it has no transactions, so the "entitlement and event commit
+# together" guarantee the two database backends enforce is
+# best-effort there. src/logic/account_access.py's decision does not
+# depend on that guarantee, but an audit trail does, which is why
+# enforcement in production runs on Postgres.
+
+class AccountEntitlementRepositoryProtocol(Protocol):
+    def get_entitlement(self, email: str) -> AccountEntitlement | None: ...
+    def list_entitlements(self, statuses: tuple[AccessStatus, ...] | None = None) -> list[AccountEntitlement]: ...
+    def list_events(self, email: str) -> list[AccessEvent]: ...
+    def request_access(self, email: str, request: AccessRequest, now: str) -> AccountEntitlement: ...
+    def set_status(
+        self, email: str, status: AccessStatus, *, tier: AccessTier | None, actor: str, now: str,
+        expires_at: str | None = None, detail: str = "", expected_status: AccessStatus | None = None,
+    ) -> AccountEntitlement: ...
+
+
+def _entitlements_json_path(cache_dir: Path) -> Path:
+    return cache_dir / "account_entitlements.json"
+
+
+def _load_json_entitlements(cache_dir: Path) -> tuple[dict[str, AccountEntitlement], list[AccessEvent]]:
+    path = _entitlements_json_path(cache_dir)
+    if not path.exists():
+        return {}, []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    entitlements = {}
+    for email, record in raw.get("entitlements", {}).items():
+        reason = record.get("request_reason")
+        entitlements[email] = AccountEntitlement(
+            email=email,
+            # Unrecognized values raise here exactly as they do in the
+            # database backends — access is never granted because a
+            # stored value failed to parse.
+            status=AccessStatus(record["status"]),
+            tier=AccessTier(record["tier"]) if record.get("tier") else None,
+            requested_at=record.get("requested_at"),
+            decided_at=record.get("decided_at"),
+            decided_by=record.get("decided_by"),
+            expires_at=record.get("expires_at"),
+            updated_at=record["updated_at"],
+            request=AccessRequest(
+                reason=reason,
+                organisation=record.get("request_organisation"),
+                role=record.get("request_role"),
+            ) if reason else None,
+        )
+    events = [
+        AccessEvent(
+            email=record["email"],
+            from_status=AccessStatus(record["from_status"]) if record.get("from_status") else None,
+            to_status=AccessStatus(record["to_status"]),
+            tier=AccessTier(record["tier"]) if record.get("tier") else None,
+            at=record["at"], actor=record["actor"], detail=record.get("detail", ""),
+        )
+        for record in raw.get("events", [])
+    ]
+    return entitlements, events
+
+
+def _save_json_entitlements(
+    cache_dir: Path, entitlements: dict[str, AccountEntitlement], events: list[AccessEvent]
+) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "entitlements": {
+            email: {
+                "status": e.status.value,
+                "tier": e.tier.value if e.tier else None,
+                "requested_at": e.requested_at,
+                "decided_at": e.decided_at,
+                "decided_by": e.decided_by,
+                "expires_at": e.expires_at,
+                "request_reason": e.request.reason if e.request else None,
+                "request_organisation": e.request.organisation if e.request else None,
+                "request_role": e.request.role if e.request else None,
+                "updated_at": e.updated_at,
+            }
+            for email, e in entitlements.items()
+        },
+        "events": [
+            {
+                "email": ev.email,
+                "from_status": ev.from_status.value if ev.from_status else None,
+                "to_status": ev.to_status.value,
+                "tier": ev.tier.value if ev.tier else None,
+                "at": ev.at, "actor": ev.actor, "detail": ev.detail,
+            }
+            for ev in events
+        ],
+    }
+    _entitlements_json_path(cache_dir).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class JsonAccountEntitlementRepository:
+    cache_dir: Path
+
+    def get_entitlement(self, email: str) -> AccountEntitlement | None:
+        entitlements, _ = _load_json_entitlements(self.cache_dir)
+        return entitlements.get(email.strip().lower())
+
+    def list_entitlements(self, statuses: tuple[AccessStatus, ...] | None = None) -> list[AccountEntitlement]:
+        entitlements, _ = _load_json_entitlements(self.cache_dir)
+        values = list(entitlements.values())
+        if statuses is not None:
+            # An empty filter returns nothing, never everything — same
+            # contract as both database backends.
+            values = [e for e in values if e.status in statuses] if statuses else []
+        return sorted(values, key=lambda e: e.updated_at, reverse=True)
+
+    def list_events(self, email: str) -> list[AccessEvent]:
+        normalized = email.strip().lower()
+        _, events = _load_json_entitlements(self.cache_dir)
+        return sorted([ev for ev in events if ev.email == normalized], key=lambda ev: ev.at)
+
+    def request_access(self, email: str, request: AccessRequest, now: str) -> AccountEntitlement:
+        normalized = email.strip().lower()
+        entitlements, events = _load_json_entitlements(self.cache_dir)
+        existing = entitlements.get(normalized)
+        if existing is not None and existing.status not in (AccessStatus.REQUESTED, AccessStatus.DENIED):
+            raise EntitlementConflictError(
+                f"access request refused: account already has status {existing.status.value!r}"
+            )
+        entitlements[normalized] = AccountEntitlement(
+            email=normalized, status=AccessStatus.REQUESTED, tier=None, requested_at=now,
+            decided_at=None, decided_by=None, expires_at=None, updated_at=now, request=request,
+        )
+        events.append(AccessEvent(
+            email=normalized, from_status=existing.status if existing else None,
+            to_status=AccessStatus.REQUESTED, tier=None, at=now, actor=normalized,
+            detail="access requested",
+        ))
+        _save_json_entitlements(self.cache_dir, entitlements, events)
+        return entitlements[normalized]
+
+    def set_status(
+        self, email: str, status: AccessStatus, *, tier: AccessTier | None, actor: str, now: str,
+        expires_at: str | None = None, detail: str = "", expected_status: AccessStatus | None = None,
+    ) -> AccountEntitlement:
+        normalized = email.strip().lower()
+        entitlements, events = _load_json_entitlements(self.cache_dir)
+        existing = entitlements.get(normalized)
+        if expected_status is not None and (existing.status if existing else None) is not expected_status:
+            raise EntitlementConflictError(
+                f"expected status {expected_status.value!r}, found "
+                f"{existing.status.value if existing else 'no entitlement'!r}"
+            )
+        entitlements[normalized] = AccountEntitlement(
+            email=normalized, status=status, tier=tier,
+            requested_at=existing.requested_at if existing else None,
+            decided_at=now, decided_by=actor, expires_at=expires_at, updated_at=now,
+            request=existing.request if existing else None,
+        )
+        events.append(AccessEvent(
+            email=normalized, from_status=existing.status if existing else None, to_status=status,
+            tier=tier, at=now, actor=actor, detail=detail,
+        ))
+        _save_json_entitlements(self.cache_dir, entitlements, events)
+        return entitlements[normalized]
+
+
+@dataclass(frozen=True)
+class SqliteAccountEntitlementRepository:
+    conn: sqlite3.Connection
+
+    def get_entitlement(self, email: str) -> AccountEntitlement | None:
+        return sqlite_entitlements.get_entitlement(self.conn, email)
+
+    def list_entitlements(self, statuses: tuple[AccessStatus, ...] | None = None) -> list[AccountEntitlement]:
+        return sqlite_entitlements.list_entitlements(self.conn, statuses)
+
+    def list_events(self, email: str) -> list[AccessEvent]:
+        return sqlite_entitlements.list_events(self.conn, email)
+
+    def request_access(self, email: str, request: AccessRequest, now: str) -> AccountEntitlement:
+        return sqlite_entitlements.request_access(self.conn, email, request, now)
+
+    def set_status(
+        self, email: str, status: AccessStatus, *, tier: AccessTier | None, actor: str, now: str,
+        expires_at: str | None = None, detail: str = "", expected_status: AccessStatus | None = None,
+    ) -> AccountEntitlement:
+        return sqlite_entitlements.set_status(
+            self.conn, email, status, tier=tier, actor=actor, now=now,
+            expires_at=expires_at, detail=detail, expected_status=expected_status,
+        )
+
+
+@dataclass(frozen=True)
+class PostgresAccountEntitlementRepository:
+    conn: psycopg.Connection
+
+    def get_entitlement(self, email: str) -> AccountEntitlement | None:
+        return postgres_entitlements.get_entitlement(self.conn, email)
+
+    def list_entitlements(self, statuses: tuple[AccessStatus, ...] | None = None) -> list[AccountEntitlement]:
+        return postgres_entitlements.list_entitlements(self.conn, statuses)
+
+    def list_events(self, email: str) -> list[AccessEvent]:
+        return postgres_entitlements.list_events(self.conn, email)
+
+    def request_access(self, email: str, request: AccessRequest, now: str) -> AccountEntitlement:
+        return postgres_entitlements.request_access(self.conn, email, request, now)
+
+    def set_status(
+        self, email: str, status: AccessStatus, *, tier: AccessTier | None, actor: str, now: str,
+        expires_at: str | None = None, detail: str = "", expected_status: AccessStatus | None = None,
+    ) -> AccountEntitlement:
+        return postgres_entitlements.set_status(
+            self.conn, email, status, tier=tier, actor=actor, now=now,
+            expires_at=expires_at, detail=detail, expected_status=expected_status,
+        )
+
+
+def get_account_entitlement_repository(settings: Settings) -> AccountEntitlementRepositoryProtocol:
+    """Same `settings.db_backend` selection convention as
+    get_user_account_repository above."""
+    backend = _normalized_backend(settings)
+    if backend == "sqlite":
+        return SqliteAccountEntitlementRepository(conn=_require_sqlite_connection(settings))
+    if backend == "postgres":
+        return PostgresAccountEntitlementRepository(conn=_require_postgres_connection(settings))
+    return JsonAccountEntitlementRepository(cache_dir=settings.cache_dir)
 
 
 # --- User preferences repository — Theming + Typography release. The

@@ -31,6 +31,23 @@ def _parse_beta_auth_enabled(var_name: str) -> bool:
     return (os.getenv(var_name) or "").strip().lower() in _PRIVATE_BETA_TRUE_VALUES
 
 
+def _parse_positive_int(var_name: str, *, default: int) -> int:
+    """A strictly positive integer, or `default`. Unset, blank,
+    non-numeric, zero and negative all resolve to the default rather
+    than raising at import time — a malformed deployment variable must
+    not stop the app from starting, and must not silently become a
+    value that changes behaviour (a 0- or negative-day trial would be a
+    denial wearing a grant's clothes)."""
+    raw = (os.getenv(var_name) or "").strip()
+    if not raw:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
 def _parse_beta_allowed_emails(var_name: str) -> frozenset[str]:
     raw = os.getenv(var_name) or ""
     return frozenset(email for email in (part.strip().lower() for part in raw.split(",")) if email)
@@ -408,6 +425,33 @@ class Settings:
     # EEVA_, not EDGE_, per explicit product decision — every other
     # variable in this file uses EDGE_; this one deliberately doesn't.
     admin_emails: frozenset[str] = field(default_factory=lambda: _parse_beta_allowed_emails("EEVA_ADMIN_EMAILS"))
+    # Paid professional access, phase 1 — entitlement enforcement
+    # (src/logic/account_access.py). OFF by default, and the default is
+    # the important part: EevaResearch runs as an open beta where an
+    # empty allowlist means "allow", and entitlements invert that to
+    # "no row means no access". Enabling this while the entitlements
+    # table is empty would lock out every existing user on the deploy
+    # that applied the migration. So the order is migrate, backfill,
+    # verify, then enable — and this flag is what makes those four
+    # separate, reversible steps instead of one irreversible one.
+    #
+    # Same "unset/blank/unrecognized -> disabled" parsing as
+    # private_beta_auth_enabled above. Administrators (admin_emails)
+    # are allowed in regardless of this flag and regardless of the
+    # entitlement store, so turning it on can never lock the operator
+    # out of the page that turns it off again.
+    access_enforcement_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_ACCESS_ENFORCEMENT_ENABLED")
+    )
+    # Trial length an admin approval grants by default, in days. Only a
+    # default for the approval UI — the stored expires_at is what the
+    # decision actually reads, so changing this never alters an
+    # entitlement already granted. Unset, blank or unparseable resolves
+    # to 14; zero and negatives are rejected the same way, because a
+    # "0-day trial" is an access denial dressed as a grant.
+    access_trial_days: int = field(
+        default_factory=lambda: _parse_positive_int("EDGE_ACCESS_TRIAL_DAYS", default=14)
+    )
     # R2 remote-cache sync (dormant infrastructure — see
     # src/data_access/remote_cache/ — nothing in the app reads/writes
     # through these yet). Disabled by default so every existing page and

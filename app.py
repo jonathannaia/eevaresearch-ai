@@ -36,6 +36,8 @@ from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.container import get_repositories
 from src.logic.unread import seed_initial_last_seen
+from src.logic import account_access
+from src.ui import access_screens
 from src.ui.beta_gate import BetaGateReason, evaluate_beta_gate
 from src.ui.pages import (
     about,
@@ -295,6 +297,92 @@ if not _beta_allowed:
     st.error("This Google account does not have access to EevaResearch AI.")
     st.button("Sign out", on_click=st.logout)
     st.stop()
+
+# Paid professional access, phase 1 — entitlement gate
+# (src/logic/account_access.py). DORMANT by default: with
+# EDGE_ACCESS_ENFORCEMENT_ENABLED unset, evaluate_account_access()
+# returns ENFORCEMENT_DISABLED for everyone and this block changes
+# nothing, which is what lets the migration that creates the table
+# deploy without locking out every existing open-beta user. Enabling it
+# before real accounts have entitlement rows would do exactly that, so
+# the order is migrate, backfill, verify, then enable.
+#
+# Runs AFTER the mandatory sign-in gate and the open-beta allowlist gate
+# above — both of those still apply unchanged — and BEFORE any page,
+# nav or repository access, so a non-entitled visitor never triggers a
+# protected data read.
+#
+# The repository is constructed here and nowhere else in this file,
+# directly rather than via get_repositories()/AppContext, for the same
+# reason the user-account hook below does it: no other page should
+# connect to a table it does not need. It is read at most once per
+# browser session and the decision cached in session state, so this is
+# not a query per rerun.
+#
+# A read failure is NOT silently treated as "no entitlement". Those are
+# different facts and the person is told different things: one means
+# their request was never received, the other that we could not check.
+# Administrators are decided before the store is consulted at all, so
+# an entitlement-store outage can never lock the operator out of the
+# admin page that repairs it.
+if _beta_settings.access_enforcement_enabled:
+    _ACCESS_DECISION_KEY = "_account_access_decision"
+    _beta_is_admin = (_beta_email or "").strip().lower() in _beta_settings.admin_emails
+    if _ACCESS_DECISION_KEY not in st.session_state:
+        _entitlement = None
+        _entitlement_read_failed = False
+        if not _beta_is_admin:
+            # Skipped entirely for an administrator: evaluate_account_access
+            # decides ADMIN before it looks at any entitlement, so reading
+            # the store first would be a query whose result cannot change
+            # the answer — and, during an outage, a logged failure for the
+            # one person who must still get in.
+            try:
+                _entitlement = backend_factory.get_account_entitlement_repository(
+                    _beta_settings
+                ).get_entitlement(_beta_email)
+            except Exception:  # noqa: BLE001 — never leak a connection/config error, never fail open
+                # Exactly one sanitized line: event type only, never the
+                # email, the exception text, the backend or any connection
+                # detail. Same discipline as the sign-in hook below.
+                print("[app] Account entitlement read failed.")
+                _entitlement_read_failed = True
+        st.session_state[_ACCESS_DECISION_KEY] = account_access.evaluate_account_access(
+            _beta_settings,
+            email=_beta_email,
+            entitlement=_entitlement,
+            now=datetime.now(timezone.utc).isoformat(),
+            entitlement_read_failed=_entitlement_read_failed,
+        )
+
+    _access_decision = st.session_state[_ACCESS_DECISION_KEY]
+
+    if not _access_decision.allowed:
+        access_screens.render_status_message(_access_decision)
+        if _access_decision.reason in access_screens.REQUESTABLE_REASONS:
+            _already_submitted = st.session_state.get("_access_request_submitted", False)
+            _submitted_request = access_screens.render_request_form(
+                _beta_email, submitted_already=_already_submitted
+            )
+            if _submitted_request is not None:
+                try:
+                    backend_factory.get_account_entitlement_repository(_beta_settings).request_access(
+                        email=_beta_email,
+                        request=_submitted_request,
+                        now=datetime.now(timezone.utc).isoformat(),
+                    )
+                    st.session_state["_access_request_submitted"] = True
+                    # Drop the cached decision so the next rerun reflects
+                    # the row that now exists, rather than showing the
+                    # form again over a pending request.
+                    st.session_state.pop(_ACCESS_DECISION_KEY, None)
+                    st.rerun()
+                except Exception:  # noqa: BLE001 — never leak a storage error into the UI
+                    print("[app] Account access request write failed.")
+                    st.error("We could not record that request. Please try again shortly.")
+        st.button("Sign out", on_click=st.logout, key="access_denied_sign_out")
+        st.stop()
+
 
 # Admin Users v1 (design/DECISIONS.md) — records this authenticated,
 # allowed visitor's sign-in at most once per Streamlit browser session
