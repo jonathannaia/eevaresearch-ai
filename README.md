@@ -15,7 +15,7 @@ it passes a deterministic evidence policy.
 ## Stack
 
 - **Python 3.12** (`runtime.txt`), **Streamlit** UI (19 page modules, routed via `st.navigation`)
-- **PostgreSQL** in production (schema v25); SQLite (v23) and JSON backends also
+- **PostgreSQL** in production (schema v27); SQLite (v25) and JSON backends also
   implemented, selected by `EDGE_DB_BACKEND` via
   `src/data_access/backend_factory.py`
 - **psycopg 3** driver
@@ -48,8 +48,14 @@ only to run its tests or its worker.
 pytest -q
 ```
 
-~6,900 tests. A small number require a local Postgres container and skip
-cleanly without one:
+~7,000 tests. A clean checkout is green: the CI run on every pull request
+reports **6,647 passed, 312 skipped, 0 failed**. A clean checkout installs only
+`requirements.txt`, so the skips are structural — the Postgres-backed suites
+have no database and the agent suites have no agent runtime. The job summary
+prints the skip count for that reason: a green run with a large skip count is
+not the same as a green run.
+
+The Postgres suites do run against a real database if you give them one:
 
 ```bash
 scripts/postgres_test_container.sh .venv/bin/python -m pytest tests/test_backend_factory_postgres.py -q
@@ -59,14 +65,12 @@ That script starts one loopback-only, volume-less container, supplies a
 freshly-generated password through `EEVARESEARCH_PG_TEST_PASSWORD` for the
 duration of the command, and always removes the container afterwards.
 
-Two things to know before you read a failing run:
-
-- **Many tests are diff-scope guards.** They run `git diff --name-only HEAD`
-  and fail if a change touches files outside an approved set. They fail on *any*
-  uncommitted tracked modification and clear once you commit — a dirty tree
-  looks far more broken than it is.
-- **A clean checkout is not currently fully green.** See
-  `IMPLEMENTATION_NOTES.md` for the current list and why each one fails.
+One thing to know before you read a failing run: **many tests are diff-scope
+guards.** They run `git diff --name-only HEAD` and fail if a change touches
+files outside an approved set. They fail on *any* uncommitted tracked
+modification and clear once you commit — so a dirty working tree looks far more
+broken than it is. CI checks for a clean tree before running pytest, so that
+one failure reads clearly instead of twenty misleading ones.
 
 ## Deploy
 
