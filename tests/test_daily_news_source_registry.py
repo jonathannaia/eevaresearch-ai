@@ -41,33 +41,55 @@ from src.data_access.daily_news.source_registry import (
     validate_source_entry,
 )
 
-# A live registry entry must be VERIFIED — or, if it has since regressed,
-# must say so in its own notes and be excluded from polling. Asserting
-# bare VERIFIED made these guards point-in-time claims: the first source
-# a publisher blocked broke nine unrelated tests, which is how a guard
-# stops being read. This keeps the teeth that matter (nothing unverified
-# and undocumented sits in the live set) without re-breaking on every
-# upstream outage.
+# A live registry entry must be VERIFIED — or, if it has since
+# regressed, must say so in its own notes. Asserting bare VERIFIED made
+# these guards point-in-time claims: the first source a publisher
+# blocked broke nine unrelated tests, which is how a guard stops being
+# read.
+#
+# The first version of this helper then over-corrected, requiring every
+# non-VERIFIED entry to be excluded from polling. That quietly encoded
+# "regressed" as "switched off" and made DEGRADED unrepresentable —
+# which matters, because DEGRADED is precisely the state for a source
+# that still works sometimes and should still be polled. The registry's
+# own state machine distinguishes the two; this guard now does too.
 _NON_POLLING_HEALTH_STATES = frozenset({
+    SourceHealthState.FAILING,
+    SourceHealthState.RETIRED,
+})
+_REGRESSED_HEALTH_STATES = frozenset({
+    SourceHealthState.DEGRADED,
     SourceHealthState.FAILING,
     SourceHealthState.RETIRED,
 })
 
 
 def _assert_verified_or_documented_regression(entry) -> None:
+    """Teeth that matter: nothing unverified and undocumented sits in
+    the live set, and a health state always agrees with whether the
+    source is actually polled."""
     if entry.health_state == SourceHealthState.VERIFIED:
         return
-    assert entry.health_state in _NON_POLLING_HEALTH_STATES, (
+
+    assert entry.health_state in _REGRESSED_HEALTH_STATES, (
         f"{entry.source_id}: health_state {entry.health_state.value!r} is neither VERIFIED nor a "
-        f"non-polling state — a live registry entry may not sit in an unverified, still-polled state"
-    )
-    assert not is_eligible_for_polling(entry), (
-        f"{entry.source_id}: marked {entry.health_state.value!r} but still eligible for polling"
+        f"regression state — a live registry entry may not sit in an unverified limbo"
     )
     assert "REGRESSED" in entry.notes, (
         f"{entry.source_id}: marked {entry.health_state.value!r} with no REGRESSED note explaining "
         f"what was observed, when, and what would re-verify it"
     )
+    # The state and the polling behaviour must not disagree. A FAILING
+    # source that is still polled, or a DEGRADED one that is not, means
+    # the registry says one thing and the worker does another.
+    if entry.health_state in _NON_POLLING_HEALTH_STATES:
+        assert not is_eligible_for_polling(entry), (
+            f"{entry.source_id}: marked {entry.health_state.value!r} but still eligible for polling"
+        )
+    else:
+        assert is_eligible_for_polling(entry), (
+            f"{entry.source_id}: marked DEGRADED, which means still polled, but is not eligible"
+        )
 
 
 
