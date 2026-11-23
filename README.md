@@ -15,7 +15,7 @@ it passes a deterministic evidence policy.
 ## Stack
 
 - **Python 3.12** (`runtime.txt`), **Streamlit** UI (19 page modules, routed via `st.navigation`)
-- **PostgreSQL** in production (schema v27); SQLite (v25) and JSON backends also
+- **PostgreSQL** in production (schema v28); SQLite (v26) and JSON backends also
   implemented, selected by `EDGE_DB_BACKEND` via
   `src/data_access/backend_factory.py`
 - **psycopg 3** driver

@@ -1,7 +1,7 @@
 # Implementation Notes
 
 What is built, what is partial, and what is known-broken, as of 2026-11-23
-(`main` at `a25dde0`). The authoritative "why" for any decision here is
+(`main` at `127442d`). The authoritative "why" for any decision here is
 `design/DECISIONS.md`; this file is the index to current state.
 
 > This document previously described a demo-data "foundation phase" with 66
@@ -73,16 +73,24 @@ an email allowlist decision layer in `src/ui/beta_gate.py` (pure, no I/O).
 `EEVA_ADMIN_EMAILS` gates admin pages. The allowlist is authorization only —
 it cannot verify that an email belongs to the caller.
 
+There are now **two** access layers, and only the first is live. The beta gate
+above treats an empty allowlist as *allow*, which is what makes the open beta
+open. `src/logic/account_access.py` inverts that — a row grants access and
+nothing else does — but it is switched off (see the entitlements row below).
+Do not read one as a replacement for the other until enforcement is enabled;
+today the beta gate is the only thing deciding anything.
+
 ## Partial, dormant, or parked
 
 | Thing | State |
 |---|---|
+| **Account entitlements** (`src/models/account_access.py`, `src/logic/account_access.py`, `src/ui/access_screens.py`) | **Built, deployed and dormant.** Production is at Postgres v28 with `account_entitlements` and `account_access_events` created and **empty**. `EDGE_ACCESS_ENFORCEMENT_ENABLED` is unset, so `evaluate_account_access()` returns `ENFORCEMENT_DISABLED` for everyone and `app.py` never constructs the repository — the open beta's own gate is still the only gate. **Enabling it before backfilling locks out every existing user, because nobody has a row.** Order: migrate (done), backfill at `/admin-users`, verify, enable. Administrators (`EEVA_ADMIN_EMAILS`) are allowed in before enforcement, before the allowlist and before the store is read, so switching it on cannot lock the operator out of the page that switches it off. |
 | **Autonomous Research Agent** (`src/mcp_agent/`, `scripts/research_agent_worker.py`) | Fully built, **dormant by default** behind `EDGE_RESEARCH_AGENT_MODE` plus a publication kill switch and a shadow write-guard. Its Render service is **suspended**. Runtime deps isolated in `requirements-agent.txt`; the SDK's Linux wheel has **never been verified** on Render's runtime. |
 | **Read-only filing API** | Complete on the unmerged branch `feat/filing-read-api` (4 commits, unpushed): digest-based bearer auth, three projection policies, SQLite + Postgres adapters, gunicorn hosting, rate limiting, readiness gate. Verified locally end-to-end against a disposable Postgres. **Never deployed, and the branch is local-only — never pushed.** Needs a least-privilege DB role and restricted network access first. It is also the only non-Streamlit HTTP surface in the project, so anything needing a webhook endpoint depends on its fate. |
 | **LLM filing comparison** | Parked on `feat/llm-filing-comparison`. A synthetic-only smoke test ran; use against real filings is not cleared. |
 | **R2 remote cache** (`src/data_access/remote_cache/`) | Code exists, explicitly dormant. Nothing imports it at runtime; `boto3` is only reached through a lazy import that never fires. |
 | **Demo backend** (`src/data_access/demo/`, `data/seed/`) | Still the default when `EDGE_DB_BACKEND` is unset. Used by local dev and a large part of the test suite. |
-| **Unmerged work** | 3 worktrees and 8 local branches. Four open PRs: #108, #111 and #112 (drafts) and the `rescue/daily-news-cohort1-sources` branch, which has no PR pending a scope-guard exception. |
+| **Unmerged work** | Three open draft PRs: #108, #111 and #112, plus the `rescue/daily-news-cohort1-sources` branch, which has no PR pending a scope-guard exception. `feat/supply-chain-relationship-seed-v1` holds a validated 12-relationship seed that nothing calls; see PR #118's own discussion for why it was not merged. |
 
 There are **no `TODO`/`FIXME`/`XXX`/`HACK` comments** anywhere in `src/`,
 `scripts/` or `app.py`. Incomplete work is tracked in `design/` and in module
