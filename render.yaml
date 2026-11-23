@@ -1,0 +1,209 @@
+# Render Blueprint for EevaResearch.
+#
+# WHY THIS FILE EXISTS. Until now every service setting lived only in the
+# Render dashboard, with no record in the repository. That made the
+# deployment unreviewable — the only way to learn that a worker was
+# deploying from a feature branch, or that four DSN variables pointed at
+# one database, was to open the dashboard and look.
+#
+# THIS FILE IS A RECORD, NOT AN INSTRUCTION. It is written to MATCH the
+# services as they exist, so that adopting it would change nothing by
+# surprise. Committing it does not apply it: Render reads a Blueprint
+# only for services that belong to a Blueprint instance, and every
+# service here was created by hand in the dashboard. They keep their
+# dashboard configuration until someone deliberately creates a
+# Blueprint from this repository. Verified before this file was
+# committed: the Render account has no Blueprint instance pointing at
+# this repository.
+#
+# ENVIRONMENT VARIABLES ARE DECLARED, NOT DEFINED. Every `sync: false`
+# below means "this value is set in the dashboard and must not be
+# published here". No secret, DSN, key or token belongs in this file.
+# The names are listed so the required configuration is reviewable; the
+# values stay where they are.
+#
+# TWO SERVICES ARE DELIBERATELY ABSENT:
+#
+#   1. eeva-review-64d82127ad, a throwaway UI-review deployment that ran
+#      `review/ui-3d1e4a870f` — a branch whose only commit describes
+#      itself as a "throwaway review-mode gate", 566 commits behind main
+#      and conflicting with it. It is suspended in the dashboard and
+#      should be retired, not codified here. The branch is kept on the
+#      remote only because the suspended service still pins it.
+#
+#   2. eevaresearch-research-agent-worker, also suspended. Adding it to a
+#      Blueprint would recreate a service that is deliberately off.
+#      Re-add it when the autonomous agent is enabled.
+#
+# DATABASES ARE NOT DECLARED. The two Postgres instances
+# (eevaresearch-radar-db, eeva-radar-beta-db) are omitted on purpose: a
+# `databases:` block here could create or reshape a live datastore that
+# four services depend on. They stay dashboard-managed until that is a
+# deliberate, separately-reviewed decision. Note that all four live
+# services point at eevaresearch-radar-db and the same database within
+# it; eeva-radar-beta-db is unused.
+
+services:
+  # --- Streamlit dashboard, app.eevaresearch.com -------------------------
+  #
+  # render_start.sh generates .streamlit/secrets.toml from the
+  # environment before exec'ing Streamlit, because app.py reads st.user
+  # on every page load and Streamlit raises without an [auth] section.
+  - type: web
+    name: eevaresearch-ai
+    runtime: python
+    plan: standard
+    region: ohio
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash scripts/render_start.sh
+    envVars:
+      - key: EDGE_DB_BACKEND
+        sync: false
+      - key: EDGE_STATE_DB_URL
+        sync: false
+      - key: EDGE_DART_API_KEY
+        sync: false
+      - key: EDGE_EDGAR_USER_AGENT
+        sync: false
+      - key: EDGE_EDGAR_DISCOVERY_ENABLED
+        sync: false
+      - key: EDGE_EDINET_SUBSCRIPTION_KEY
+        sync: false
+      - key: EDGE_TRANSLATION_API_KEY
+        sync: false
+      - key: EDGE_PRIVATE_BETA_AUTH_ENABLED
+        sync: false
+      - key: EDGE_AUTH_COOKIE_SECRET
+        sync: false
+      - key: EDGE_AUTH_REDIRECT_URI
+        sync: false
+      - key: EDGE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: EDGE_GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: EDGE_GOOGLE_SERVER_METADATA_URL
+        sync: false
+      - key: EEVA_ADMIN_EMAILS
+        sync: false
+      - key: EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED
+        sync: false
+
+  # --- Radar worker: continuous filing scans -----------------------------
+  #
+  # Reads EDGE_RADAR_WORKER_* for its database, not the generic pair.
+  # _build_worker_settings() overrides db_backend and state_db_url from
+  # the worker-specific variables, so EDGE_DB_BACKEND and
+  # EDGE_STATE_DB_URL are currently set on this service and IGNORED for
+  # database selection. They are deliberately not declared here.
+  - type: worker
+    name: eevaresearch-radar-worker
+    runtime: python
+    plan: starter
+    region: ohio
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m scripts.radar_worker
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: EDGE_RADAR_WORKER_DB_BACKEND
+        sync: false
+      - key: EDGE_RADAR_WORKER_STATE_DB_URL
+        sync: false
+      - key: EDGE_RADAR_LIVE_SCAN_ENABLED
+        sync: false
+      - key: EDGE_RADAR_LIVE_SCAN_PROVIDERS
+        sync: false
+      - key: EDGE_RADAR_SCAN_INTERVAL_MINUTES
+        sync: false
+      - key: EDGE_THEME_CANDIDATE_DETECTION_ENABLED
+        sync: false
+      - key: EDGE_DART_API_KEY
+        sync: false
+      - key: EDGE_EDGAR_USER_AGENT
+        sync: false
+      - key: EDGE_EDGAR_DISCOVERY_ENABLED
+        sync: false
+      - key: EDGE_EDINET_SUBSCRIPTION_KEY
+        sync: false
+      - key: EDGE_EDINET_MATERIAL_EVENT_LEXICON_ENABLED
+        sync: false
+      - key: EDGE_TRANSLATION_API_KEY
+        sync: false
+      - key: EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED
+        sync: false
+
+  # --- Daily News worker: feed discovery ---------------------------------
+  #
+  # Requires Postgres: _build_worker_settings() rejects anything but
+  # "postgres" for live mode.
+  - type: worker
+    name: eevaresearch-daily-news-worker
+    runtime: python
+    plan: starter
+    region: ohio
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m scripts.daily_news_worker
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: EDGE_DAILY_NEWS_WORKER_DB_BACKEND
+        sync: false
+      - key: EDGE_DAILY_NEWS_WORKER_STATE_DB_URL
+        sync: false
+      - key: EDGE_DAILY_NEWS_LIVE_SCAN_ENABLED
+        sync: false
+      - key: EDGE_DAILY_NEWS_ENABLED_SOURCES
+        sync: false
+      - key: EDGE_DAILY_NEWS_ENABLED_SOURCES_JP_KR
+        sync: false
+      - key: EDGE_DAILY_NEWS_SCAN_INTERVAL_MINUTES
+        sync: false
+      - key: EDGE_RESEARCH_AGENT_PUBLICATION_KILL_SWITCH_ENABLED
+        sync: false
+
+  # --- Company Discovery worker: passive candidate ledger ----------------
+  #
+  # Deployed from `feat/issuer-registry-foundation` until 2026-11-22,
+  # a branch fully merged into main since 2026-09-05 that held nothing
+  # main did not (verified: 0 commits ahead, 0 unique commits). It had
+  # been running ~475 commits behind for no benefit, and failing every
+  # tick against a schema it no longer matched. Repointed to `main`.
+  - type: worker
+    name: eevaresearch-company-discovery
+    runtime: python
+    plan: starter
+    region: ohio
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -u -m scripts.company_discovery_worker
+    envVars:
+      - key: EDGE_COMPANY_DISCOVERY_WORKER_DB_BACKEND
+        sync: false
+      - key: EDGE_COMPANY_DISCOVERY_WORKER_STATE_DB_URL
+        sync: false
+      - key: EDGE_COMPANY_DISCOVERY_LIVE_ENABLED
+        sync: false
+      - key: EDGE_COMPANY_DISCOVERY_ADMIN_ENABLED
+        sync: false
+      - key: EDGE_COMPANY_DISCOVERY_SCAN_INTERVAL_MINUTES
+        sync: false
+      - key: EDGE_COMPANY_DISCOVERY_STALE_DAYS
+        sync: false
+
+  # --- Marketing site, eevaresearch.com ----------------------------------
+  #
+  # Plain static files; no build step and no package.json in landing/.
+  - type: web
+    name: eevaresearch-landing
+    runtime: static
+    branch: main
+    autoDeploy: true
+    buildCommand: ""
+    staticPublishPath: ./landing

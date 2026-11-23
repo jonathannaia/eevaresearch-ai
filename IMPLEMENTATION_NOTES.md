@@ -130,11 +130,17 @@ verification against code.
 
 ### Deployment configuration
 
-- **No tracked `render.yaml`, `Procfile` or `Dockerfile`.** Every service
-  setting exists only in the Render dashboard.
-- **`eevaresearch-company-discovery` deploys from `feat/issuer-registry-foundation`**,
-  not `main` — merging to `main` does not update it. A review web service runs
-  from `review/ui-3d1e4a870f` similarly.
+- **`render.yaml` is tracked but not authoritative.** It mirrors the live
+  dashboard configuration so the deployment is reviewable here; Render ignores
+  it, because no service belongs to a Blueprint instance. The dashboard remains
+  the source of truth until a Blueprint is deliberately created. No `Procfile`
+  or `Dockerfile` is tracked.
+- **All five live services now deploy from `main`.** Until 2026-11-22
+  `eevaresearch-company-discovery` deployed from `feat/issuer-registry-foundation`
+  — fully merged since 2026-09-05, so it ran ~475 commits behind and failed
+  every tick against a schema it no longer matched. The `review/ui-3d1e4a870f`
+  review service is suspended; its branch is kept only because that suspended
+  service still pins it.
 - **Two Postgres datastores exist; only one is used.** All live services point
   at the same database; the second is referenced by nothing.
 - **Four independently-settable DSN variables point at the same database**, so
