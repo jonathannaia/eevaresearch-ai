@@ -1,7 +1,7 @@
 # Implementation Notes
 
-What is built, what is partial, and what is known-broken, as of 2026-11-19
-(`main` at `e827320`). The authoritative "why" for any decision here is
+What is built, what is partial, and what is known-broken, as of 2026-11-23
+(`main` at `a25dde0`). The authoritative "why" for any decision here is
 `design/DECISIONS.md`; this file is the index to current state.
 
 > This document previously described a demo-data "foundation phase" with 66
@@ -78,11 +78,11 @@ it cannot verify that an email belongs to the caller.
 | Thing | State |
 |---|---|
 | **Autonomous Research Agent** (`src/mcp_agent/`, `scripts/research_agent_worker.py`) | Fully built, **dormant by default** behind `EDGE_RESEARCH_AGENT_MODE` plus a publication kill switch and a shadow write-guard. Its Render service is **suspended**. Runtime deps isolated in `requirements-agent.txt`; the SDK's Linux wheel has **never been verified** on Render's runtime. |
-| **Read-only filing API** | Complete on the unmerged branch `feat/filing-read-api` (4 commits, unpushed): digest-based bearer auth, three projection policies, SQLite + Postgres adapters, gunicorn hosting, rate limiting, readiness gate. Verified locally end-to-end against a disposable Postgres. **Never deployed.** Needs a least-privilege DB role and restricted network access first. |
+| **Read-only filing API** | Complete on the unmerged branch `feat/filing-read-api` (4 commits, unpushed): digest-based bearer auth, three projection policies, SQLite + Postgres adapters, gunicorn hosting, rate limiting, readiness gate. Verified locally end-to-end against a disposable Postgres. **Never deployed, and the branch is local-only — never pushed.** Needs a least-privilege DB role and restricted network access first. It is also the only non-Streamlit HTTP surface in the project, so anything needing a webhook endpoint depends on its fate. |
 | **LLM filing comparison** | Parked on `feat/llm-filing-comparison`. A synthetic-only smoke test ran; use against real filings is not cleared. |
 | **R2 remote cache** (`src/data_access/remote_cache/`) | Code exists, explicitly dormant. Nothing imports it at runtime; `boto3` is only reached through a lazy import that never fires. |
 | **Demo backend** (`src/data_access/demo/`, `data/seed/`) | Still the default when `EDGE_DB_BACKEND` is unset. Used by local dev and a large part of the test suite. |
-| **Unmerged work** | ~12 active worktrees and dozens of branches; 30 uncommitted design documents in `design/`. |
+| **Unmerged work** | 3 worktrees and 8 local branches. Four open PRs: #108, #111 and #112 (drafts) and the `rescue/daily-news-cohort1-sources` branch, which has no PR pending a scope-guard exception. |
 
 There are **no `TODO`/`FIXME`/`XXX`/`HACK` comments** anywhere in `src/`,
 `scripts/` or `app.py`. Incomplete work is tracked in `design/` and in module
@@ -91,28 +91,41 @@ look, not a grep.
 
 ## Known issues
 
-### Clean-checkout test failures (12 on `main` at `e827320`)
+### Clean-checkout test failures — resolved 2026-11-22
 
-`pytest -q` on a pristine checkout: **12 failed, 6615 passed, 287 skipped**
-out of 6,914 collected.
+`pytest -q` on a pristine checkout failed **12** tests for a long time, which
+trained everyone — human and assistant — to skim past failures. PR #113 fixed
+all 12 and added CI, so a clean checkout is now green: **6,647 passed, 312
+skipped, 0 failed**.
 
-- `test_backend_factory_phase2b.py::test_phase2b_files_never_reference_real_local_state_or_real_signal_ids`
-- `test_candidate_persistence_phase3a.py::test_phase3a_files_never_reference_real_local_state_or_real_signal_ids`
-- `test_state_db_candidate_repository.py::test_phase3b0_files_never_reference_real_local_state_or_real_signal_ids`
-- `test_coverage_page.py::test_coverage_page_shows_both_seed_and_discovery_tables_with_expected_row_counts`
-- `test_coverage_page.py::test_coverage_page_summary_metrics_match_registry_counts`
-- `test_evidence_packet_phase1.py::test_no_new_document_fetch_or_forbidden_dependency_introduced`
-- `test_evidence_packet_phase2_step2.py::test_no_forbidden_imports_introduced_in_phase2_step2_files`
-- `test_issuer_coverage.py::test_country_filter_returns_expected_subset`
-- `test_issuer_coverage.py::test_source_filter_returns_expected_subset`
-- `test_radar_public_read_only.py::test_radar_card_shows_only_the_approved_public_fields`
-- `test_ui_audit_phase_r1.py::test_card_shows_original_and_english_translation`
-- `test_ui_audit_phase_t1.py::test_phase_t1_does_not_add_a_dependency_other_than_tzdata`
+**Every one of the 12 was an outdated test, not a bug.** No production code
+changed. One theme ran through all of them: *point-in-time claims implemented
+as permanent assertions* — each was true the day it was written and became
+false as the repository moved. Where possible the replacement asserts a
+property that cannot drift (derived counts, bounded document slices, field
+presence instead of exact prose) rather than a new fixed value.
 
-These are long-standing, not new regressions. Diagnosis per test is pending.
+| Tests | Cause → fix |
+|---|---|
+| 3 | A `DECISIONS.md` phase section was sliced marker→EOF; the file is append-only, so later sections got swallowed → bound the slice to the phase's own `## ` heading |
+| 4 | Registry sizes hardcoded (105 seed, 10 DART…); the registry grew to 129 → derive counts from `SEED_ISSUERS`/`DISCOVERY_STUBS` |
+| 2 | Phase-scoped guards forbade `daily_news` imports but read files' *current* contents; the filing-event bridge is deliberate → drop that clause, keep the rest |
+| 1 | Diffed the working tree against `HEAD:requirements.txt`, so it could only pass *before* its own commit → assert the dependency as a property |
+| 1 | Asserted the original excerpt is never shown; it is now deliberately shown and labelled → assert the honesty invariant instead |
+| 1 | Asserted one exact composed sentence; the card was redesigned → assert the fields individually |
 
-The exact set is base-dependent: at `f803dca` (24 commits earlier) it is 11,
-without `test_radar_public_read_only`. Measure before citing a number.
+Adding CI immediately found three more failure classes that only a clean
+environment can expose, and which had been masked locally:
+
+| Tests | Cause → fix |
+|---|---|
+| 5 modules | Agent suites raised `ModuleNotFoundError` at **collection** time without `requirements-agent.txt`, aborting the whole run → module-level `pytest.importorskip` |
+| 6 + 2 | `requirements.txt` allows `streamlit>=1.38,<2.0`; a fresh install gets a newer Streamlit where `AppTest.query_params.get()` returns a scalar, not a one-element list → normalise in the test rather than pin the dependency |
+| 1 | A test asserted a live Japan Times fetch returns 403 — true from one IP, 200 from GitHub's runners → gate behind `EEVARESEARCH_RUN_LIVE_NETWORK_TESTS` so the suite has no default network dependency |
+
+The lasting lesson is the second table, not the first: "it passes locally" was
+not the same as "it passes," and nothing surfaced the difference until a check
+ran somewhere else.
 
 ### Diff-scope guards
 
