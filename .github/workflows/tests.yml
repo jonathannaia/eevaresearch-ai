@@ -1,0 +1,87 @@
+# Run the test suite on every pull request.
+#
+# Until now the only workflow in this repository was manual-scan.yml,
+# which is `workflow_dispatch` only — so no pull request has ever had a
+# check attached to it, and "no checks" has been silently indistinguishable
+# from "checks passed". That is the gap this closes.
+#
+# WHAT THIS DOES NOT COVER. The Postgres-backed tests skip without a
+# reachable database (tests/_postgres_test_support.py fails soft by
+# design), so a green run here does NOT exercise the Postgres backend.
+# The skip count is printed in the summary for exactly that reason:
+# read it, do not assume it is zero.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch; a new push supersedes an in-flight run.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: several tests read the repository's own git
+          # state, and a shallow clone makes those fail or pass
+          # vacuously rather than testing what they describe.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches runtime.txt (python-3.12), which is what Render runs.
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Confirm the working tree is clean
+        # Many tests are diff-scope guards: they run `git diff --name-only
+        # HEAD` and fail on any tracked modification. A dirty tree here
+        # would produce a wall of failures that say nothing about the
+        # change under review, so fail early and plainly instead.
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::working tree is not clean; diff-scope guards will misreport"
+            git status --porcelain --untracked-files=no
+            exit 1
+          fi
+
+      - name: Run tests
+        run: pytest -q --junitxml=junit.xml
+
+      - name: Summarise
+        if: always()
+        run: |
+          python - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          p = pathlib.Path("junit.xml")
+          if not p.exists():
+              print("no junit.xml produced"); raise SystemExit(0)
+          s = ET.parse(p).getroot()
+          suite = s if s.tag == "testsuite" else s.find("testsuite")
+          g = lambda k: int(suite.get(k, 0))
+          total, failures, errors, skipped = g("tests"), g("failures"), g("errors"), g("skipped")
+          out = pathlib.Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
+          out.write_text(
+              f"## pytest\n\n"
+              f"| passed | failed | errors | skipped | total |\n|---|---|---|---|---|\n"
+              f"| {total - failures - errors - skipped} | {failures} | {errors} | {skipped} | {total} |\n\n"
+              f"Postgres-backed tests skip without a database; a non-zero skip "
+              f"count is expected here and does not mean they passed.\n"
+          )
+          PY

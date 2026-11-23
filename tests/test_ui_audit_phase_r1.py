@@ -205,10 +205,30 @@ def test_card_shows_original_and_english_translation(tmp_path):
     all_text = _text(at)
     assert "Why this matters:" not in all_text
     assert "Why flagged:" not in all_text
-    # No stored translation — Summary is the neutral metadata fallback;
-    # the native excerpt is reachable only behind its own toggle.
-    assert "삼성전자 filed Facility Investment — 신규시설투자등 결정 on Aug 12, 2026." in all_text
-    assert "신규시설투자등 관련 원문" not in all_text
+
+    # The card's identifying fields, asserted individually.
+    #
+    # This used to assert one exact sentence — "삼성전자 filed Facility
+    # Investment — 신규시설투자등 결정 on Aug 12, 2026." — produced by the
+    # pre-redesign metadata fallback. The Filings surface was since
+    # redesigned (d0312c5, and 430336a for typography and
+    # original-language tagging): issuer and ticker now render as their
+    # own line and the title as its own element, so the sentence no
+    # longer exists anywhere in the output.
+    #
+    # The contract this test exists to protect is WHICH FIELDS appear,
+    # not the prose that once joined them. Asserting the fields
+    # individually keeps that intact and stops a layout change from
+    # failing a test about field presence.
+    assert candidate.filing.corp_name in all_text
+    assert candidate.filing.stock_code in all_text
+    assert "신규시설투자등 결정" in all_text
+    assert "Filed Aug 12, 2026" in all_text
+    # Original-language text is tagged for what it is, wherever it is
+    # shown (see tests/test_radar_public_read_only.py for the honesty
+    # invariant this supports).
+    assert 'lang="ko"' in all_text
+
     original_toggle = [b for b in at.button if b.label == "View original filing excerpt"]
     assert len(original_toggle) == 1
 

@@ -16,6 +16,24 @@ from src.data_access.state_db import agent_repository as sqlite_agent
 from src.data_access.state_db import connection, schema
 from src.logic import agent_persistence
 from src.logic.publication_policy import POLICY_VERSION, PolicyDecision, PublicationDecision, RowResult
+import pytest
+
+# The autonomous research agent's runtime lives in requirements-agent.txt,
+# not requirements.txt: the dashboard and the three workers never import
+# it, and claude-agent-sdk bundles a large platform-specific binary. A
+# checkout following README's quickstart therefore does NOT have it.
+#
+# Without this guard those absent packages are a COLLECTION ERROR, which
+# aborts the whole run — `pytest -q` exits 2 and reports nothing about
+# the thousands of tests that would otherwise pass. Skipping is the same
+# fail-soft contract tests/_postgres_test_support.py already uses for the
+# Postgres backend: the dependency is optional, so its absence skips its
+# tests and leaves the rest of the suite meaningful.
+#
+# Install requirements-agent.txt to actually run these.
+pytest.importorskip("claude_agent_sdk", reason="agent runtime not installed (requirements-agent.txt)")
+pytest.importorskip("mcp", reason="agent runtime not installed (requirements-agent.txt)")
+
 from src.mcp_agent.contracts import (
     Claim,
     ClaimCategory,

@@ -7,6 +7,7 @@ become an ingestion path."""
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,10 @@ def test_mcp_package_is_imported_only_by_the_server():
     assert any(_matches(n, ("mcp",)) for n in _imports(SERVER))
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("claude_agent_sdk") is None,
+    reason="agent runtime not installed (requirements-agent.txt)",
+)
 def test_worker_is_dormant_by_default_and_never_ticks(monkeypatch):
     monkeypatch.delenv("EDGE_RESEARCH_AGENT_LIVE_ENABLED", raising=False)
     import scripts.research_agent_worker as worker
@@ -78,6 +83,10 @@ def test_worker_is_dormant_by_default_and_never_ticks(monkeypatch):
     assert worker.main([]) == 0
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("claude_agent_sdk") is None,
+    reason="agent runtime not installed (requirements-agent.txt)",
+)
 def test_worker_refuses_to_run_live_without_its_service_credential(monkeypatch):
     monkeypatch.setenv("EDGE_RESEARCH_AGENT_LIVE_ENABLED", "1")
     monkeypatch.delenv("EDGE_RESEARCH_AGENT_SERVICE_TOKEN", raising=False)
