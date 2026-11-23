@@ -180,8 +180,10 @@ and module docstrings instead, and in a large number of unmerged branches.
   its `_build_worker_settings()` overrides them.
 - **Three of four services connect over the external database hostname**
   rather than Render's internal one **(inferred: avoidable latency)**.
-- **No `render.yaml`, `Procfile` or `Dockerfile` is tracked** — all deployment
-  configuration lives only in the Render dashboard, with no record in the repo.
+- **`render.yaml` is tracked as a record only** — it mirrors the dashboard so
+  the deployment is reviewable, but Render does not read it: no service belongs
+  to a Blueprint instance, so the dashboard is still the source of truth. No
+  `Procfile` or `Dockerfile` is tracked.
 - **Streamlit secrets are generated at boot** by `scripts/render_start.sh`
   because `app.py` touches `st.user` on every page load and raises without an
   `[auth]` section — a fragile startup coupling.

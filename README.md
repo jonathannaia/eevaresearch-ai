@@ -70,9 +70,15 @@ Two things to know before you read a failing run:
 
 ## Deploy
 
-Push to `main` and Render auto-deploys. Deployment configuration currently lives
-**only in the Render dashboard** — there is no tracked `render.yaml`, `Procfile`
-or `Dockerfile`.
+Push to `main` and Render auto-deploys. There is no `Procfile` or `Dockerfile`.
+
+`render.yaml` records the five live services as they are configured today, so
+the deployment is reviewable in the repository instead of only in the
+dashboard. **It is a record, not an instruction:** every service was created by
+hand, none belongs to a Blueprint instance, and Render therefore does not read
+this file. Changing it changes nothing until someone deliberately creates a
+Blueprint from it. Environment variables are listed by name with `sync: false`
+— no value, secret or DSN is published there.
 
 | Service | Type | Start command |
 |---|---|---|
