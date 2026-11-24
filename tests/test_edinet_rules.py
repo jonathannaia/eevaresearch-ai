@@ -56,12 +56,34 @@ _REAL_DOMESTIC_SPECIFIED_SECURITIES_EXTRAORDINARY_KEY = "030:995000:180"  # 臨�
 _REAL_CORRECTED_EXTRAORDINARY_REPORT_KEY = "010:053001:190"  # 訂正臨時報告書
 
 
-def test_default_code_category_map_has_exactly_three_real_entries():
-    assert DEFAULT_CODE_CATEGORY_MAP == {
-        _REAL_ANNUAL_REPORT_KEY: "annual_securities_report",
-        _REAL_SHARE_BUYBACK_STATUS_KEY: "share_buyback_status",
-        _REAL_EXTRAORDINARY_REPORT_KEY: "extraordinary_report",
-    }
+def test_the_three_originally_verified_entries_are_still_mapped_unchanged():
+    """EXPECTATION WIDENED, 2026-11-24. This asserted the map held
+    exactly three entries — correct while three was all that had been
+    live-verified. A verification pass against EDINET's own
+    documents.json (1,721 documents over five publication days,
+    2026-11-14..23) established twenty-three more, each observed with
+    its official docDescription read back.
+
+    What must still hold is that the original three are untouched, and
+    that every entry is a real triplet rather than a guess. The
+    exact-equality form could only ever be true until the next
+    verified document type, which is the wrong thing for a guard to
+    assert."""
+    assert DEFAULT_CODE_CATEGORY_MAP[_REAL_ANNUAL_REPORT_KEY] == "annual_securities_report"
+    assert DEFAULT_CODE_CATEGORY_MAP[_REAL_SHARE_BUYBACK_STATUS_KEY] == "share_buyback_status"
+    assert DEFAULT_CODE_CATEGORY_MAP[_REAL_EXTRAORDINARY_REPORT_KEY] == "extraordinary_report"
+
+
+def test_every_mapped_triplet_is_well_formed_and_corporate():
+    """The shape guard that replaces exact equality. ordinanceCode 010
+    is ordinary corporate disclosure; 030 is investment trusts and 060
+    is third-party shareholding reporting, both high-volume and
+    neither a tracked issuer's own event."""
+    for triplet, category in DEFAULT_CODE_CATEGORY_MAP.items():
+        parts = triplet.split(":")
+        assert len(parts) == 3, triplet
+        assert parts[0] == "010", f"{triplet} is not the corporate-disclosure ordinance"
+        assert category and category.islower(), triplet
 
 
 def test_evaluate_document_default_map_matches_only_the_real_annual_report_tuple():
@@ -109,12 +131,18 @@ def test_evaluate_document_default_map_does_not_match_domestic_specified_securit
     assert result.matched_rules == ()
 
 
-def test_evaluate_document_default_map_does_not_match_corrected_extraordinary_report_variant():
-    # 訂正臨時報告書 (corrected/amended) — a different docTypeCode from
-    # the base rule; must remain unmapped.
+def test_the_corrected_extraordinary_report_variant_is_now_mapped_separately():
+    """EXPECTATION INVERTED, 2026-11-24. 訂正臨時報告書 was deliberately
+    unmapped while amendments were excluded outright. They are now
+    admitted with their OWN category, which is the point: an amendment
+    never inherits the original's tier, it resolves to Watchlist by
+    prefix and is lifted only on evidence of changed amounts or terms
+    (filing_signal_tiers.tier_for_amendment)."""
     result = evaluate_document("010", "053001", "190")
-    assert result.confidence is None
-    assert result.matched_rules == ()
+    assert result.matched_rules == ("amended_extraordinary_report:010:053001:190",)
+    assert result.matched_rules[0].startswith("amended_"), (
+        "an amendment must be distinguishable from the document it amends, by category alone"
+    )
 
 
 def test_evaluate_document_default_map_does_not_match_fictional_codes():

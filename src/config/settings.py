@@ -440,6 +440,20 @@ class Settings:
     # are allowed in regardless of this flag and regardless of the
     # entitlement store, so turning it on can never lock the operator
     # out of the page that turns it off again.
+    # Filings -> Signals bridge (2026-11-24). OFF by default. With this
+    # unset, filing-derived stories are never projected and the Signals
+    # feed is news-only, exactly as today — so the deploy that adds the
+    # bridge changes nothing and the flag can be switched off again
+    # instantly if the feed looks wrong. Same "unset/blank/unrecognized
+    # -> disabled" parsing as every flag above.
+    filing_signals_enabled: bool = field(
+        default_factory=lambda: _parse_beta_auth_enabled("EDGE_FILING_SIGNALS_ENABLED")
+    )
+    # How far back the bridge looks on each tick. Bounded so a restart
+    # cannot replay the entire filing history into the feed in one go.
+    filing_signals_lookback_days: int = field(
+        default_factory=lambda: _parse_positive_int("EDGE_FILING_SIGNALS_LOOKBACK_DAYS", default=7)
+    )
     access_enforcement_enabled: bool = field(
         default_factory=lambda: _parse_beta_auth_enabled("EDGE_ACCESS_ENFORCEMENT_ENABLED")
     )

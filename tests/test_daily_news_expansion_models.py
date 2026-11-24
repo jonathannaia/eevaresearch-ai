@@ -111,11 +111,33 @@ def test_edinet_only_share_buyback_and_extraordinary_report_are_accepted():
     assert validate_filing_event_category(FilingSourceSystem.EDINET, "extraordinary_report")
 
 
-def test_edinet_annual_securities_report_is_explicitly_rejected():
-    # This batch's own explicit correction: annual securities reports are
-    # NOT Daily News eligible at all, unlike share_buyback_status/
-    # extraordinary_report.
-    assert not validate_filing_event_category(FilingSourceSystem.EDINET, "annual_securities_report")
+def test_edinet_annual_securities_report_is_now_eligible():
+    """EXPECTATION INVERTED, 2026-11-24 (Filings -> Signals bridge).
+
+    Annual securities reports were excluded from Daily News on the
+    reasoning that most of EDINET_CATEGORIES was an unbacked
+    structural placeholder. That was true of the taxonomy tuple and is
+    not true of DEFAULT_CODE_CATEGORY_MAP: every category reachable
+    there is now backed by a triplet observed in EDINET's own
+    documents.json with its docDescription read back.
+
+    The allowed set is derived from that map rather than listed
+    separately, so a verified triplet and an eligible category cannot
+    drift apart."""
+    assert validate_filing_event_category(FilingSourceSystem.EDINET, "annual_securities_report")
+
+
+def test_edinet_eligibility_still_refuses_an_unverified_category():
+    """The restriction that matters is unchanged: eligibility comes
+    from the verified map, not from the broader taxonomy tuple. A
+    category that exists in EDINET_CATEGORIES but has no verified
+    triplet is still rejected."""
+    from src.data_access.edinet.edinet_rules import EDINET_CATEGORIES, DEFAULT_CODE_CATEGORY_MAP
+
+    unverified = sorted(set(EDINET_CATEGORIES) - set(DEFAULT_CODE_CATEGORY_MAP.values()))
+    assert unverified, "this test is meaningless if the taxonomy and the map are identical"
+    for category in unverified:
+        assert not validate_filing_event_category(FilingSourceSystem.EDINET, category), category
 
 
 def test_unrecognized_category_is_rejected_for_every_source_system():
