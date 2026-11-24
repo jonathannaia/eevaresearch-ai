@@ -64,7 +64,45 @@ EIGHT_K_ITEM_CATEGORIES: dict[str, str] = {
     "5.02": "governance_or_management_change",
     "7.01": "regulation_fd_disclosure",
     "8.01": "other_material_event",  # SEC's own documented catch-all provision
+    # Added 2026-11-24, after re-extracting fourteen 8-Ks that had sat
+    # in the "items pending" state. Anchoring their excerpts on the
+    # item header showed what they actually were, and not one was a
+    # type this map knew:
+    #
+    #   5.07  eight filings   Oracle, Western Digital, Coherent,
+    #                         Lumentum, SanDisk, Modine, Credo, Aehr
+    #   3.02  two filings     Qualcomm, AMD
+    #   9.01  two filings     IBM (x2)
+    #   5.03  one filing      SanDisk
+    #
+    # They were being excluded correctly and described wrongly. An
+    # unmapped item reads as "we could not resolve this", which is what
+    # led me to report eight lost material filings that were in fact
+    # annual-meeting housekeeping. Naming them makes the exclusion a
+    # statement rather than a gap — and stops the next reader reaching
+    # the same wrong conclusion.
+    "3.02": "unregistered_equity_sale",
+    "5.03": "charter_amendment",
+    "5.07": "shareholder_vote_results",
+    "9.01": "financial_statements_and_exhibits",
 }
+
+#: Item categories that are NAMED but never admitted to Daily News.
+#: Recorded here, beside the map, so the distinction between "unknown"
+#: and "known and not wanted" is visible in one place.
+#:
+#: 5.07 is the outcome of a shareholder vote already announced; 9.01 is
+#: an index of attachments to another item in the same filing; 5.03 is
+#: a charter or fiscal-year-end amendment. All three are procedural.
+#: 7.01 (Reg FD) and 8.01 (SEC's catch-all) were already excluded by
+#: the adapter and are listed here for completeness.
+NAMED_BUT_EXCLUDED_ITEM_CATEGORIES: frozenset[str] = frozenset({
+    "shareholder_vote_results",          # 5.07
+    "financial_statements_and_exhibits", # 9.01
+    "charter_amendment",                 # 5.03
+    "regulation_fd_disclosure",          # 7.01
+    "other_material_event",              # 8.01
+})
 
 # Non-8-K form types handled directly by form type (complete signal at
 # scan time — no item-number-style sub-detail exists for these).
