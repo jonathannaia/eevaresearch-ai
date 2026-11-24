@@ -108,6 +108,32 @@ def test_a_genuine_event_is_not_capped(headline, why):
     assert not reasons[0].startswith("watchlist_cap:"), reasons
 
 
+def test_a_sampling_plan_is_not_a_commercial_outcome():
+    """The exception that nearly swallowed the rule. The live Penguin
+    item ends "customer samples expected in 2027", and a bare
+    \bcustomers?\b in the exception kept it at High Signal — a
+    trade-show demo surviving the trade-show cap through its own
+    escape hatch. A sampling plan is neither an agreement nor a
+    launch."""
+    tier, reasons = classify_editorial_story(
+        "Penguin shows off photonic memory box at SC26 that can expand AI accelerator capacity "
+        "over optical links - device sports up to 576GB of HBM3E, customer samples expected in 2027",
+        HARD_GATE_BODY, NEWS,
+    )
+    assert tier is NewsMaterialityTier.WATCHLIST, reasons
+    assert reasons[0].startswith("watchlist_cap:trade_show_demo:"), reasons
+
+
+@pytest.mark.parametrize("headline", [
+    "Acme demos its 3nm chip, now shipping to customers",
+    "Beta showcases its accelerator and signs a supply agreement",
+    "Gamma shows off HBM4 at CES with a design win at a hyperscaler",
+])
+def test_a_real_commercial_outcome_still_lifts_a_trade_show_headline(headline):
+    tier, reasons = classify_editorial_story(headline, HARD_GATE_BODY, NEWS)
+    assert tier is NewsMaterialityTier.HIGH_SIGNAL, reasons
+
+
 def test_a_trade_show_demo_with_a_commercial_outcome_keeps_its_tier():
     """Showing a product is not news; selling it is. The exception
     exists because the most material announcements at a conference are

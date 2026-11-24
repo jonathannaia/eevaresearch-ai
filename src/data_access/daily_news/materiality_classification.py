@@ -1239,7 +1239,8 @@ _CORPORATE_ACTION_HEADLINE_PATTERN = re.compile(
     r"appeals?|appealed|indicts?|indicted|fines?|fined|"
     # Deploy and test. Both describe something a company DID, as
     # distinct from something it is thinking about.
-    r"tests?|tested|deploys?|deployed|certifi(?:es|ed)|qualifies|qualified)\b",
+    r"tests?|tested|deploys?|deployed|certifi(?:es|ed)|qualifies|qualified|"
+    r"ships?|shipping|shipped|delivers?|delivered)\b",
     re.IGNORECASE,
 )
 
@@ -1334,9 +1335,18 @@ _WATCHLIST_CAP_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 #: shipping date, general availability, a design win. Showing a
 #: product is not news; selling it is.
 _COMMERCIAL_OUTCOME_PATTERN = re.compile(
-    r"\b(?:order|orders|contract|contracts|customers?|design win|"
-    r"general availability|ships?|shipping|shipment|volume production|"
-    r"mass production|supply agreement|purchase agreement|letter of intent)\b",
+    # Transactions and commitments.
+    r"\b(?:orders?|contracts?|design win|supply agreement|purchase agreement|"
+    r"letter of intent|signs?|signed)\b"
+    # Shipping for real, not a plan to sample later.
+    r"|\b(?:general availability|now shipping|begins? shipping|starts? shipping|"
+    r"volume production|mass production)\b"
+    # A customer, but only where one is actually engaged. Bare
+    # "customer" is far too loose: "customer samples expected in 2027"
+    # is a sampling plan, and it kept the live Penguin trade-show item
+    # at High Signal through this very exception.
+    r"|\b(?:with|for|to)\s+(?:its\s+|three\s+|two\s+|several\s+|major\s+)?customers?\b"
+    r"|\bcustomer (?:order|contract|win|agreement|commitment)s?\b",
     re.IGNORECASE,
 )
 
