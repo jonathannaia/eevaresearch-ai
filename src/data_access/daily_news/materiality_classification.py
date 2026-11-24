@@ -1095,6 +1095,131 @@ def _classify_core(
     return NewsMaterialityTier.BACKGROUND, ("off_taxonomy_no_anchor",)
 
 
+# --- Headline ceiling (editorial lane only) ---------------------------
+# Signals ranking fix (2026-11-23). Every gate above runs over
+# headline + "\n" + excerpt, and the excerpt is the publisher's lede:
+# arbitrary prose, dense with numbers and jargon. That let the excerpt
+# decide the tier on its own while the headline — the one line that
+# actually states the event — contributed nothing.
+#
+# Measured on the live feed, both of these reached High Signal with a
+# headline that scores BACKGROUND entirely on its own:
+#   "Homelabber's second-gen Optane build uses two RTX 3090s"
+#       -> taxonomy_anchored_consequence, from excerpt text alone
+#   "Act fast to score Intel's Core i7-14700K for its lowest price"
+#       -> quantified_change:price cut, from excerpt text alone
+#
+# WHAT THIS IS NOT. The first version of this fix required the headline
+# to clear a full gate by itself. That broke thirteen existing positive
+# controls, and they were right to break: "Nvidia Raises GPU Prices by
+# 15% Amid Tariff Pressures" plainly states a material event, but the
+# anchor keyword list holds the phrase "price increase", which that
+# headline does not contain. Requiring a headline to satisfy a
+# keyword-and-number gate on its own rejects most real corporate news,
+# because headlines are written in English rather than in gate
+# vocabulary.
+#
+# WHAT IT IS. The headline must merely CARRY A MATERIALITY SIGNAL — a
+# taxonomy phrase, an anchor keyword, a number, formal-action or
+# earnings language, or a definitive transaction. That is a far weaker
+# test than a gate, and it is the right one: it asks "is this headline
+# about a corporate event at all", not "does this headline prove the
+# event is material". The excerpt keeps every bit of its power to
+# SUPPLY the proof; what it can no longer do is supply the subject too.
+#
+# ISSUER LANE IS EXEMPT. A company's own disclosure carries its
+# materiality in the body by convention — the headline is the issuer's
+# framing, often promotional, and "NVIDIA AI Factory Compute Is
+# Becoming an Investable Asset Class" introduces a real $500bn
+# financing commitment. Third-party editorial is where the noise was
+# measured and where this applies.
+#
+# Capping never goes below WATCHLIST. An item whose excerpt shows real
+# relevance is relevant; it just has not shown that the headline event
+# is material, and Watchlist is exactly that statement.
+
+_HEADLINE_CEILING_REASON_PREFIX = "headline_ceiling_applied"
+
+# Headlines state events with VERBS; every other vocabulary in this
+# module is nouns, which is why a headline-only test built from them
+# rejected "KSAT Selected by Intuitive Machines..." — a real contract
+# award with no anchor noun in it. Agent verbs only: a company doing
+# something. Deliberately excludes "launch" (a product word, and
+# already a space-taxonomy noun) and "report" (covered by the earnings
+# vocabulary), both of which would otherwise match hedged geopolitical
+# headlines like "Reports: Russia may launch...".
+_CORPORATE_ACTION_HEADLINE_PATTERN = re.compile(
+    r"\b(?:select(?:s|ed)?|award(?:s|ed)?|wins?|won|sign(?:s|ed)?|order(?:s|ed)?|"
+    r"acquir(?:es?|ed)|buys?|bought|sells?|sold|divests?|appoint(?:s|ed)?|names?|named|"
+    r"promot(?:es?|ed)|reinstat(?:es?|ed)|resigns?|steps? down|ousts?|"
+    r"rais(?:es?|ed)|cuts?|lowers?|hikes?|expand(?:s|ed)|invest(?:s|ed)|"
+    r"partner(?:s|ed)|secur(?:es?|ed)|agree(?:s|d)|complet(?:es?|ed)|"
+    r"halts?|paus(?:es?|ed)|suspend(?:s|ed)|recalls?|settl(?:es?|ed)|"
+    r"approv(?:es?|ed)|files?|filed|unveils?|commits?|committed)\b",
+    re.IGNORECASE,
+)
+
+
+def _headline_carries_materiality_signal(headline: str) -> bool:
+    """Pure. True when the headline alone shows any sign of describing a
+    corporate event. Deliberately permissive — this decides only
+    whether the excerpt is allowed to carry an item to the top of the
+    feed, so a false positive here costs one Watchlist-worthy item
+    appearing as High Signal, while a false negative hides real news."""
+    if not headline:
+        return False
+    return bool(
+        _matched_taxonomy_buckets(headline)
+        or _matched_anchor_keywords(headline, _MATERIALITY_ANCHOR_KEYWORDS)
+        or _has_numeric_magnitude(headline)
+        or _contains_any(headline, _FORMAL_ACTION_KEYWORDS)
+        or _contains_any(headline, _EARNINGS_KEYWORDS)
+        or _matched_dividend_actions(headline)
+        or _definitive_transaction_hit(headline)
+        or _CORPORATE_ACTION_HEADLINE_PATTERN.search(headline)
+    )
+
+
+def _apply_headline_ceiling(
+    combined: tuple[NewsMaterialityTier, tuple[str, ...]], headline: str,
+    *, is_primary_disclosure: bool = False,
+) -> tuple[NewsMaterialityTier, tuple[str, ...]]:
+    """Pure. Returns `combined` unchanged unless it reached HIGH_SIGNAL
+    on a headline that carries no materiality signal at all — in which
+    case the tier drops to WATCHLIST and the original gate is preserved
+    in the reasons, behind a marker naming what happened. Nothing is
+    ever raised here, so this can only reduce what reaches the top of
+    the feed."""
+    combined_tier, combined_reasons = combined
+    if combined_tier is not NewsMaterialityTier.HIGH_SIGNAL:
+        return combined
+    if is_primary_disclosure:
+        # A filing or a regulator action is material because of WHAT IT
+        # IS. Its headline is a form name or a docket line and was never
+        # written to carry the event, so a headline test says nothing
+        # about it.
+        return combined
+    if _headline_carries_materiality_signal(headline):
+        return combined
+    capped_from = combined_reasons[0] if combined_reasons else "unknown"
+    return NewsMaterialityTier.WATCHLIST, (
+        f"{_HEADLINE_CEILING_REASON_PREFIX}:{capped_from}",
+    ) + combined_reasons
+
+
+def _editorial_is_primary_disclosure(text: str, source_category: SourceCategory) -> bool:
+    """Extracted only so the shape of the primary-disclosure test stays
+    readable now that classify_editorial_story does more than one thing."""
+    return (
+        source_category == SourceCategory.OFFICIAL_FILING
+        or source_category in _GOVERNMENT_CATEGORY_QUALIFIES_BY_CATEGORY_ALONE
+        or (
+            source_category in _GOVERNMENT_CATEGORY_REQUIRES_ANCHOR
+            and bool(_contains_any(text, _FORMAL_ACTION_KEYWORDS))
+        )
+    )
+
+
 def classify_issuer_story(
     headline: str | None, excerpt: str | None, source_class: SourceClass,
     *, issuer_names: IssuerNameForms | None = None,
@@ -1115,6 +1240,8 @@ def classify_issuer_story(
     text = _combined_text(headline, excerpt)
     if issuer_names is not None and not _issuer_is_named(text, issuer_names):
         return NewsMaterialityTier.BACKGROUND, ("issuer_not_named",)
+    # No headline ceiling here — see its own comment above for why a
+    # first-party issuer disclosure is exempt.
     return _classify_core(
         text, is_primary_disclosure=(source_class == SourceClass.REGULATORY_FILING),
         is_independent_news=False, headline=headline or "", issuer_lane=True,
@@ -1131,16 +1258,12 @@ def classify_editorial_story(
     accept None for input-robustness — see classify_issuer_story's own
     docstring."""
     text = _combined_text(headline, excerpt)
-    is_primary_disclosure = (
-        source_category == SourceCategory.OFFICIAL_FILING
-        or source_category in _GOVERNMENT_CATEGORY_QUALIFIES_BY_CATEGORY_ALONE
-        or (
-            source_category in _GOVERNMENT_CATEGORY_REQUIRES_ANCHOR
-            and bool(_contains_any(text, _FORMAL_ACTION_KEYWORDS))
-        )
-    )
-    return _classify_core(
+    is_independent_news = source_category == SourceCategory.INDEPENDENT_NEWS
+    is_primary_disclosure = _editorial_is_primary_disclosure(text, source_category)
+    combined = _classify_core(
         text, is_primary_disclosure=is_primary_disclosure,
-        is_independent_news=(source_category == SourceCategory.INDEPENDENT_NEWS),
-        headline=headline or "",
+        is_independent_news=is_independent_news, headline=headline or "",
+    )
+    return _apply_headline_ceiling(
+        combined, headline or "", is_primary_disclosure=is_primary_disclosure,
     )

@@ -1949,20 +1949,39 @@ def test_regression_meta_one_type_launch_defaults_to_background_or_below(tmp_pat
 # function daily_news_pipeline.py itself invokes for this lane.
 
 
-def test_regression_nvidia_quantified_ai_factory_evidence_reaches_high_signal(tmp_path, monkeypatch):
-    """The required positive control, run end-to-end through the real
-    pipeline — proves the P0/P1/P2 tightening does not suppress
-    genuine, quantified first-party AI-infrastructure/power/cooling
-    material."""
+def test_regression_nvidia_quantified_ai_factory_evidence_is_retained_at_watchlist(tmp_path, monkeypatch):
+    """EXPECTATION DELIBERATELY CHANGED, 2026-11-23 (headline ceiling).
+
+    This control was written to prove the earlier P0/P1/P2 precision
+    tightening did not SUPPRESS genuine quantified material, and it
+    still proves that: the item is published, matched and retained,
+    with its original gate preserved in the reasons.
+
+    What changed is the tier. "From Megawatts to Tokens: How NVIDIA
+    Maximizes AI Factory Production" is a vendor-marketing headline
+    carried through an independent-news source; it names no event, no
+    number and no corporate action. Every bit of its materiality lives
+    in the body. That is exactly the shape the headline ceiling exists
+    to stop reaching the top of the feed, and the same shape that put
+    "Homelabber's second-gen Optane build" and a Tom's Hardware
+    newsletter roundup into live High Signals.
+
+    Watchlist is the honest answer here, not a suppression: the item is
+    fully visible and the excerpt evidence is recorded. Nothing is
+    lost, and a reader scanning High Signals is no longer shown a
+    headline that tells them nothing."""
     report, stories = _run_single_item(
         tmp_path, monkeypatch,
         "From Megawatts to Tokens: How NVIDIA Maximizes AI Factory Production",
         "NVIDIA now delivers 50 megawatts of AI factory capacity per rack-scale deployment, a major new "
         "investment in cooling and power delivery infrastructure across the data center.",
     )
-    assert report.stories_published == 1
+    assert report.stories_published == 1, "the item must still be published, not suppressed"
     story = next(iter(stories.values()))
-    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    assert story.materiality_tier == NewsMaterialityTier.WATCHLIST
+    assert story.materiality_reasons[0].startswith("headline_ceiling_applied:"), story.materiality_reasons
+    assert any("taxonomy_anchored_consequence" in r or "quantified_change" in r
+               for r in story.materiality_reasons), "the original gate must be preserved, not discarded"
 
 
 # --- G: Rosen/ASTS solicitation -> reject; substantive legal event eligible ---
