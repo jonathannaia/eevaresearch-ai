@@ -985,10 +985,83 @@ def _combined_text(title: str | None, description: str | None) -> str:
     return safe_title if not safe_description else f"{safe_title}\n{safe_description}"
 
 
+# --- Disqualifying formats -------------------------------------------
+# Signals ranking fix (2026-11-23). These are not weak signals; they
+# are not corporate events at all, and no amount of gate evidence in
+# the body changes that.
+#
+# The existing _LOW_SIGNAL_HEADLINE_PATTERNS machinery could not
+# express this. It demotes only on the WEAK path — a hard gate
+# (earnings, quantified change, dividend action, capital return) still
+# wins, which is deliberate and correct for a genuine disclosure that
+# happens to be announced at a conference. But it meant these two
+# reached live High Signals:
+#
+#   "Sponsored: Solving cabling challenges behind AI data center
+#    growth"            -> taxonomy_anchored_consequence
+#   "This week on Tom's Hardware Premium: 21 November 2026"
+#                       -> quantified_change:capacity (a HARD gate)
+#
+# A sponsored post is advertising. A newsletter roundup is a
+# publication artifact. Both will reliably contain taxonomy phrases
+# and numbers, because that is what the publication is about — so the
+# evidence a gate looks for is exactly what these formats are full of.
+# The gates cannot distinguish them and should not be asked to.
+#
+# So this is a hard short-circuit, evaluated before any gate, landing
+# on BACKGROUND. Not Watchlist: an advertisement is not an early or
+# unquantified signal, it is not a signal, and Watchlist is a list a
+# reader is expected to monitor. Items remain stored and retrievable.
+#
+# Every pattern is anchored to how publishers actually mark these —
+# at the START of the headline, or in a bracketed label. An unanchored
+# \bsponsored\b would catch "Company X sponsored research shows...",
+# which is ordinary news about a real company action.
+_DISQUALIFYING_FORMAT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "sponsored_content": (
+        # Start-anchored, optionally inside [] or (), as publishers label ads.
+        re.compile(r"^\s*[\[(]?\s*(?:sponsored|advertorial|promoted|advertisement)\b", re.IGNORECASE),
+        re.compile(r"^\s*[\[(]?\s*paid\s+(?:post|content|partnership)\b", re.IGNORECASE),
+        re.compile(r"^\s*[\[(]?\s*(?:partner|branded)\s+content\b", re.IGNORECASE),
+        # A bracketed label anywhere, which is the other common convention.
+        re.compile(r"[\[(]\s*(?:sponsored|ad|advertorial|promoted)\s*[\])]", re.IGNORECASE),
+    ),
+    "newsletter_roundup": (
+        re.compile(r"^\s*this week (?:on|in|at)\b", re.IGNORECASE),
+        re.compile(r"^\s*the week in\b", re.IGNORECASE),
+        re.compile(r"\bweek in review\b", re.IGNORECASE),
+        re.compile(r"^\s*(?:daily|weekly|morning|evening)\s+(?:digest|roundup|round-up|briefing|brief|wrap)\b", re.IGNORECASE),
+        re.compile(r"^\s*(?:your\s+)?(?:daily|weekly)\s+newsletter\b", re.IGNORECASE),
+        re.compile(r"\bnewsletter\b", re.IGNORECASE),
+        # "... Premium: 21 November 2026" — a dated subscriber bulletin.
+        re.compile(r"\bpremium:\s*\d{1,2}\s+\w+\s+\d{4}\b", re.IGNORECASE),
+    ),
+}
+
+
+def _disqualifying_format_hit(headline: str) -> str | None:
+    """Pure. Returns the format name when the headline is one of these,
+    otherwise None. Checked against the HEADLINE only — a body that
+    merely mentions a newsletter is not a newsletter."""
+    if not headline:
+        return None
+    for name, patterns in _DISQUALIFYING_FORMAT_PATTERNS.items():
+        if any(pattern.search(headline) for pattern in patterns):
+            return name
+    return None
+
+
 def _classify_core(
     text: str, *, is_primary_disclosure: bool, is_independent_news: bool,
     headline: str = "", issuer_lane: bool = False,
 ) -> tuple[NewsMaterialityTier, tuple[str, ...]]:
+    # Hard short-circuit, before any gate — see
+    # _DISQUALIFYING_FORMAT_PATTERNS' own comment for why this cannot
+    # live on the weak low-signal-format path.
+    disqualifying_format = _disqualifying_format_hit(headline)
+    if disqualifying_format is not None:
+        return NewsMaterialityTier.BACKGROUND, (f"disqualifying_format:{disqualifying_format}",)
+
     reasons: list[str] = []
     survey_content = _is_survey_or_research_content(text)
     # Weak-path-only block (see "Low-signal formats" in the docstring).
