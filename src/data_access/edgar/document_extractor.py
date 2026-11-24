@@ -112,7 +112,12 @@ def _item_anchored_excerpt(full_text: str, expected_items: tuple[str, ...]) -> t
     return excerpt, detail, anchor_item
 
 
-def extract_excerpt(document_bytes: bytes, expected_items: tuple[str, ...] = ()) -> ExtractionResult:
+def extract_excerpt(
+    document_bytes: bytes,
+    expected_items: tuple[str, ...] = (),
+    *,
+    anchor_on_any_item: bool = False,
+) -> ExtractionResult:
     """Pure function over already-fetched bytes — network I/O and the
     per-accession-number cache/dedup live in document_service.py, one
     layer up (same separation DART's own document_service.py uses).
@@ -122,7 +127,31 @@ def extract_excerpt(document_bytes: bytes, expected_items: tuple[str, ...] = ())
     empty tuple (the default, and every non-8-K call) preserves the
     exact original prefix-from-start behavior under MAX_EXCERPT_CHARS.
     Only 8-K candidates with known expected items use the item-anchored
-    path under the separate EIGHT_K_ITEM_EXCERPT_CHARS cap."""
+    path under the separate EIGHT_K_ITEM_EXCERPT_CHARS cap.
+
+    `anchor_on_any_item` breaks a circular dependency that quietly cost
+    a quarter of every week's EDGAR filings.
+
+    SEC does not always publish an 8-K's item numbers when the filing
+    appears. With items unknown, the caller had no expected_items to
+    pass, so extraction fell to the prefix-from-start path and captured
+    the 600-character cover page — company name, address, CIK,
+    boilerplate — which stops before the item section. The later
+    re-check then read that excerpt looking for item numbers, found
+    none, and left the filing pending. The excerpt could never contain
+    what was needed to resolve the excerpt.
+
+    Observed live on 2026-11-24: eight 8-Ks (Meta, AMD, Oracle, Western
+    Digital, Coherent, IBM, SanDisk, Lumentum) each stored exactly 600
+    characters of cover page, while every filing that did resolve had
+    an excerpt beginning at its item text.
+
+    With this True, an 8-K whose items are unknown still anchors on the
+    FIRST item header of any kind — which _item_anchored_excerpt already
+    does as its own fallback, and which is exactly the right behaviour
+    for "this is an 8-K, we just do not know which item yet". Nothing
+    about the non-8-K path changes: the flag is explicit, defaults off,
+    and is passed only where the form type is known to be 8-K."""
     if len(document_bytes) > MAX_DOCUMENT_SIZE_BYTES:
         return ExtractionResult(
             state=ExtractionState.UNSUPPORTED_FORMAT,
@@ -151,7 +180,7 @@ def extract_excerpt(document_bytes: bytes, expected_items: tuple[str, ...] = ())
     if not excerpt:
         return ExtractionResult(state=ExtractionState.PARSE_FAILED, detail="Document parsed but contained no extractable text.")
 
-    if expected_items:
+    if expected_items or anchor_on_any_item:
         anchored_excerpt, detail, anchor_item = _item_anchored_excerpt(excerpt, expected_items)
         location_section = f"Item {anchor_item}" if anchor_item else None
         return ExtractionResult(

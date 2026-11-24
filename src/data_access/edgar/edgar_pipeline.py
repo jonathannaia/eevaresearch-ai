@@ -222,10 +222,22 @@ def process_candidate(
     # document_extractor.py's module docstring). Empty for a candidate
     # still at the coarse "8-K filed, items pending" classification.
     expected_items = ()
-    if candidate.filing.pblntf_ty.strip().upper() == "8-K":
+    is_eight_k = candidate.filing.pblntf_ty.strip().upper() == "8-K"
+    if is_eight_k:
         expected_items = edgar_rules.items_from_matched_rules(candidate.matched_rules)
 
-    doc_result = document_service.get_or_fetch_excerpt(client, cik, accession_no, filename, cache_dir, expected_items)
+    # An 8-K whose items SEC has not published yet still anchors on its
+    # first Item header. Without this the excerpt is the cover page, the
+    # later item re-check reads that cover page, finds no items, and the
+    # filing stays "items pending" for ever — the excerpt could never
+    # contain what was needed to resolve the excerpt. Measured live on
+    # 2026-11-24: eight 8-Ks stuck at exactly 600 characters of
+    # boilerplate. Only ever True for a real 8-K; every other form type
+    # keeps the prefix-from-start behaviour unchanged.
+    doc_result = document_service.get_or_fetch_excerpt(
+        client, cik, accession_no, filename, cache_dir, expected_items,
+        anchor_on_any_item=is_eight_k,
+    )
     candidate.extraction_state = doc_result.state
     if doc_result.from_cache:
         counters["cache_hits"] += 1
