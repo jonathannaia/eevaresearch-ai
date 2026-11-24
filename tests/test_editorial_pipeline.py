@@ -190,6 +190,48 @@ def test_same_title_different_publisher_is_not_a_duplicate(tmp_path, monkeypatch
 
     report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(cnbc, korea_herald))
 
+    # EXPECTATION DELIBERATELY INVERTED, 2026-11-23 (cross-publisher
+    # dedupe). This control was written when publisher was part of the
+    # duplicate key, so one story carried by two outlets produced two
+    # entries — read as independent corroboration. In the live feed
+    # that produced visible duplicates at the top of High Signals, so
+    # the first-seen story now wins and the second is suppressed.
+    #
+    # An IDENTICAL headline is the strongest possible same-story
+    # signal, so if anything is deduped across publishers, this is.
+    # The corroboration case the original test protected is preserved
+    # in the companion test below: two DIFFERENT stories from two
+    # outlets are still both kept.
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_two_different_stories_from_two_publishers_are_both_kept(tmp_path, monkeypatch):
+    """The other half of the inversion above. Cross-publisher dedupe
+    must suppress the same story told twice, never two outlets
+    reporting different things on the same day — that would hide real
+    coverage, which is a far worse failure than a visible duplicate."""
+    cnbc = _source(source_id="cnbc-y", attribution_label="CNBC")
+    korea_herald = DailyNewsSourceEntry(
+        source_id="kh-y", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.koreaherald.com/rss/kh_Business", domains=("www.koreaherald.com",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Korea Herald", licensing_classification=_LICENSING, priority=1,
+        issuer_agnostic=True, allowlisted=True,
+    )
+    _patch_fetch(monkeypatch, {
+        cnbc.canonical_url: FeedFetchResult(
+            entries=(_entry(link="https://www.cnbc.com/b.html",
+                            title="Oracle Corporation posts AI cloud growth"),), failure_code=None,
+        ),
+        korea_herald.canonical_url: FeedFetchResult(
+            entries=(_entry(link="https://www.koreaherald.com/article/2",
+                            title="SK hynix begins HBM4 mass production at Icheon"),), failure_code=None,
+        ),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(cnbc, korea_herald))
+
     assert report.stories_published == 2
     assert report.items_duplicate == 0
 
@@ -244,13 +286,23 @@ def test_per_feed_cap_is_independent_per_feed_not_shared_across_feeds(tmp_path, 
         attribution_label="The Korea Herald", licensing_classification=_LICENSING, priority=1,
         issuer_agnostic=True, allowlisted=True,
     )
+    # Distinct subjects per entry, not an indexed suffix. The original
+    # fixture used "Oracle Corporation CNBC update {i}", six headlines
+    # differing only by a single digit — which near-duplicate detection
+    # correctly collapses into one story. This test is about the
+    # per-feed cap, so its fixture must not also be a pile of
+    # duplicates.
+    _CNBC_SUBJECTS = ("cloud backlog", "database licensing", "Austin campus",
+                      "autonomous systems", "healthcare unit", "fiscal guidance")
+    _KH_SUBJECTS = ("foundry yields", "Pyeongtaek fab", "display spin-off",
+                    "network equipment", "retail arm", "logistics venture")
     cnbc_entries = tuple(
-        _entry(title=f"Oracle Corporation CNBC update {i}", link=f"https://www.cnbc.com/cnbc-{i}.html")
-        for i in range(6)
+        _entry(title=f"Oracle Corporation reports on its {subject}", link=f"https://www.cnbc.com/cnbc-{i}.html")
+        for i, subject in enumerate(_CNBC_SUBJECTS)
     )
     kh_entries = tuple(
-        _entry(title=f"Samsung Electronics update {i}", link=f"https://www.koreaherald.com/kh-{i}")
-        for i in range(6)
+        _entry(title=f"Samsung Electronics advances its {subject}", link=f"https://www.koreaherald.com/kh-{i}")
+        for i, subject in enumerate(_KH_SUBJECTS)
     )
     _patch_fetch(monkeypatch, {
         cnbc.canonical_url: FeedFetchResult(entries=cnbc_entries, failure_code=None),
