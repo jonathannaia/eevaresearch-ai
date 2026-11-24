@@ -286,13 +286,23 @@ def test_per_feed_cap_is_independent_per_feed_not_shared_across_feeds(tmp_path, 
         attribution_label="The Korea Herald", licensing_classification=_LICENSING, priority=1,
         issuer_agnostic=True, allowlisted=True,
     )
+    # Distinct subjects per entry, not an indexed suffix. The original
+    # fixture used "Oracle Corporation CNBC update {i}", six headlines
+    # differing only by a single digit — which near-duplicate detection
+    # correctly collapses into one story. This test is about the
+    # per-feed cap, so its fixture must not also be a pile of
+    # duplicates.
+    _CNBC_SUBJECTS = ("cloud backlog", "database licensing", "Austin campus",
+                      "autonomous systems", "healthcare unit", "fiscal guidance")
+    _KH_SUBJECTS = ("foundry yields", "Pyeongtaek fab", "display spin-off",
+                    "network equipment", "retail arm", "logistics venture")
     cnbc_entries = tuple(
-        _entry(title=f"Oracle Corporation CNBC update {i}", link=f"https://www.cnbc.com/cnbc-{i}.html")
-        for i in range(6)
+        _entry(title=f"Oracle Corporation reports on its {subject}", link=f"https://www.cnbc.com/cnbc-{i}.html")
+        for i, subject in enumerate(_CNBC_SUBJECTS)
     )
     kh_entries = tuple(
-        _entry(title=f"Samsung Electronics update {i}", link=f"https://www.koreaherald.com/kh-{i}")
-        for i in range(6)
+        _entry(title=f"Samsung Electronics advances its {subject}", link=f"https://www.koreaherald.com/kh-{i}")
+        for i, subject in enumerate(_KH_SUBJECTS)
     )
     _patch_fetch(monkeypatch, {
         cnbc.canonical_url: FeedFetchResult(entries=cnbc_entries, failure_code=None),

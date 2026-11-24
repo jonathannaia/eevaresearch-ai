@@ -1,17 +1,29 @@
-"""Cross-publisher same-story detection for the Daily News editorial
-lane. Pure, deterministic, no I/O — the same discipline dedup.py and
+"""Same-story detection for the Daily News editorial lane. Pure, deterministic, no I/O — the same discipline dedup.py and
 localization_dedup.py already follow.
 
 THE GAP THIS FILLS. editorial_pipeline.py keys duplicates on
-(normalized_title, publisher) or normalized URL. Publisher is PART of
-the key, so the same real-world story carried by two outlets is never
-a duplicate. That is deliberate for corroboration, and it is why the
-live feed on 2026-11-23 showed both of these as separate High Signals:
+(normalized_title, publisher) or normalized URL — an EXACT title
+match. A near-duplicate slips through whether or not the publisher is
+the same, which is why the live feed on 2026-11-23 showed both of
+these as separate High Signals:
 
     "Reports: Russia may launch nuclear weapon into orbit as soon as
-     next year"
+     next month"
     "Russia may launch a nuclear-armed satellite far sooner than we
      thought"
+
+PUBLISHER IS NOT A GATE, AND THAT WAS A CORRECTION. This module first
+required the two items to come from DIFFERENT publishers, on the
+reasoning that same-publisher duplicates were already caught exactly
+upstream and that a publisher's own second piece is a follow-up.
+Checking the real data killed that: BOTH Russia items are from Ars
+Technica, minutes apart. The different-publisher gate would have
+excluded the only true duplicate in the window.
+
+Scored across every pair of the 35 live High Signal items in that
+window — 595 pairs — exactly one lands above threshold, and it is
+that pair. So the gate costs a real detection and buys nothing
+measurable.
 
 WHY HEADLINE SIMILARITY ALONE DOES NOT WORK. Those two headlines share
 three words. Ordinary token-set similarity over all words puts them at
@@ -48,6 +60,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+from src.data_access.daily_news.company_aliases import build_company_alias_entries
 from src.data_access.daily_news.materiality_classification import TAXONOMY_KEYWORDS
 
 #: Two items must be published within this long of each other. A story
@@ -67,6 +80,12 @@ MIN_RARE_TOKENS = 3
 MIN_SHARED_RARE_TOKENS = 2
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _normalize(headline: str) -> str:
+    """Whitespace- and punctuation-insensitive form, for the
+    exact-headline route only."""
+    return " ".join(_TOKEN_RE.findall((headline or "").lower()))
 _MIN_TOKEN_LENGTH = 4
 
 # Ordinary English plus the reporting and time vocabulary every
@@ -85,6 +104,30 @@ claimed suggest suggests suggested seem seems seemed appear appears appeared lik
 """.split())
 
 
+def _company_vocabulary() -> frozenset[str]:
+    """Every word appearing in a tracked company's name or alias, plus
+    the legal suffixes.
+
+    THE SUBJECT IS NOT THE STORY. Two different Oracle headlines both
+    say "Oracle" and "Corporation"; on a short headline those two words
+    can be half the distinctive content, which put two genuinely
+    unrelated Oracle stories at 0.40 — above the threshold. The company
+    is what both stories are ABOUT, not evidence that they are the SAME
+    story. What distinguishes them is everything else.
+
+    Found by a test fixture, not by reasoning: six synthetic
+    same-company headlines collapsed into one."""
+    words: set[str] = {
+        "corp", "corporation", "incorporated", "limited", "holdings", "group",
+        "company", "technologies", "technology", "electronics", "industries",
+        "international", "systems", "solutions", "partners", "ventures",
+    }
+    for entry in build_company_alias_entries():
+        for name in (entry.company_name, *entry.aliases, *entry.brand_aliases):
+            words.update(_TOKEN_RE.findall(name.lower()))
+    return frozenset(word for word in words if len(word) >= _MIN_TOKEN_LENGTH)
+
+
 def _taxonomy_vocabulary() -> frozenset[str]:
     """Every word appearing in any taxonomy phrase. Excluded from the
     similarity because they are what this whole feed is about — see the
@@ -98,17 +141,19 @@ def _taxonomy_vocabulary() -> frozenset[str]:
 
 
 _TAXONOMY_WORDS = _taxonomy_vocabulary()
+_COMPANY_WORDS = _company_vocabulary()
+_IGNORED_WORDS = _STOPWORDS | _TAXONOMY_WORDS | _COMPANY_WORDS
 
 
 def rare_tokens(headline: str) -> frozenset[str]:
     """Pure. The distinctive words of a headline: four or more
-    characters, not a stopword, not taxonomy vocabulary."""
+    characters, and none of a stopword, this feed's taxonomy
+    vocabulary, or a tracked company's name. See each vocabulary's own
+    function for why it is excluded."""
     return frozenset(
         token
         for token in _TOKEN_RE.findall((headline or "").lower())
-        if len(token) >= _MIN_TOKEN_LENGTH
-        and token not in _STOPWORDS
-        and token not in _TAXONOMY_WORDS
+        if len(token) >= _MIN_TOKEN_LENGTH and token not in _IGNORED_WORDS
     )
 
 
@@ -137,9 +182,8 @@ def _hours_apart(left: str, right: str) -> float | None:
     return abs((a - b).total_seconds()) / 3600.0
 
 
-def find_cross_publisher_duplicate(
+def find_same_story_duplicate(
     existing: Iterable[tuple[str, str, str]],
-    publisher: str,
     headline: str,
     published_at: str,
 ) -> tuple[str, str, float] | None:
@@ -151,21 +195,31 @@ def find_cross_publisher_duplicate(
     this module never imports daily_news_models.py, exactly as dedup.py
     does.
 
-    Every gate must hold: a DIFFERENT publisher (same-publisher
-    duplicates are already caught exactly, upstream), both headlines
-    carrying enough distinctive content to compare, publication within
-    MAX_HOURS_APART, and similarity at or above the threshold with at
-    least MIN_SHARED_RARE_TOKENS words in common. Any gate failing
-    means both stories are kept."""
+    Every gate must hold: both headlines carrying enough distinctive
+    content to compare, publication within MAX_HOURS_APART, and
+    similarity at or above the threshold with at least
+    MIN_SHARED_RARE_TOKENS words in common. Any gate failing means
+    both stories are kept. Publisher is deliberately NOT a gate — see
+    the module docstring."""
     candidate_rare = rare_tokens(headline)
-    if len(candidate_rare) < MIN_RARE_TOKENS:
-        return None
+    normalized_candidate = _normalize(headline)
 
     for existing_publisher, existing_headline, existing_published_at in existing:
-        if existing_publisher == publisher:
+        # Route 0 — the same headline, word for word. The strongest
+        # possible same-story evidence, and it needs no similarity
+        # machinery at all. Upstream catches this only when the
+        # publisher also matches, so a syndicated wire story carried by
+        # two outlets reaches here untouched. No token-count floor:
+        # "Oracle Corporation posts AI cloud growth" has two
+        # distinctive words once the company name is removed, and two
+        # identical copies of it are still one story.
+        if normalized_candidate and _normalize(existing_headline) == normalized_candidate:
+            return existing_publisher, existing_headline, 1.0
+
+        if not candidate_rare:
             continue
         existing_rare = rare_tokens(existing_headline)
-        if len(existing_rare) < MIN_RARE_TOKENS:
+        if not existing_rare:
             continue
         shared = candidate_rare & existing_rare
         if len(shared) < MIN_SHARED_RARE_TOKENS:
@@ -173,7 +227,30 @@ def find_cross_publisher_duplicate(
         hours = _hours_apart(existing_published_at, published_at)
         if hours is None or hours > MAX_HOURS_APART:
             continue
+
         similarity = len(shared) / len(candidate_rare | existing_rare)
-        if similarity >= MIN_RARE_TOKEN_SIMILARITY:
+
+        # Route 1 — ratio. Needs enough distinctive content on BOTH
+        # sides for a ratio to mean anything.
+        if (
+            len(candidate_rare) >= MIN_RARE_TOKENS
+            and len(existing_rare) >= MIN_RARE_TOKENS
+            and similarity >= MIN_RARE_TOKEN_SIMILARITY
+        ):
+            return existing_publisher, existing_headline, similarity
+
+        # Route 2 — containment. The shorter headline's distinctive
+        # words appear WHOLLY inside the longer one. A ratio punishes
+        # this shape for the longer headline merely saying more:
+        # "SoftBank Son weighed a $1 trillion bid for SK hynix" against
+        # "SoftBank's Son Weighed $1 Trillion Acquisition of SK hynix"
+        # leaves the shorter side with two distinctive words, both
+        # present in the longer, which the MIN_RARE_TOKENS floor would
+        # otherwise discard entirely.
+        #
+        # Verified against all 595 pairs of the live High Signal window:
+        # this route adds that detection and not one false positive.
+        smaller = candidate_rare if len(candidate_rare) <= len(existing_rare) else existing_rare
+        if shared == smaller:
             return existing_publisher, existing_headline, similarity
     return None

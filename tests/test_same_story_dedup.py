@@ -1,10 +1,10 @@
-"""Cross-publisher same-story detection (cross_publisher_dedup.py).
+"""Same-story detection (same_story_dedup.py).
 
 The live feed on 2026-11-23 showed these as two separate High Signals,
-because the editorial duplicate key included the publisher:
+because the editorial duplicate key is an EXACT title match:
 
     "Reports: Russia may launch nuclear weapon into orbit as soon as
-     next year"
+     next month"
     "Russia may launch a nuclear-armed satellite far sooner than we
      thought"
 
@@ -14,16 +14,22 @@ The signal is not how much the headlines overlap — it is WHICH words
 they share, which is why similarity runs over rare tokens only and
 drops this product's own taxonomy vocabulary.
 
-The separation test below is the one that matters. It asserts the
+PUBLISHER IS NOT A GATE. This module first required the two items to
+come from different publishers. Both Russia items are from Ars
+Technica, minutes apart — the gate would have excluded the only true
+duplicate in the window. test_the_same_publisher_is_matched_too below
+is the regression for that.
+
+The separation test is the one that matters most. It asserts the
 measured gap between real non-duplicates and real duplicates from that
 day, so the threshold can never be quietly tuned onto a knife edge."""
 from __future__ import annotations
 
 import pytest
 
-from src.data_access.daily_news.cross_publisher_dedup import (
+from src.data_access.daily_news.same_story_dedup import (
     MIN_RARE_TOKEN_SIMILARITY,
-    find_cross_publisher_duplicate,
+    find_same_story_duplicate,
     rare_token_similarity,
     rare_tokens,
 )
@@ -33,7 +39,7 @@ T4H = "2026-11-22T14:00:00+00:00"
 T8D = "2026-11-30T10:00:00+00:00"
 
 RUSSIA_A = "Russia may launch a nuclear-armed satellite far sooner than we thought"
-RUSSIA_B = "Reports: Russia may launch nuclear weapon into orbit as soon as next year"
+RUSSIA_B = "Reports: Russia may launch nuclear weapon into orbit as soon as next month"
 
 #: Real pairs from the live feed, with what they are.
 DUPLICATES = [
@@ -74,8 +80,8 @@ def test_duplicates_and_non_duplicates_are_separated_by_a_wide_margin():
 
 @pytest.mark.parametrize("left,right", DUPLICATES)
 def test_a_real_duplicate_pair_is_detected(left, right):
-    assert find_cross_publisher_duplicate(
-        [("The Register", left, T0)], publisher="Ars Technica", headline=right, published_at=T4H,
+    assert find_same_story_duplicate(
+        [("The Register", left, T0)], headline=right, published_at=T4H,
     ) is not None
 
 
@@ -84,26 +90,32 @@ def test_two_genuinely_different_stories_are_both_kept(left, right):
     """Suppressing real coverage is a far worse failure than showing a
     visible duplicate, so this direction matters more than the one
     above."""
-    assert find_cross_publisher_duplicate(
-        [("The Register", left, T0)], publisher="Ars Technica", headline=right, published_at=T4H,
+    assert find_same_story_duplicate(
+        [("The Register", left, T0)], headline=right, published_at=T4H,
     ) is None
 
 
 # --- every structural gate must hold independently --------------------
 
-def test_the_same_publisher_is_never_matched_here():
-    """Same-publisher duplicates are caught exactly, upstream. Matching
-    them again here would double-count and could suppress a publisher's
-    legitimate follow-up."""
-    assert find_cross_publisher_duplicate(
-        [("The Register", RUSSIA_A, T0)], publisher="The Register", headline=RUSSIA_B, published_at=T4H,
-    ) is None
+def test_the_same_publisher_is_matched_too():
+    """THE CORRECTION THIS MODULE NEEDED. It first required different
+    publishers, reasoning that same-publisher duplicates were already
+    caught upstream and a publisher's own second piece is a follow-up.
+
+    Both live Russia items are from Ars Technica, published minutes
+    apart. The exact-title check upstream could not catch them because
+    the wordings differ, and a different-publisher gate would have
+    excluded the only true duplicate in the window. Checking the real
+    data is what found this; the reasoning alone sounded fine."""
+    assert find_same_story_duplicate(
+        [("Ars Technica", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
+    ) is not None
 
 
 def test_items_far_apart_in_time_are_not_duplicates():
     """A story genuinely re-reported a week later is a follow-up."""
-    assert find_cross_publisher_duplicate(
-        [("The Register", RUSSIA_A, T0)], publisher="Ars Technica", headline=RUSSIA_B, published_at=T8D,
+    assert find_same_story_duplicate(
+        [("The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T8D,
     ) is None
 
 
@@ -111,8 +123,8 @@ def test_items_far_apart_in_time_are_not_duplicates():
 def test_an_unusable_timestamp_fails_the_gate_rather_than_passing_it(bad_time):
     """An unknown interval is not evidence of sameness. The last case
     is naive-vs-aware, which raises on comparison."""
-    assert find_cross_publisher_duplicate(
-        [("The Register", RUSSIA_A, bad_time)], publisher="Ars Technica", headline=RUSSIA_B, published_at=T4H,
+    assert find_same_story_duplicate(
+        [("The Register", RUSSIA_A, bad_time)], headline=RUSSIA_B, published_at=T4H,
     ) is None
 
 
@@ -121,9 +133,8 @@ def test_a_headline_with_too_little_distinctive_content_never_matches(headline):
     """Two three-word headlines sharing two words score 0.5 while
     saying almost nothing. The last case is all taxonomy vocabulary,
     which carries no information in this feed at all."""
-    assert find_cross_publisher_duplicate(
-        [("The Register", "AI chip demand surges", T0)],
-        publisher="Ars Technica", headline=headline, published_at=T4H,
+    assert find_same_story_duplicate(
+        [("The Register", "AI chip demand surges", T0)], headline=headline, published_at=T4H,
     ) is None
 
 
@@ -136,7 +147,56 @@ def test_taxonomy_vocabulary_is_not_evidence_of_sameness():
     tokens = rare_tokens("Samsung expands HBM DRAM memory chip capacity at its foundry")
     for taxonomy_word in ("memory", "foundry", "dram"):
         assert taxonomy_word not in tokens, tokens
-    assert "samsung" in tokens, "a company name is exactly the kind of distinctive token to keep"
+
+
+def test_a_company_name_is_not_evidence_of_sameness_either():
+    """A LATER CORRECTION, and the opposite of what I first assumed.
+
+    A company name looks like the most distinctive token in a
+    headline, so it was deliberately kept. On a SHORT headline that is
+    exactly wrong: two unrelated Oracle stories share "oracle" and
+    "corporation", which can be half the distinctive content, and they
+    scored 0.40 — above the threshold. The company is what both
+    stories are ABOUT; what distinguishes them is everything else.
+
+    Found by a test fixture collapsing six synthetic same-company
+    headlines into one, not by reasoning about it."""
+    tokens = rare_tokens("Samsung Electronics advances its Pyeongtaek foundry")
+    assert "samsung" not in tokens and "electronics" not in tokens, tokens
+    assert "pyeongtaek" in tokens, "the distinguishing word must survive"
+
+    assert rare_token_similarity(
+        "Oracle Corporation reports on its cloud backlog",
+        "Oracle Corporation reports on its database licensing",
+    ) < MIN_RARE_TOKEN_SIMILARITY
+
+
+def test_an_identical_headline_is_a_duplicate_however_short_it_is():
+    """Route 0. Once the company name is removed, "Oracle Corporation
+    posts AI cloud growth" has two distinctive words — below the floor
+    every similarity route requires. Two identical copies of it are
+    still one story, so the exact-headline route carries no floor at
+    all. Upstream catches this only when the publisher also matches, so
+    a syndicated wire story reaches here untouched."""
+    match = find_same_story_duplicate(
+        [("CNBC", "Oracle Corporation posts AI cloud growth", T0)],
+        headline="Oracle Corporation posts AI cloud growth!", published_at=T4H,
+    )
+    assert match is not None
+    assert match[2] == 1.0
+
+
+def test_containment_catches_a_longer_retelling_of_a_shorter_headline():
+    """Route 2. A ratio punishes this shape for the longer headline
+    merely saying more; the shorter side's distinctive words appear
+    wholly inside the longer one. Verified against all 595 pairs of
+    the live window: this route adds the detection below and not one
+    false positive."""
+    match = find_same_story_duplicate(
+        [("Business Korea", "SoftBank's Son Weighed $1 Trillion Acquisition of SK hynix", T0)],
+        headline="SoftBank Son weighed a $1 trillion bid for SK hynix, sources say", published_at=T4H,
+    )
+    assert match is not None
 
 
 def test_commentary_verbs_are_not_evidence_of_sameness():
@@ -150,8 +210,8 @@ def test_commentary_verbs_are_not_evidence_of_sameness():
 def test_the_first_seen_story_wins():
     """Matching this package's existing convention: nothing is merged,
     and no corroborating source is attached to the survivor."""
-    match = find_cross_publisher_duplicate(
-        [("The Register", RUSSIA_A, T0)], publisher="Ars Technica", headline=RUSSIA_B, published_at=T4H,
+    match = find_same_story_duplicate(
+        [("The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
     )
     assert match is not None
     matched_publisher, matched_headline, similarity = match

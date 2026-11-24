@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING
 
 from src.data_access.daily_news import (
     canonical_url,
-    cross_publisher_dedup,
+    same_story_dedup,
     dedup,
     editorial_story_store,
     rss_atom_client,
@@ -328,11 +328,12 @@ def run_editorial_discovery(
     existing_title_publisher = {
         (dedup.normalize_title_unicode(s.headline), s.publisher) for s in store.values()
     }
-    # Cross-publisher same-story detection needs the publisher and the
-    # publication time, which the exact-match sets above discard. Built
-    # once per run and extended in place as this run persists, so two
-    # outlets carrying one story in the SAME run dedupe against each
-    # other and not only against earlier runs.
+    # Near-duplicate detection needs the publication time, which the
+    # exact-match sets above discard, and the publisher for reporting
+    # which story a suppressed one matched. Built once per run and
+    # extended in place as this run persists, so one story carried
+    # twice within a SINGLE run dedupes against itself and not only
+    # against earlier runs.
     existing_publisher_headline_time = [
         (s.publisher, s.headline, s.published_at) for s in store.values()
     ]
@@ -400,21 +401,21 @@ def run_editorial_discovery(
                 items_duplicate += 1
                 continue
 
-            # Cross-publisher same-story suppression. The exact-match
-            # check above keys on (title, publisher), so the SAME story
-            # from a DIFFERENT outlet always passed it — which is how
-            # two near-identical Russia satellite stories both reached
-            # live High Signals on 2026-11-23. Narrow by construction:
-            # see cross_publisher_dedup.py for every gate that must
-            # hold. First-seen wins, matching dedup.py's own
+            # Near-duplicate same-story suppression. The check above is
+            # an EXACT title match, so two differently-worded takes on
+            # one story always passed it — which is how two Russia
+            # satellite stories, published minutes apart by the same
+            # outlet, both reached live High Signals on 2026-11-23.
+            # Narrow by construction: see same_story_dedup.py for every
+            # gate that must hold, and for why publisher is not one of
+            # them. First-seen wins, matching dedup.py's own
             # convention; nothing is merged onto the survivor.
-            cross_publisher_match = cross_publisher_dedup.find_cross_publisher_duplicate(
+            same_story_match = same_story_dedup.find_same_story_duplicate(
                 existing_publisher_headline_time,
-                publisher=source.attribution_label,
                 headline=entry.title,
                 published_at=entry.published_at,
             )
-            if cross_publisher_match is not None:
+            if same_story_match is not None:
                 items_duplicate += 1
                 continue
 
@@ -525,9 +526,9 @@ def run_editorial_discovery(
             # simple, single-pass dedup registration.
             existing_urls.add(normalized_url)
             existing_title_publisher.add((normalized_title, source.attribution_label))
-            # Same registration for the cross-publisher corpus, so one
-            # story carried by two outlets within a SINGLE run dedupes
-            # against itself and not only against an earlier run.
+            # Same registration for the near-duplicate corpus, so one
+            # story carried twice within a SINGLE run dedupes against
+            # itself and not only against an earlier run.
             existing_publisher_headline_time.append(
                 (source.attribution_label, entry.title, entry.published_at)
             )
