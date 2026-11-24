@@ -81,20 +81,24 @@ def map_edinet_filing_to_candidate(filing: FilingEvent) -> FilingDerivedNewsCand
     triplet_key = f"{filing.ordinance_code}:{filing.pblntf_ty}:{filing.pblntf_detail_ty}"
     mapped_category = edinet_rules.DEFAULT_CODE_CATEGORY_MAP.get(triplet_key)
 
-    if mapped_category == _SHARE_BUYBACK_CATEGORY:
-        event_category = _SHARE_BUYBACK_CATEGORY
-        source_form_code = triplet_key
-    elif is_eligible_extraordinary_report(filing):
-        event_category = _EXTRAORDINARY_REPORT_CATEGORY
-        source_form_code = triplet_key
-    else:
-        # Covers: annual_securities_report (mapped_category would be that
-        # string, never share_buyback_status), every correction/
-        # confirmation-letter/internal-control-report/domestic-specified-
-        # security-variant exclusion already enforced inside
-        # is_eligible_extraordinary_report() itself, and every other
-        # unmapped triplet.
+    # Filings -> Signals bridge (2026-11-24). This used to hard-code
+    # exactly two paths — share buyback and extraordinary report — and
+    # return None for everything else, so the other twenty-four
+    # verified triplets could never resolve no matter what the map
+    # said. The map is now the routing table, as its name always
+    # implied, and the allowed-category set is derived from it.
+    #
+    # The extraordinary-report path keeps its EXTRA check.
+    # is_eligible_extraordinary_report() enforces a title match on top
+    # of the triplet, which excludes the 030:995000:180 look-alike
+    # filed by asset managers about instruments they manage. That is a
+    # real exclusion the triplet alone does not express, so it stays.
+    if mapped_category is None:
         return None
+    if mapped_category == _EXTRAORDINARY_REPORT_CATEGORY and not is_eligible_extraordinary_report(filing):
+        return None
+    event_category = mapped_category
+    source_form_code = triplet_key
 
     if not validate_filing_event_category(FilingSourceSystem.EDINET, event_category):
         return None

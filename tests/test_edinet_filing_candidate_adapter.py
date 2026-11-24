@@ -89,18 +89,38 @@ def test_edinet_candidates_are_never_eligible_for_candidate_or_published_status(
 # ============================================================
 
 
-def test_annual_securities_report_is_excluded():
+def test_annual_securities_report_is_now_admitted():
+    """EXPECTATION INVERTED, 2026-11-24 (Filings -> Signals bridge).
+
+    Annual securities reports were excluded while only two EDINET
+    categories were Daily News eligible, on the reasoning that most of
+    EDINET_CATEGORIES was an unbacked structural placeholder. That was
+    true of the taxonomy tuple and is not true of
+    DEFAULT_CODE_CATEGORY_MAP: every triplet in it was verified against
+    EDINET's own documents.json with its docDescription read back."""
     candidate = map_edinet_filing_to_candidate(_filing(
         report_nm="有価証券報告書", ordinance_code="010", pblntf_ty="030000", pblntf_detail_ty="120",
     ))
-    assert candidate is None
+    assert candidate is not None
+    assert candidate.event_category == "annual_securities_report"
 
 
-def test_extraordinary_report_correction_is_excluded():
+def test_extraordinary_report_correction_is_admitted_as_an_amendment():
+    """EXPECTATION INVERTED, 2026-11-24.
+
+    訂正臨時報告書 was excluded outright. It is now admitted with its
+    OWN category rather than the original's, which is the whole point:
+    an amendment never inherits the tier of the document it amends. It
+    resolves to Watchlist by prefix and is lifted only on evidence of
+    changed amounts, prices or terms."""
     candidate = map_edinet_filing_to_candidate(_filing(
         report_nm="訂正臨時報告書", ordinance_code="010", pblntf_ty="053001", pblntf_detail_ty="190",
     ))
-    assert candidate is None
+    assert candidate is not None
+    assert candidate.event_category == "amended_extraordinary_report", (
+        "an amendment must be distinguishable from the document it amends, by category alone"
+    )
+    assert candidate.event_category != "extraordinary_report"
 
 
 def test_buyback_correction_is_excluded():
