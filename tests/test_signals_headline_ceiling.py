@@ -40,10 +40,15 @@ NEWS = SourceCategory.INDEPENDENT_NEWS
         "Retailers are clearing inventory ahead of the next generation.",
         "quantified_change", id="retail-cpu-deal"),
     pytest.param(
-        "This week on Tom's Hardware Premium: 21 November 2026",
-        "This week we published a deep dive into AI data center capacity, adding 40 megawatts of "
-        "analysis on GPU cluster economics, plus our usual benchmark roundup.",
-        "quantified_change", id="newsletter-roundup"),
+        # Deliberately NOT the Tom's Hardware newsletter roundup, which
+        # was the obvious fixture here. A roundup is blocked outright
+        # as a disqualifying format, which is strictly better than a
+        # cap — using it would make this test pass for the other
+        # change's reason and quietly stop testing the ceiling.
+        "AI boom threatens circuit board crunch to rival pandemic-era chip shortage",
+        "Circuit board capacity is 40% oversubscribed into 2027, with substrate lead times "
+        "stretching past 30 weeks across the AI data center supply chain.",
+        "quantified_change", id="market-commentary"),
     pytest.param(
         "Memory crunch makes refurbished kit look a lot less silly",
         "DRAM contract prices have risen 60% this quarter as HBM capacity absorbs supply, pushing "
