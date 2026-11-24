@@ -271,28 +271,55 @@ def test_the_label_is_carried_on_the_story():
 
 # --- batch projection --------------------------------------------------
 
-def test_a_filing_already_projected_is_not_projected_twice():
+def test_two_filings_sharing_a_form_name_are_both_projected():
+    """THE BUG THIS FUNCTION SHIPPED WITH, and the reason dedupe is
+    keyed on story id.
+
+    The first version suppressed any filing whose (publisher,
+    headline) pair had been seen. A filing's headline is its FORM
+    NAME: every SEC 8-K is titled "8-K". So one EDGAR 8-K survived per
+    run and every other one was discarded as a duplicate of an
+    unrelated company's filing.
+
+    Observed live on the first tick after the flag went on: 14
+    projectable EDGAR filings collapsed to 4, one per distinct form
+    name — and NVIDIA's Item 5.02 governance filing, the single filing
+    this whole feature was built for, was one of the ten discarded."""
+    governance = (_edgar(rcept_no="a1"), ("governance_or_management_change:8-K item 5.02",))
+    earnings = (_edgar(rcept_no="a2"), ("earnings_or_results:8-K item 2.02",))
+    other_company = (
+        _edgar(rcept_no="a3", corp_code="0001158114", stock_code="CSCO", corp_name="Cisco Systems, Inc."),
+        ("earnings_or_results:8-K item 2.02",),
+    )
+
+    stories = project_filing_signals((governance, earnings, other_company), retrieved_at=NOW)
+
+    assert len(stories) == 3, [s.materiality_reasons[0] for s in stories]
+    assert {s.headline for s in stories} == {"8-K"}, "all three share a headline, which is the point"
+    assert any("governance_or_management_change" in s.materiality_reasons[0] for s in stories)
+
+
+def test_the_same_filing_twice_in_one_batch_is_projected_once():
+    """Story ids are deterministic on (source, corp_code, rcept_no) —
+    the same key the filing store deduplicates by — so a repeat upserts
+    rather than duplicating."""
     filing = _edgar()
     rules = ("governance_or_management_change:8-K item 5.02",)
-    first = project_filing_signals(((filing, rules),), retrieved_at=NOW)
-    assert len(first) == 1
-    again = project_filing_signals(
-        ((filing, rules),), retrieved_at=NOW,
-        existing_headlines=((first[0].publisher, first[0].headline),),
-    )
-    assert again == ()
-
-
-def test_a_news_item_about_the_same_event_is_not_treated_as_a_duplicate():
-    """A filing is the primary source and a news story is a third
-    party's account of it. Showing both is the point."""
-    filing = _edgar()
-    stories = project_filing_signals(
-        ((filing, ("governance_or_management_change:8-K item 5.02",)),),
-        retrieved_at=NOW,
-        existing_headlines=(("The Robot Report", "NVIDIA reinstates Jensen Huang after 11-day absence"),),
-    )
+    stories = project_filing_signals(((filing, rules), (filing, rules)), retrieved_at=NOW)
     assert len(stories) == 1
+
+
+def test_a_news_item_about_the_same_event_is_not_deduped_against():
+    """A filing is the primary source and a news story is a third
+    party's account of it. Showing both is the point — which is also
+    why this function no longer looks at news headlines at all."""
+    import inspect
+
+    source = inspect.getsource(project_filing_signals)
+    assert "existing_headlines" not in source, (
+        "cross-checking against news headlines would suppress a primary source "
+        "because a journalist wrote about it"
+    )
 
 
 def test_an_empty_batch_is_not_an_error():
