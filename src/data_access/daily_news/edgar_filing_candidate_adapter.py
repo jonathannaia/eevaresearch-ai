@@ -92,6 +92,12 @@ _EARNINGS_CATEGORY = "earnings_or_results"
 _EIGHT_K_APPROVED_CATEGORIES: frozenset[str] = frozenset({
     "material_agreement", "acquisition_or_disposition", "earnings_or_results",
     "financing_or_debt", "governance_or_management_change",
+    # Item 3.02, added 2026-11-24. An unregistered equity sale can
+    # signal dilution, or an acquisition paid in stock — a real
+    # financing event, if an early one. Tiered Early (Watchlist) and
+    # labelled "Financing" rather than High: the filing reports that
+    # shares were issued, not what they bought.
+    "unregistered_equity_sale",
 })
 
 

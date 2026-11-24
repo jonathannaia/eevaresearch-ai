@@ -40,6 +40,19 @@ def evaluate_discovery_row(form: str, items_raw: str | None) -> edgar_rules.Rule
     if edgar_rules.normalize_form_type(form) not in DISCOVERY_FORM_ALLOWLIST:
         return None
     item_numbers = edgar_rules.parse_items_metadata(items_raw)
+    # Procedural items never propose a company. EIGHT_K_ITEM_CATEGORIES
+    # gained 3.02/5.03/5.07/9.01 on 2026-11-24 so the TRACKED pipeline
+    # could name filings it was already excluding; discovery shares that
+    # map, so without this filter a shareholder-vote outcome or an
+    # exhibit index would start proposing brand-new issuers. A coarse
+    # "something happened" signal is noise for an unverified company —
+    # which is exactly the reasoning this function's own docstring
+    # already gives for excluding the generic pending-items fallback.
+    item_numbers = tuple(
+        item for item in item_numbers
+        if edgar_rules.EIGHT_K_ITEM_CATEGORIES.get(item)
+        not in edgar_rules.NAMED_BUT_EXCLUDED_ITEM_CATEGORIES
+    )
     if not item_numbers:
         return None
     evaluation = edgar_rules.refine_8k_evaluation(item_numbers)

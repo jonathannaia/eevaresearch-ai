@@ -143,7 +143,11 @@ def test_refine_8k_evaluation_empty_items_yields_no_confidence():
 
 
 def test_all_eight_k_categories_have_the_brief_required_items():
-    assert set(EIGHT_K_ITEM_CATEGORIES.keys()) == {"1.01", "2.01", "2.02", "2.03", "5.02", "7.01", "8.01"}
+    # The brief's required items must all be present. Exact equality
+    # held while the map was only those seven; 3.02/5.03/5.07/9.01 were
+    # added 2026-11-24 so filings already being excluded could be
+    # NAMED rather than read as unresolvable.
+    assert {"1.01", "2.01", "2.02", "2.03", "5.02", "7.01", "8.01"} <= set(EIGHT_K_ITEM_CATEGORIES)
 
 
 # --- parse_items_metadata (real scan-time `items` column, verified live

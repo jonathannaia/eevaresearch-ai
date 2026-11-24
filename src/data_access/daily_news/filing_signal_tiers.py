@@ -39,6 +39,11 @@ FILING_CATEGORY_TIERS: dict[str, NewsMaterialityTier] = {
     "earnings_or_results": NewsMaterialityTier.HIGH_SIGNAL,               # 8-K 2.02, 10-K, 10-Q, 20-F
     "acquisition_or_disposition": NewsMaterialityTier.HIGH_SIGNAL,        # 8-K 2.01
     "financing_or_debt": NewsMaterialityTier.HIGH_SIGNAL,                 # 8-K 2.03
+    # 8-K 3.02. Early rather than High: the filing reports that shares
+    # were issued, not what they were issued for. Dilution and a
+    # stock-funded acquisition look identical here, and only one of
+    # those belongs at the top of the feed.
+    "unregistered_equity_sale": NewsMaterialityTier.WATCHLIST,
 
     # --- OpenDART (dart_rules.KOREAN_KEYWORD_LEXICON)
     "earnings": NewsMaterialityTier.HIGH_SIGNAL,
@@ -77,6 +82,7 @@ DART_AMENDMENT_MARKER = "[기재정정]"
 #: registration reads oddly next to ordinary offerings otherwise.
 CATEGORY_CARD_LABELS: dict[str, str] = {
     "ipo_registration": "IPO",
+    "unregistered_equity_sale": "Financing",
     "share_buyback_status": "Routine",
     "shelf_registration": "Financing",
     "shelf_registration_supplement": "Financing",
