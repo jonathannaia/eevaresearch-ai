@@ -1,0 +1,291 @@
+"""Filings -> Signals bridge. Pure projection, no I/O.
+
+A regulatory filing and a news story are different things, and this
+project keeps Radar and Daily News deliberately separate. This module
+does not merge them. It PROJECTS a filing that is already ingested,
+already a candidate and already categorised into the one shape the
+Signals feed renders, so a reader looking at the feed sees an issuer's
+own 8-K next to a journalist's account of it.
+
+WHY THIS EXISTS. NVIDIA's 2026-11-23 8-K reinstating its chief
+executive was ingested, became a candidate, and could never appear in
+Signals, because Signals reads editorial_stories and filings live in
+candidates. The three adapters that map a filing into the Daily News
+domain were built, tested, and run in shadow mode with their output
+discarded. This connects the last step.
+
+WHAT IT DOES NOT TOUCH. No scan, no pipeline, no candidate record, no
+Radar surface. The adapters are called for their resolution work —
+category, company identity, document URL — and the FilingDerivedNews
+Candidate they return is read and dropped, never promoted or
+persisted. That matters for EDINET in particular, whose candidates are
+restricted to SHADOW status by validate_filing_candidate(); nothing
+here changes that, because nothing here persists a candidate at all.
+
+DORMANT BY DEFAULT. Gated on settings.filing_signals_enabled, off
+unless explicitly set. The caller checks it; this module stays pure so
+it can be exercised without a flag, a database or a worker."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from src.data_access.daily_news import dedup
+from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
+from src.data_access.daily_news.edgar_filing_candidate_adapter import map_edgar_filing_to_candidate
+from src.data_access.daily_news.edinet_filing_candidate_adapter import map_edinet_filing_to_candidate
+from src.data_access.daily_news.filing_signal_tiers import (
+    AMENDMENT_CARD_LABEL,
+    CATEGORY_CARD_LABELS,
+    is_amendment_category,
+    tier_for_amendment,
+    tier_for_filing_category,
+)
+from src.data_access.edgar import edgar_rules
+from src.models.daily_news_models import EditorialStory
+from src.models.models import FilingEvent
+
+#: Publisher shown on the card. The filing's own venue, never an
+#: outlet — a filing has no journalist.
+_PUBLISHER_BY_SOURCE: dict[str, str] = {
+    "SEC EDGAR": "SEC EDGAR",
+    "OpenDART / DART": "OpenDART",
+    "EDINET": "EDINET",
+}
+
+#: Feed id, so a filing-derived story is distinguishable from every
+#: RSS source at a glance and in a query.
+_FEED_ID_BY_SOURCE: dict[str, str] = {
+    "SEC EDGAR": "filing-sec-edgar",
+    "OpenDART / DART": "filing-opendart",
+    "EDINET": "filing-edinet",
+}
+
+#: Prefix for the deterministic story id. A filing projected twice
+#: produces the same id and upserts, never a duplicate card.
+_STORY_ID_PREFIX = "filing"
+
+#: The DART amendment marker, stripped when deriving the base title to
+#: compare against.
+_DART_AMENDMENT_MARKER = "[기재정정]"
+
+
+# --- Pending-items 8-K re-check ---------------------------------------
+# SEC publishes an 8-K's item numbers in its own `items` column, but
+# not always at the moment the filing appears. When they are absent,
+# edgar_rules classifies the filing "material_event_8k_pending_items"
+# — items unknown — and the adapter correctly declines it, because an
+# 8-K of unknown item could be anything from a change of auditor to a
+# Reg FD slide deck.
+#
+# Nothing re-checked them. In the dry run of 2026-11-17..23 that was
+# EIGHT of thirty-two filings, a quarter of the window, including
+# Meta, AMD, Oracle and Western Digital — not unwanted, merely
+# unresolved, and then lost permanently.
+#
+# The items are recoverable without a second SEC request: the filing's
+# own excerpt carries them, and edgar_rules already knows how to read
+# them (extract_item_numbers) and how to combine them with whatever
+# scan time knew (merge_8k_item_evaluation). This re-runs that
+# combination at projection time, on each tick, until it resolves.
+#
+# BOUNDED. An 8-K whose items never materialise is retried only within
+# PENDING_RECHECK_MAX_DAYS of its filing date and then left alone. The
+# alternative is re-deriving every unresolved 8-K in history on every
+# tick, forever, for filings whose metadata is simply never coming.
+PENDING_RECHECK_MAX_DAYS = 14
+
+_PENDING_ITEMS_CATEGORY = "material_event_8k_pending_items"
+
+
+def has_pending_items(matched_rules: tuple[str, ...] | None) -> bool:
+    return any((rule or "").startswith(_PENDING_ITEMS_CATEGORY) for rule in (matched_rules or ()))
+
+
+def _as_utc(value: str) -> datetime | None:
+    """Parses an ISO timestamp OR a bare calendar date.
+
+    filing.rcept_dt is a bare date ("2026-11-23") while `now` is a full
+    aware timestamp, so a naive-vs-aware guard alone rejected every
+    real comparison and silently disabled the whole re-check. A bare
+    date is anchored at UTC midnight, which is the only reading
+    available and is accurate to within a day — far inside a window
+    measured in days."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
+def _days_between(earlier: str, later: str) -> float | None:
+    """None when either value is missing or unparseable, which fails
+    the window rather than opening it."""
+    a, b = _as_utc(earlier), _as_utc(later)
+    if a is None or b is None:
+        return None
+    return abs((b - a).total_seconds()) / 86400.0
+
+
+def recheck_pending_8k_items(
+    matched_rules: tuple[str, ...] | None,
+    *,
+    excerpt: str | None,
+    filing_date: str,
+    now: str,
+    max_days: int = PENDING_RECHECK_MAX_DAYS,
+) -> tuple[str, ...] | None:
+    """Re-derived matched_rules when a pending 8-K's items can now be
+    read from its excerpt, otherwise None (meaning: nothing changed,
+    use what you had).
+
+    Pure — reads the excerpt it is handed and performs no fetch. None
+    for a filing that is not pending, has no excerpt, is outside the
+    window, or whose excerpt still yields no items."""
+    if not has_pending_items(matched_rules):
+        return None
+    if not excerpt:
+        return None
+    age_days = _days_between(filing_date, now)
+    if age_days is None or age_days > max_days:
+        return None
+
+    excerpt_items = edgar_rules.extract_item_numbers(excerpt)
+    if not excerpt_items:
+        return None
+    evaluation, newly_added = edgar_rules.merge_8k_item_evaluation((), excerpt_items)
+    if not newly_added or not evaluation.matched_rules:
+        return None
+    return tuple(evaluation.matched_rules)
+
+
+def story_id_for(filing: FilingEvent) -> str:
+    """Deterministic and collision-free on the same key the filing
+    store itself deduplicates by (source, corp_code, rcept_no) — never
+    the title, which is neither unique nor stable."""
+    return f"{_STORY_ID_PREFIX}:{filing.source_name}:{filing.corp_code}:{filing.rcept_no}"
+
+
+def _resolve_candidate(filing: FilingEvent, matched_rules: tuple[str, ...] | None):
+    """Routes to the one adapter that owns this source. Returns None
+    for an unroutable source rather than guessing — a filing from a
+    venue with no adapter is not projected."""
+    if filing.source_name == "SEC EDGAR":
+        return map_edgar_filing_to_candidate(filing, matched_rules or None)
+    if filing.source_name == "EDINET":
+        return map_edinet_filing_to_candidate(filing)
+    if filing.source_name == "OpenDART / DART":
+        # Amendments admitted here and nowhere else — see that
+        # adapter's own docstring for why, and filing_signal_tiers for
+        # how they are tiered once admitted.
+        return map_dart_filing_to_candidate(filing, include_amendments=True)
+    return None
+
+
+def card_label_for(category: str) -> str | None:
+    """A short label the card shows beside the tier, so an IPO
+    registration does not read like an ordinary offering and an
+    amendment does not read like an original filing."""
+    if is_amendment_category(category):
+        return AMENDMENT_CARD_LABEL
+    return CATEGORY_CARD_LABELS.get(category)
+
+
+def build_filing_signal_story(
+    filing: FilingEvent,
+    *,
+    matched_rules: tuple[str, ...] | None,
+    retrieved_at: str,
+    excerpt_for_item_recheck: str | None = None,
+) -> EditorialStory | None:
+    """One filing -> one EditorialStory, or None.
+
+    None whenever anything is unresolved: an unroutable source, an
+    adapter that declines the filing, a category with no tier, or a
+    company the tracked registry cannot name. Never a default tier and
+    never an invented company — an unplaceable filing stays a filing."""
+    # A pending-items 8-K gets one more chance per tick, from its own
+    # excerpt, before the adapter is asked — see the re-check block
+    # above for why these were being lost outright.
+    recovered_rules = recheck_pending_8k_items(
+        matched_rules, excerpt=excerpt_for_item_recheck,
+        filing_date=filing.filed_at or filing.rcept_dt, now=retrieved_at,
+    )
+    if recovered_rules is not None:
+        matched_rules = recovered_rules
+
+    candidate = _resolve_candidate(filing, matched_rules)
+    if candidate is None:
+        return None
+
+    category = candidate.event_category
+    if is_amendment_category(category) or _DART_AMENDMENT_MARKER in (filing.report_nm or ""):
+        tier = tier_for_amendment(category, filing.report_nm or "")
+    else:
+        tier = tier_for_filing_category(category)
+    if tier is None:
+        # An unmapped category is not guessed at. See
+        # filing_signal_tiers for why there is no default.
+        return None
+
+    reasons = [f"filing_event:{category}"]
+    label = card_label_for(category)
+    if label is not None:
+        reasons.append(f"filing_label:{label}")
+    if matched_rules:
+        reasons.append(f"filing_rules:{','.join(matched_rules)}")
+
+    company = candidate.company_name
+    return EditorialStory(
+        id=story_id_for(filing),
+        headline=candidate.title_translated or candidate.title_native,
+        publisher=_PUBLISHER_BY_SOURCE.get(filing.source_name, filing.source_name),
+        source_url=candidate.official_document_url or filing.source_url or "",
+        published_at=candidate.filing_date,
+        retrieved_at=retrieved_at,
+        # Deliberately None. A filing's excerpt is extracted by a
+        # separate path with its own quality states, and inventing a
+        # summary here is exactly the "Summary unavailable" problem one
+        # layer earlier.
+        excerpt=None,
+        matched_companies=(company,),
+        matched_themes=(),
+        source_feed_id=_FEED_ID_BY_SOURCE.get(filing.source_name, "filing-unknown"),
+        materiality_tier=tier,
+        materiality_reasons=tuple(reasons),
+        identified_companies=(company,),
+    )
+
+
+def project_filing_signals(
+    filings_with_rules: tuple[tuple[FilingEvent, tuple[str, ...]], ...],
+    *,
+    retrieved_at: str,
+    existing_headlines: tuple[tuple[str, str], ...] = (),
+    excerpts_by_story_id: dict[str, str] | None = None,
+) -> tuple[EditorialStory, ...]:
+    """Every projectable filing, in input order, skipping any whose
+    headline already exists in the feed under the same publisher.
+
+    The headline check is deliberately narrow: a filing and a news item
+    about the same event are NOT duplicates of each other — the filing
+    is the primary source and the news is a third party's account, and
+    showing both is the point. This only guards against projecting the
+    same filing twice under two source rows."""
+    seen = {(publisher, dedup.normalize_title_unicode(headline)) for publisher, headline in existing_headlines}
+    stories: list[EditorialStory] = []
+    for filing, matched_rules in filings_with_rules:
+        story = build_filing_signal_story(
+            filing, matched_rules=matched_rules, retrieved_at=retrieved_at,
+            excerpt_for_item_recheck=(excerpts_by_story_id or {}).get(story_id_for(filing)),
+        )
+        if story is None:
+            continue
+        key = (story.publisher, dedup.normalize_title_unicode(story.headline))
+        if key in seen:
+            continue
+        seen.add(key)
+        stories.append(story)
+    return tuple(stories)

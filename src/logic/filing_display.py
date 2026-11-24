@@ -114,6 +114,21 @@ _EDINET_CATEGORY_TITLES: dict[str, str] = {
     "annual_securities_report": "Annual Securities Report",
     "share_buyback_status": "Status Report of Purchase of Own Shares",
     "extraordinary_report": "Extraordinary Report",
+    # Filings -> Signals bridge (2026-11-24). EDINET's own English
+    # naming for each statutory document, so a card names the document
+    # a reader would find on EDINET rather than an inferred meaning —
+    # the same discipline the three titles above already follow.
+    "semi_annual_report": "Semi-Annual Report",
+    "securities_registration": "Securities Registration Statement",
+    "ipo_registration": "Securities Registration Statement (IPO)",
+    "shelf_registration": "Shelf Registration Statement",
+    "shelf_registration_supplement": "Shelf Registration Supplement",
+    "parent_company_status": "Parent Company Status Report",
+    "amended_extraordinary_report": "Extraordinary Report (amended)",
+    "amended_annual_securities_report": "Annual Securities Report (amended)",
+    "amended_semi_annual_report": "Semi-Annual Report (amended)",
+    "amended_securities_registration": "Securities Registration Statement (amended)",
+    "amended_shelf_registration": "Shelf Registration Statement (amended)",
 }
 
 

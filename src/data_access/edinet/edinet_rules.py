@@ -43,6 +43,25 @@ EDINET_CATEGORIES: tuple[str, ...] = (
     "regulatory_or_legal",
     "technology_or_product",
     "other",
+    # Already live in DEFAULT_CODE_CATEGORY_MAP but missing from this
+    # tuple — a pre-existing gap, not introduced here. Added so the
+    # taxonomy is actually a superset of what the map emits.
+    "extraordinary_report",
+    "share_buyback_status",
+    # Filings -> Signals bridge (2026-11-24). Named after the statutory
+    # document rather than an inferred market meaning, the same
+    # discipline "annual_securities_report" already follows.
+    "semi_annual_report",
+    "securities_registration",
+    "ipo_registration",
+    "shelf_registration",
+    "shelf_registration_supplement",
+    "parent_company_status",
+    "amended_extraordinary_report",
+    "amended_annual_securities_report",
+    "amended_semi_annual_report",
+    "amended_securities_registration",
+    "amended_shelf_registration",
 )
 
 # Gate 10 — the first, and this gate the only, real EDINET category
@@ -122,11 +141,82 @@ EDINET_CATEGORIES: tuple[str, ...] = (
 #   - 015:010000:235 — 内部統制報告書 (Internal Control Report; the same
 #     SoftBank Group companion tuple already excluded from the
 #     annual-report entry above).
+# Filings -> Signals bridge (2026-11-24). Twenty-three triplets added
+# to the three above, every one observed in EDINET's OWN documents.json
+# across 2026-11-14..23 (1,721 documents over five publication days)
+# with its official docDescription read back, which is the same
+# live-verification discipline the first three went through.
+#
+# THREE THINGS THAT VERIFICATION PASS ESTABLISHED, none of which was
+# obvious from the document names alone:
+#
+# 1. ordinanceCode is load-bearing. The highest-volume triplets in the
+#    whole sample are not operating companies at all: 030:10A000:160 is
+#    a 半期報告書 for an investment TRUST, 030:995000:180 an 臨時報告書
+#    for specified securities, and the entire 060: ordinance is
+#    large-shareholding reporting. Everything below is 010:, the
+#    ordinance for ordinary corporate disclosure.
+# 2. Two document types have MORE THAN ONE form code. 臨時報告書 is
+#    both 053000:180 (already mapped) and 102000:180; mapping one
+#    silently loses the other. 半期報告書 is 043A00:160 and
+#    050000:160.
+# 3. 有価証券届出書 has four live variants, distinguished only by form
+#    code: 通常方式, 組込方式, 参照方式, and 新規公開時 (an IPO).
+#
+# Amendments carry their own category rather than a flag, so the tier
+# map can place every amended_* at Watchlist in one line and a reader
+# of this dict can see what each triplet means without a second lookup.
 DEFAULT_CODE_CATEGORY_MAP: dict[str, str] = {
-    "010:030000:120": "annual_securities_report",
-    "010:170000:220": "share_buyback_status",
-    "010:053000:180": "extraordinary_report",
+    # --- Material events -------------------------------------------
+    "010:053000:180": "extraordinary_report",          # 臨時報告書
+    "010:102000:180": "extraordinary_report",          # 臨時報告書 (second form code)
+    # --- Periodic results ------------------------------------------
+    "010:030000:120": "annual_securities_report",      # 有価証券報告書
+    "010:043A00:160": "semi_annual_report",            # 半期報告書
+    "010:050000:160": "semi_annual_report",            # 半期報告書 (second form code)
+    # --- Offerings -------------------------------------------------
+    "010:020000:030": "securities_registration",       # 有価証券届出書（通常方式）
+    "010:022000:030": "securities_registration",       # 有価証券届出書（組込方式）
+    "010:023000:030": "securities_registration",       # 有価証券届出書（参照方式）
+    "010:024000:030": "ipo_registration",              # 有価証券届出書（新規公開時）
+    # --- Shelf financing -------------------------------------------
+    "010:110000:080": "shelf_registration",            # 発行登録書
+    "010:120003:100": "shelf_registration_supplement", # 発行登録追補書類（株券、社債券等）
+    "010:150003:100": "shelf_registration_supplement", # 発行登録追補書類
+    # --- Routine ----------------------------------------------------
+    "010:170000:220": "share_buyback_status",          # 自己株券買付状況報告書
+    "010:054000:200": "parent_company_status",         # 親会社等状況報告書
+    # --- Amendments -------------------------------------------------
+    "010:053001:190": "amended_extraordinary_report",  # 訂正臨時報告書
+    "010:102001:190": "amended_extraordinary_report",  # 訂正臨時報告書 (second form code)
+    "010:030001:130": "amended_annual_securities_report",  # 訂正有価証券報告書
+    "010:043A01:170": "amended_semi_annual_report",    # 訂正半期報告書
+    "010:043001:150": "amended_semi_annual_report",    # 訂正四半期報告書 (legacy quarterly)
+    "010:020001:040": "amended_securities_registration",   # 訂正有価証券届出書（通常方式）
+    "010:022001:040": "amended_securities_registration",   # 訂正有価証券届出書（組込方式）
+    "010:023001:040": "amended_securities_registration",   # 訂正有価証券届出書（参照方式）
+    "010:024001:040": "amended_securities_registration",   # 訂正有価証券届出書（新規公開時）
+    "010:070001:040": "amended_securities_registration",   # 訂正有価証券届出書
+    "010:113001:090": "amended_shelf_registration",    # 訂正発行登録書
+    "010:142001:090": "amended_shelf_registration",    # 訂正発行登録書 (second form code)
 }
+
+# Observed in the same verification pass and deliberately NOT mapped.
+# Recorded so the next reader does not have to re-derive the exclusion:
+#   010:042000:135, :042100:135, :042200:135, :042300:135 — 確認書
+#     (Confirmation Letter). 164 instances, the single largest 010:
+#     group. A management attestation attached to another filing; it
+#     carries no event of its own.
+#   015:010000:235 — 内部統制報告書 (Internal Control Report).
+#   030:* — investment trusts and specified securities, filed by
+#     asset managers about instruments they manage, never a tracked
+#     issuer's own corporate event.
+#   060:* — 大量保有報告書 / 変更報告書, third-party shareholding
+#     disclosure about an issuer rather than by it.
+_VERIFIED_AND_EXCLUDED: tuple[str, ...] = (
+    "010:042000:135", "010:042100:135", "010:042200:135", "010:042300:135",
+    "015:010000:235",
+)
 
 
 @dataclass(frozen=True)

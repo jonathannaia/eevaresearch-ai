@@ -123,16 +123,19 @@ import signal
 import sys
 import time
 from contextlib import contextmanager
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
 import psycopg
 
 from src.config.settings import Settings, get_settings
+from src.data_access import backend_factory
 from src.data_access.daily_news import (
     daily_news_backend,
     daily_news_pipeline,
     editorial_pipeline,
+    filing_signal_bridge,
     jp_kr_sources,
     market_news_sources,
 )
@@ -475,6 +478,78 @@ def _run_editorial_tick(worker_settings: Settings) -> None:
         worker_settings.cache_dir, source_entries=source_entries, editorial_repository=editorial_repository,
     )
     _log_editorial_completion(report)
+    # After editorial discovery, so a filing projected this tick is
+    # deduped against the news already persisted in it.
+    _run_filing_signal_projection(worker_settings)
+
+
+#: Filing venues the bridge projects from, in the order their stories
+#: should appear when timestamps tie.
+_FILING_SIGNAL_SOURCES: tuple[str, ...] = ("SEC EDGAR", "OpenDART / DART", "EDINET")
+
+
+def _run_filing_signal_projection(worker_settings) -> None:
+    """Projects recent filings into the Signals feed, behind
+    EDGE_FILING_SIGNALS_ENABLED.
+
+    OFF BY DEFAULT, and when off this function opens no connection,
+    reads nothing and returns immediately — a disabled feature should
+    cost nothing, not merely do nothing.
+
+    Reads filing events and their candidates, hands them to the pure
+    projection in filing_signal_bridge, and upserts the result into the
+    same editorial store the news feed uses. Story ids are
+    deterministic, so re-running a tick upserts rather than duplicates.
+
+    Isolated like every other tick stage: an unexpected failure here is
+    logged as one sanitized line and never allowed to take down the
+    news discovery that already ran."""
+    if not worker_settings.filing_signals_enabled:
+        return
+
+    try:
+        editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
+        existing = editorial_repository.load_stories()
+        existing_headlines = tuple((s.publisher, s.headline) for s in existing.values())
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=worker_settings.filing_signals_lookback_days)
+        ).date().isoformat()
+
+        filings_with_rules: list[tuple[object, tuple[str, ...]]] = []
+        excerpts: dict[str, str] = {}
+        for source in _FILING_SIGNAL_SOURCES:
+            filing_repository = backend_factory.get_filing_event_repository(worker_settings, source)
+            candidate_repository = backend_factory.get_candidate_repository(worker_settings, source)
+            candidates_by_key = {
+                (c.filing.corp_code, c.filing.rcept_no): c
+                for c in candidate_repository.load_candidates().values()
+            }
+            for filing in filing_repository.load_filing_events():
+                if (filing.filed_at or filing.rcept_dt or "") < cutoff:
+                    continue
+                candidate = candidates_by_key.get((filing.corp_code, filing.rcept_no))
+                matched_rules = tuple(candidate.matched_rules) if candidate else ()
+                filings_with_rules.append((filing, matched_rules))
+                if candidate and candidate.excerpt_original:
+                    excerpts[filing_signal_bridge.story_id_for(filing)] = candidate.excerpt_original
+
+        stories = filing_signal_bridge.project_filing_signals(
+            tuple(filings_with_rules),
+            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            existing_headlines=existing_headlines,
+            excerpts_by_story_id=excerpts,
+        )
+        if stories:
+            editorial_repository.upsert_new_stories(list(stories))
+        tiers = Counter(s.materiality_tier.value for s in stories if s.materiality_tier)
+        print(
+            f"Daily News worker: filing signals projected — considered={len(filings_with_rules)} "
+            f"projected={len(stories)} "
+            + " ".join(f"{tier.replace(' ', '_').lower()}={n}" for tier, n in sorted(tiers.items()))
+        )
+    except Exception:  # noqa: BLE001 — never let the bridge take down a tick
+        print("Daily News worker: filing-signal projection failed.")
 
 
 def _run_tick_body(

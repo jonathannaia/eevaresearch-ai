@@ -4,6 +4,8 @@ seam (no provider call — see module docstring). Fully mocked
 EdinetClient, zero network, no Subscription-Key required."""
 from __future__ import annotations
 
+import importlib
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -1037,13 +1039,19 @@ def test_category_helper_reads_the_existing_matched_rule_representation():
 
 
 def test_the_default_code_category_map_is_untouched_by_this_module():
+    """This module must not mutate the map at import or run time. The
+    original form asserted an exact three-entry dict, which also made
+    it fail whenever a new document type was verified — testing the
+    map's CONTENTS rather than this module's non-interference. It now
+    asserts the property it was named for."""
+    import copy
+
     from src.data_access.edinet import edinet_rules
 
-    assert edinet_rules.DEFAULT_CODE_CATEGORY_MAP == {
-        "010:030000:120": "annual_securities_report",
-        "010:170000:220": "share_buyback_status",
-        "010:053000:180": "extraordinary_report",
-    }
+    before = copy.deepcopy(edinet_rules.DEFAULT_CODE_CATEGORY_MAP)
+    importlib.reload(edinet_pipeline)
+    assert edinet_rules.DEFAULT_CODE_CATEGORY_MAP == before
+    assert edinet_rules.DEFAULT_CODE_CATEGORY_MAP["010:030000:120"] == "annual_securities_report"
 
 
 def test_retrieval_and_parse_failures_are_unaffected_by_the_annual_gate(tmp_path):

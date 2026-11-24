@@ -75,11 +75,23 @@ def _resolve_company_name(krx_code: str) -> str | None:
     return None
 
 
-def map_dart_filing_to_candidate(filing: FilingEvent) -> FilingDerivedNewsCandidate | None:
+def map_dart_filing_to_candidate(
+    filing: FilingEvent, *, include_amendments: bool = False,
+) -> FilingDerivedNewsCandidate | None:
     """Pure function, no I/O. Returns None for any excluded/unmapped
-    event, an amendment, an unresolvable company identity, or a
-    wrongly-routed non-DART FilingEvent — never raises, never fabricates
-    a value."""
+    event, an unresolvable company identity, or a wrongly-routed
+    non-DART FilingEvent — never raises, never fabricates a value.
+
+    `include_amendments` defaults to False, so every existing caller
+    keeps the original behaviour of excluding amendments outright. The
+    Filings -> Signals bridge passes True: the dry run of 2026-11-17..23
+    found that BOTH Korean filings in the window were [기재정정]
+    amendments of already-approved categories, so excluding them meant
+    DART contributed nothing at all. In Korean disclosure practice an
+    amended major-decision filing is frequently where the actual
+    numbers land. The bridge tiers them at Watchlist by default and
+    lifts one only on evidence of changed amounts or terms — see
+    filing_signal_tiers.tier_for_amendment()."""
     if filing.source_name != _SOURCE_NAME:
         return None
 
@@ -87,10 +99,10 @@ def map_dart_filing_to_candidate(filing: FilingEvent) -> FilingDerivedNewsCandid
     # evaluate_report_name() flags the amendment marker as an *additional*
     # matched_rules entry but does NOT itself suppress an underlying
     # category match (an amended earnings report still shows
-    # confidence="Moderate"/"High") — the approved scope requires
-    # excluding every amendment regardless of category, so this adapter
-    # checks it explicitly, before consulting the rule evaluation at all.
-    if dart_rules.AMENDMENT_MARKER in filing.report_nm:
+    # confidence="Moderate"/"High"), so a caller that wants amendments
+    # excluded has to check it explicitly, here, before consulting the
+    # rule evaluation at all.
+    if not include_amendments and dart_rules.AMENDMENT_MARKER in filing.report_nm:
         return None
 
     evaluation = dart_rules.evaluate_report_name(filing.report_nm)

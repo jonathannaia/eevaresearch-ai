@@ -45,6 +45,7 @@ from urllib.parse import urlparse
 
 from src.data_access.dart import dart_rules
 from src.data_access.edgar import edgar_rules
+from src.data_access.edinet import edinet_rules
 
 
 class FilingSourceSystem(str, Enum):
@@ -105,7 +106,22 @@ def _dart_allowed_categories() -> frozenset[str]:
 # (material_event_shadow.py) — named "extraordinary_report" here since
 # that module itself exposes no category string of its own (it returns a
 # bool via is_eligible_extraordinary_report(), not a category label).
-_EDINET_ALLOWED_CATEGORIES: frozenset[str] = frozenset({"share_buyback_status", "extraordinary_report"})
+# Filings -> Signals bridge (2026-11-24). Widened from the original
+# two to every category in edinet_rules.DEFAULT_CODE_CATEGORY_MAP,
+# after that map's triplets were verified against EDINET's own
+# documents.json. The original restriction said most of
+# EDINET_CATEGORIES was "an unbacked structural placeholder", which was
+# true of the taxonomy tuple and is no longer true of the MAP: every
+# category below is now reachable only from a triplet observed live,
+# with its official docDescription read back.
+#
+# Derived from the map rather than written out, so a verified triplet
+# and an allowed category can never drift apart — adding one to
+# edinet_rules admits it here by construction, and there is no second
+# list to forget.
+_EDINET_ALLOWED_CATEGORIES: frozenset[str] = frozenset(
+    edinet_rules.DEFAULT_CODE_CATEGORY_MAP.values()
+)
 
 
 def validate_filing_event_category(source_system: FilingSourceSystem, category: str) -> bool:
