@@ -509,8 +509,6 @@ def _run_filing_signal_projection(worker_settings) -> None:
 
     try:
         editorial_repository = daily_news_backend.get_editorial_story_repository(worker_settings)
-        existing = editorial_repository.load_stories()
-        existing_headlines = tuple((s.publisher, s.headline) for s in existing.values())
 
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=worker_settings.filing_signals_lookback_days)
@@ -537,7 +535,6 @@ def _run_filing_signal_projection(worker_settings) -> None:
         stories = filing_signal_bridge.project_filing_signals(
             tuple(filings_with_rules),
             retrieved_at=datetime.now(timezone.utc).isoformat(),
-            existing_headlines=existing_headlines,
             excerpts_by_story_id=excerpts,
         )
         if stories:

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from src.data_access.daily_news import dedup
 from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
 from src.data_access.daily_news.edgar_filing_candidate_adapter import map_edgar_filing_to_candidate
 from src.data_access.daily_news.edinet_filing_candidate_adapter import map_edinet_filing_to_candidate
@@ -263,29 +262,43 @@ def project_filing_signals(
     filings_with_rules: tuple[tuple[FilingEvent, tuple[str, ...]], ...],
     *,
     retrieved_at: str,
-    existing_headlines: tuple[tuple[str, str], ...] = (),
     excerpts_by_story_id: dict[str, str] | None = None,
 ) -> tuple[EditorialStory, ...]:
-    """Every projectable filing, in input order, skipping any whose
-    headline already exists in the feed under the same publisher.
+    """Every projectable filing, in input order, one story per filing.
 
-    The headline check is deliberately narrow: a filing and a news item
-    about the same event are NOT duplicates of each other — the filing
-    is the primary source and the news is a third party's account, and
-    showing both is the point. This only guards against projecting the
-    same filing twice under two source rows."""
-    seen = {(publisher, dedup.normalize_title_unicode(headline)) for publisher, headline in existing_headlines}
+    DEDUPLICATION IS BY STORY ID, NOT BY HEADLINE, and that correction
+    matters more than it looks. The first version of this function
+    suppressed any filing whose (publisher, headline) pair had already
+    been seen. A filing's headline is its FORM NAME: every SEC 8-K is
+    titled "8-K". So one EDGAR 8-K survived per run and every other one
+    — NVIDIA's Item 5.02 governance filing among them — was discarded
+    as a duplicate of an unrelated company's 8-K.
+
+    Observed live: 14 projectable EDGAR filings collapsed to 4, one per
+    distinct form name ("8-K", "FORM 8-K", "10-K", "10-Q").
+
+    story_id_for() is already derived from (source, corp_code,
+    rcept_no), the same key the filing store itself deduplicates by, so
+    it is both necessary and sufficient here: a filing projected twice
+    produces the same id and upserts. The headline check added nothing
+    and removed almost everything.
+
+    No cross-check against NEWS headlines either, deliberately: a
+    filing and a news item about the same event are not duplicates of
+    each other. The filing is the primary source and the news is a
+    third party's account of it, and showing both is the point."""
+    seen_ids: set[str] = set()
     stories: list[EditorialStory] = []
     for filing, matched_rules in filings_with_rules:
+        story_id = story_id_for(filing)
+        if story_id in seen_ids:
+            continue
         story = build_filing_signal_story(
             filing, matched_rules=matched_rules, retrieved_at=retrieved_at,
-            excerpt_for_item_recheck=(excerpts_by_story_id or {}).get(story_id_for(filing)),
+            excerpt_for_item_recheck=(excerpts_by_story_id or {}).get(story_id),
         )
         if story is None:
             continue
-        key = (story.publisher, dedup.normalize_title_unicode(story.headline))
-        if key in seen:
-            continue
-        seen.add(key)
+        seen_ids.add(story_id)
         stories.append(story)
     return tuple(stories)
