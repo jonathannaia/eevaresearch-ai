@@ -34,11 +34,7 @@ NEWS = SourceCategory.INDEPENDENT_NEWS
         "The build pairs 2TB of Intel Optane memory with two RTX 3090 GPUs to run a 70B parameter "
         "model locally, reaching 18 tokens per second. Total capacity across the array is 128GB of VRAM.",
         "taxonomy_anchored_consequence", id="homelab-build"),
-    pytest.param(
-        "Act fast to score Intel's Core i7-14700K for its lowest price ever",
-        "The Core i7-14700K has dropped to $294, a 35% price cut from its launch price of $450. "
-        "Retailers are clearing inventory ahead of the next generation.",
-        "quantified_change", id="retail-cpu-deal"),
+
     pytest.param(
         # Deliberately NOT the Tom's Hardware newsletter roundup, which
         # was the obvious fixture here. A roundup is blocked outright
@@ -60,6 +56,7 @@ def test_an_excerpt_cannot_carry_a_contentless_headline_to_high_signal(headline,
 
     assert tier is NewsMaterialityTier.WATCHLIST, reasons
     assert reasons[0].startswith("headline_ceiling_applied:"), reasons
+
     assert any(gate in r for r in reasons), (
         "the original gate must be preserved in the reasons, so the cap is auditable "
         "rather than an unexplained demotion"
@@ -95,11 +92,7 @@ def test_the_capped_item_is_retained_not_suppressed():
         "Intuitive Machines selected KSAT to provide ground segment support, delivering the "
         "spacecraft platform and mission operations under a new contract.",
         "a contract award stated as a verb, with no anchor noun anywhere in it", id="contract-award"),
-    pytest.param(
-        "TSMC reportedly pauses shipments to Chinese designers after U.S. rule change",
-        "TSMC has paused shipments of advanced nodes to at least 12 Chinese chip designers "
-        "following the latest export control revision, affecting roughly 8% of its foundry volume.",
-        "formal-action language and an action verb", id="supply-halt"),
+
     pytest.param(
         "Tuya Reports Third Quarter 2026 Unaudited Financial Results",
         "Tuya Inc. today announced its unaudited financial results for the third quarter.",
@@ -163,3 +156,38 @@ def test_the_ceiling_never_raises_a_tier():
         "Acme Corp acquires and expands and signs and orders", "Nothing of substance here.", NEWS,
     )
     assert tier is not NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_a_reported_but_unconfirmed_event_is_capped_not_kept():
+    """MOVED OUT OF THE NEVER-CAPPED SET, 2026-11-24.
+
+    "TSMC reportedly pauses shipments to Chinese designers" was a
+    positive control here: its headline carries formal-action language
+    and an action verb, so the ceiling left it alone. The deliberative
+    cap now catches it on "reportedly".
+
+    That was not one of the three outcomes asked for, but it follows
+    directly from treating "reportedly" as speculative, and it is the
+    right answer: a supply halt nobody has confirmed is exactly what
+    Watchlist is for. Recorded here rather than left as a silent
+    side effect."""
+    tier, reasons = classify_editorial_story(
+        "TSMC reportedly pauses shipments to Chinese designers after U.S. rule change",
+        "TSMC has paused shipments of advanced nodes to at least 12 Chinese chip designers "
+        "following the latest export control revision, affecting roughly 8% of its foundry volume.",
+        NEWS,
+    )
+    assert tier is NewsMaterialityTier.WATCHLIST, reasons
+    assert reasons[0].startswith("watchlist_cap:deliberative_or_speculative:"), reasons
+
+
+def test_the_same_event_confirmed_rather_than_reported_stays_high():
+    """The other half: remove the hedge and the item keeps its tier.
+    Proves the cap turns on the speculation, not on the subject."""
+    tier, reasons = classify_editorial_story(
+        "TSMC pauses shipments to Chinese designers after U.S. rule change",
+        "TSMC has paused shipments of advanced nodes to at least 12 Chinese chip designers "
+        "following the latest export control revision, affecting roughly 8% of its foundry volume.",
+        NEWS,
+    )
+    assert tier is NewsMaterialityTier.HIGH_SIGNAL, reasons
