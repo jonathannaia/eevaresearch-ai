@@ -77,15 +77,18 @@ def _fetch_with_retry(client: EdgarClient, cik: str, accession_no: str, filename
 def get_or_fetch_excerpt(
     client: EdgarClient, cik: str, accession_no: str, filename: str, cache_dir: Path,
     expected_items: tuple[str, ...] = (),
+    *,
+    anchor_on_any_item: bool = False,
 ) -> DocumentFetchResult:
     """For ONE explicitly selected filing only — never a loop over many
     accession numbers. Checks the on-disk cache first, including a
     previously-failed result, so a known-unparseable document isn't
     retried on every page view.
 
-    `expected_items` is additive/optional — passed through to
-    extract_excerpt unchanged (see that function's docstring for the
-    item-anchored excerpt this enables for 8-K candidates)."""
+    `expected_items` and `anchor_on_any_item` are additive/optional and
+    passed through to extract_excerpt unchanged — see that function's
+    docstring for the item-anchored excerpt they enable, and for why an
+    8-K with UNKNOWN items still needs anchoring."""
     cache = _load_cache(cache_dir)
     cached = cache.get(accession_no)
     if cached is not None:
@@ -106,7 +109,7 @@ def get_or_fetch_excerpt(
         _cache_result(cache, cache_dir, result)
         return result
 
-    extraction = extract_excerpt(document_bytes, expected_items)
+    extraction = extract_excerpt(document_bytes, expected_items, anchor_on_any_item=anchor_on_any_item)
     result = DocumentFetchResult(
         accession_no=accession_no, state=extraction.state, excerpt_original=extraction.excerpt_original,
         detail=extraction.detail, retrieved_at=retrieved_at, from_cache=False,
