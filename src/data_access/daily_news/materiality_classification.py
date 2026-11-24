@@ -1228,7 +1228,28 @@ _CORPORATE_ACTION_HEADLINE_PATTERN = re.compile(
     r"rais(?:es?|ed)|cuts?|lowers?|hikes?|expand(?:s|ed)|invest(?:s|ed)|"
     r"partner(?:s|ed)|secur(?:es?|ed)|agree(?:s|d)|complet(?:es?|ed)|"
     r"halts?|paus(?:es?|ed)|suspend(?:s|ed)|recalls?|settl(?:es?|ed)|"
-    r"approv(?:es?|ed)|files?|filed|unveils?|commits?|committed)\b",
+    r"approv(?:es?|ed)|files?|filed|unveils?|commits?|committed|"
+    r"announc(?:es?|ed)|discloses?|disclosed|"
+
+    # Litigation. A lawsuit is a corporate event with a balance-sheet
+    # consequence, and the vocabulary had none of it: "Japan's Furukawa
+    # Electric Sues LG Chem Over DDF Patent Infringement" was demoted
+    # for want of the word "sues".
+    r"sues?|sued|suing|lawsuits?|countersues?|litigat(?:es?|ed|ion)|"
+    r"appeals?|appealed|indicts?|indicted|fines?|fined|"
+    # Deploy and test. Both describe something a company DID, as
+    # distinct from something it is thinking about.
+    r"tests?|tested|deploys?|deployed|certifi(?:es|ed)|qualifies|qualified)\b",
+    re.IGNORECASE,
+)
+
+# "wins/loses a ruling" and "files suit" need two words to mean
+# anything — bare "wins" is already in the list above, but bare
+# "ruling" or "suit" is not an action.
+_LITIGATION_PHRASE_PATTERN = re.compile(
+    r"\b(?:files?|filed|filing)\s+(?:a\s+)?(?:suit|lawsuit|complaint|claim)\b"
+    r"|\b(?:wins?|won|loses?|lost)\s+(?:a\s+|the\s+)?(?:ruling|appeal|case|verdict|judgment|judgement)\b"
+    r"|\b(?:court|judge|jury|tribunal|regulator)\s+(?:rules?|ruled|orders?|ordered|finds?|found)\b",
     re.IGNORECASE,
 )
 
@@ -1250,7 +1271,94 @@ def _headline_carries_materiality_signal(headline: str) -> bool:
         or _matched_dividend_actions(headline)
         or _definitive_transaction_hit(headline)
         or _CORPORATE_ACTION_HEADLINE_PATTERN.search(headline)
+        or _LITIGATION_PHRASE_PATTERN.search(headline)
     )
+
+
+# --- Watchlist caps ---------------------------------------------------
+# Signals ranking calibration (2026-11-24). A tier below the
+# disqualifying formats: these headlines ARE about something, so
+# Background would hide real content, but none of them states a
+# completed corporate event, so none belongs at the top of the feed.
+#
+# Each entry below is a shape observed in the live High Signal feed
+# after the headline ceiling, the format block and deduplication had
+# already run. The ceiling asks "is this headline about a corporate
+# event at all"; these ask the narrower question "has the event
+# actually happened".
+_WATCHLIST_CAP_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    # DELIBERATIVE / SPECULATIVE. A company weighing a deal has not
+    # done one. These words are the difference between an event and
+    # somebody's account of a possible event, and the gates read them
+    # as equivalent: "SoftBank's Son Weighed $1 Trillion Acquisition of
+    # SK hynix" scored High Signal on the number alone.
+    "deliberative_or_speculative": (
+        re.compile(r"\b(?:weigh(?:s|ed|ing)|consider(?:s|ed|ing)|mulls?|mulling|explor(?:es|ing))\b", re.IGNORECASE),
+        re.compile(r"\b(?:could|might|may)\s+\w+", re.IGNORECASE),
+        re.compile(r"\b(?:reportedly|rumou?red|allegedly|said to be|is said to)\b", re.IGNORECASE),
+        re.compile(r"\bin (?:advanced )?talks\b", re.IGNORECASE),
+        re.compile(r"\b(?:eyeing|eyes)\s+(?:a\s+|an\s+)?\w+", re.IGNORECASE),
+    ),
+    # CONSUMER RETAIL PRICING. A genuine corporate pricing action
+    # ("Nvidia Raises GPU Prices by 15%") must keep its tier, so this
+    # matches the RETAIL framing — the sale, the bundle, the shopping
+    # event — never the word "price" on its own.
+    "consumer_retail_pricing": (
+        re.compile(r"\b(?:black friday|cyber monday|prime day|boxing day|singles'? day)\b", re.IGNORECASE),
+        re.compile(r"\b(?:deals?|discounts?|coupons?|vouchers?|bundles?)\b", re.IGNORECASE),
+        re.compile(r"\b(?:lowest|best|cheapest)\s+price\b", re.IGNORECASE),
+        re.compile(r"\b(?:save|saving)\s+\$?\d|\b\d+%\s+off\b|\$\d[\d,.]*\s+off\b", re.IGNORECASE),
+        re.compile(r"\b(?:act fast|grab|score|snag|shop)\b", re.IGNORECASE),
+        re.compile(r"\bon sale\b|\bsale\b(?!\s*(?:of|and)\b)", re.IGNORECASE),
+    ),
+    # TRADE-SHOW DEMONSTRATION. A product shown at a conference is a
+    # product shown at a conference. Capped UNLESS the headline also
+    # states a commercial outcome — see _states_commercial_outcome.
+    "trade_show_demo": (
+        re.compile(r"\bshows? off\b|\bshowcas(?:es|ing)\b|\bdemo(?:s|es|ing|nstrates)\b", re.IGNORECASE),
+        re.compile(r"\bon display at\b|\bat its booth\b|\bbooth\b", re.IGNORECASE),
+        re.compile(r"\bteas(?:es|ed|ing)\b|\bpreviews?\b", re.IGNORECASE),
+    ),
+    # VAGUE PROGRESS. Momentum language describing no discrete event:
+    # "Google's Korea Maps push gains pace with investment plans".
+    "vague_progress": (
+        re.compile(r"\b(?:gains?|gather(?:s|ing)?|pick(?:s|ing)? up)\s+(?:pace|steam|momentum|speed|ground)\b", re.IGNORECASE),
+        re.compile(r"\bmomentum (?:builds?|grows?|continues?)\b", re.IGNORECASE),
+        re.compile(r"\b(?:push|drive|effort|bid)\s+(?:gains?|gather|continues?|accelerates?)\b", re.IGNORECASE),
+        re.compile(r"\benters? its\b.{0,24}\bera\b", re.IGNORECASE),
+    ),
+}
+
+#: A trade-show headline keeps its tier when it ALSO states a
+#: commercial outcome — an order, a contract, a named customer, a
+#: shipping date, general availability, a design win. Showing a
+#: product is not news; selling it is.
+_COMMERCIAL_OUTCOME_PATTERN = re.compile(
+    r"\b(?:order|orders|contract|contracts|customers?|design win|"
+    r"general availability|ships?|shipping|shipment|volume production|"
+    r"mass production|supply agreement|purchase agreement|letter of intent)\b",
+    re.IGNORECASE,
+)
+
+
+def _states_commercial_outcome(headline: str) -> bool:
+    return bool(_COMMERCIAL_OUTCOME_PATTERN.search(headline or ""))
+
+
+def _watchlist_cap_hit(headline: str) -> str | None:
+    """Pure. Returns the cap name when the headline matches one of
+    these shapes, otherwise None. Headline only: a body that mentions a
+    conference is not a conference announcement."""
+    if not headline:
+        return None
+    for name, patterns in _WATCHLIST_CAP_PATTERNS.items():
+        if not any(pattern.search(headline) for pattern in patterns):
+            continue
+        if name == "trade_show_demo" and _states_commercial_outcome(headline):
+            # Shown AND sold. The commercial outcome is the event.
+            continue
+        return name
+    return None
 
 
 def _apply_headline_ceiling(
@@ -1272,6 +1380,19 @@ def _apply_headline_ceiling(
         # written to carry the event, so a headline test says nothing
         # about it.
         return combined
+
+    # Checked BEFORE the signal test, because these shapes usually do
+    # carry a signal — that is exactly why they reached High Signal.
+    # "Black Friday" headlines carry pricing anchors; "weighed a $1
+    # trillion acquisition" carries a number. The signal is real; the
+    # completed event is not.
+    cap_hit = _watchlist_cap_hit(headline)
+    if cap_hit is not None:
+        capped_from = combined_reasons[0] if combined_reasons else "unknown"
+        return NewsMaterialityTier.WATCHLIST, (
+            f"watchlist_cap:{cap_hit}:{capped_from}",
+        ) + combined_reasons
+
     if _headline_carries_materiality_signal(headline):
         return combined
     capped_from = combined_reasons[0] if combined_reasons else "unknown"
