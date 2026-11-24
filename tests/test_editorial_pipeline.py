@@ -190,6 +190,48 @@ def test_same_title_different_publisher_is_not_a_duplicate(tmp_path, monkeypatch
 
     report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(cnbc, korea_herald))
 
+    # EXPECTATION DELIBERATELY INVERTED, 2026-11-23 (cross-publisher
+    # dedupe). This control was written when publisher was part of the
+    # duplicate key, so one story carried by two outlets produced two
+    # entries — read as independent corroboration. In the live feed
+    # that produced visible duplicates at the top of High Signals, so
+    # the first-seen story now wins and the second is suppressed.
+    #
+    # An IDENTICAL headline is the strongest possible same-story
+    # signal, so if anything is deduped across publishers, this is.
+    # The corroboration case the original test protected is preserved
+    # in the companion test below: two DIFFERENT stories from two
+    # outlets are still both kept.
+    assert report.stories_published == 1
+    assert report.items_duplicate == 1
+
+
+def test_two_different_stories_from_two_publishers_are_both_kept(tmp_path, monkeypatch):
+    """The other half of the inversion above. Cross-publisher dedupe
+    must suppress the same story told twice, never two outlets
+    reporting different things on the same day — that would hide real
+    coverage, which is a far worse failure than a visible duplicate."""
+    cnbc = _source(source_id="cnbc-y", attribution_label="CNBC")
+    korea_herald = DailyNewsSourceEntry(
+        source_id="kh-y", category=SourceCategory.INDEPENDENT_NEWS, format=SourceFormat.RSS_ATOM,
+        canonical_url="https://www.koreaherald.com/rss/kh_Business", domains=("www.koreaherald.com",),
+        jurisdiction="South Korea", enabled=True, health_state=SourceHealthState.VERIFIED,
+        attribution_label="The Korea Herald", licensing_classification=_LICENSING, priority=1,
+        issuer_agnostic=True, allowlisted=True,
+    )
+    _patch_fetch(monkeypatch, {
+        cnbc.canonical_url: FeedFetchResult(
+            entries=(_entry(link="https://www.cnbc.com/b.html",
+                            title="Oracle Corporation posts AI cloud growth"),), failure_code=None,
+        ),
+        korea_herald.canonical_url: FeedFetchResult(
+            entries=(_entry(link="https://www.koreaherald.com/article/2",
+                            title="SK hynix begins HBM4 mass production at Icheon"),), failure_code=None,
+        ),
+    })
+
+    report = editorial_pipeline.run_editorial_discovery(tmp_path, source_entries=(cnbc, korea_herald))
+
     assert report.stories_published == 2
     assert report.items_duplicate == 0
 

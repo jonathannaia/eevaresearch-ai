@@ -74,7 +74,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.data_access.daily_news import canonical_url, dedup, editorial_story_store, rss_atom_client
+from src.data_access.daily_news import (
+    canonical_url,
+    cross_publisher_dedup,
+    dedup,
+    editorial_story_store,
+    rss_atom_client,
+)
 from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import classify_editorial_story
@@ -322,6 +328,14 @@ def run_editorial_discovery(
     existing_title_publisher = {
         (dedup.normalize_title_unicode(s.headline), s.publisher) for s in store.values()
     }
+    # Cross-publisher same-story detection needs the publisher and the
+    # publication time, which the exact-match sets above discard. Built
+    # once per run and extended in place as this run persists, so two
+    # outlets carrying one story in the SAME run dedupe against each
+    # other and not only against earlier runs.
+    existing_publisher_headline_time = [
+        (s.publisher, s.headline, s.published_at) for s in store.values()
+    ]
 
     items_fetched = 0
     items_no_valid_url = 0
@@ -383,6 +397,24 @@ def run_editorial_discovery(
             normalized_url = normalize_source_url(entry.link)
             normalized_title = dedup.normalize_title_unicode(entry.title)
             if normalized_url in existing_urls or (normalized_title, source.attribution_label) in existing_title_publisher:
+                items_duplicate += 1
+                continue
+
+            # Cross-publisher same-story suppression. The exact-match
+            # check above keys on (title, publisher), so the SAME story
+            # from a DIFFERENT outlet always passed it — which is how
+            # two near-identical Russia satellite stories both reached
+            # live High Signals on 2026-11-23. Narrow by construction:
+            # see cross_publisher_dedup.py for every gate that must
+            # hold. First-seen wins, matching dedup.py's own
+            # convention; nothing is merged onto the survivor.
+            cross_publisher_match = cross_publisher_dedup.find_cross_publisher_duplicate(
+                existing_publisher_headline_time,
+                publisher=source.attribution_label,
+                headline=entry.title,
+                published_at=entry.published_at,
+            )
+            if cross_publisher_match is not None:
                 items_duplicate += 1
                 continue
 
@@ -493,6 +525,12 @@ def run_editorial_discovery(
             # simple, single-pass dedup registration.
             existing_urls.add(normalized_url)
             existing_title_publisher.add((normalized_title, source.attribution_label))
+            # Same registration for the cross-publisher corpus, so one
+            # story carried by two outlets within a SINGLE run dedupes
+            # against itself and not only against an earlier run.
+            existing_publisher_headline_time.append(
+                (source.attribution_label, entry.title, entry.published_at)
+            )
             qualifying.append((
                 entry, story_id, matched_companies, attributed_companies,
                 matched_themes, materiality_tier, materiality_reasons,
