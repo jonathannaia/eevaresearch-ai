@@ -1926,7 +1926,20 @@ def test_regression_space_executive_tied_to_funded_program_is_eligible(tmp_path,
     assert report.stories_published == 1
     story = next(iter(stories.values()))
     assert story.matched_themes == ("space",)
-    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    # EXPECTATION CHANGED, 2026-11-24 (tracked-company requirement).
+    # The filer is the Department of the Air Force — a government
+    # agency, not a tracked issuer — so this matches on THEME alone.
+    # An $800m contract award is material to whoever won it, and this
+    # headline does not say who. Watchlist is where a reader looks for
+    # exactly that: relevant, and not yet a claim about a company we
+    # follow.
+    #
+    # The control still proves what it was written for: a personnel
+    # announcement coupled to a funded program is not rejected as
+    # routine. It is published, theme-matched, and keeps its gate.
+    assert story.materiality_tier == NewsMaterialityTier.WATCHLIST
+    assert story.materiality_reasons[0].startswith("no_tracked_company:"), story.materiality_reasons
+    assert story.matched_companies == ()
 
 
 # --- D: Kirkwood-style podcast -> non-High-Signal; quantified interview eligible ---
@@ -1954,7 +1967,21 @@ def test_regression_interview_with_attributable_quantified_commitment_is_eligibl
     )
     assert report.stories_published == 1
     story = next(iter(stories.values()))
-    assert story.materiality_tier == NewsMaterialityTier.HIGH_SIGNAL
+    # EXPECTATION CHANGED, 2026-11-24 (tracked-company requirement).
+    # Kirkwood IG is not a tracked company: this item matches on THEME
+    # alone. A $300m fibre expansion by a company this product does
+    # not follow is real news and not a High Signal in a feed whose
+    # High Signals are claims about tracked issuers.
+    #
+    # The control still proves what it was written for — the interview
+    # format does not suppress a quantified commitment. The item is
+    # published, matched, and keeps its gate in the reasons.
+    assert story.materiality_tier == NewsMaterialityTier.WATCHLIST
+    assert story.materiality_reasons[0].startswith("no_tracked_company:"), story.materiality_reasons
+    assert story.matched_companies == (), "theme-only match, which is the point"
+    assert any("quantified" in r or "taxonomy_anchored" in r for r in story.materiality_reasons), (
+        "the original gate must survive the cap"
+    )
 
 
 # --- E/F: first-party launch calibration; Nvidia positive control ---

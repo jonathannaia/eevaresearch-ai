@@ -1424,6 +1424,108 @@ def _editorial_is_primary_disclosure(text: str, source_category: SourceCategory)
     )
 
 
+# --- Tracked-company requirement --------------------------------------
+# Signals ranking (2026-11-24). A High Signal is a claim that something
+# material happened to a company this product tracks. An item with no
+# attributed tracked company cannot be that claim, however material its
+# text reads.
+#
+# Measured on the live feed: 8 of 32 High Signals had NO identified
+# company at all — both Russia satellite items, a Tuya earnings
+# release (Tuya is not tracked), "AI server makers hike prices up to
+# 45%", "Korea's exports forecast to exceed $1 tril.". Each is real
+# news; none is news about a tracked issuer.
+#
+# WHY THIS IS A CAP AND NOT A REJECTION. An item with no tracked
+# company can still be the first sign of something — a supply-chain
+# constraint, a policy change, a price move across a sector. Watchlist
+# is where a reader goes looking for that. Background would hide it.
+#
+# WHY matched_companies AND NOT identified_companies. The story's
+# matched_companies field is the admission-VETTED subset; its
+# identified_companies field is the raw, pre-attribution text match
+# that this project's own design documents say must never drive a
+# visible tag. Requiring the vetted list is the whole point: 25% of
+# live High Signals had an empty raw match, and several of the rest
+# had a WRONG one ("Nintendo Switch 2 bundles" attributed to NVIDIA),
+# which is a separate defect this rule deliberately does not pretend
+# to fix.
+
+_NO_TRACKED_COMPANY_REASON = "no_tracked_company"
+
+
+def cap_without_tracked_company(
+    tier: NewsMaterialityTier,
+    reasons: tuple[str, ...],
+    attributed_companies: tuple[str, ...],
+) -> tuple[NewsMaterialityTier, tuple[str, ...]]:
+    """Pure. HIGH_SIGNAL requires at least one attributed tracked
+    company; everything else passes through untouched. Never raises
+    a tier, so this can only reduce what reaches the top of the feed.
+    The original gate is preserved behind the marker, so the cap is
+    auditable rather than an unexplained demotion."""
+    if tier is not NewsMaterialityTier.HIGH_SIGNAL:
+        return tier, reasons
+    if attributed_companies:
+        return tier, reasons
+    capped_from = reasons[0] if reasons else "unknown"
+    return NewsMaterialityTier.WATCHLIST, (f"{_NO_TRACKED_COMPANY_REASON}:{capped_from}",) + reasons
+
+
+# --- Vague-headline flag ----------------------------------------------
+# A marker, not a demotion. These headlines name a company and an
+# approximate direction without a discrete event: "Nvidia gets more
+# supplier capacity to meet AI demand", "Google's Korea Maps push
+# gains pace". Some are genuinely the first report of something real,
+# so demoting them all would lose signal — but they are worth counting
+# before deciding, and worth showing to whoever reviews the feed.
+#
+# Recorded in materiality_reasons so it is queryable and visible on a
+# card, and changes no tier. If the count turns out to be large and
+# the items turn out to be noise, turning this into a cap is a
+# one-line change to the caller.
+
+_VAGUE_HEADLINE_REASON = "vague_headline"
+
+_VAGUE_HEADLINE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # "gets more X", "sees more X", "adds more X" — a direction with no
+    # quantity, no counterparty and no date.
+    re.compile(r"\b(?:gets?|sees?|adds?|gains?|wins?)\s+(?:more|further|additional|extra)\b", re.IGNORECASE),
+    # "to meet demand", "amid demand", "on strong demand" — a reason
+    # offered in place of an event.
+    re.compile(r"\b(?:to meet|amid|on(?: strong| rising| weak)?)\s+\w*\s*demand\b", re.IGNORECASE),
+    # "eyes", "looks to", "set to", "poised to", "on track to" — an
+    # intention rather than an act. Distinct from the deliberative cap
+    # above, which fires on explicit speculation.
+    re.compile(r"\b(?:looks? to|set to|poised to|on track to|aims? to|plans? to)\b", re.IGNORECASE),
+    # "ramps up", "doubles down", "steps up" without a figure.
+    re.compile(r"\b(?:ramps?|steps?|scales?)\s+up\b|\bdoubles? down\b", re.IGNORECASE),
+)
+
+
+def headline_is_vague(headline: str) -> bool:
+    """Pure. True when the headline describes a direction rather than a
+    discrete event. Deliberately a flag and not a gate."""
+    if not headline:
+        return False
+    if _has_numeric_magnitude(headline):
+        # A number makes it concrete enough to stop calling it vague,
+        # whatever the surrounding wording.
+        return False
+    return any(pattern.search(headline) for pattern in _VAGUE_HEADLINE_PATTERNS)
+
+
+def flag_vague_headline(headline: str, reasons: tuple[str, ...]) -> tuple[str, ...]:
+    """Appends the marker when the headline is vague. Never removes or
+    reorders an existing reason, so reasons[0] stays the operative
+    gate for every caller that reads it."""
+    if not headline_is_vague(headline):
+        return reasons
+    if any(r.startswith(_VAGUE_HEADLINE_REASON) for r in reasons):
+        return reasons
+    return reasons + (_VAGUE_HEADLINE_REASON,)
+
+
 def classify_issuer_story(
     headline: str | None, excerpt: str | None, source_class: SourceClass,
     *, issuer_names: IssuerNameForms | None = None,
