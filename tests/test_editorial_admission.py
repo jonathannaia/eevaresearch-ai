@@ -1276,3 +1276,104 @@ def test_private_startup_incidental_tracked_company_mention_is_not_attributed():
     assert decision.admitted is True
     assert decision.reason == "theme_subject:humanoids"
     assert decision.identified_companies == ()
+
+
+# ============================================================
+# Regulatory/government-subject veto (item 3 — the "export controls ->
+# NVIDIA" diagnosis). Unlike the fixtures above, the three headline/
+# excerpt pairs below are literal production rows read from
+# editorial_stories on 2026-11-25; where the full ingest-time summary is
+# no longer retained (only the truncated excerpt is persisted), the body
+# is extended with an authored continuation that reproduces the exact
+# mechanism observed in production, and the test says so.
+# ============================================================
+
+
+def test_us_export_controls_story_attributes_no_body_only_company():
+    """Production row (editorial_stories, published 2026-11-20). Raw
+    company recognition matched NVIDIA, Applied Materials, ON
+    Semiconductor and Samsung Electronics; exactly one — NVIDIA — was
+    attributed and shown as a chip, purely because its mention fell
+    inside _ACTOR_LOOKAHEAD_CHARS after the action keyword
+    "Regulators" while Applied Materials, in the same clause, fell
+    outside it. The subject is the U.S. government; no company is."""
+    decision = _assess(
+        "U.S. Tightens Controls on Chinese Access to AI Chips",
+        "U.S. President Donald Trump and Commerce Secretary Howard Lutnick, whose department "
+        "oversees export controls on advanced semiconductors. The U.S. government is tightening "
+        "export controls to prevent Chinese companies from accessing advanced artificial "
+        "intelligence (AI) semiconductors through indirect channels. Regulators said the rule "
+        "covers NVIDIA accelerators as well as equipment from Applied Materials, Inc. and "
+        "Lam Research Corp.",
+    )
+    assert decision.identified_companies == ()
+
+
+def test_tsmc_export_rules_story_attributes_no_company():
+    """Production row (published 2026-11-22). NVIDIA is raw-matched from
+    "chips like Nvidia Blackwell AI GPUs" — a pure object-position
+    mention. Already correct before this change; locked here so the
+    regulatory veto's front-anchoring never becomes the only thing
+    holding it."""
+    decision = _assess(
+        "TSMC reportedly pauses shipments to Chinese designers after U.S. export rules flag "
+        "decade-old 16nm and 14nm nodes",
+        "The U.S. Bureau of Industry and Security (BIS) has released an interim final rule (IFR) "
+        "that will prevent Chinese AI companies from leasing data compute outside of China to "
+        "access advanced U.S. chips like Nvidia Blackwell AI GPUs.",
+    )
+    assert decision.identified_companies == ()
+
+
+def test_nintendo_black_friday_bundle_story_attributes_no_company():
+    """Production row (published 2026-11-22), reported as
+    "Nintendo -> NVIDIA". The NVIDIA chip was never shown: admission had
+    already rejected it. Locked so it stays rejected."""
+    decision = _assess(
+        "Nintendo Switch 2 bundles drop to pre-hike pricing in Black Friday run-up sale",
+        "Nintendo raised the price of the Switch 2 earlier this year in response to rising NAND "
+        "and DRAM prices, but on Black Friday, you can wipe out that hike with a variety of "
+        "bundles available on Amazon. The core deal is the Mario Kart World Switch 2 bundle, "
+        "which includes the game, the console, and three months of Nintendo Switch Online.",
+    )
+    assert decision.identified_companies == ()
+
+
+def test_regulatory_headline_still_attributes_a_company_named_in_the_headline():
+    """The veto's scope: it suppresses the action-language route only.
+    A company the regulator is visibly acting ON, named in the headline
+    itself, keeps its attribution in full — this is the behaviour the
+    litigation verbs added earlier depend on."""
+    decision = _assess(
+        "EU fines Qualcomm Incorporated over chip pricing",
+        "The European Commission fined Qualcomm Incorporated after a multi-year antitrust "
+        "investigation into its modem chip pricing.",
+    )
+    assert decision.identified_companies == ("Qualcomm Incorporated",)
+
+
+def test_mid_headline_regulator_mention_does_not_veto_the_company_subject():
+    """Front-anchoring matters: a headline whose own subject is a
+    company but which mentions a regulator later ("... after U.S.
+    export rules ...") is still a company story, and a tracked company
+    acting in its body keeps its attribution."""
+    decision = _assess(
+        "Protec reportedly pauses shipments after U.S. export rules flag older nodes",
+        "Protec, a Korean equipment maker, paused shipments this week. Samsung Electronics "
+        "confirmed it has adjusted its bonding equipment orders in response.",
+    )
+    assert "Samsung Electronics" in decision.identified_companies
+
+
+def test_regulatory_subject_detector_ignores_ordinary_company_headlines():
+    """_has_regulatory_subject() is deliberately narrow: a regulator-
+    shaped word is not enough, and neither is policy vocabulary on its
+    own. "USB-C" must not read as the acronym "US"."""
+    assert editorial_admission._has_regulatory_subject("U.S. Tightens Controls on Chinese Access to AI Chips")
+    assert editorial_admission._has_regulatory_subject("EU fines Qualcomm over chip pricing")
+    assert not editorial_admission._has_regulatory_subject("Samsung Orders Additional Protec Bonding Equipment")
+    assert not editorial_admission._has_regulatory_subject("USB-C mandate arrives in Europe")
+    assert not editorial_admission._has_regulatory_subject("Huang Returns as Nvidia CEO 11 Days After Resigning")
+    assert not editorial_admission._has_regulatory_subject(
+        "TSMC reportedly pauses shipments to Chinese designers after U.S. export rules flag 16nm nodes"
+    )
