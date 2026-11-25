@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only-extracted", action="store_true")
     parser.add_argument("--source-chars", type=int, default=400)
+    parser.add_argument("--compact", action="store_true", help="one line per filing: old -> new")
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -124,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 "provenance": provenance,
                 "grounded": grounded,
                 "excerpt_shown": bool(story.excerpt),
+                "summary": story.excerpt or "",
                 "reason": detail.rejected_because if detail else None,
                 "sentence": (detail.source_sentence if detail and detail.source_sentence else raw),
             })
@@ -140,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  cards that now show a summary: {sum(1 for r in rows if r['excerpt_shown'])}")
     print(f"  FAILED the grounding re-check: {len(ungrounded)}")
     print()
+    if args.compact:
+        for i, r in enumerate(rows, 1):
+            print(f"[{i:2}] {r['provenance'][:6]:6} {r['old'][:34]:34} -> {r['new'][:96]}")
+        return 1 if ungrounded else 0
+
     for i, r in enumerate(rows, 1):
         mark = {True: "grounded", False: "UNGROUNDED", None: "n/a"}[r["grounded"]]
         print(f"--- [{i}] {r['source']} {r['form']} {r['item']} / {r['category']} / {r['tier']}")
@@ -148,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    provenance={r['provenance']} grounding={mark} summary={'yes' if r['excerpt_shown'] else 'no'}"
               + (f" rejected={r['reason']}" if r["reason"] else ""))
         print(f"    source: {r['sentence'][: args.source_chars]!r}")
+        if r["summary"]:
+            print(f"    summary: {r['summary'][: args.source_chars]!r}")
         print()
     return 1 if ungrounded else 0
 
