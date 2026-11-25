@@ -31,7 +31,7 @@ import argparse
 import sys
 from datetime import datetime, timezone
 
-from src.config.settings import Settings
+from src.config.settings import get_settings
 from src.data_access.daily_news.editorial_reclassification import plan_reclassification
 from src.data_access.postgres_state_db import editorial_story_repository
 from src.data_access.postgres_state_db import schema as postgres_schema
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    settings = Settings.from_env()
+    settings = get_settings()
     now = datetime.now(timezone.utc)
 
     dsn = settings.state_db_url
