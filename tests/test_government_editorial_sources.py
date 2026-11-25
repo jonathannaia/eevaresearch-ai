@@ -98,12 +98,19 @@ def test_editorial_story_persisted_field_set_is_exactly_as_expected():
     # IMPLEMENTATION_READINESS_2026_09_16.md) added one more additive,
     # safe-default field (identified_companies — raw, pre-attribution
     # company recognition; see EditorialStory's own docstring). The
-    # exact-field-set assertion below is updated each time, explicitly,
-    # rather than silently going stale or being weakened to a subset
-    # check.
+    # Most recently again, related coverage ("one event = one card",
+    # design/DECISIONS.md) added duplicate_of_story_id: the id of the
+    # story a duplicate is linked to, so duplicate coverage is kept and
+    # shown under the surviving card instead of being discarded at
+    # ingest. Additive and safe-default — None means "this story is a
+    # survivor", which is what every row persisted before the field
+    # existed was. The exact-field-set assertion below is updated each
+    # time, explicitly, rather than silently going stale or being
+    # weakened to a subset check.
     field_names = {f.name for f in dataclasses.fields(EditorialStory)}
     assert field_names == {
         "id", "headline", "publisher", "source_url", "published_at", "retrieved_at",
         "excerpt", "matched_companies", "matched_themes", "source_feed_id",
         "materiality_tier", "materiality_reasons", "identified_companies",
+        "duplicate_of_story_id",
     }
