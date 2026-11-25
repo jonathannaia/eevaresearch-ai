@@ -45,6 +45,8 @@ def _format(change) -> str:
         lines.append(f"      tier:      {old_tier} -> {change.new_tier.value}")
     if change.companies_changed:
         lines.append(f"      companies: {list(change.old_companies)} -> {list(change.new_companies)}")
+    if change.duplicate_of_story_id:
+        lines.append(f"      linked to: {change.duplicate_of_story_id}  (shown as related coverage)")
     lines.append(f"      reason:    {change.reason}")
     return "\n".join(lines)
 

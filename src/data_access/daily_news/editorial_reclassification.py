@@ -111,6 +111,10 @@ class ReclassificationChange:
     new_companies: tuple[str, ...]
     new_reasons: tuple[str, ...]
     reason: str
+    #: Set only on a suppressed duplicate: the survivor it is linked
+    #: to, so the card can show it as related coverage. None on every
+    #: other kind of change, which leaves the column untouched.
+    duplicate_of_story_id: str | None = None
 
     @property
     def tier_changed(self) -> bool:
@@ -176,8 +180,8 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
     window = stories_in_window(stories, now)
     changes: list[ReclassificationChange] = []
 
-    seen_headlines: list[tuple[str, str, str]] = []
-    seen_events: list[tuple[str, str, str, tuple[str, ...], str | None]] = []
+    seen_headlines: list[tuple[str, str, str, str]] = []
+    seen_events: list[tuple[str, str, str, str, tuple[str, ...], str | None]] = []
 
     for story in window:
         tier, reasons, attributed = _reclassify_one(story)
@@ -194,28 +198,32 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
                 category=same_story_dedup.event_category(reasons),
             )
             if duplicate_of is not None:
-                duplicate_reason = f"same_event_duplicate_of:{duplicate_of[0]}"
+                duplicate_reason = f"same_event_duplicate_of:{duplicate_of[1]}"
             else:
                 duplicate_reason = ""
         else:
-            duplicate_reason = f"same_story_duplicate_of:{duplicate_of[0]}"
+            duplicate_reason = f"same_story_duplicate_of:{duplicate_of[1]}"
 
         if duplicate_of is not None:
             # Suppressed, not deleted: the row stays so the archive can
             # still show it was published, and its tier drops out of
             # the visible feed.
-            if story.materiality_tier is not SUPPRESSED_TIER:
+            if (
+                story.materiality_tier is not SUPPRESSED_TIER
+                or story.duplicate_of_story_id != duplicate_of[0]
+            ):
                 changes.append(ReclassificationChange(
                     story_id=story.id, headline=story.headline, published_at=story.published_at,
                     old_tier=story.materiality_tier, new_tier=SUPPRESSED_TIER,
                     old_companies=story.matched_companies, new_companies=story.matched_companies,
                     new_reasons=(duplicate_reason,) + reasons, reason=duplicate_reason,
+                    duplicate_of_story_id=duplicate_of[0],
                 ))
             continue
 
-        seen_headlines.append((story.publisher, story.headline, story.published_at))
+        seen_headlines.append((story.id, story.publisher, story.headline, story.published_at))
         seen_events.append((
-            story.publisher, story.headline, story.published_at,
+            story.id, story.publisher, story.headline, story.published_at,
             attributed, same_story_dedup.event_category(reasons),
         ))
 

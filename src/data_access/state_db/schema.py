@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 27
+CURRENT_SCHEMA_VERSION = 28
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1206,6 +1206,19 @@ _V27_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V28_STATEMENTS: tuple[str, ...] = (
+    # Related coverage (daily_news_models.EditorialStory.
+    # duplicate_of_story_id) — "one event = one card", with the other
+    # reports kept and linked rather than discarded. NULL for a
+    # survivor, which is almost every row; set to the survivor's id for
+    # a suppressed duplicate. Nullable with no default, so every row
+    # persisted before this column existed reads as a survivor, which
+    # is what it was.
+    "ALTER TABLE editorial_stories ADD COLUMN duplicate_of_story_id TEXT",
+    "CREATE INDEX idx_editorial_stories_duplicate_of ON editorial_stories (duplicate_of_story_id)",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1234,6 +1247,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (25, _V25_STATEMENTS),
     (26, _V26_STATEMENTS),
     (27, _V27_STATEMENTS),
+    (28, _V28_STATEMENTS),
 )
 
 

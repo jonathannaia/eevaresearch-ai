@@ -47,6 +47,9 @@ def _row_to_story(row) -> EditorialStory:
         # NOT NULL DEFAULT '[]' (schema.py V21), so an unconditional
         # read is safe, same convention as matched_companies_json above.
         identified_companies=tuple(json.loads(row["identified_companies_json"])),
+        # Related coverage (schema V30) — NULL for a survivor, which is
+        # every row persisted before this column existed.
+        duplicate_of_story_id=row["duplicate_of_story_id"],
     )
 
 
@@ -61,8 +64,9 @@ def _insert_story(conn: psycopg.Connection, story: EditorialStory) -> None:
         INSERT INTO editorial_stories (
             id, headline, publisher, source_url, published_at, retrieved_at, excerpt,
             matched_companies_json, matched_themes_json, source_feed_id,
-            materiality_tier, materiality_reasons, identified_companies_json
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            materiality_tier, materiality_reasons, identified_companies_json,
+            duplicate_of_story_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             story.id, story.headline, story.publisher, story.source_url, story.published_at,
@@ -71,6 +75,7 @@ def _insert_story(conn: psycopg.Connection, story: EditorialStory) -> None:
             story.materiality_tier.value if story.materiality_tier else None,
             json.dumps(list(story.materiality_reasons)) if story.materiality_reasons else None,
             json.dumps(list(story.identified_companies)),
+            story.duplicate_of_story_id,
         ),
     )
 
@@ -126,13 +131,15 @@ def apply_reclassification(conn: psycopg.Connection, changes) -> int:
             conn.execute(
                 """
                 UPDATE editorial_stories
-                SET materiality_tier = %s, materiality_reasons = %s, matched_companies_json = %s
+                SET materiality_tier = %s, materiality_reasons = %s,
+                    matched_companies_json = %s, duplicate_of_story_id = %s
                 WHERE id = %s
                 """,
                 (
                     change.new_tier.value,
                     json.dumps(list(change.new_reasons)),
                     json.dumps(list(change.new_companies)),
+                    change.duplicate_of_story_id,
                     change.story_id,
                 ),
             )
@@ -148,3 +155,14 @@ def load_revisions(conn: psycopg.Connection, story_id: str) -> list[dict]:
         (story_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def load_related_coverage(conn: psycopg.Connection, story_id: str) -> list[EditorialStory]:
+    """Every story linked to this one as a duplicate, oldest first —
+    the "+N related reports" a card shows beneath itself. Returns []
+    for a story nothing duplicates, which is almost every story."""
+    rows = conn.execute(
+        "SELECT * FROM editorial_stories WHERE duplicate_of_story_id = %s ORDER BY published_at",
+        (story_id,),
+    ).fetchall()
+    return [_row_to_story(row) for row in rows]

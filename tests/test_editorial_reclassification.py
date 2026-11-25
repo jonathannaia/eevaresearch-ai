@@ -245,3 +245,55 @@ def test_a_demotion_on_long_text_is_declined_not_guessed():
     )
     assert len(story.excerpt) > COMPLETE_EXCERPT_CHARS
     assert plan_reclassification([story], NOW) == ()
+
+
+# --- related coverage ---------------------------------------------
+
+
+def test_a_suppressed_duplicate_is_linked_to_its_survivor():
+    """"One event = one card" — but the other reports are kept and
+    linked, not discarded. A market reaction and a political reaction
+    to the same event are real coverage; six separate cards was the
+    only thing wrong with them."""
+    cluster = [
+        _story("survivor", "Nvidia reinstates Jensen Huang as CEO", hours_ago=30,
+               excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+               tier=NewsMaterialityTier.WATCHLIST, publisher="Light Reading"),
+        _story("reaction", "Huang Returns as Nvidia CEO 11 Days After Resigning",
+               hours_ago=20, excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+               tier=NewsMaterialityTier.WATCHLIST, publisher="Business Korea"),
+    ]
+    by_id = {c.story_id: c for c in plan_reclassification(cluster, NOW)}
+    assert by_id["reaction"].duplicate_of_story_id == "survivor"
+    assert by_id["reaction"].new_tier is SUPPRESSED_TIER
+    # The survivor is never linked to anything, so the chain is one deep.
+    assert "survivor" not in by_id or by_id["survivor"].duplicate_of_story_id is None
+
+
+def test_a_non_duplicate_change_never_touches_the_link():
+    story = _story(
+        "capped",
+        "Nintendo Switch 2 bundles drop to pre-hike pricing in Black Friday run-up sale",
+        excerpt="Nintendo raised the price of the Switch 2 earlier this year in response to "
+                "rising NAND and DRAM prices.",
+        tier=NewsMaterialityTier.HIGH_SIGNAL,
+    )
+    change = plan_reclassification([story], NOW)[0]
+    assert change.duplicate_of_story_id is None
+
+
+def test_rerunning_the_pass_does_not_relink_an_already_linked_duplicate():
+    """Idempotence: once a duplicate is suppressed AND linked, the pass
+    has nothing further to say about it."""
+    from dataclasses import replace
+
+    survivor = _story("survivor", "Nvidia reinstates Jensen Huang as CEO", hours_ago=30,
+                      excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+                      tier=NewsMaterialityTier.WATCHLIST, publisher="Light Reading")
+    linked = replace(
+        _story("linked", "Huang Returns as Nvidia CEO 11 Days After Resigning",
+               hours_ago=20, excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+               tier=SUPPRESSED_TIER, publisher="Business Korea"),
+        duplicate_of_story_id="survivor",
+    )
+    assert [c.story_id for c in plan_reclassification([survivor, linked], NOW)] != ["linked"]

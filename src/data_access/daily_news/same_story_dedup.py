@@ -228,20 +228,23 @@ def event_category(reasons: Iterable[str]) -> str | None:
 
 
 def find_same_event_duplicate(
-    existing: Iterable[tuple[str, str, str, tuple[str, ...], str | None]],
+    existing: Iterable[tuple[str, str, str, str, tuple[str, ...], str | None]],
     headline: str,
     published_at: str,
     companies: tuple[str, ...],
     category: str | None,
-) -> tuple[str, str, str] | None:
-    """Returns (matched_publisher, matched_headline, category) for the
-    first already-stored story describing the same event as this one,
-    or None.
+) -> tuple[str, str, str, str] | None:
+    """Returns (matched_story_id, matched_publisher, matched_headline,
+    category) for the first already-stored story describing the same
+    event as this one, or None.
 
-    `existing` is an iterable of (publisher, headline, published_at,
-    companies, category) — the same deliberate plain-tuple shape
-    find_same_story_duplicate() takes, extended with the two fields
-    this route needs, so this module still imports no models.
+    `existing` is an iterable of (story_id, publisher, headline,
+    published_at, companies, category) — the same deliberate
+    plain-tuple shape find_same_story_duplicate() takes, extended with
+    the fields this route needs, so this module still imports no
+    models. The id is carried so the caller can LINK the duplicate to
+    its survivor rather than discard it (see
+    EditorialStory.duplicate_of_story_id).
 
     Every gate must hold: an allow-listed category on BOTH sides and
     the same one, at least one tracked company in common, and
@@ -259,7 +262,7 @@ def find_same_event_duplicate(
     candidate_companies = set(companies)
 
     for (
-        existing_publisher, existing_headline, existing_published_at,
+        existing_id, existing_publisher, existing_headline, existing_published_at,
         existing_companies, existing_category,
     ) in existing:
         if existing_category != category:
@@ -269,22 +272,25 @@ def find_same_event_duplicate(
         hours = _hours_apart(existing_published_at, published_at)
         if hours is None or hours > MAX_HOURS_APART:
             continue
-        return existing_publisher, existing_headline, category
+        return existing_id, existing_publisher, existing_headline, category
     return None
 
 
 def find_same_story_duplicate(
-    existing: Iterable[tuple[str, str, str]],
+    existing: Iterable[tuple[str, str, str, str]],
     headline: str,
     published_at: str,
-) -> tuple[str, str, float] | None:
-    """Returns (matched_publisher, matched_headline, similarity) for the
-    first already-stored story this one duplicates, or None.
+) -> tuple[str, str, str, float] | None:
+    """Returns (matched_story_id, matched_publisher, matched_headline,
+    similarity) for the first already-stored story this one
+    duplicates, or None.
 
-    `existing` is an iterable of (publisher, headline, published_at) —
-    the caller's own already-persisted stories, passed in this shape so
-    this module never imports daily_news_models.py, exactly as dedup.py
-    does.
+    `existing` is an iterable of (story_id, publisher, headline,
+    published_at) — the caller's own already-persisted stories, passed
+    in this shape so this module never imports daily_news_models.py,
+    exactly as dedup.py does. The id is carried so the caller can LINK
+    the duplicate to its survivor rather than discard it (see
+    EditorialStory.duplicate_of_story_id).
 
     Every gate must hold: both headlines carrying enough distinctive
     content to compare, publication within MAX_HOURS_APART, and
@@ -295,7 +301,7 @@ def find_same_story_duplicate(
     candidate_rare = rare_tokens(headline)
     normalized_candidate = _normalize(headline)
 
-    for existing_publisher, existing_headline, existing_published_at in existing:
+    for existing_id, existing_publisher, existing_headline, existing_published_at in existing:
         # Route 0 — the same headline, word for word. The strongest
         # possible same-story evidence, and it needs no similarity
         # machinery at all. Upstream catches this only when the
@@ -305,7 +311,7 @@ def find_same_story_duplicate(
         # distinctive words once the company name is removed, and two
         # identical copies of it are still one story.
         if normalized_candidate and _normalize(existing_headline) == normalized_candidate:
-            return existing_publisher, existing_headline, 1.0
+            return existing_id, existing_publisher, existing_headline, 1.0
 
         if not candidate_rare:
             continue
@@ -328,7 +334,7 @@ def find_same_story_duplicate(
             and len(existing_rare) >= MIN_RARE_TOKENS
             and similarity >= MIN_RARE_TOKEN_SIMILARITY
         ):
-            return existing_publisher, existing_headline, similarity
+            return existing_id, existing_publisher, existing_headline, similarity
 
         # Route 2 — containment. The shorter headline's distinctive
         # words appear WHOLLY inside the longer one. A ratio punishes
@@ -343,5 +349,5 @@ def find_same_story_duplicate(
         # this route adds that detection and not one false positive.
         smaller = candidate_rare if len(candidate_rare) <= len(existing_rare) else existing_rare
         if shared == smaller:
-            return existing_publisher, existing_headline, similarity
+            return existing_id, existing_publisher, existing_headline, similarity
     return None
