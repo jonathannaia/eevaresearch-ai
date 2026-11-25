@@ -27,6 +27,7 @@ unless explicitly set. The caller checks it; this module stays pure so
 it can be exercised without a flag, a database or a worker."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -42,7 +43,15 @@ from src.data_access.daily_news.filing_signal_tiers import (
 )
 from src.data_access.daily_news import filing_event_headline
 from src.data_access.edgar import edgar_rules
-from src.logic.filing_display import extractive_summary, is_readable_extracted_text
+from src.logic.filing_display import (
+    EDINET_SOURCE_NAME,
+    extractive_summary,
+    is_readable_extracted_text,
+    issuer_display_names,
+    strip_dart_cover_page_header,
+    strip_edinet_summary_artifacts,
+    summary_is_substantive,
+)
 from src.models.daily_news_models import EditorialStory
 from src.models.models import FilingEvent
 
@@ -253,7 +262,69 @@ def _event_headline(
     )
 
 
-def _card_excerpt(filing: FilingEvent, excerpt: str | None, excerpt_translated: str | None) -> str | None:
+def _remaining_after(excerpt: str, sentence: str | None) -> str:
+    """The excerpt with the sentence already used as the headline
+    removed from the front.
+
+    Without this the card reads the same thing twice: an extracted
+    headline IS the excerpt's first event sentence, so showing the
+    excerpt underneath it repeats it verbatim. What the reader wants
+    below the headline is what came NEXT."""
+    normalized = " ".join((excerpt or "").split())
+    if not sentence:
+        return normalized
+    position = normalized.find(sentence)
+    if position < 0:
+        return normalized
+    return normalized[position + len(sentence):].strip()
+
+
+#: A translated cover page, once the issuer's own name and the form
+#: version marker are discounted, is two or three words of document
+#: type. Real content clears this easily — "Decision to Acquire Shares
+#: and Equity Securities of Other Corporations" is nine.
+_MIN_INFORMATIVE_SUMMARY_WORDS = 4
+
+_FORM_VERSION_TOKEN = re.compile(r"^\d{1,3}\.\d{1,3}$")
+_PLACEHOLDER_TOKEN = re.compile(r"^(?:0+|\d{8}|\d{6}-\d{7}|[A-Z])$")
+_SUMMARY_WORD = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+
+
+def _is_translated_document_masthead(text: str, issuer_names: tuple[str, ...]) -> bool:
+    """True for a translated DART/EDINET cover-page masthead — e.g.
+    "Semiannual Report 6.7 LG Innotek Co., Ltd." — which is a document
+    type, a form version and the issuer's own name, and tells the
+    reader nothing the card's title has not already said.
+
+    filing_display._is_dart_document_header() covers the same shape but
+    recognises it either by a Korean corporate registry number, which a
+    short masthead like the one above does not carry, or by matching
+    the words before the version marker against the display title,
+    which cannot work here: the summary is English and these filings'
+    titles are not translated, so there is no English title to compare
+    against. This reads the English text on its own terms instead."""
+    issuer_words = {
+        w.lower() for name in issuer_names for w in _SUMMARY_WORD.findall(name)
+    }
+    informative = 0
+    for token in " ".join(text.split()).split():
+        bare = token.strip(".,;:()[]{}\u00b7\u2014-/")
+        if not bare or _FORM_VERSION_TOKEN.match(bare) or _PLACEHOLDER_TOKEN.match(bare):
+            continue
+        informative += sum(
+            1 for w in _SUMMARY_WORD.findall(bare) if w.lower() not in issuer_words
+        )
+    return informative < _MIN_INFORMATIVE_SUMMARY_WORDS
+
+
+def _card_excerpt(
+    filing: FilingEvent,
+    *,
+    excerpt: str | None,
+    excerpt_translated: str | None,
+    headline: str,
+    headline_sentence: str | None,
+) -> str | None:
     """The card's summary paragraph, or None.
 
     Was unconditionally None, with the comment that a filing's excerpt
@@ -265,13 +336,42 @@ def _card_excerpt(filing: FilingEvent, excerpt: str | None, excerpt_translated: 
     English-native text is shown directly. Korean and Japanese text is
     shown only when a translation already exists; the native excerpt is
     never shown untranslated, because an English feed's reader cannot
-    use it and this module is not permitted to translate. Unreadable
-    text — a 10-K's excerpt in this corpus is raw XBRL namespace URLs —
-    is never shown at all."""
-    text = excerpt_translated if filing.source_name != _ENGLISH_NATIVE_SOURCE else excerpt
+    use it and this module is not permitted to translate.
+
+    Then the same three gates the Radar card applies, in the same
+    order, because the first dry run showed what skipping them costs:
+    nine of eighteen summaries were translated DART cover-page
+    mastheads — "Semiannual Report 6.7 LG Innotek Co., Ltd." — which
+    is a heading, a form-version marker and the issuer's own name, and
+    says nothing the card's title does not. is_readable_extracted_text
+    passes that text happily; summary_is_substantive is the function
+    written for exactly it, and its own docstring names this string.
+    Returning None here is the honest answer and leaves the card
+    showing its headline alone."""
+    is_english = filing.source_name == _ENGLISH_NATIVE_SOURCE
+    text = excerpt if is_english else excerpt_translated
     if not text or not is_readable_extracted_text(text):
         return None
-    return extractive_summary(text) or None
+
+    if filing.source_name == EDINET_SOURCE_NAME:
+        text = strip_edinet_summary_artifacts(text)
+    elif not is_english:
+        text = strip_dart_cover_page_header(text)
+    elif headline_sentence:
+        text = _remaining_after(text, headline_sentence)
+
+    summary = extractive_summary(text)
+    if not summary:
+        return None
+    issuers = issuer_display_names(filing)
+    if not summary_is_substantive(
+        summary, headline, issuers,
+        dart_header_rules=not is_english and filing.source_name != EDINET_SOURCE_NAME,
+    ):
+        return None
+    if not is_english and _is_translated_document_masthead(summary, issuers):
+        return None
+    return summary
 
 
 def build_filing_signal_story(
@@ -331,7 +431,11 @@ def build_filing_signal_story(
         source_url=candidate.official_document_url or filing.source_url or "",
         published_at=candidate.filing_date,
         retrieved_at=retrieved_at,
-        excerpt=_card_excerpt(filing, excerpt, excerpt_translated),
+        excerpt=_card_excerpt(
+            filing, excerpt=excerpt, excerpt_translated=excerpt_translated,
+            headline=headline_result.headline,
+            headline_sentence=headline_result.source_sentence,
+        ),
         matched_companies=(company,),
         matched_themes=(),
         source_feed_id=_FEED_ID_BY_SOURCE.get(filing.source_name, "filing-unknown"),

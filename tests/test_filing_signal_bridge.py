@@ -402,7 +402,7 @@ def test_a_readable_english_excerpt_becomes_the_cards_summary():
         excerpt=_ADI_2_02,
     )
     assert story.excerpt
-    assert "announced its financial results" in story.excerpt
+    assert story.excerpt.startswith("The full text of the press release")
 
 
 def test_raw_xbrl_is_never_shown_as_a_summary():
@@ -414,15 +414,60 @@ def test_raw_xbrl_is_never_shown_as_a_summary():
     assert story.headline == "NVIDIA — Results of operations (Form 8-K)"
 
 
+def _summary(filing, **kw):
+    from src.data_access.daily_news.filing_signal_bridge import _card_excerpt
+
+    kw.setdefault("excerpt", None)
+    kw.setdefault("excerpt_translated", None)
+    kw.setdefault("headline", "Some headline")
+    kw.setdefault("headline_sentence", None)
+    return _card_excerpt(filing, **kw)
+
+
 def test_an_untranslated_korean_excerpt_is_never_shown_to_an_english_reader():
     """The bridge is not permitted to translate, and a Korean paragraph
     on an English card is not a summary. Only an already-translated
     excerpt is shown for a non-English source."""
-    from src.data_access.daily_news.filing_signal_bridge import _card_excerpt
+    korean = _edgar(source_name="OpenDART / DART", original_language="Korean")
+    assert _summary(korean, excerpt="중대재해 발생 장소 사외기숙사") is None
+    assert _summary(
+        korean, excerpt="중대재해 발생 장소 사외기숙사",
+        excerpt_translated=(
+            "LG Innotek / Serious Accident / (November 19, 2026) A serious industrial "
+            "accident occurred at an off-site dormitory in Gumi, North Gyeongsang Province."
+        ),
+    ) == (
+        "A serious industrial accident occurred at an off-site dormitory in Gumi, "
+        "North Gyeongsang Province."
+    ), "the DART cover-page header is stripped; the statement itself is kept"
 
-    korean = _edgar(source_name="OpenDART / DART")
-    assert _card_excerpt(korean, "중대재해 발생 장소 사외기숙사", None) is None
-    assert _card_excerpt(
-        korean, "중대재해 발생 장소 사외기숙사",
-        "A serious industrial accident occurred at an off-site dormitory in Gumi.",
-    ) == "A serious industrial accident occurred at an off-site dormitory in Gumi."
+
+def test_a_translated_dart_cover_page_masthead_is_not_a_summary():
+    """Nine of the eighteen summaries in the first production dry run
+    were this: a heading, a form-version marker and the issuer's own
+    name. It passes is_readable_extracted_text, which is why the
+    stricter gate has to run too."""
+    korean = _edgar(
+        source_name="OpenDART / DART", corp_name="LG Innotek Co., Ltd.",
+        flr_nm="LG Innotek Co., Ltd.", original_language="Korean",
+    )
+    assert _summary(
+        korean, excerpt="반기보고서",
+        excerpt_translated="Semiannual Report 6.7 LG Innotek Co., Ltd.",
+        headline="Earnings or Results Report — 반기보고서 (2026.06)",
+    ) is None
+
+
+def test_the_summary_does_not_repeat_the_sentence_used_as_the_headline():
+    sentence = (
+        "On November 24, 2026, NVIDIA Corporation announced its financial results "
+        "for its third quarter and fiscal year ended October 31, 2026."
+    )
+    summary = _summary(
+        _edgar(), excerpt=_ADI_2_02,
+        headline="NVIDIA Corporation announced its financial results",
+        headline_sentence=sentence,
+    )
+    assert summary
+    assert "announced its financial results" not in summary
+    assert summary.startswith("The full text of the press release")
