@@ -1429,3 +1429,94 @@ def test_editorial_lane_is_unchanged_by_the_recall_rules():
     ):
         _, reasons = classify_editorial_story(headline, "", SourceCategory.INDEPENDENT_NEWS)
         assert not any(r.startswith(("definitive_transaction", "quantified_commitment", "production_milestone")) for r in reasons), headline
+
+
+# ============================================================
+# Gate G — leadership/governance change (item 6). The news-lane
+# counterpart of the 8-K Item 5.02 tier in filing_signal_tiers.py: the
+# same event arriving through a filing is High Signal, so the same
+# event arriving through a publisher should be too.
+# ============================================================
+
+
+from src.data_access.daily_news.materiality_classification import (  # noqa: E402
+    _governance_change_hit,
+)
+
+
+def _gov(headline: str, description: str):
+    return classify_editorial_story(headline, description, SourceCategory.INDEPENDENT_NEWS)
+
+
+def test_governance_gate_promotes_a_clean_appointment_with_no_number_in_it():
+    """Production row (editorial_stories, 2026-11-21), previously
+    Watchlist: divisional chief appointments satisfy no existing gate —
+    A2 is earnings, A4 dividends, B/B2 need a magnitude, C needs a
+    taxonomy phrase beside an anchor — so a governance change with no
+    number in it fell through every one of them."""
+    tier, reasons = _gov(
+        "Samsung names new memory, mobile chiefs as chips sweep promotions",
+        "Samsung Electronics said it appointed new heads of its memory and mobile divisions "
+        "in its annual reshuffle.",
+    )
+    assert tier is NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons[0] == "governance_change:chiefs:names"
+
+
+def test_governance_gate_promotes_a_named_ceo_appointment():
+    tier, reasons = _gov(
+        "ASML names Christophe Fouquet as CEO",
+        "ASML Holding said Christophe Fouquet will take over as chief executive officer.",
+    )
+    assert tier is NewsMaterialityTier.HIGH_SIGNAL
+    assert reasons[0] == "governance_change:ceo:names"
+
+
+def test_governance_gate_does_not_fire_on_a_deliberation():
+    """A board that is thinking about a change has not made one. The
+    gate carries the same rumor guard as Gates C and D."""
+    tier, _ = _gov(
+        "Qualcomm reportedly weighs replacing its CEO",
+        "People familiar with the matter said the board has discussed a change.",
+    )
+    assert tier is not NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_governance_gate_does_not_fire_on_aggregate_hr_reporting():
+    """Production row (2026-11-21). "Samsung Cuts Executive Promotions
+    by 18.6%" uses the vocabulary of a governance change but reports an
+    HR budget. It may still reach High Signal on its own quantified
+    merits through Gate B; what it must not do is claim Gate G."""
+    assert _governance_change_hit(
+        "Samsung Cuts Executive Promotions by 18.6%, Elevating Three Semiconductor Executives"
+    ) is None
+
+
+def test_governance_gate_does_not_fire_on_commentary_naming_an_executive():
+    """Production row (2026-11-20). A column about an era is not an
+    event: no change verb is bound to the role."""
+    assert _governance_change_hit(
+        "Robotics enters its post-Jensen Huang era"
+    ) is None
+
+
+def test_governance_gate_ignores_government_headlines_and_bulk_hiring():
+    """Bare "president" is deliberately not a governance role — "U.S.
+    President ... names ..." is a government headline. And a change
+    verb with no role at all ("hires 500 engineers") is not a
+    governance change either."""
+    assert _governance_change_hit(
+        "U.S. President Donald Trump names new trade envoy"
+    ) is None
+    assert _governance_change_hit(
+        "Nvidia hires 500 engineers in Taiwan"
+    ) is None
+
+
+def test_governance_gate_requires_role_and_change_to_be_near_each_other():
+    """A role in one clause and an unrelated verb in another must not
+    combine into a governance event."""
+    assert _governance_change_hit(
+        "CEO opens the new fab in Arizona this week, and the company separately "
+        "confirmed it has named its main data centre after a site engineer"
+    ) is None

@@ -1051,6 +1051,83 @@ def _disqualifying_format_hit(headline: str) -> str | None:
     return None
 
 
+# --- Gate G: leadership / governance change -----------------------
+# A change at the top of a company is a material event with no number
+# in it, so none of the existing gates reliably catch one. Gate A2 is
+# earnings, A4 dividends, B and B2 need a quantified magnitude, C needs
+# a taxonomy phrase next to an anchor, D needs reporting verbs plus one
+# of those. A clean "X appointed CEO" headline satisfies none of them
+# and lands at Watchlist on the taxonomy fallback, or at Background.
+# This is the news-lane counterpart of the 8-K Item 5.02 tier already
+# agreed for the filings bridge (filing_signal_tiers.py): the same
+# event arriving through a filing is High Signal, so the same event
+# arriving through a publisher should be too.
+#
+# Headline-scoped, like every other post-headline-ceiling rule: the
+# change has to be what the story is announcing, not something the body
+# mentions in passing.
+#
+# Bare "president" is deliberately NOT a role here. "U.S. President …
+# names …" is a government headline, not a governance change, and the
+# role adds almost nothing in practice — corporate headlines say CEO.
+_GOVERNANCE_ROLE_PATTERN = re.compile(
+    r"\b(?:"
+    r"chief\s+(?:executive|financial|operating|technology|technical|legal|accounting)\s+officers?|"
+    r"ceo|cfo|coo|cto|"
+    r"chair(?:man|woman|person)?|"
+    r"board\s+of\s+directors?|board\s+members?|boardroom|"
+    r"chiefs?|co-chief|executive\s+chair(?:man|woman)?"
+    r")\b",
+    re.IGNORECASE,
+)
+# The change itself. Agent verbs and the nouns that stand in for them in
+# headlinese ("CEO succession", "boardroom shake-up").
+_GOVERNANCE_CHANGE_PATTERN = re.compile(
+    r"\b(?:"
+    r"appoint(?:s|ed|ment|ments)?|names?|named|naming|"
+    r"promot(?:es?|ed|ion|ions)|elevat(?:es?|ed)|"
+    r"resign(?:s|ed|ation|ations)?|steps?\s+down|stepped\s+down|"
+    r"depart(?:s|ed|ure|ures)?|exits?|retir(?:es?|ed|ement)|"
+    r"oust(?:s|ed|er)?|replac(?:es?|ed|ing|ement)|succeed(?:s|ed)|succession|"
+    r"reinstat(?:es?|ed)|returns?\s+as|takes?\s+over\s+as|to\s+lead|"
+    r"hires?|retains?|shake-?up|reshuffle"
+    r")\b",
+    re.IGNORECASE,
+)
+# Aggregate HR reporting is not a governance change: "Samsung Cuts
+# Executive Promotions by 18.6%" is a budget story that happens to use
+# the vocabulary. A percentage or a count alongside an aggregate noun
+# is the tell. (Such items can still reach High Signal through Gate B
+# on their own quantified merits — this only stops Gate G claiming
+# them.)
+_GOVERNANCE_AGGREGATE_PATTERN = re.compile(
+    r"\b(?:promotions?|layoffs?|job\s+cuts?|headcount|staff|workforce|employees?)\b",
+    re.IGNORECASE,
+)
+_GOVERNANCE_PROXIMITY_CHARS = 60
+
+
+def _governance_change_hit(headline: str) -> tuple[str, str] | None:
+    """(role, change) when the headline announces a change at the top
+    of a company, else None. Both terms must be present and within
+    _GOVERNANCE_PROXIMITY_CHARS of one another, in either order, so
+    that a role in one clause and an unrelated verb in another do not
+    combine into a governance event."""
+    if not headline:
+        return None
+    if _GOVERNANCE_AGGREGATE_PATTERN.search(headline) and _has_numeric_magnitude(headline):
+        return None
+    for role in _GOVERNANCE_ROLE_PATTERN.finditer(headline):
+        for change in _GOVERNANCE_CHANGE_PATTERN.finditer(headline):
+            if role.start() <= change.start():
+                distance = change.start() - role.end()
+            else:
+                distance = role.start() - change.end()
+            if distance <= _GOVERNANCE_PROXIMITY_CHARS:
+                return role.group(0), change.group(0)
+    return None
+
+
 def _classify_core(
     text: str, *, is_primary_disclosure: bool, is_independent_news: bool,
     headline: str = "", issuer_lane: bool = False,
@@ -1064,6 +1141,10 @@ def _classify_core(
 
     reasons: list[str] = []
     survey_content = _is_survey_or_research_content(text)
+    # Computed once here rather than at Gate C, because Gate G below
+    # needs the same two guards and runs first.
+    uncertain_reporting_g = _has_rumor_or_negated_confirmation_language(text)
+    interview_format_g = _is_interview_or_podcast_format(text)
     # Weak-path-only block (see "Low-signal formats" in the docstring).
     low_signal_format = _low_signal_format_hit(headline, issuer_lane=issuer_lane)
 
@@ -1096,6 +1177,14 @@ def _classify_core(
     if capital_return_quantified_hit and numeric_hit:
         reasons.append(f"quantified_capital_return:{capital_return_quantified_hit[0]}")
 
+    # Gate G — leadership/governance change (see _governance_change_hit).
+    # Suppressed by the same rumor/interview/low-signal-format guards
+    # Gates C and D use: "reportedly weighs replacing its CEO" is a
+    # deliberation, not a change, and is capped to Watchlist elsewhere.
+    governance_hit = _governance_change_hit(headline)
+    if governance_hit and not uncertain_reporting_g and not interview_format_g and not low_signal_format:
+        reasons.append(f"governance_change:{governance_hit[0].lower()}:{governance_hit[1].lower()}")
+
     # Gate C uses the deploy-family-excluded anchor pool — see
     # _TAXONOMY_PAIRING_ANCHOR_KEYWORDS' own comment. A deploy-family
     # anchor still reaches High Signal here indirectly whenever it also
@@ -1110,8 +1199,8 @@ def _classify_core(
     # below is deliberately UNCHANGED and still drives the Watchlist
     # "on_taxonomy_no_anchor" fallback further down — only whether Gate
     # C itself qualifies for HIGH_SIGNAL is tightened.
-    uncertain_reporting = _has_rumor_or_negated_confirmation_language(text)
-    interview_format = _is_interview_or_podcast_format(text)
+    uncertain_reporting = uncertain_reporting_g
+    interview_format = interview_format_g
     taxonomy_hits = _matched_taxonomy_buckets(text)
     local_hit = _taxonomy_anchor_local_hits(text)
     if local_hit and not survey_content and not uncertain_reporting and not interview_format and not low_signal_format:
