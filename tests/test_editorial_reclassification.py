@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.data_access.daily_news.editorial_reclassification import (
+    COMPLETE_EXCERPT_CHARS,
     RECLASSIFY_WINDOW_DAYS,
     SUPPRESSED_TIER,
     TRUNCATED_EXCERPT_CHARS,
@@ -209,3 +210,38 @@ def test_a_truncated_story_can_still_be_suppressed_as_a_duplicate():
     ]
     by_id = {c.story_id: c for c in plan_reclassification(cluster, NOW)}
     assert by_id["long"].new_tier is SUPPRESSED_TIER
+
+
+def test_a_promotion_is_applied_even_on_long_possibly_truncated_text():
+    """Direction matters. The pass sees at most the text ingest saw, so
+    a gate firing on a truncated excerpt would have fired on the full
+    summary too. Less evidence reaching the same conclusion is stronger
+    evidence, not weaker."""
+    story = _story(
+        "promote", "ASML names Christophe Fouquet as CEO",
+        excerpt="ASML Holding said Christophe Fouquet will take over as chief executive "
+                "officer. " + ("Context follows. " * 30),
+        tier=NewsMaterialityTier.BACKGROUND, companies=(),
+    )
+    assert len(story.excerpt) > COMPLETE_EXCERPT_CHARS
+    changes = plan_reclassification([story], NOW)
+    assert len(changes) == 1
+    # Gate G fires; the tracked-company requirement then caps it to
+    # Watchlist, since no company is attributed. Still a promotion from
+    # Background, which is the direction this test is about.
+    assert changes[0].new_tier is NewsMaterialityTier.WATCHLIST
+    assert changes[0].old_tier is NewsMaterialityTier.BACKGROUND
+    assert changes[0].new_reasons[-1] == "governance_change:ceo:names"
+
+
+def test_a_demotion_on_long_text_is_declined_not_guessed():
+    """The honest floor: the story keeps its original classification and
+    ages out of the window, exactly as it would have before this pass
+    existed."""
+    story = _story(
+        "demote", "Nintendo Switch 2 bundles drop to pre-hike pricing in Black Friday sale",
+        excerpt="Nintendo raised the price of the Switch 2 earlier this year. " + ("Filler text. " * 30),
+        tier=NewsMaterialityTier.HIGH_SIGNAL,
+    )
+    assert len(story.excerpt) > COMPLETE_EXCERPT_CHARS
+    assert plan_reclassification([story], NOW) == ()

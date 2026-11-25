@@ -64,25 +64,35 @@ RECLASSIFY_WINDOW_DAYS = 7
 #: correction apart from an original classification.
 REVISION_SOURCE = "window_reclassification"
 
-#: editorial_pipeline._MAX_EXCERPT_CHARS. A stored excerpt at this
-#: length was TRUNCATED from a longer feed summary, so the text this
-#: pass can see is strictly less than the text ingest classified
-#: against — and a tier or attribution computed from it would be a
-#: guess, not a correction. Such a story is left exactly as it is.
+#: editorial_pipeline._MAX_EXCERPT_CHARS — the length a stored excerpt
+#: was truncated to, from a feed summary that is not retained.
 #:
-#: Measured on the live window: 3 of 40 proposed High Signal demotions
-#: fell into this category; the other 37 had short, complete excerpts
-#: and were genuine re-evaluations of the same text. Small, but a
-#: silently wrong demotion is precisely what the append-only record
-#: exists to prevent, so the pass declines rather than guesses.
-#:
-#: Duplicate suppression is exempt: it compares headlines, companies
-#: and publication times, never the excerpt, so truncation cannot
-#: affect it. Kept in sync by
-#: test_truncation_threshold_matches_the_pipelines_own_cap.
+#: WHY LENGTH ALONE CANNOT SETTLE THIS. _extractive_excerpt() trims
+#: back to a sentence or word boundary under the cap, so a truncated
+#: excerpt lands anywhere below it, not at it. Measured on the live
+#: window, the 40 proposed High Signal demotions had excerpt lengths
+#: spread across 300-399 (22 of them), 250-299 (8) and below (10) —
+#: a distribution that cannot be separated into "truncated" and
+#: "complete" by length. An earlier version of this guard tested for
+#: >= 400 and therefore excluded nothing at all.
 TRUNCATED_EXCERPT_CHARS = 400
 
+#: Comfortably below any truncation boundary: an excerpt this short is
+#: the whole cleaned summary, so re-classifying it compares like with
+#: like.
+COMPLETE_EXCERPT_CHARS = 250
+
 SUPPRESSED_TIER = NewsMaterialityTier.BACKGROUND
+
+#: Ranked so the pass can tell a demotion from a promotion. None is a
+#: row persisted before the materiality column existed; anything the
+#: classifier now says about it is new information, never a weakening.
+_TIER_ORDER: dict = {
+    None: -1,
+    NewsMaterialityTier.BACKGROUND: 0,
+    NewsMaterialityTier.WATCHLIST: 1,
+    NewsMaterialityTier.HIGH_SIGNAL: 2,
+}
 
 
 @dataclass(frozen=True)
@@ -209,12 +219,35 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
             attributed, same_story_dedup.event_category(reasons),
         ))
 
-        if len(story.excerpt or "") >= TRUNCATED_EXCERPT_CHARS:
-            # Truncated source text — see TRUNCATED_EXCERPT_CHARS.
-            # Dedupe above has already had its say; nothing else here
-            # can be decided honestly.
-            continue
         if tier is story.materiality_tier and attributed == story.matched_companies:
+            continue
+
+        # DIRECTION MATTERS when the source text may be truncated.
+        #
+        # A PROMOTION is always safe. The pass sees at most the text
+        # ingest saw, so a gate that fires on a truncated excerpt would
+        # have fired on the full summary too — less evidence reaching
+        # the same conclusion is stronger evidence, not weaker.
+        #
+        # A DEMOTION is not. It rests on evidence being ABSENT, and
+        # absence in a truncated excerpt says nothing about the summary
+        # it was cut from. Applying one would silently delete a signal
+        # on the strength of text we no longer hold.
+        #
+        # So a demotion, or the removal of an attributed company, is
+        # applied only when the excerpt is short enough to be certainly
+        # complete. Everything else is left exactly as it is: the pass
+        # declines rather than guesses, and the story ages out of the
+        # window on its original classification — the same outcome as
+        # before this pass existed, which is the honest floor.
+        #
+        # Duplicate suppression is decided above and is exempt
+        # throughout: it compares headlines, companies and publication
+        # times, never the excerpt.
+        weakening = _TIER_ORDER[tier] < _TIER_ORDER[story.materiality_tier] or (
+            set(attributed) < set(story.matched_companies)
+        )
+        if weakening and len(story.excerpt or "") > COMPLETE_EXCERPT_CHARS:
             continue
         if tier is not story.materiality_tier:
             old = story.materiality_tier.value if story.materiality_tier else "none"
