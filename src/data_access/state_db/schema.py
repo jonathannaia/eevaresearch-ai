@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 26
+CURRENT_SCHEMA_VERSION = 27
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1174,6 +1174,38 @@ _V26_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V27_STATEMENTS: tuple[str, ...] = (
+    # Append-only revision log for re-classified editorial stories
+    # (editorial_reclassification.py). Written on every correction,
+    # never updated or deleted — same discipline as
+    # account_access_events and state_transitions.
+    #
+    # WHY IT EXISTS. editorial_stories holds one row per story and the
+    # re-classification pass overwrites that row's tier and companies.
+    # Without this table a correction would be indistinguishable from
+    # the story having always been classified that way, and the signal
+    # track record could not answer "what did we publish, and when did
+    # we correct it" — which is the whole point of keeping a record.
+    #
+    # old_tier is nullable because rows persisted before the
+    # materiality column existed have no tier at all.
+    """
+    CREATE TABLE editorial_story_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL,
+        revised_at TEXT NOT NULL,
+        old_tier TEXT,
+        new_tier TEXT NOT NULL,
+        old_companies_json TEXT NOT NULL,
+        new_companies_json TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        revision_source TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_editorial_story_revisions_story ON editorial_story_revisions (story_id, revised_at)",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1201,6 +1233,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (24, _V24_STATEMENTS),
     (25, _V25_STATEMENTS),
     (26, _V26_STATEMENTS),
+    (27, _V27_STATEMENTS),
 )
 
 

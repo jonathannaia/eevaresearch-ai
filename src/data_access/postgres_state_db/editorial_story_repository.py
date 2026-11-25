@@ -16,11 +16,17 @@ propagates as a real exception rather than becoming an empty result."""
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import psycopg
 
 from src.data_access.postgres_state_db.connection import transaction
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
+
+#: Mirrors editorial_reclassification.REVISION_SOURCE. Duplicated as a
+#: literal rather than imported, so this repository keeps its existing
+#: rule of importing nothing from the daily_news package.
+REVISION_SOURCE = "window_reclassification"
 
 
 def _row_to_story(row) -> EditorialStory:
@@ -80,3 +86,65 @@ def upsert_new_stories(conn: psycopg.Connection, new_stories: list[EditorialStor
                 continue
             _insert_story(conn, story)
     return load_stories(conn)
+
+
+def apply_reclassification(conn: psycopg.Connection, changes) -> int:
+    """Apply window re-classification corrections (see
+    editorial_reclassification.py), writing one append-only revision
+    row per change in the SAME transaction as the story update.
+
+    The pairing is the point: a story's tier and companies can only
+    change here alongside a record of what they were and why. If the
+    revision insert fails the story update rolls back with it, so the
+    feed can never hold a corrected row with no explanation for it.
+
+    `changes` is an iterable of ReclassificationChange; this module
+    reads only its public fields and imports nothing from the
+    daily_news package, same convention as the rest of this file.
+    Returns the number of stories updated."""
+    updated = 0
+    with transaction(conn):
+        for change in changes:
+            revised_at = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """
+                INSERT INTO editorial_story_revisions (
+                    story_id, revised_at, old_tier, new_tier,
+                    old_companies_json, new_companies_json, reason, revision_source
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    change.story_id, revised_at,
+                    change.old_tier.value if change.old_tier else None,
+                    change.new_tier.value,
+                    json.dumps(list(change.old_companies)),
+                    json.dumps(list(change.new_companies)),
+                    change.reason,
+                    REVISION_SOURCE,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE editorial_stories
+                SET materiality_tier = %s, materiality_reasons = %s, matched_companies_json = %s
+                WHERE id = %s
+                """,
+                (
+                    change.new_tier.value,
+                    json.dumps(list(change.new_reasons)),
+                    json.dumps(list(change.new_companies)),
+                    change.story_id,
+                ),
+            )
+            updated += 1
+    return updated
+
+
+def load_revisions(conn: psycopg.Connection, story_id: str) -> list[dict]:
+    """Every recorded correction for one story, oldest first. Read-only
+    — nothing in this module ever updates or deletes a revision row."""
+    rows = conn.execute(
+        "SELECT * FROM editorial_story_revisions WHERE story_id = %s ORDER BY revised_at",
+        (story_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]

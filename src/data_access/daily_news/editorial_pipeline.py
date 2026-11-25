@@ -341,6 +341,18 @@ def run_editorial_discovery(
     existing_publisher_headline_time = [
         (s.publisher, s.headline, s.published_at) for s in store.values()
     ]
+    # Same-event corpus (same_story_dedup Route 3). Separate from the
+    # headline corpus above because this route runs later in the loop:
+    # it needs the attributed companies and the materiality reasons,
+    # neither of which exists until after classification and admission.
+    # Same build-once-extend-in-place contract.
+    existing_same_event = [
+        (
+            s.publisher, s.headline, s.published_at, s.matched_companies,
+            same_story_dedup.event_category(s.materiality_reasons),
+        )
+        for s in store.values()
+    ]
 
     items_fetched = 0
     items_no_valid_url = 0
@@ -522,6 +534,25 @@ def run_editorial_discovery(
                 # tuple is preserved separately as identified_companies.
                 attributed_companies = admission.identified_companies
 
+            # Same-event duplicate (same_story_dedup Route 3) — checked
+            # HERE rather than beside the headline routes above because
+            # it compares the classification, not the words, and the
+            # classification does not exist until this point. Same
+            # first-seen-wins convention; nothing is merged onto the
+            # survivor.
+            same_event_match = same_story_dedup.find_same_event_duplicate(
+                existing_same_event,
+                headline=entry.title,
+                published_at=entry.published_at,
+                companies=attributed_companies,
+                category=same_story_dedup.event_category(materiality_reasons),
+            )
+            if same_event_match is not None:
+                items_duplicate += 1
+                if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
+                    rejected_examples.append((entry.title, f"same_event:{same_event_match[2]}"))
+                continue
+
             # Provisionally registered so a second duplicate of THIS SAME
             # entry later in this same source's own feed is still caught
             # — even though this entry might itself be dropped by the cap
@@ -536,6 +567,10 @@ def run_editorial_discovery(
             existing_publisher_headline_time.append(
                 (source.attribution_label, entry.title, entry.published_at)
             )
+            existing_same_event.append((
+                source.attribution_label, entry.title, entry.published_at,
+                attributed_companies, same_story_dedup.event_category(materiality_reasons),
+            ))
             qualifying.append((
                 entry, story_id, matched_companies, attributed_companies,
                 matched_themes, materiality_tier, materiality_reasons,

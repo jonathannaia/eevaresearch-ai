@@ -182,6 +182,97 @@ def _hours_apart(left: str, right: str) -> float | None:
     return abs((a - b).total_seconds()) / 3600.0
 
 
+#: Route 3 — same company, same event category, same window.
+#:
+#: WHY a second check exists at all. Routes 0-2 compare words, and two
+#: publishers can describe one event with no distinctive words in
+#: common. Measured on the live window: "Nvidia reinstates Jensen Huang
+#: as CEO" and "Huang Returns as Nvidia CEO 11 Days After Resigning"
+#: share the rare tokens {huang} alone once the company vocabulary is
+#: removed — similarity 0.12, far under MIN_RARE_TOKEN_SIMILARITY —
+#: because "reinstates" and "returns as" are the same event in
+#: different words and this module does no stemming and has no
+#: synonym table. No threshold tuning reaches that pair without
+#: dragging in genuine non-duplicates; the headline text simply does
+#: not carry the evidence.
+#:
+#: What does carry it is the classification the pipeline has already
+#: computed: the same tracked company, the same event category, inside
+#: MAX_HOURS_APART.
+#:
+#: Deliberately an ALLOW-LIST, not every category. The rule is only
+#: sound for an event type a single company genuinely has at most once
+#: in a 48-hour window. A governance change qualifies: a company does
+#: not replace its chief executive twice in two days, so two such
+#: stories about one company are two reports of one event. Earnings
+#: does NOT qualify and is deliberately absent — "Q3 results" and
+#: "raises full-year guidance" are separate, separately material
+#: disclosures that routinely land hours apart. Widening this set is a
+#: one-line change, but each addition needs the same argument made for
+#: it.
+SAME_EVENT_CATEGORIES: frozenset[str] = frozenset({"governance_change"})
+
+
+def event_category(reasons: Iterable[str]) -> str | None:
+    """The allow-listed event category a story's materiality reasons
+    name, or None. Reasons are "<category>:<detail>:<detail>" (see
+    materiality_classification._classify_core), so only the head
+    matters. Returns the first allow-listed category found, so a story
+    qualifying on several gates is categorised by the one this module
+    actually knows how to compare."""
+    for reason in reasons or ():
+        head = (reason or "").split(":", 1)[0]
+        if head in SAME_EVENT_CATEGORIES:
+            return head
+    return None
+
+
+def find_same_event_duplicate(
+    existing: Iterable[tuple[str, str, str, tuple[str, ...], str | None]],
+    headline: str,
+    published_at: str,
+    companies: tuple[str, ...],
+    category: str | None,
+) -> tuple[str, str, str] | None:
+    """Returns (matched_publisher, matched_headline, category) for the
+    first already-stored story describing the same event as this one,
+    or None.
+
+    `existing` is an iterable of (publisher, headline, published_at,
+    companies, category) — the same deliberate plain-tuple shape
+    find_same_story_duplicate() takes, extended with the two fields
+    this route needs, so this module still imports no models.
+
+    Every gate must hold: an allow-listed category on BOTH sides and
+    the same one, at least one tracked company in common, and
+    publication within MAX_HOURS_APART. A story with no attributed
+    company can never match — an uncategorised or unattributed story
+    carries no evidence of which event it describes, and guessing
+    would collapse unrelated items.
+
+    `headline` is not compared. That is the point of this route: it
+    exists precisely for the pairs whose headlines do not match."""
+    if category is None or category not in SAME_EVENT_CATEGORIES:
+        return None
+    if not companies:
+        return None
+    candidate_companies = set(companies)
+
+    for (
+        existing_publisher, existing_headline, existing_published_at,
+        existing_companies, existing_category,
+    ) in existing:
+        if existing_category != category:
+            continue
+        if not candidate_companies & set(existing_companies or ()):
+            continue
+        hours = _hours_apart(existing_published_at, published_at)
+        if hours is None or hours > MAX_HOURS_APART:
+            continue
+        return existing_publisher, existing_headline, category
+    return None
+
+
 def find_same_story_duplicate(
     existing: Iterable[tuple[str, str, str]],
     headline: str,

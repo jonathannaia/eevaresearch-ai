@@ -217,3 +217,99 @@ def test_the_first_seen_story_wins():
     matched_publisher, matched_headline, similarity = match
     assert (matched_publisher, matched_headline) == ("The Register", RUSSIA_A)
     assert similarity >= MIN_RARE_TOKEN_SIMILARITY
+
+
+# ============================================================
+# Route 3 — same company, same event category, same window.
+# Exists for the pairs whose headlines carry no shared evidence:
+# measured on the live window, "Nvidia reinstates Jensen Huang as CEO"
+# and "Huang Returns as Nvidia CEO 11 Days After Resigning" score 0.12,
+# because "reinstates" and "returns as" are the same event in different
+# words and this module does no stemming.
+# ============================================================
+
+from src.data_access.daily_news import same_story_dedup  # noqa: E402
+
+_HUANG_EXISTING = [(
+    "Light Reading",
+    "Nvidia reinstates Jensen Huang as CEO, board director",
+    "2026-11-23T17:33:36+00:00",
+    ("NVIDIA",),
+    "governance_change",
+)]
+
+
+def test_route_3_catches_the_pair_the_headline_routes_cannot():
+    """The real production pair. Route 1 scores it 0.12 — recorded here
+    so the two routes' division of labour stays visible."""
+    assert same_story_dedup.rare_token_similarity(
+        "Nvidia reinstates Jensen Huang as CEO, board director",
+        "Huang Returns as Nvidia CEO 11 Days After Resigning",
+    ) < same_story_dedup.MIN_RARE_TOKEN_SIMILARITY
+
+    match = same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Huang Returns as Nvidia CEO 11 Days After Resigning",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=("NVIDIA",),
+        category="governance_change",
+    )
+    assert match is not None
+    assert match[2] == "governance_change"
+
+
+def test_route_3_requires_a_shared_company():
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Samsung names new memory, mobile chiefs",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=("Samsung Electronics",),
+        category="governance_change",
+    ) is None
+
+
+def test_route_3_never_fires_without_an_attributed_company():
+    """An unattributed story carries no evidence of which event it
+    describes; guessing would collapse unrelated items."""
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Robotics enters its post-Jensen Huang era",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=(),
+        category="governance_change",
+    ) is None
+
+
+def test_route_3_is_an_allow_list_and_earnings_is_not_on_it():
+    """Two earnings stories about one company hours apart are routinely
+    two separate, separately material disclosures — "Q3 results" and
+    "raises full-year guidance". Earnings is deliberately absent."""
+    assert "governance_change" in same_story_dedup.SAME_EVENT_CATEGORIES
+    assert "formal_earnings_materials" not in same_story_dedup.SAME_EVENT_CATEGORIES
+    assert same_story_dedup.event_category(("formal_earnings_materials:revenue",)) is None
+    assert same_story_dedup.find_same_event_duplicate(
+        [("Reuters", "Nvidia posts Q3 results", "2026-11-23T17:00:00+00:00",
+          ("NVIDIA",), "formal_earnings_materials")],
+        headline="Nvidia raises full-year guidance",
+        published_at="2026-11-23T21:00:00+00:00",
+        companies=("NVIDIA",),
+        category="formal_earnings_materials",
+    ) is None
+
+
+def test_route_3_respects_the_48_hour_window():
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Huang Returns as Nvidia CEO",
+        published_at="2026-11-27T01:46:54+00:00",
+        companies=("NVIDIA",),
+        category="governance_change",
+    ) is None
+
+
+def test_event_category_reads_the_head_of_a_materiality_reason():
+    assert same_story_dedup.event_category(
+        ("governance_change:ceo:names", "quantified_change:capacity")
+    ) == "governance_change"
+    assert same_story_dedup.event_category(()) is None
+    assert same_story_dedup.event_category(("off_taxonomy_no_anchor",)) is None
