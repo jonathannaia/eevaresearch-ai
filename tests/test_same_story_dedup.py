@@ -81,7 +81,7 @@ def test_duplicates_and_non_duplicates_are_separated_by_a_wide_margin():
 @pytest.mark.parametrize("left,right", DUPLICATES)
 def test_a_real_duplicate_pair_is_detected(left, right):
     assert find_same_story_duplicate(
-        [("The Register", left, T0)], headline=right, published_at=T4H,
+        [("s1", "The Register", left, T0)], headline=right, published_at=T4H,
     ) is not None
 
 
@@ -91,7 +91,7 @@ def test_two_genuinely_different_stories_are_both_kept(left, right):
     visible duplicate, so this direction matters more than the one
     above."""
     assert find_same_story_duplicate(
-        [("The Register", left, T0)], headline=right, published_at=T4H,
+        [("s1", "The Register", left, T0)], headline=right, published_at=T4H,
     ) is None
 
 
@@ -108,14 +108,14 @@ def test_the_same_publisher_is_matched_too():
     excluded the only true duplicate in the window. Checking the real
     data is what found this; the reasoning alone sounded fine."""
     assert find_same_story_duplicate(
-        [("Ars Technica", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
+        [("s1", "Ars Technica", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
     ) is not None
 
 
 def test_items_far_apart_in_time_are_not_duplicates():
     """A story genuinely re-reported a week later is a follow-up."""
     assert find_same_story_duplicate(
-        [("The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T8D,
+        [("s1", "The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T8D,
     ) is None
 
 
@@ -124,7 +124,7 @@ def test_an_unusable_timestamp_fails_the_gate_rather_than_passing_it(bad_time):
     """An unknown interval is not evidence of sameness. The last case
     is naive-vs-aware, which raises on comparison."""
     assert find_same_story_duplicate(
-        [("The Register", RUSSIA_A, bad_time)], headline=RUSSIA_B, published_at=T4H,
+        [("s1", "The Register", RUSSIA_A, bad_time)], headline=RUSSIA_B, published_at=T4H,
     ) is None
 
 
@@ -134,7 +134,7 @@ def test_a_headline_with_too_little_distinctive_content_never_matches(headline):
     saying almost nothing. The last case is all taxonomy vocabulary,
     which carries no information in this feed at all."""
     assert find_same_story_duplicate(
-        [("The Register", "AI chip demand surges", T0)], headline=headline, published_at=T4H,
+        [("s1", "The Register", "AI chip demand surges", T0)], headline=headline, published_at=T4H,
     ) is None
 
 
@@ -179,11 +179,12 @@ def test_an_identical_headline_is_a_duplicate_however_short_it_is():
     all. Upstream catches this only when the publisher also matches, so
     a syndicated wire story reaches here untouched."""
     match = find_same_story_duplicate(
-        [("CNBC", "Oracle Corporation posts AI cloud growth", T0)],
+        [("s1", "CNBC", "Oracle Corporation posts AI cloud growth", T0)],
         headline="Oracle Corporation posts AI cloud growth!", published_at=T4H,
     )
     assert match is not None
-    assert match[2] == 1.0
+    assert match[0] == "s1"
+    assert match[3] == 1.0
 
 
 def test_containment_catches_a_longer_retelling_of_a_shorter_headline():
@@ -193,7 +194,7 @@ def test_containment_catches_a_longer_retelling_of_a_shorter_headline():
     the live window: this route adds the detection below and not one
     false positive."""
     match = find_same_story_duplicate(
-        [("Business Korea", "SoftBank's Son Weighed $1 Trillion Acquisition of SK hynix", T0)],
+        [("s1", "Business Korea", "SoftBank's Son Weighed $1 Trillion Acquisition of SK hynix", T0)],
         headline="SoftBank Son weighed a $1 trillion bid for SK hynix, sources say", published_at=T4H,
     )
     assert match is not None
@@ -211,9 +212,107 @@ def test_the_first_seen_story_wins():
     """Matching this package's existing convention: nothing is merged,
     and no corroborating source is attached to the survivor."""
     match = find_same_story_duplicate(
-        [("The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
+        [("s1", "The Register", RUSSIA_A, T0)], headline=RUSSIA_B, published_at=T4H,
     )
     assert match is not None
-    matched_publisher, matched_headline, similarity = match
+    matched_id, matched_publisher, matched_headline, similarity = match
     assert (matched_publisher, matched_headline) == ("The Register", RUSSIA_A)
     assert similarity >= MIN_RARE_TOKEN_SIMILARITY
+
+
+# ============================================================
+# Route 3 — same company, same event category, same window.
+# Exists for the pairs whose headlines carry no shared evidence:
+# measured on the live window, "Nvidia reinstates Jensen Huang as CEO"
+# and "Huang Returns as Nvidia CEO 11 Days After Resigning" score 0.12,
+# because "reinstates" and "returns as" are the same event in different
+# words and this module does no stemming.
+# ============================================================
+
+from src.data_access.daily_news import same_story_dedup  # noqa: E402
+
+_HUANG_EXISTING = [(
+    "s-survivor",
+    "Light Reading",
+    "Nvidia reinstates Jensen Huang as CEO, board director",
+    "2026-11-23T17:33:36+00:00",
+    ("NVIDIA",),
+    "governance_change",
+)]
+
+
+def test_route_3_catches_the_pair_the_headline_routes_cannot():
+    """The real production pair. Route 1 scores it 0.12 — recorded here
+    so the two routes' division of labour stays visible."""
+    assert same_story_dedup.rare_token_similarity(
+        "Nvidia reinstates Jensen Huang as CEO, board director",
+        "Huang Returns as Nvidia CEO 11 Days After Resigning",
+    ) < same_story_dedup.MIN_RARE_TOKEN_SIMILARITY
+
+    match = same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Huang Returns as Nvidia CEO 11 Days After Resigning",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=("NVIDIA",),
+        category="governance_change",
+    )
+    assert match is not None
+    assert match[0] == "s-survivor"
+    assert match[3] == "governance_change"
+
+
+def test_route_3_requires_a_shared_company():
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Samsung names new memory, mobile chiefs",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=("Samsung Electronics",),
+        category="governance_change",
+    ) is None
+
+
+def test_route_3_never_fires_without_an_attributed_company():
+    """An unattributed story carries no evidence of which event it
+    describes; guessing would collapse unrelated items."""
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Robotics enters its post-Jensen Huang era",
+        published_at="2026-11-24T01:46:54+00:00",
+        companies=(),
+        category="governance_change",
+    ) is None
+
+
+def test_route_3_is_an_allow_list_and_earnings_is_not_on_it():
+    """Two earnings stories about one company hours apart are routinely
+    two separate, separately material disclosures — "Q3 results" and
+    "raises full-year guidance". Earnings is deliberately absent."""
+    assert "governance_change" in same_story_dedup.SAME_EVENT_CATEGORIES
+    assert "formal_earnings_materials" not in same_story_dedup.SAME_EVENT_CATEGORIES
+    assert same_story_dedup.event_category(("formal_earnings_materials:revenue",)) is None
+    assert same_story_dedup.find_same_event_duplicate(
+        [("s-earn", "Reuters", "Nvidia posts Q3 results", "2026-11-23T17:00:00+00:00",
+          ("NVIDIA",), "formal_earnings_materials")],
+        headline="Nvidia raises full-year guidance",
+        published_at="2026-11-23T21:00:00+00:00",
+        companies=("NVIDIA",),
+        category="formal_earnings_materials",
+    ) is None
+
+
+def test_route_3_respects_the_48_hour_window():
+    assert same_story_dedup.find_same_event_duplicate(
+        _HUANG_EXISTING,
+        headline="Huang Returns as Nvidia CEO",
+        published_at="2026-11-27T01:46:54+00:00",
+        companies=("NVIDIA",),
+        category="governance_change",
+    ) is None
+
+
+def test_event_category_reads_the_head_of_a_materiality_reason():
+    assert same_story_dedup.event_category(
+        ("governance_change:ceo:names", "quantified_change:capacity")
+    ) == "governance_change"
+    assert same_story_dedup.event_category(()) is None
+    assert same_story_dedup.event_category(("off_taxonomy_no_anchor",)) is None

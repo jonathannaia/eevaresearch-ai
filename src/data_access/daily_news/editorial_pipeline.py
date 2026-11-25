@@ -239,6 +239,27 @@ def _classification_text(raw_description: str | None) -> str | None:
     return trimmed or None
 
 
+
+def _linked_duplicate(entry, story_id: str, source, survivor_id: str, reason: str) -> EditorialStory:
+    """A duplicate, kept with everything it was published with and
+    linked to the story it duplicates. Deliberately NOT classified:
+    its tier follows from being a duplicate, not from its own text, so
+    none of the gates run on it and none of their reasons appear. The
+    single reason recorded says what it duplicates and by which
+    route."""
+    return EditorialStory(
+        id=story_id, headline=entry.title, publisher=source.attribution_label,
+        source_url=entry.link, published_at=entry.published_at,
+        retrieved_at=datetime.now(timezone.utc).isoformat(),
+        excerpt=_extractive_excerpt(entry.summary),
+        identified_companies=(), matched_companies=(), matched_themes=(),
+        source_feed_id=source.source_id,
+        materiality_tier=NewsMaterialityTier.BACKGROUND,
+        materiality_reasons=(reason,),
+        duplicate_of_story_id=survivor_id,
+    )
+
+
 def _extractive_excerpt(raw_description: str | None) -> str | None:
     """Mirrors summary_grounding.py's own extractive approach (HTML-strip,
     trim to a sentence boundary, bounded length) — a deliberate, small,
@@ -339,7 +360,19 @@ def run_editorial_discovery(
     # twice within a SINGLE run dedupes against itself and not only
     # against earlier runs.
     existing_publisher_headline_time = [
-        (s.publisher, s.headline, s.published_at) for s in store.values()
+        (s.id, s.publisher, s.headline, s.published_at) for s in store.values()
+    ]
+    # Same-event corpus (same_story_dedup Route 3). Separate from the
+    # headline corpus above because this route runs later in the loop:
+    # it needs the attributed companies and the materiality reasons,
+    # neither of which exists until after classification and admission.
+    # Same build-once-extend-in-place contract.
+    existing_same_event = [
+        (
+            s.id, s.publisher, s.headline, s.published_at, s.matched_companies,
+            same_story_dedup.event_category(s.materiality_reasons),
+        )
+        for s in store.values()
     ]
 
     items_fetched = 0
@@ -351,6 +384,7 @@ def run_editorial_discovery(
     items_already_seen = 0
     items_capped = 0
     newly_published: list[EditorialStory] = []
+    duplicate_stories: list[EditorialStory] = []
     source_failures: dict[str, str] = {}
     admitted_examples: list[str] = []
     rejected_examples: list[tuple[str, str]] = []
@@ -420,7 +454,30 @@ def run_editorial_discovery(
                 published_at=entry.published_at,
             )
             if same_story_match is not None:
+                # KEPT AND LINKED, not discarded ("one event = one
+                # card", design/DECISIONS.md). A market reaction and a
+                # political reaction to the same event are real
+                # coverage; six separate cards was the only thing wrong
+                # with them. The duplicate is persisted at BACKGROUND
+                # with duplicate_of_story_id pointing at the survivor,
+                # so display can show it under that card as related
+                # coverage instead of losing it.
+                #
+                # No classification work is done on it: its tier is
+                # decided by being a duplicate, not by its own text.
                 items_duplicate += 1
+                duplicate_stories.append(_linked_duplicate(
+                    entry, story_id, source, same_story_match[0],
+                    f"same_story_duplicate_of:{same_story_match[1]}",
+                ))
+                # Registered under the SURVIVOR's id, so a third copy
+                # links to the survivor too and the chain stays one
+                # deep.
+                existing_urls.add(normalized_url)
+                existing_title_publisher.add((normalized_title, source.attribution_label))
+                existing_publisher_headline_time.append(
+                    (same_story_match[0], source.attribution_label, entry.title, entry.published_at)
+                )
                 continue
 
             # Content-boundary fix (Signals precision follow-up, design/
@@ -522,6 +579,38 @@ def run_editorial_discovery(
                 # tuple is preserved separately as identified_companies.
                 attributed_companies = admission.identified_companies
 
+            # Same-event duplicate (same_story_dedup Route 3) — checked
+            # HERE rather than beside the headline routes above because
+            # it compares the classification, not the words, and the
+            # classification does not exist until this point. Same
+            # first-seen-wins convention; nothing is merged onto the
+            # survivor.
+            same_event_match = same_story_dedup.find_same_event_duplicate(
+                existing_same_event,
+                headline=entry.title,
+                published_at=entry.published_at,
+                companies=attributed_companies,
+                category=same_story_dedup.event_category(materiality_reasons),
+            )
+            if same_event_match is not None:
+                # Same keep-and-link treatment as the headline routes
+                # above — see that branch's own comment.
+                items_duplicate += 1
+                if dry_run and len(rejected_examples) < _DRY_RUN_SAMPLE_SIZE:
+                    rejected_examples.append((entry.title, f"same_event:{same_event_match[3]}"))
+                duplicate_stories.append(_linked_duplicate(
+                    entry, story_id, source, same_event_match[0],
+                    f"same_event_duplicate_of:{same_event_match[2]}",
+                ))
+                existing_urls.add(normalized_url)
+                existing_title_publisher.add((normalized_title, source.attribution_label))
+                existing_same_event.append((
+                    same_event_match[0], source.attribution_label, entry.title,
+                    entry.published_at, attributed_companies,
+                    same_story_dedup.event_category(materiality_reasons),
+                ))
+                continue
+
             # Provisionally registered so a second duplicate of THIS SAME
             # entry later in this same source's own feed is still caught
             # — even though this entry might itself be dropped by the cap
@@ -534,8 +623,12 @@ def run_editorial_discovery(
             # story carried twice within a SINGLE run dedupes against
             # itself and not only against an earlier run.
             existing_publisher_headline_time.append(
-                (source.attribution_label, entry.title, entry.published_at)
+                (story_id, source.attribution_label, entry.title, entry.published_at)
             )
+            existing_same_event.append((
+                story_id, source.attribution_label, entry.title, entry.published_at,
+                attributed_companies, same_story_dedup.event_category(materiality_reasons),
+            ))
             qualifying.append((
                 entry, story_id, matched_companies, attributed_companies,
                 matched_themes, materiality_tier, materiality_reasons,
@@ -586,11 +679,15 @@ def run_editorial_discovery(
             if dry_run and len(admitted_examples) < _DRY_RUN_SAMPLE_SIZE:
                 admitted_examples.append(story.headline)
 
-    if newly_published and not dry_run:
+    # Duplicates are persisted alongside the survivors, in the same
+    # call, so a crash between the two can never leave a survivor
+    # without its related coverage or vice versa.
+    to_persist = newly_published + duplicate_stories
+    if to_persist and not dry_run:
         if editorial_repository is None:
-            editorial_story_store.upsert_new_stories(cache_dir, newly_published)
+            editorial_story_store.upsert_new_stories(cache_dir, to_persist)
         else:
-            editorial_repository.upsert_new_stories(newly_published)
+            editorial_repository.upsert_new_stories(to_persist)
 
     completed_at = datetime.now(timezone.utc).isoformat()
     return EditorialScanReport(
@@ -630,7 +727,12 @@ def select_visible_editorial_stories(
     src/ui/pages/daily_news.py's own existing "filter at render time"
     convention for the issuer lane exactly."""
     now = now or datetime.now(timezone.utc)
-    fresh = [s for s in stories.values() if _is_fresh(s.published_at, now)]
+    # A linked duplicate is never its own card ("one event = one
+    # card"). It is not gone — editorial_story_repository.
+    # load_related_coverage() returns it under the survivor it points
+    # at, which is what the card's "+N related reports" reads.
+    visible = [s for s in stories.values() if s.duplicate_of_story_id is None]
+    fresh = [s for s in visible if _is_fresh(s.published_at, now)]
     fresh.sort(key=lambda s: s.published_at, reverse=True)
 
     capped_per_source: list[EditorialStory] = []
@@ -672,7 +774,14 @@ def select_visible_editorial_stories_for_company(
     provably byte-for-byte unchanged — see
     tests/test_editorial_pipeline.py's own regression coverage."""
     now = now or datetime.now(timezone.utc)
-    matching = [s for s in stories.values() if company_name in s.matched_companies]
+    # A linked duplicate is never its own card ("one event = one
+    # card"). It is not gone — editorial_story_repository.
+    # load_related_coverage() returns it under the survivor it points
+    # at, which is what the card's "+N related reports" reads.
+    matching = [
+        s for s in stories.values()
+        if company_name in s.matched_companies and s.duplicate_of_story_id is None
+    ]
     fresh = [s for s in matching if _is_fresh(s.published_at, now)]
     fresh.sort(key=lambda s: s.published_at, reverse=True)
 

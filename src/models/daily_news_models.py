@@ -201,3 +201,20 @@ class EditorialStory:
     # record persisted before this field existed, never backfilled
     # automatically — same contract as materiality_tier above.
     identified_companies: tuple[str, ...] = ()
+
+    # Related coverage (design/DECISIONS.md — "one event = one card").
+    # The id of the story this one duplicates, or None when this story
+    # is itself the survivor (which is the overwhelming majority).
+    #
+    # NOT A DELETION MARKER. A duplicate is kept, with everything it
+    # was published with, and linked to the survivor instead of being
+    # dropped: a market reaction and a political reaction to the same
+    # event are real coverage, and the feed showing them as six
+    # separate cards was the only thing wrong with them. Display
+    # excludes a linked story from the top-level list and shows it
+    # under the survivor's card as related coverage.
+    #
+    # First-seen-by-publication wins, so the chain is always one deep:
+    # a survivor never has a duplicate_of_story_id of its own, and a
+    # consumer never has to follow more than one link.
+    duplicate_of_story_id: str | None = None

@@ -46,6 +46,10 @@ def _story_from_dict(data: dict) -> EditorialStory:
         # no "identified_companies" key, so .get(..., ()) returns an
         # empty tuple, exactly like every other optional field above.
         identified_companies=tuple(data.get("identified_companies", ())),
+        # Related coverage — same additive, safe-default contract: a
+        # record persisted before this field existed has no key, and
+        # None is exactly right for it (it was a survivor).
+        duplicate_of_story_id=data.get("duplicate_of_story_id"),
     )
 
 

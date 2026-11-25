@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 28
+CURRENT_SCHEMA_VERSION = 30
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1002,6 +1002,58 @@ _V28_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V29_STATEMENTS: tuple[str, ...] = (
+    # Append-only revision log for re-classified editorial stories
+    # (editorial_reclassification.py).
+    #
+    # POSTGRES ONLY, with no SQLite counterpart — deliberately. The
+    # SQLite schema has no editorial_stories table at all: the
+    # editorial lane persists to Postgres in production and to
+    # editorial_story_store.py's JSON cache locally, and never to
+    # SQLite. A mirrored migration here would ALTER a table that does
+    # not exist and fail every SQLite migration from this version on. Written on every correction,
+    # never updated or deleted — same discipline as
+    # account_access_events and state_transitions.
+    #
+    # WHY IT EXISTS. editorial_stories holds one row per story and the
+    # re-classification pass overwrites that row's tier and companies.
+    # Without this table a correction would be indistinguishable from
+    # the story having always been classified that way, and the signal
+    # track record could not answer "what did we publish, and when did
+    # we correct it" — which is the whole point of keeping a record.
+    #
+    # old_tier is nullable because rows persisted before the
+    # materiality column existed have no tier at all.
+    """
+    CREATE TABLE editorial_story_revisions (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        story_id TEXT NOT NULL,
+        revised_at TEXT NOT NULL,
+        old_tier TEXT,
+        new_tier TEXT NOT NULL,
+        old_companies_json TEXT NOT NULL,
+        new_companies_json TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        revision_source TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_editorial_story_revisions_story ON editorial_story_revisions (story_id, revised_at)",
+)
+
+
+_V30_STATEMENTS: tuple[str, ...] = (
+    # Related coverage (daily_news_models.EditorialStory.
+    # duplicate_of_story_id) — "one event = one card", with the other
+    # reports kept and linked rather than discarded. NULL for a
+    # survivor, which is almost every row; set to the survivor's id for
+    # a suppressed duplicate. Nullable with no default, so every row
+    # persisted before this column existed reads as a survivor, which
+    # is what it was.
+    "ALTER TABLE editorial_stories ADD COLUMN duplicate_of_story_id TEXT",
+    "CREATE INDEX idx_editorial_stories_duplicate_of ON editorial_stories (duplicate_of_story_id)",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1031,6 +1083,8 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (26, _V26_STATEMENTS),
     (27, _V27_STATEMENTS),
     (28, _V28_STATEMENTS),
+    (29, _V29_STATEMENTS),
+    (30, _V30_STATEMENTS),
 )
 
 
