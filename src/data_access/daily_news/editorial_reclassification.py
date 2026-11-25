@@ -64,6 +64,24 @@ RECLASSIFY_WINDOW_DAYS = 7
 #: correction apart from an original classification.
 REVISION_SOURCE = "window_reclassification"
 
+#: editorial_pipeline._MAX_EXCERPT_CHARS. A stored excerpt at this
+#: length was TRUNCATED from a longer feed summary, so the text this
+#: pass can see is strictly less than the text ingest classified
+#: against — and a tier or attribution computed from it would be a
+#: guess, not a correction. Such a story is left exactly as it is.
+#:
+#: Measured on the live window: 3 of 40 proposed High Signal demotions
+#: fell into this category; the other 37 had short, complete excerpts
+#: and were genuine re-evaluations of the same text. Small, but a
+#: silently wrong demotion is precisely what the append-only record
+#: exists to prevent, so the pass declines rather than guesses.
+#:
+#: Duplicate suppression is exempt: it compares headlines, companies
+#: and publication times, never the excerpt, so truncation cannot
+#: affect it. Kept in sync by
+#: test_truncation_threshold_matches_the_pipelines_own_cap.
+TRUNCATED_EXCERPT_CHARS = 400
+
 SUPPRESSED_TIER = NewsMaterialityTier.BACKGROUND
 
 
@@ -191,6 +209,11 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
             attributed, same_story_dedup.event_category(reasons),
         ))
 
+        if len(story.excerpt or "") >= TRUNCATED_EXCERPT_CHARS:
+            # Truncated source text — see TRUNCATED_EXCERPT_CHARS.
+            # Dedupe above has already had its say; nothing else here
+            # can be decided honestly.
+            continue
         if tier is story.materiality_tier and attributed == story.matched_companies:
             continue
         if tier is not story.materiality_tier:

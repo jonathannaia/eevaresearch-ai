@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from src.data_access.daily_news.editorial_reclassification import (
     RECLASSIFY_WINDOW_DAYS,
     SUPPRESSED_TIER,
+    TRUNCATED_EXCERPT_CHARS,
     plan_reclassification,
     stories_in_window,
 )
@@ -166,3 +167,45 @@ def test_an_already_suppressed_duplicate_is_not_rewritten_again():
                tier=SUPPRESSED_TIER, publisher="Business Korea"),
     ]
     assert [c.story_id for c in plan_reclassification(cluster, NOW)] != ["second"]
+
+
+# --- truncated source text ----------------------------------------
+
+
+def test_truncation_threshold_matches_the_pipelines_own_cap():
+    """These two constants are one fact. If the pipeline ever stores
+    longer excerpts, this pass must learn about it here rather than
+    silently start re-classifying truncated text."""
+    from src.data_access.daily_news import editorial_pipeline
+
+    assert TRUNCATED_EXCERPT_CHARS == editorial_pipeline._MAX_EXCERPT_CHARS
+
+
+def test_a_story_with_a_truncated_excerpt_is_left_alone():
+    """The pass sees the stored excerpt, not the original feed summary.
+    At the cap, the text was truncated, so any tier computed from it
+    would be a guess — and a silently wrong demotion is exactly what
+    the append-only record exists to prevent."""
+    story = _story(
+        "truncated",
+        "Nintendo Switch 2 bundles drop to pre-hike pricing in Black Friday run-up sale",
+        excerpt="x" * TRUNCATED_EXCERPT_CHARS,
+        tier=NewsMaterialityTier.HIGH_SIGNAL,
+    )
+    assert plan_reclassification([story], NOW) == ()
+
+
+def test_a_truncated_story_can_still_be_suppressed_as_a_duplicate():
+    """Duplicate detection compares headlines, companies and times,
+    never the excerpt, so truncation cannot affect it."""
+    cluster = [
+        _story("first", "Nvidia reinstates Jensen Huang as CEO", hours_ago=30,
+               excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+               tier=NewsMaterialityTier.WATCHLIST, publisher="Light Reading"),
+        _story("long", "Nvidia reinstates Jensen Huang as CEO, board director", hours_ago=20,
+               excerpt=_HUANG_EXCERPT + "y" * TRUNCATED_EXCERPT_CHARS,
+               companies=("NVIDIA",), tier=NewsMaterialityTier.HIGH_SIGNAL,
+               publisher="Data Center Dynamics"),
+    ]
+    by_id = {c.story_id: c for c in plan_reclassification(cluster, NOW)}
+    assert by_id["long"].new_tier is SUPPRESSED_TIER
