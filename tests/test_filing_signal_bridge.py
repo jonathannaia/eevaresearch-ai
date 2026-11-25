@@ -166,7 +166,7 @@ def test_a_pending_items_8k_recovers_from_its_own_excerpt():
 def test_the_recovered_items_carry_the_filing_all_the_way_to_high_signal():
     story = build_filing_signal_story(
         _edgar(), matched_rules=("material_event_8k_pending_items:8-K",), retrieved_at=NOW,
-        excerpt_for_item_recheck=ITEM_502_EXCERPT,
+        excerpt=ITEM_502_EXCERPT,
     )
     assert story is not None and story.materiality_tier is NewsMaterialityTier.HIGH_SIGNAL
 
@@ -295,8 +295,28 @@ def test_two_filings_sharing_a_form_name_are_both_projected():
     stories = project_filing_signals((governance, earnings, other_company), retrieved_at=NOW)
 
     assert len(stories) == 3, [s.materiality_reasons[0] for s in stories]
-    assert {s.headline for s in stories} == {"8-K"}, "all three share a headline, which is the point"
     assert any("governance_or_management_change" in s.materiality_reasons[0] for s in stories)
+    # The form name no longer reaches the card at all — item 4 replaced
+    # it with an event headline (filing_event_headline.py). That removes
+    # the collision these three filings used to have, so the guard above
+    # no longer exercises the failure on its own; the next test keeps
+    # it exercised with headlines that really are identical.
+    assert "8-K" not in {s.headline for s in stories}
+
+
+def test_two_filings_with_the_SAME_headline_are_still_both_projected():
+    """The guard the test above used to carry, kept alive deliberately.
+
+    Two filings by one company, same category, both falling back to the
+    same "[Company] — [event] (Form 8-K)" headline. If dedupe ever moves
+    back to (publisher, headline), this is the test that fails."""
+    first = (_edgar(rcept_no="b1"), ("earnings_or_results:8-K item 2.02",))
+    second = (_edgar(rcept_no="b2"), ("earnings_or_results:8-K item 2.02",))
+
+    stories = project_filing_signals((first, second), retrieved_at=NOW)
+
+    assert len({s.headline for s in stories}) == 1, "the premise: one headline, two filings"
+    assert len(stories) == 2, "both survive, because dedupe is keyed on story id"
 
 
 def test_the_same_filing_twice_in_one_batch_is_projected_once():
@@ -332,3 +352,77 @@ def test_no_tier_entry_is_an_amendment():
     """Amendments resolve by prefix. An explicit amended_* row in the
     table would be a second, conflicting source of truth."""
     assert not [c for c in FILING_CATEGORY_TIERS if c.startswith("amended_")]
+
+
+# --- item 4: the card's headline and summary --------------------------
+
+_ADI_2_02 = (
+    "Item 2.02. Results of Operations and Financial Condition On November 24, 2026, "
+    "NVIDIA Corporation announced its financial results for its third quarter and "
+    "fiscal year ended October 31, 2026. The full text of the press release is "
+    "furnished herewith as Exhibit 99.1."
+)
+_XBRL = (
+    "nvda-20261031 0001045810 False 2026 FY "
+    "http://fasb.org/us-gaap/2026#AccruedIncomeTaxesCurrent"
+)
+
+
+def test_the_card_no_longer_shows_the_form_name_as_its_headline():
+    story = build_filing_signal_story(
+        _edgar(), matched_rules=("earnings_or_results:8-K item 2.02",), retrieved_at=NOW,
+        excerpt=_ADI_2_02, item_anchor="Item Item 2.02",
+    )
+    assert story is not None
+    assert story.headline != "8-K"
+    assert story.headline.startswith("NVIDIA Corporation announced its financial results")
+
+
+def test_the_headlines_provenance_is_recorded_on_the_story():
+    """A dry run, an audit and a future repair all need to tell an
+    extracted headline from a fallback without re-deriving either."""
+    extracted = build_filing_signal_story(
+        _edgar(), matched_rules=("earnings_or_results:8-K item 2.02",), retrieved_at=NOW,
+        excerpt=_ADI_2_02,
+    )
+    fell_back = build_filing_signal_story(
+        _edgar(), matched_rules=("earnings_or_results:8-K item 2.02",), retrieved_at=NOW,
+        excerpt=_XBRL,
+    )
+    assert "filing_headline:excerpt" in extracted.materiality_reasons
+    assert "filing_headline:fallback" in fell_back.materiality_reasons
+
+
+def test_a_readable_english_excerpt_becomes_the_cards_summary():
+    """Was unconditionally None: the filing cards showed no summary at
+    all while the text sat in the candidate the worker had already
+    loaded."""
+    story = build_filing_signal_story(
+        _edgar(), matched_rules=("earnings_or_results:8-K item 2.02",), retrieved_at=NOW,
+        excerpt=_ADI_2_02,
+    )
+    assert story.excerpt
+    assert "announced its financial results" in story.excerpt
+
+
+def test_raw_xbrl_is_never_shown_as_a_summary():
+    story = build_filing_signal_story(
+        _edgar(), matched_rules=("earnings_or_results:8-K item 2.02",), retrieved_at=NOW,
+        excerpt=_XBRL,
+    )
+    assert story.excerpt is None
+    assert story.headline == "NVIDIA — Results of operations (Form 8-K)"
+
+
+def test_an_untranslated_korean_excerpt_is_never_shown_to_an_english_reader():
+    """The bridge is not permitted to translate, and a Korean paragraph
+    on an English card is not a summary. Only an already-translated
+    excerpt is shown for a non-English source."""
+    from src.data_access.daily_news.filing_signal_bridge import _card_excerpt
+
+    korean = _edgar(source_name="OpenDART / DART")
+    assert _card_excerpt(korean, "중대재해 발생 장소 사외기숙사", None) is None
+    assert _card_excerpt(
+        korean, "중대재해 발생 장소 사외기숙사",
+        "A serious industrial accident occurred at an off-site dormitory in Gumi.",
+    ) == "A serious industrial accident occurred at an off-site dormitory in Gumi."

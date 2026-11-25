@@ -225,6 +225,17 @@ def display_title(filing: FilingEvent, candidate: CandidateSignal | None, prefer
     return mapped or native_or_translated
 
 
+def native_category_title(source_name: str, category: str) -> str | None:
+    """The curated English document-type phrase for a DART or EDINET
+    category — the same table display_title() prefixes onto a native
+    title. Public so the Signals filing card can name a filing exactly
+    as the Radar card names it, instead of keeping a second copy of
+    these hand-written translations that would drift. None for an
+    unmapped category, never a guess."""
+    table = _EDINET_CATEGORY_TITLES if source_name == EDINET_SOURCE_NAME else _DART_CATEGORY_TITLES
+    return table.get(category)
+
+
 def display_category_label(filing: FilingEvent, candidate: CandidateSignal | None) -> str | None:
     """The filing's category as a standalone chip label (redesign v2):
     for DART/EDINET the same curated category phrase display_title()

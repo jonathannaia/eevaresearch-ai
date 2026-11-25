@@ -52,6 +52,7 @@ from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import filing_signal_bridge
 from src.data_access.postgres_state_db.connection import connect
+from src.logic import filing_display
 
 REPAIR_REASON = "repair_filing_misclassification"
 REPAIR_SOURCE = "filing_repair"
@@ -82,7 +83,7 @@ def _rebuild_from_filing_store(settings) -> dict:
         datetime.now(timezone.utc) - timedelta(days=settings.filing_signals_lookback_days)
     ).date().isoformat()
     filings_with_rules = []
-    excerpts: dict[str, str] = {}
+    documents: dict[str, filing_signal_bridge.FilingDocumentContext] = {}
     for source in _FILING_SIGNAL_SOURCES:
         filing_repository = backend_factory.get_filing_event_repository(settings, source)
         candidate_repository = backend_factory.get_candidate_repository(settings, source)
@@ -97,13 +98,23 @@ def _rebuild_from_filing_store(settings) -> dict:
             filings_with_rules.append(
                 (filing, tuple(candidate.matched_rules) if candidate else ())
             )
-            if candidate and candidate.excerpt_original:
-                excerpts[filing_signal_bridge.story_id_for(filing)] = candidate.excerpt_original
+            if candidate is not None:
+                documents[filing_signal_bridge.story_id_for(filing)] = (
+                    filing_signal_bridge.FilingDocumentContext(
+                        excerpt=candidate.excerpt_original,
+                        excerpt_translated=(
+                            candidate.excerpt_translation.translated_text
+                            if candidate.excerpt_translation is not None
+                            else None
+                        ),
+                        item_anchor=filing_display.item_anchor_label(candidate.evidence_location),
+                    )
+                )
 
     stories = filing_signal_bridge.project_filing_signals(
         tuple(filings_with_rules),
         retrieved_at=datetime.now(timezone.utc).isoformat(),
-        excerpts_by_story_id=excerpts,
+        documents_by_story_id=documents,
     )
     return {s.id: s for s in stories}
 

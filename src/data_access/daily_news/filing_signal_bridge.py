@@ -27,6 +27,7 @@ unless explicitly set. The caller checks it; this module stays pure so
 it can be exercised without a flag, a database or a worker."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
@@ -39,7 +40,9 @@ from src.data_access.daily_news.filing_signal_tiers import (
     tier_for_amendment,
     tier_for_filing_category,
 )
+from src.data_access.daily_news import filing_event_headline
 from src.data_access.edgar import edgar_rules
+from src.logic.filing_display import extractive_summary, is_readable_extracted_text
 from src.models.daily_news_models import EditorialStory
 from src.models.models import FilingEvent
 
@@ -97,6 +100,25 @@ _DART_AMENDMENT_MARKER = "[기재정정]"
 PENDING_RECHECK_MAX_DAYS = 14
 
 _PENDING_ITEMS_CATEGORY = "material_event_8k_pending_items"
+
+
+@dataclass(frozen=True)
+class FilingDocumentContext:
+    """What the extraction path already knows about one filing's
+    document, handed to the projection so it does not have to go and
+    find it. All three fields are optional: a filing whose document was
+    never successfully extracted still projects, it simply gets the
+    fallback headline and no summary.
+
+    `item_anchor` is the recorded evidence-location section ("Item
+    5.02"), never a value parsed out of the excerpt text here."""
+
+    excerpt: str | None = None
+    excerpt_translated: str | None = None
+    item_anchor: str | None = None
+
+
+_NO_DOCUMENT = FilingDocumentContext()
 
 
 def has_pending_items(matched_rules: tuple[str, ...] | None) -> bool:
@@ -195,12 +217,71 @@ def card_label_for(category: str) -> str | None:
     return CATEGORY_CARD_LABELS.get(category)
 
 
+#: The one source whose documents are English. Everything else gets the
+#: curated document-type phrase instead of an extracted sentence — see
+#: filing_event_headline.py for why.
+_ENGLISH_NATIVE_SOURCE = "SEC EDGAR"
+
+
+def _event_headline(
+    filing: FilingEvent,
+    candidate,
+    category: str,
+    excerpt: str | None,
+    item_anchor: str | None,
+) -> filing_event_headline.HeadlineResult:
+    """The card's title line. Never the bare form name.
+
+    EDGAR goes through the extractive path, which returns a verified
+    span of the filing's own text or a fallback naming the company, the
+    event type and the document. DART and EDINET go through the curated
+    English document-type phrase joined to their own title."""
+    company = candidate.company_name
+    if filing.source_name == _ENGLISH_NATIVE_SOURCE:
+        return filing_event_headline.edgar_event_headline(
+            company=company,
+            category=category,
+            excerpt=excerpt,
+            form_type=filing.pblntf_ty,
+            item_anchor=item_anchor,
+            excerpt_is_readable=bool(excerpt) and is_readable_extracted_text(excerpt),
+        )
+    return filing_event_headline.native_filing_headline(
+        source_name=filing.source_name,
+        category=category,
+        title=candidate.title_translated or candidate.title_native,
+    )
+
+
+def _card_excerpt(filing: FilingEvent, excerpt: str | None, excerpt_translated: str | None) -> str | None:
+    """The card's summary paragraph, or None.
+
+    Was unconditionally None, with the comment that a filing's excerpt
+    is extracted by a separate path — true, but the worker already HAS
+    that path's output by the time it calls this module, so the card was
+    showing no summary at all for every filing while the text sat one
+    function call away.
+
+    English-native text is shown directly. Korean and Japanese text is
+    shown only when a translation already exists; the native excerpt is
+    never shown untranslated, because an English feed's reader cannot
+    use it and this module is not permitted to translate. Unreadable
+    text — a 10-K's excerpt in this corpus is raw XBRL namespace URLs —
+    is never shown at all."""
+    text = excerpt_translated if filing.source_name != _ENGLISH_NATIVE_SOURCE else excerpt
+    if not text or not is_readable_extracted_text(text):
+        return None
+    return extractive_summary(text) or None
+
+
 def build_filing_signal_story(
     filing: FilingEvent,
     *,
     matched_rules: tuple[str, ...] | None,
     retrieved_at: str,
-    excerpt_for_item_recheck: str | None = None,
+    excerpt: str | None = None,
+    excerpt_translated: str | None = None,
+    item_anchor: str | None = None,
 ) -> EditorialStory | None:
     """One filing -> one EditorialStory, or None.
 
@@ -212,7 +293,7 @@ def build_filing_signal_story(
     # excerpt, before the adapter is asked — see the re-check block
     # above for why these were being lost outright.
     recovered_rules = recheck_pending_8k_items(
-        matched_rules, excerpt=excerpt_for_item_recheck,
+        matched_rules, excerpt=excerpt,
         filing_date=filing.filed_at or filing.rcept_dt, now=retrieved_at,
     )
     if recovered_rules is not None:
@@ -239,19 +320,18 @@ def build_filing_signal_story(
     if matched_rules:
         reasons.append(f"filing_rules:{','.join(matched_rules)}")
 
+    headline_result = _event_headline(filing, candidate, category, excerpt, item_anchor)
+    reasons.append(f"filing_headline:{headline_result.provenance}")
+
     company = candidate.company_name
     return EditorialStory(
         id=story_id_for(filing),
-        headline=candidate.title_translated or candidate.title_native,
+        headline=headline_result.headline,
         publisher=_PUBLISHER_BY_SOURCE.get(filing.source_name, filing.source_name),
         source_url=candidate.official_document_url or filing.source_url or "",
         published_at=candidate.filing_date,
         retrieved_at=retrieved_at,
-        # Deliberately None. A filing's excerpt is extracted by a
-        # separate path with its own quality states, and inventing a
-        # summary here is exactly the "Summary unavailable" problem one
-        # layer earlier.
-        excerpt=None,
+        excerpt=_card_excerpt(filing, excerpt, excerpt_translated),
         matched_companies=(company,),
         matched_themes=(),
         source_feed_id=_FEED_ID_BY_SOURCE.get(filing.source_name, "filing-unknown"),
@@ -265,7 +345,7 @@ def project_filing_signals(
     filings_with_rules: tuple[tuple[FilingEvent, tuple[str, ...]], ...],
     *,
     retrieved_at: str,
-    excerpts_by_story_id: dict[str, str] | None = None,
+    documents_by_story_id: dict[str, FilingDocumentContext] | None = None,
 ) -> tuple[EditorialStory, ...]:
     """Every projectable filing, in input order, one story per filing.
 
@@ -296,9 +376,12 @@ def project_filing_signals(
         story_id = story_id_for(filing)
         if story_id in seen_ids:
             continue
+        document = (documents_by_story_id or {}).get(story_id, _NO_DOCUMENT)
         story = build_filing_signal_story(
             filing, matched_rules=matched_rules, retrieved_at=retrieved_at,
-            excerpt_for_item_recheck=(excerpts_by_story_id or {}).get(story_id),
+            excerpt=document.excerpt,
+            excerpt_translated=document.excerpt_translated,
+            item_anchor=document.item_anchor,
         )
         if story is None:
             continue
