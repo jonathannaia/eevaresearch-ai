@@ -83,7 +83,11 @@ from src.data_access.daily_news import (
 )
 from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
-from src.data_access.daily_news.materiality_classification import classify_editorial_story
+from src.data_access.daily_news.materiality_classification import (
+    cap_without_tracked_company,
+    classify_editorial_story,
+    flag_vague_headline,
+)
 from src.data_access.daily_news.source_registry import (
     EDITORIAL_SOURCE_REGISTRY,
     DailyNewsSourceEntry,
@@ -552,6 +556,16 @@ def run_editorial_discovery(
             # editorial_admission.py); carried through here unchanged,
             # never recomputed and never reclassifies an already-
             # persisted story (see NewsMaterialityTier's own docstring).
+            # Applied HERE, after admission, deliberately. The gate
+            # above consults materiality_tier to decide whether a
+            # genuine material signal justifies admitting an ambiguous
+            # alias, so capping before it would change what gets
+            # admitted, not just how it is ranked. This only ranks.
+            final_tier, final_reasons = cap_without_tracked_company(
+                materiality_tier, materiality_reasons, attributed_companies,
+            )
+            final_reasons = flag_vague_headline(entry.title, final_reasons)
+
             story = EditorialStory(
                 id=story_id, headline=entry.title, publisher=source.attribution_label, source_url=entry.link,
                 published_at=entry.published_at, retrieved_at=retrieved_at,
@@ -566,7 +580,7 @@ def run_editorial_discovery(
                 identified_companies=matched_companies, matched_companies=attributed_companies,
                 matched_themes=matched_themes,
                 source_feed_id=source.source_id,
-                materiality_tier=materiality_tier, materiality_reasons=materiality_reasons,
+                materiality_tier=final_tier, materiality_reasons=final_reasons,
             )
             newly_published.append(story)
             if dry_run and len(admitted_examples) < _DRY_RUN_SAMPLE_SIZE:
