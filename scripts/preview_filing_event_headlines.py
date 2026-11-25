@@ -92,6 +92,19 @@ def main(argv: list[str] | None = None) -> int:
                 excerpt_is_readable=bool(raw) and filing_display.is_readable_extracted_text(raw),
             ) if filing.source_name == "SEC EDGAR" else None
 
+            # What the card showed before this change: the adapter's own
+            # title, which for EDGAR is the form name. Read back through
+            # the adapter rather than off the CandidateSignal, because
+            # the two carry different title fields and only the adapter's
+            # is what the bridge used to publish.
+            adapter_candidate = filing_signal_bridge._resolve_candidate(
+                filing, tuple(candidate.matched_rules),
+            )
+            old_headline = (
+                (adapter_candidate.title_translated or adapter_candidate.title_native or "")
+                if adapter_candidate is not None else ""
+            )
+
             body = story.headline
             company = story.matched_companies[0] if story.matched_companies else ""
             if body.startswith(f"{company} — "):
@@ -106,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 "item": filing_event_headline.normalized_item_anchor(document.item_anchor) or "-",
                 "category": category,
                 "tier": story.materiality_tier.value if story.materiality_tier else "",
-                "old": candidate.title_translated or candidate.title_native or "",
+                "old": old_headline,
                 "new": story.headline,
                 "provenance": provenance,
                 "grounded": grounded,
