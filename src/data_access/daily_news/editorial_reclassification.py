@@ -46,7 +46,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from src.data_access.daily_news import same_story_dedup
+from src.data_access.daily_news import filing_signal_bridge, same_story_dedup
 from src.data_access.daily_news.editorial_admission import assess_admission
 from src.data_access.daily_news.editorial_matching import matched_companies_and_themes
 from src.data_access.daily_news.materiality_classification import (
@@ -110,6 +110,11 @@ class ReclassificationChange:
     old_companies: tuple[str, ...]
     new_companies: tuple[str, ...]
     new_reasons: tuple[str, ...]
+    #: What the story carried before. Recorded so a correction can be
+    #: undone from the log alone — the 2026-11-25 repair had to
+    #: re-derive these from the filing store because V29 did not keep
+    #: them.
+    old_reasons: tuple[str, ...]
     reason: str
     #: Set only on a suppressed duplicate: the survivor it is linked
     #: to, so the card can show it as related coverage. None on every
@@ -152,6 +157,31 @@ def stories_in_window(stories, now: datetime) -> list:
     return inside
 
 
+def _is_filing_story(story) -> bool:
+    """A filing-derived story is NOT news and must never pass through
+    this module.
+
+    Its tier comes from filing_signal_tiers.py — an 8-K Item 2.02 is
+    High Signal because of what that item IS, not because of anything
+    the news classifier can read in a form name. Running one through
+    classify_editorial_story() drops it to Background with
+    "off_taxonomy_no_anchor", because the news gates have no concept of
+    a 臨時報告書 or a 10-Q.
+
+    Dedupe is the worse half. Every SEC 8-K is titled "8-K", so the
+    exact-headline route collapses unrelated companies' filings into
+    each other — the identical failure project_filing_signals()'s own
+    docstring records ("14 projectable EDGAR filings collapsed to 4").
+    That guard lives in the projection path and does not protect this
+    one, so the exclusion has to be here.
+
+    Verified in production on 2026-11-25: a pass without this check
+    demoted 12 filing rows to Background and linked 5 of them as
+    duplicates of unrelated companies' filings.
+    """
+    return str(story.id or "").startswith(f"{filing_signal_bridge.STORY_ID_PREFIX}:")
+
+
 def _reclassify_one(story) -> tuple[NewsMaterialityTier, tuple[str, ...], tuple[str, ...]]:
     """(tier, reasons, attributed_companies) for one stored story, via
     exactly the calls editorial_pipeline.py makes in the same order.
@@ -177,7 +207,7 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
     """Pure. Returns one change per story whose tier or attribution the
     current code disagrees with, plus one per duplicate the current
     dedupe would have suppressed at ingest. Writes nothing."""
-    window = stories_in_window(stories, now)
+    window = [s for s in stories_in_window(stories, now) if not _is_filing_story(s)]
     changes: list[ReclassificationChange] = []
 
     seen_headlines: list[tuple[str, str, str, str]] = []
@@ -216,6 +246,7 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
                     story_id=story.id, headline=story.headline, published_at=story.published_at,
                     old_tier=story.materiality_tier, new_tier=SUPPRESSED_TIER,
                     old_companies=story.matched_companies, new_companies=story.matched_companies,
+                    old_reasons=story.materiality_reasons,
                     new_reasons=(duplicate_reason,) + reasons, reason=duplicate_reason,
                     duplicate_of_story_id=duplicate_of[0],
                 ))
@@ -266,6 +297,7 @@ def plan_reclassification(stories, now: datetime) -> tuple[ReclassificationChang
             story_id=story.id, headline=story.headline, published_at=story.published_at,
             old_tier=story.materiality_tier, new_tier=tier,
             old_companies=story.matched_companies, new_companies=attributed,
+            old_reasons=story.materiality_reasons,
             new_reasons=reasons, reason=reason,
         ))
     return tuple(changes)

@@ -61,7 +61,10 @@ _FEED_ID_BY_SOURCE: dict[str, str] = {
 
 #: Prefix for the deterministic story id. A filing projected twice
 #: produces the same id and upserts, never a duplicate card.
-_STORY_ID_PREFIX = "filing"
+#: Public: editorial_reclassification.py identifies filing-derived
+#: stories by this prefix, so the two cannot drift apart silently.
+STORY_ID_PREFIX = "filing"
+_STORY_ID_PREFIX = STORY_ID_PREFIX
 
 #: The DART amendment marker, stripped when deriving the base title to
 #: compare against.

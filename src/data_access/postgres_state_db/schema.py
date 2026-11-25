@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 30
+CURRENT_SCHEMA_VERSION = 31
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1054,6 +1054,20 @@ _V30_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V31_STATEMENTS: tuple[str, ...] = (
+    # The reasons a story carried BEFORE a revision. V29 recorded the
+    # old tier and old companies but not the old reasons, which made
+    # the 2026-11-25 repair harder than it should have been: the
+    # original filing_event/filing_rules reasons had to be re-derived
+    # from the filing store because the log could not give them back.
+    #
+    # Nullable: every revision row written before this column existed
+    # genuinely has no recorded prior reasons, and claiming otherwise
+    # would be worse than admitting the gap.
+    "ALTER TABLE editorial_story_revisions ADD COLUMN old_reasons_json TEXT",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1085,6 +1099,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (28, _V28_STATEMENTS),
     (29, _V29_STATEMENTS),
     (30, _V30_STATEMENTS),
+    (31, _V31_STATEMENTS),
 )
 
 
