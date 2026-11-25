@@ -375,6 +375,108 @@ _HISTORICAL_BACKGROUND_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+# --- Regulatory/government-subject veto (item 3, the "export controls
+# -> NVIDIA" diagnosis). Same shape and same narrow scope as
+# _HISTORICAL_BACKGROUND_PATTERNS above: it vetoes the action-language
+# route ONLY, never the in-title route, so a company genuinely named in
+# the headline of a policy story keeps its attribution in full.
+#
+# WHY. _admission_attributed_companies() below decides identity for a
+# non-ambiguous company on "in_title OR has_action_language", and
+# _company_is_grammatical_actor() approximates action language by
+# character proximity to a word in _COMPANY_ACTION_KEYWORDS. That list
+# necessarily contains "regulators", "investigation", "lawsuit",
+# "fined" and "faces" — the very vocabulary of a government policy
+# story. In such a story the government is the actor and the companies
+# are the OBJECTS of the action, so the proximity heuristic attributes
+# whichever company happens to sit nearest the keyword, which is an
+# artifact of sentence order rather than a fact about the story.
+#
+# Verified production false positive (editorial_stories, 2026-11-20),
+# reproduced in tests/test_editorial_admission.py: "U.S. Tightens
+# Controls on Chinese Access to AI Chips" raw-matched NVIDIA, Applied
+# Materials, ON Semiconductor and Samsung Electronics, and attributed
+# exactly one of them — NVIDIA — purely because its mention fell inside
+# the lookahead window after "Regulators" while Applied Materials, in
+# the same clause of the same sentence, fell outside it. Neither is the
+# subject; the U.S. government is.
+#
+# The veto is headline-scoped and anchored to the FRONT of the
+# headline, because what is being detected is the headline's own
+# grammatical subject, not the mere presence of policy vocabulary
+# somewhere in it. "TSMC reportedly pauses shipments ... after U.S.
+# export rules flag ..." names a regulator mid-sentence but is still a
+# TSMC story, and does not trip this. ---
+_REGULATORY_SUBJECT_PREFIX_CHARS = 40
+_REGULATORY_ACTION_WINDOW_CHARS = 60
+
+# Spelled-out bodies and jurisdictions — safe to match case-
+# insensitively; every one of them is a proper noun in ordinary use.
+_REGULATORY_ACTOR_PATTERN = re.compile(
+    r"\b("
+    r"united states|washington|white house|congress|senate|"
+    r"commerce department|department of commerce|bureau of industry and security|"
+    r"treasury|pentagon|justice department|european union|european commission|brussels|"
+    r"china|beijing|japan|tokyo|south korea|seoul|taiwan|taipei|india|netherlands|"
+    r"britain|london|germany|berlin|"
+    r"regulators?|lawmakers?|antitrust (?:regulators?|authorit(?:y|ies))|court|judge"
+    r")\b",
+    re.IGNORECASE,
+)
+# Acronyms matched case-SENSITIVELY, deliberately: lower-cased "us",
+# "sec", "itc" and "bis" are ordinary English words or fragments, and a
+# case-insensitive match on them would fire on headlines that have
+# nothing to do with a regulator.
+# A trailing \b is wrong for a dotted acronym ("U.S." ends in a non-word
+# character, so there is no word boundary after it); a negative
+# lookahead is the correct terminator and also keeps "US" from matching
+# inside "USB" or "US-based".
+_REGULATORY_ACTOR_ACRONYM_PATTERN = re.compile(
+    r"\b(?:U\.S\.?|US|EU|UK|BIS|FTC|SEC|DOJ|FCC|CFIUS|USTR|ITC|METI|MOFCOM)(?![\w.])",
+)
+# Actions only a government, regulator or court performs. Deliberately
+# excludes ordinary commercial verbs ("expands", "launches", "reports")
+# so that "China's SMIC expands capacity" is untouched.
+_REGULATORY_ACTION_PATTERN = re.compile(
+    r"\b("
+    r"tighten(?:s|ed|ing)?|impose(?:s|d)?|ban(?:s|ned|ning)?|"
+    r"restrict(?:s|ed|ing|ions?)?|curb(?:s|ed|ing)?|blacklist(?:s|ed|ing)?|"
+    r"sanction(?:s|ed)?|probe(?:s|d)?|investigat(?:es?|ed|ing|ion)|fine(?:s|d)?|"
+    r"block(?:s|ed|ing)?|approve(?:s|d)?|clear(?:s|ed)?|order(?:s|ed)?|"
+    r"rule(?:s|d)?|charge(?:s|d)?|sue(?:s|d)?|subpoena(?:s|ed)?|"
+    r"tariffs?|export controls?|export rules?|entity list|"
+    r"licen[cs](?:e|ing) requirements?|crackdown|mandate(?:s|d)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _regulatory_actor_spans(title: str) -> tuple[tuple[int, int], ...]:
+    spans = [m.span() for m in _REGULATORY_ACTOR_PATTERN.finditer(title)]
+    spans += [m.span() for m in _REGULATORY_ACTOR_ACRONYM_PATTERN.finditer(title)]
+    return tuple(sorted(spans))
+
+
+def _has_regulatory_subject(title: str) -> bool:
+    """True when the headline leads with a government, regulator or
+    court and goes on to name an action only such a body performs —
+    i.e. the story's subject is the policy, not any company named in
+    the body. Front-anchored (_REGULATORY_SUBJECT_PREFIX_CHARS) and
+    proximity-bounded (_REGULATORY_ACTION_WINDOW_CHARS) on purpose: see
+    this block's own preceding comment for why presence alone is not
+    enough. Like _has_historical_background_framing(), this vetoes the
+    action-language route only."""
+    for actor_start, actor_end in _regulatory_actor_spans(title):
+        if actor_start > _REGULATORY_SUBJECT_PREFIX_CHARS:
+            continue
+        for match in _REGULATORY_ACTION_PATTERN.finditer(title):
+            if match.start() < actor_end:
+                continue
+            if (match.start() - actor_end) <= _REGULATORY_ACTION_WINDOW_CHARS:
+                return True
+    return False
+
+
 def _sentences(text: str) -> tuple[str, ...]:
     """A deliberately simple sentence split — sufficient to scope the
     action-language check to a company's own vicinity; not intended as
@@ -599,13 +701,19 @@ def _admission_attributed_companies(
     # never the in_title route, so a company genuinely named in the
     # headline is always unaffected.
     historical_background = _has_historical_background_framing(text)
+    # Regulatory/government-subject veto (see _has_regulatory_subject's
+    # own block comment) — same veto scope as historical_background
+    # immediately above: the action-language route only, never in_title.
+    regulatory_subject = _has_regulatory_subject(title)
     attributed: list[str] = []
     for company in matched_companies:
         if _contains_any(text, _RIVAL_ENTITY_EXCLUSION_PHRASES.get(company, ())):
             continue
         in_title = company in title_companies
         has_action_language = (
-            not historical_background and _company_is_grammatical_actor(text, company)
+            not historical_background
+            and not regulatory_subject
+            and _company_is_grammatical_actor(text, company)
         )
         if company in _AMBIGUOUS_ALIAS_COMPANIES:
             if in_title and has_action_language:
