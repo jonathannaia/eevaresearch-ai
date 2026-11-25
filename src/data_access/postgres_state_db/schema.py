@@ -1004,7 +1004,14 @@ _V28_STATEMENTS: tuple[str, ...] = (
 
 _V29_STATEMENTS: tuple[str, ...] = (
     # Append-only revision log for re-classified editorial stories
-    # (editorial_reclassification.py). Written on every correction,
+    # (editorial_reclassification.py).
+    #
+    # POSTGRES ONLY, with no SQLite counterpart — deliberately. The
+    # SQLite schema has no editorial_stories table at all: the
+    # editorial lane persists to Postgres in production and to
+    # editorial_story_store.py's JSON cache locally, and never to
+    # SQLite. A mirrored migration here would ALTER a table that does
+    # not exist and fail every SQLite migration from this version on. Written on every correction,
     # never updated or deleted — same discipline as
     # account_access_events and state_transitions.
     #
