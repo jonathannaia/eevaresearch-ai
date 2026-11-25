@@ -115,8 +115,9 @@ def apply_reclassification(conn: psycopg.Connection, changes) -> int:
                 """
                 INSERT INTO editorial_story_revisions (
                     story_id, revised_at, old_tier, new_tier,
-                    old_companies_json, new_companies_json, reason, revision_source
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    old_companies_json, new_companies_json, reason, revision_source,
+                    old_reasons_json
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     change.story_id, revised_at,
@@ -126,6 +127,7 @@ def apply_reclassification(conn: psycopg.Connection, changes) -> int:
                     json.dumps(list(change.new_companies)),
                     change.reason,
                     REVISION_SOURCE,
+                    json.dumps(list(change.old_reasons)),
                 ),
             )
             conn.execute(

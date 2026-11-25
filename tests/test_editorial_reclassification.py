@@ -297,3 +297,58 @@ def test_rerunning_the_pass_does_not_relink_an_already_linked_duplicate():
         duplicate_of_story_id="survivor",
     )
     assert [c.story_id for c in plan_reclassification([survivor, linked], NOW)] != ["linked"]
+
+
+# --- filing-derived stories are not news --------------------------
+
+
+def _filing_story(story_id: str, headline: str, *, hours_ago: int = 10,
+                  tier=NewsMaterialityTier.HIGH_SIGNAL, companies=("NVIDIA",)):
+    from src.data_access.daily_news.filing_signal_bridge import STORY_ID_PREFIX
+
+    return _story(
+        f"{STORY_ID_PREFIX}:{story_id}", headline, hours_ago=hours_ago,
+        excerpt="Item 2.02 Results of Operations and Financial Condition.",
+        tier=tier, companies=companies, publisher="SEC EDGAR",
+        reasons=("filing_event:earnings_or_results", "filing_rules:earnings_or_results:8-K item 2.02"),
+    )
+
+
+def test_a_filing_story_is_never_reclassified():
+    """Its tier comes from filing_signal_tiers.py — an 8-K Item 2.02 is
+    High Signal because of what that item IS. The news classifier has
+    no concept of it and drops it to Background.
+
+    Verified in production on 2026-11-25: a pass without this check
+    demoted 12 filing rows."""
+    story = _filing_story("SEC EDGAR:0001045810:0001045810", "8-K")
+    assert plan_reclassification([story], NOW) == ()
+
+
+def test_filings_sharing_a_form_name_are_never_deduped_against_each_other():
+    """Every SEC 8-K is titled "8-K". The exact-headline route would
+    collapse unrelated companies' filings into one — the identical
+    failure project_filing_signals()'s own docstring records. Five rows
+    were linked this way in production before this check existed."""
+    filings = [
+        _filing_story("SEC EDGAR:0000006281:0000006281", "8-K", hours_ago=30),
+        _filing_story("SEC EDGAR:0000004328:0000004328", "8-K", hours_ago=20),
+        _filing_story("SEC EDGAR:0001837240:0001837240", "8-K", hours_ago=10),
+    ]
+    assert plan_reclassification(filings, NOW) == ()
+
+
+def test_a_filing_story_never_suppresses_a_news_story_either():
+    """The exclusion removes filings from the pass entirely, so they
+    are not in the dedupe corpus and cannot claim a news story as
+    their duplicate."""
+    stories = [
+        _filing_story("SEC EDGAR:0000006281:0000006281", "Nvidia reinstates Jensen Huang as CEO",
+                      hours_ago=30),
+        _story("news", "Nvidia reinstates Jensen Huang as CEO", hours_ago=20,
+               excerpt=_HUANG_EXCERPT, companies=("NVIDIA",),
+               tier=NewsMaterialityTier.WATCHLIST, publisher="Light Reading"),
+    ]
+    by_id = {c.story_id: c for c in plan_reclassification(stories, NOW)}
+    assert all(not k.startswith("filing:") for k in by_id)
+    assert by_id.get("news") is None or by_id["news"].new_tier is not SUPPRESSED_TIER
