@@ -271,18 +271,57 @@ def test_provisional_results_reads_revenue_in_the_filings_own_unit():
     assert facts.template == D.PROVISIONAL_RESULTS
     assert facts.amount_won == 6_367_124 * 1_000_000
     assert D.structured_headline("LG Innotek Co., Ltd.", facts) == (
-        "LG Innotek Co., Ltd. — ₩6.4tn provisional revenue"
+        "LG Innotek Co., Ltd. — ₩6.4tn provisional revenue (+18.6% year on year)"
     )
 
 
-def test_the_year_on_year_figure_is_deliberately_not_read():
-    """18.6 sits four columns along the same row. It is worth more to
-    a reader than the revenue figure and is the single most likely
-    cell to come back wrong from positional reading, so it waits for a
-    verified column contract."""
-    facts = D.parse_structured_fields(RESULTS)
-    assert facts.ratio_percent is None
-    assert "18.6" not in D.structured_headline("LG Innotek Co., Ltd.", facts)
+HYNIX_RESULTS = (
+    "SK하이닉스/연결재무제표기준영업(잠정)실적(공정공시)/(2026.07.29) 1. 연결실적내용 단위 : 백만원, % "
+    "구분 당기실적 전기실적 전기대비 전년동기실적 전년동기대비 (2026년 2분기)(2026년 1분기) 증감율(%) "
+    "흑자적자전환여부 (2025년 2분기) 증감율(%) 흑자적자전환여부 "
+    "매출액 당해실적 79,318,746 52,576,287 50.9 - 22,231,952 256.8 - "
+    "누계실적 131,895,033 - - - 39,871,093 230.8 - "
+    "영업이익 당해실적 60,542,608 37,610,283 61.0 - 9,212,851 557.2 -"
+)
+
+
+@pytest.mark.parametrize("text,company,revenue,yoy", [
+    (RESULTS, "LG Innotek Co., Ltd.", 6_367_124, Decimal("18.6")),
+    (HYNIX_RESULTS, "SK Hynix", 79_318_746, Decimal("256.8")),
+])
+def test_the_year_on_year_cell_is_read_from_the_verified_column_contract(
+    text, company, revenue, yoy,
+):
+    """Two real filings establish the row shape, and both are asserted
+    here, because a contract proved by one sample is a guess."""
+    facts = D.parse_structured_fields(text)
+    assert facts.amount_won == revenue * 1_000_000
+    assert facts.ratio_percent == yoy
+
+
+def test_the_year_on_year_cell_is_the_right_one_of_the_two_percentages():
+    """50.9 is quarter on quarter and sits three cells earlier.
+    Reading it would tell a reader SK Hynix grew 50.9% when it grew
+    256.8% — the exact failure the shape check exists to prevent."""
+    facts = D.parse_structured_fields(HYNIX_RESULTS)
+    headline = D.structured_headline("SK Hynix", facts)
+    assert "+256.8% year on year" in headline
+    assert "50.9" not in headline
+
+
+@pytest.mark.parametrize("row,why", [
+    ("매출액 당해실적 6,367,124 5,527,241 15.2 - 5,369,431", "row truncated before the cell"),
+    ("매출액 당해실적 6,367,124 5,527,241 15.2 5,369,431 18.6 - -", "a swing-flag column missing"),
+    ("매출액 당해실적 6,367,124 - - - - - -", "no comparative periods filed"),
+])
+def test_a_row_that_does_not_match_the_shape_loses_only_the_percentage(row, why):
+    """The revenue figure is the first cell and needs no contract, so
+    it survives; the percentage does not."""
+    facts = D.parse_structured_fields(
+        "x 1. 연결실적내용 단위 : 백만원, % " + row
+    )
+    assert facts is not None and facts.amount_won == 6_367_124 * 1_000_000, why
+    assert facts.ratio_percent is None, why
 
 
 @pytest.mark.parametrize("broken,why", [

@@ -521,7 +521,13 @@ def structured_headline(company: str, facts: StructuredFilingFacts) -> str | Non
         lead = f"{lead} ({facts.shares:,} shares)"
 
     if facts.ratio_percent is not None:
-        lead = f"{lead} ({facts.ratio_percent}% {facts.ratio_label})"
+        # A growth rate reads as a change and carries its sign; a share
+        # of revenue or of equity is a proportion and does not.
+        if facts.template == PROVISIONAL_RESULTS:
+            sign = "+" if facts.ratio_percent >= 0 else ""
+            lead = f"{lead} ({sign}{facts.ratio_percent}% {facts.ratio_label})"
+        else:
+            lead = f"{lead} ({facts.ratio_percent}% {facts.ratio_label})"
     elif facts.amount_won is None and "amount" in facts.withheld:
         lead = f"{lead} ({_WITHHELD_NOTES[facts.template]})"
 
@@ -578,6 +584,22 @@ def exact_figure_note(facts: StructuredFilingFacts) -> str | None:
 # come back wrong, so it waits for a verified column contract rather
 # than an inferred one.
 #
+# THE COLUMN CONTRACT IS CHECKED, NOT ASSUMED. The year-on-year
+# percentage sits six tokens along the 매출액 row, and reading it by
+# position alone is what returns the wrong column when a filing
+# carries one extra "-". Two real filings establish the shape —
+#
+#   LG Innotek  6,367,124  5,527,241  15.2  -  5,369,431  18.6  -
+#   SK Hynix   79,318,746 52,576,287  50.9  -  22,231,952 256.8  -
+#
+#   당기실적  전기실적  전기대비%  흑자적자  전년동기실적  전년동기대비%  흑자적자
+#
+# — and _year_on_year_percent() re-checks that exact shape on every
+# filing before reading the sixth cell: three numbers, a non-number,
+# two numbers, a non-number. Anything else and the percentage is
+# dropped while the revenue figure, which is the first cell and needs
+# no contract, is kept.
+#
 # THE UNIT IS READ, NOT ASSUMED. The filing declares "단위 : 백만원"
 # and the cell is in millions of won. A filing that declares any other
 # unit, or none, is skipped rather than scaled by a guess — a wrong
@@ -619,4 +641,26 @@ def parse_provisional_results(excerpt: str | None) -> StructuredFilingFacts | No
     return StructuredFilingFacts(
         template=PROVISIONAL_RESULTS,
         amount_won=millions * _MILLION,
+        ratio_percent=_year_on_year_percent(text[marker + len(_RESULTS_THIS_PERIOD):]),
     )
+
+
+#: this | prior quarter | QoQ% | swing flag | year-ago | YoY% | swing flag
+_RESULTS_ROW_SHAPE: tuple[bool, ...] = (True, True, True, False, True, True, False)
+_YEAR_ON_YEAR_COLUMN = 5
+
+
+def _year_on_year_percent(row: str) -> Decimal | None:
+    """The 전년동기대비 증감율 cell, or None when the row does not have
+    the exact shape the contract above describes.
+
+    Dropping the percentage costs a reader some context. Reading the
+    wrong cell tells them a company grew 50.9% when it grew 256.8%,
+    which is worse than saying nothing."""
+    tokens = row.split()[: len(_RESULTS_ROW_SHAPE)]
+    if len(tokens) < len(_RESULTS_ROW_SHAPE):
+        return None
+    for token, should_be_numeric in zip(tokens, _RESULTS_ROW_SHAPE):
+        if bool(_NUMBER_RE.match(token)) is not should_be_numeric:
+            return None
+    return _as_decimal(tokens[_YEAR_ON_YEAR_COLUMN])
