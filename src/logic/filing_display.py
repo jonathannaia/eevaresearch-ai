@@ -289,6 +289,40 @@ _WORD_PATTERN = re.compile(r"[^\W\d_]{2,}")
 # never counts — the digit after it fails this pattern).
 _SENTENCE_END_PATTERN = re.compile(r"[.!?。！？](?:\s|$)")
 
+# A period that belongs to an abbreviation, not to the end of a
+# sentence. "On November 20, 2026, Navitas Semiconductor USA, Inc.
+# (“Assignee”), a Delaware corporation ... entered into a Patent
+# Assignment Agreement" was cut to "...Navitas Semiconductor USA,
+# Inc." and shown as if that were the whole statement — observed live
+# on this filing's card.
+#
+# DELIBERATELY NOT APPLIED TO _SENTENCE_END_PATTERN ITSELF.
+# is_readable_extracted_text() uses that pattern to ask whether a
+# boundary EXISTS anywhere, as one of several shape signals for "is
+# this prose or is it XBRL". Narrowing it there would newly fail text
+# whose only period happens to follow an abbreviation, changing a
+# readability verdict to fix a cut point. These are cut-point filters
+# and are used only where a cut is being chosen.
+_ABBREVIATIONS: frozenset[str] = frozenset({
+    "co", "corp", "dr", "etc", "inc", "jr", "l.p", "ltd", "mr", "mrs", "ms",
+    "no", "nos", "plc", "sr", "st", "u.s", "vs",
+})
+
+
+def _is_abbreviation_boundary(normalized: str, end: int) -> bool:
+    """True when the period ending at `end` closes an abbreviation
+    rather than a sentence.
+
+    A period at the very end of the text is always a real terminator,
+    whatever word precedes it — otherwise a document closing on "...
+    and so on, etc." would be judged to have no boundary at all and
+    lose its summary entirely."""
+    if end >= len(normalized.rstrip()):
+        return False
+    preceding = normalized[:end].rstrip(".!?。！？")
+    last_word = preceding.rsplit(" ", 1)[-1] if " " in preceding else preceding
+    return last_word.strip("(\"“‘").lower() in _ABBREVIATIONS
+
 _MARKUP_DENSITY_PER_100_CHARS_LIMIT = 1.5
 _URL_DENSITY_PER_200_CHARS_LIMIT = 1.0
 _MIN_NATURAL_LANGUAGE_CHAR_RATIO = 0.45
@@ -576,6 +610,8 @@ def extractive_summary(text: str) -> str:
             break
         if match.start() + 1 in markers:
             continue
+        if _is_abbreviation_boundary(normalized, match.start() + 1):
+            continue
         boundary = match.end()
     if boundary:
         return _drop_trailing_alpha_marker(
@@ -588,6 +624,8 @@ def extractive_summary(text: str) -> str:
         if match.end() > _SUMMARY_MAX_SEARCH_CHARS:
             break
         if match.start() + 1 in markers:
+            continue
+        if _is_abbreviation_boundary(normalized, match.start() + 1):
             continue
         return _drop_trailing_alpha_marker(
             _drop_trailing_run_marker(normalized[:match.end()].strip(), markers), markers)
@@ -678,6 +716,8 @@ def trim_excerpt_for_display(text: str) -> str:
 
     last_boundary = None
     for match in _SENTENCE_END_PATTERN.finditer(normalized):
+        if _is_abbreviation_boundary(normalized, match.start() + 1):
+            continue
         last_boundary = match.end()
     if last_boundary is None:
         return ""
