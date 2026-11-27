@@ -85,14 +85,25 @@ def _extract(company, category, excerpt, **kw):
     )
 
 
-# --- the property the whole module exists to guarantee ----------------
-
 @pytest.mark.parametrize("company,category,excerpt", REAL_8K)
 def test_every_extracted_headline_is_a_subsequence_of_its_excerpt(company, category, excerpt):
+    """Runs over every real filing, extracted or not: a fallback has
+    nothing to prove, and anything claiming to be extracted must."""
     result = _extract(company, category, excerpt)
-    assert result.is_extracted, result.rejected_because
+    if not result.is_extracted:
+        return
     body = result.headline.removeprefix(f"{company} — ").rstrip("…")
     assert is_grounded_in(body, excerpt)
+
+
+def test_three_of_the_four_real_filings_extract():
+    """Qualcomm is the fourth and falls back by design. If this moves,
+    a rule changed."""
+    extracted = [
+        company for company, category, excerpt in REAL_8K
+        if _extract(company, category, excerpt).is_extracted
+    ]
+    assert extracted == ["NVIDIA", "Dell Technologies Inc.", "Analog Devices, Inc."]
 
 
 def test_a_paraphrase_is_not_grounded_even_though_every_name_appears():
@@ -139,15 +150,29 @@ def test_the_date_preamble_is_dropped_and_the_parenthetical_with_it():
     assert "the “Company”" not in result.headline
 
 
-def test_a_dropped_trailing_clause_is_always_marked():
-    """Qualcomm's sentence names two officers and only the first fits.
-    Cutting the second silently would misstate who the filing is
-    about, so a trimmed headline always ends in an ellipsis."""
-    result = _extract("Qualcomm Incorporated", "governance_or_management_change", QUALCOMM_5_02)
+def test_trimming_that_would_drop_a_named_officer_falls_back_instead():
+    """Qualcomm's sentence grants awards to two officers and only the
+    first fits the cap. A headline naming one of the two misstates who
+    the filing is about, and an ellipsis is not enough of a warning for
+    that, so the whole extraction is abandoned."""
+    result = _extract("Qualcomm Incorporated", "governance_or_management_change", QUALCOMM_5_02,
+                      item_anchor="Item 5.02")
+    assert not result.is_extracted
+    assert result.rejected_because == "trimming would drop a named person or entity"
+    assert result.headline == (
+        "Qualcomm Incorporated — Change of directors or officers (Form 8-K Item 5.02)"
+    )
+    assert "Cristiano Amon" not in result.headline
+
+
+def test_trimming_a_clause_that_names_nobody_still_extracts_and_is_marked():
+    """The other side of the rule. NVIDIA's sentence is over the cap
+    only by ", effective immediately" — no person, no entity — so the
+    headline survives, with the ellipsis that marks every trim."""
+    result = _extract("NVIDIA", "governance_or_management_change", NVIDIA_5_02)
     assert result.is_extracted
-    assert "Cristiano Amon" in result.headline
-    assert "Akash Palkhiwala" not in result.headline
     assert result.headline.endswith("…")
+    assert "effective immediately" not in result.headline
 
 
 @pytest.mark.parametrize("company,category,excerpt", REAL_8K)

@@ -219,18 +219,57 @@ def _tidy(text: str) -> str:
     return text.strip().strip(",;").strip()
 
 
-def _trim_to_cap(body: str) -> tuple[str, bool]:
+#: Capitalised words that are roles, bodies or document furniture
+#: rather than the name of a person or a company. Without this list a
+#: dropped ", effective immediately as Chief Executive Officer" would
+#: read as dropping a named person and send an otherwise good headline
+#: to the fallback.
+_NON_NAME_CAPITALISED: frozenset[str] = frozenset({
+    "amended", "award", "awards", "board", "chairman", "chief", "committee",
+    "company", "compensation", "director", "directors", "exchange", "executive",
+    "financial", "general", "incentive", "officer", "officers", "operating",
+    "plan", "president", "registrant", "restated", "secretary", "senior",
+    "treasurer", "vice",
+})
+
+_CAPITALISED_TOKEN_RE = re.compile(r"\b[A-Z][\w.'\u2019-]*")
+
+
+def _introduces_a_name(dropped: str, kept: str) -> bool:
+    """True when the text trimmed off the end names a person or an
+    entity that the surviving headline does not.
+
+    Qualcomm's 8-K is the case this exists for: one sentence grants
+    awards to Cristiano Amon AND Akash Palkhiwala, only the first fits
+    the cap, and a headline naming one of two officers misstates who
+    the filing is about — an ellipsis is not enough of a warning for
+    that. Deliberately over-eager: a capitalised word it cannot place
+    counts as a name, because the cost of a false positive is the
+    fallback headline and the cost of a false negative is a wrong one."""
+    kept_tokens = set(tokens(kept))
+    for match in _CAPITALISED_TOKEN_RE.finditer(dropped):
+        word = match.group().strip(".,;:'\u2019-")
+        if not word:
+            continue
+        lowered = word.lower()
+        if lowered in _NON_NAME_CAPITALISED or lowered in kept_tokens:
+            continue
+        return True
+    return False
+
+
+def _trim_to_cap(body: str) -> tuple[str, bool, str]:
     """Drops trailing comma-delimited clauses until the body fits the
-    cap. Returns the body and whether anything was dropped — a dropped
-    clause is always marked with an ellipsis, because dropping
-    ", and Akash Palkhiwala, the Company's Chief Financial Officer"
-    changes who the sentence says was involved and the reader must be
-    able to see that something followed."""
+    cap. Returns the body, whether anything was dropped, and the text
+    that was dropped — a dropped clause is always marked with an
+    ellipsis, and a clause that names someone new is not dropped at
+    all (see _introduces_a_name)."""
+    original = body
     truncated = False
     while len(body) > EVENT_HEADLINE_MAX_CHARS and "," in body:
         body = body[: body.rindex(",")].rstrip()
         truncated = True
-    return body, truncated
+    return body, truncated, original[len(body):] if truncated else ""
 
 
 def _has_event_verb(body: str) -> bool:
@@ -359,7 +398,9 @@ def edgar_event_headline(
     if not _has_event_verb(body):
         return give_up("no event verb")
 
-    body, truncated = _trim_to_cap(body)
+    body, truncated, dropped = _trim_to_cap(body)
+    if truncated and _introduces_a_name(dropped, body):
+        return give_up("trimming would drop a named person or entity")
     if len(body) < EVENT_HEADLINE_MIN_CHARS:
         return give_up("too short after trimming to the cap")
     if len(body) > EVENT_HEADLINE_MAX_CHARS:
