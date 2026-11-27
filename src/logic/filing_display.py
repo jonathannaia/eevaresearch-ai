@@ -618,6 +618,11 @@ def prefer_metadata_only_summary(evidence_location: EvidenceLocation | None) -> 
     return evidence_location is not None and evidence_location.kind == LocationKind.UNAVAILABLE
 
 
+#: A stored section that already reads "Item 2.02". See
+#: item_anchor_label for why this is checked rather than assumed away.
+_ALREADY_ITEM_PREFIXED_RE = re.compile(r"^item\s", re.IGNORECASE)
+
+
 def item_anchor_label(evidence_location: EvidenceLocation | None) -> str | None:
     """"Item X.XX" only when the pipeline already recorded a genuine
     Item-header anchor for this excerpt (evidence_location.kind ==
@@ -625,12 +630,27 @@ def item_anchor_label(evidence_location: EvidenceLocation | None) -> str | None:
     persisted evidence metadata, never derived or inferred from raw
     excerpt text at display time. None otherwise (including the unknown/
     historic-candidate case, same conservative discipline as
-    prefer_metadata_only_summary above)."""
+    prefer_metadata_only_summary above).
+
+    IDEMPOTENT, because the stored value already carries the word.
+    edgar/document_extractor.extract_excerpt() writes
+    location_section=f"Item {anchor_item}", so prefixing "Item " here
+    produced "Item Item 2.02" on every anchored 8-K card — observed on
+    all five anchored filings in the 2026-11-18..25 production window.
+
+    Fixed here rather than at the extractor because EvidenceLocation is
+    write-once by construction (models.record_excerpt), so every row
+    already stored carries the prefixed form and always will; and
+    because `section` is not an EDGAR-only field — EDINET writes a
+    Japanese statutory heading into it (edinet_pipeline.py), which is
+    why this reads the stored value instead of reformatting a number it
+    assumes is there."""
     if evidence_location is None or evidence_location.kind != LocationKind.SECTION:
         return None
-    if not evidence_location.section:
+    section = (evidence_location.section or "").strip()
+    if not section:
         return None
-    return f"Item {evidence_location.section}"
+    return section if _ALREADY_ITEM_PREFIXED_RE.match(section) else f"Item {section}"
 
 
 def trim_excerpt_for_display(text: str) -> str:
