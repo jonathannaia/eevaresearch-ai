@@ -57,6 +57,10 @@ _AMENDMENT_MARKERS: tuple[str, ...] = (
 
 SUPPLY_CONTRACT = "supply_contract"
 FACILITY_INVESTMENT = "facility_investment"
+CASH_DIVIDEND = "cash_dividend"
+TREASURY_ACQUISITION = "treasury_acquisition"
+TREASURY_DISPOSAL = "treasury_disposal"
+PROVISIONAL_RESULTS = "provisional_results"
 
 #: field key -> the statutory label(s) DART prints, longest first so a
 #: label that contains another ("자기자본대비" vs "자기자본") cannot be
@@ -86,6 +90,26 @@ _TEMPLATES: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+_TEMPLATES[CASH_DIVIDEND] = {
+    "kind": ("\ubc30\ub2f9\uad6c\ubd84",),                              # 배당구분
+    "per_share": ("1\uc8fc\ub2f9 \ubc30\ub2f9\uae08", "1\uc8fc\ub2f9\ubc30\ub2f9\uae08"),     # 1주당 배당금
+    "ratio": ("\uc2dc\uac00\ubc30\ub2f9\ub960", "\uc2dc\uac00\ubc30\ub2f9\ub960(%)"),        # 시가배당률
+    "amount": ("\ubc30\ub2f9\uae08\ucd1d\uc561",),                     # 배당금총액
+    "record_date": ("\ubc30\ub2f9\uae30\uc900\uc77c",),                # 배당기준일
+}
+_TEMPLATES[TREASURY_ACQUISITION] = {
+    "shares": ("\ucde8\ub4dd\uc608\uc815\uc8fc\uc2dd",),              # 취득예정주식
+    "amount": ("\ucde8\ub4dd\uc608\uc815\uae08\uc561",),              # 취득예정금액
+    "start_date": ("\uc2dc\uc791\uc77c",),
+    "end_date": ("\uc885\ub8cc\uc77c",),
+}
+_TEMPLATES[TREASURY_DISPOSAL] = {
+    "shares": ("\ucc98\ubd84\uc608\uc815\uc8fc\uc2dd",),              # 처분예정주식
+    "amount": ("\ucc98\ubd84\uc608\uc815\uae08\uc561",),              # 처분예정금액
+    "start_date": ("\uc2dc\uc791\uc77c",),
+    "end_date": ("\uc885\ub8cc\uc77c",),
+}
+
 #: Which label identifies each template: the AMOUNT field, AS THE
 #: TABLE PRINTS IT, followed by its "(\uc6d0)" unit. Samsung's
 #: \uc7a5\ub798\uc0ac\uc5c5\u00b7\uacbd\uc601\uacc4\ud68d disclosure mentions \ud22c\uc790\uae08\uc561 in running
@@ -96,6 +120,9 @@ _TEMPLATES: dict[str, dict[str, tuple[str, ...]]] = {
 _TEMPLATE_SIGNATURES: tuple[tuple[str, str], ...] = (
     (SUPPLY_CONTRACT, "\uacc4\uc57d\uae08\uc561(\uc6d0)"),
     (FACILITY_INVESTMENT, "\ud22c\uc790\uae08\uc561(\uc6d0)"),
+    (CASH_DIVIDEND, "\ubc30\ub2f9\uae08\ucd1d\uc561(\uc6d0)"),
+    (TREASURY_ACQUISITION, "\ucde8\ub4dd\uc608\uc815\uae08\uc561(\uc6d0)"),
+    (TREASURY_DISPOSAL, "\ucc98\ubd84\uc608\uc815\uae08\uc561(\uc6d0)"),
 )
 
 #: Curated English for each template's two headline numbers. A hand
@@ -105,13 +132,21 @@ _TEMPLATE_SIGNATURES: tuple[tuple[str, str], ...] = (
 AMOUNT_LABELS: dict[str, str] = {
     SUPPLY_CONTRACT: "contract value",
     FACILITY_INVESTMENT: "investment",
+    CASH_DIVIDEND: "dividend",
+    TREASURY_ACQUISITION: "buyback",
+    TREASURY_DISPOSAL: "disposal",
+    PROVISIONAL_RESULTS: "revenue",
 }
 RATIO_LABELS: dict[str, str] = {
     SUPPLY_CONTRACT: "of recent revenue",
     FACILITY_INVESTMENT: "of equity",
+    CASH_DIVIDEND: "dividend yield",
+    PROVISIONAL_RESULTS: "year on year",
 }
 
-_UNIT_SUFFIX_RE = re.compile(r"^\s*\((?:\uc6d0|%)\)\s*")
+#: "(원)" won, "(%)" percent, "(주)" shares — the unit DART prints
+#: as part of the label itself.
+_UNIT_SUFFIX_RE = re.compile(r"^\s*\((?:\uc6d0|%|\uc8fc)\)\s*")
 #: DART numbers its sections "1. " "2. " "3. ". A value ends where the
 #: next numbered section begins, even when that section's own label is
 #: not one this module tracks — otherwise 판매·공급지역 reads as
@@ -139,6 +174,9 @@ class StructuredFilingFacts:
     amount_won: int | None = None
     ratio_percent: Decimal | None = None
     counterparty: str | None = None
+    per_share_won: int | None = None
+    record_date: str | None = None
+    shares: int | None = None
     detail: str | None = None
     region: str | None = None
     start_date: str | None = None
@@ -208,6 +246,32 @@ def _value_after(text: str, end: int, next_start: int | None) -> str:
     return raw.strip(" \t:\u00b7")
 
 
+#: A share class printed between a numeric label and its value —
+#: "취득예정금액(원) 보통주식 14,999,999,992,000 기타주식 -". The first
+#: class is the one the headline reports; the rest sit behind it.
+_SHARE_CLASS_SUBLABELS: tuple[str, ...] = (
+    "\ubcf4\ud1b5\uc8fc\uc2dd",   # 보통주식 common
+    "\uc885\ub958\uc8fc\uc2dd",   # 종류주식 class
+    "\uc6b0\uc120\uc8fc\uc2dd",   # 우선주식 preferred
+    "\uae30\ud0c0\uc8fc\uc2dd",   # 기타주식 other
+    "\ub2f9\ud574\uc2e4\uc801",   # 당해실적 this period
+)
+
+
+def _first_numeric_token(span: str) -> str | None:
+    """The value of a numeric field, reading past any share-class
+    sub-label. None when the field was withheld.
+
+    Returns the FIRST token rather than scanning for any number in the
+    span, deliberately: scanning is what turns a withheld contract
+    value into the company's own revenue two fields later."""
+    for token in span.split():
+        if token in _SHARE_CLASS_SUBLABELS:
+            continue
+        return token
+    return None
+
+
 def _as_int(value: str) -> int | None:
     if not _NUMBER_RE.match(value):
         return None
@@ -244,7 +308,9 @@ def parse_structured_fields(excerpt: str | None) -> StructuredFilingFacts | None
         return None
     template = detect_template(text)
     if template is None:
-        return None
+        # The one table-shaped disclosure, tried last so a label:value
+        # template is always preferred where one exists.
+        return parse_provisional_results(text)
 
     positions = _label_positions(text, _TEMPLATES[template])
     values: dict[str, str] = {}
@@ -254,24 +320,37 @@ def parse_structured_fields(excerpt: str | None) -> StructuredFilingFacts | None
 
     withheld = tuple(
         key for key in ("amount", "ratio", "counterparty", "detail")
-        if key in values and values[key].strip() in _WITHHELD_VALUES
+        if key in values
+        and (_first_numeric_token(values[key]) or values[key].strip()) in _WITHHELD_VALUES
     )
 
     def present(key: str) -> str | None:
         value = values.get(key, "").strip()
         return None if value in _WITHHELD_VALUES else value
 
-    amount_text = present("amount")
-    ratio_text = present("ratio")
+    def numeric(key: str) -> str | None:
+        span = values.get(key)
+        if span is None:
+            return None
+        token = _first_numeric_token(span)
+        return None if token is None or token in _WITHHELD_VALUES else token
+
+    amount_text = numeric("amount")
+    ratio_text = numeric("ratio")
+    per_share_text = numeric("per_share")
+    shares_text = numeric("shares")
     return StructuredFilingFacts(
         template=template,
         amount_won=_as_int(amount_text) if amount_text else None,
         ratio_percent=_as_decimal(ratio_text) if ratio_text else None,
+        per_share_won=_as_int(per_share_text) if per_share_text else None,
+        shares=_as_int(shares_text) if shares_text else None,
         counterparty=present("counterparty"),
         detail=present("detail"),
         region=present("region"),
         start_date=present("start_date"),
         end_date=present("end_date"),
+        record_date=present("record_date"),
         withheld=withheld,
     )
 
@@ -378,6 +457,10 @@ def rounded_won(amount: int) -> str:
 EVENT_LABELS: dict[str, str] = {
     SUPPLY_CONTRACT: "supply contract",
     FACILITY_INVESTMENT: "new facility investment",
+    CASH_DIVIDEND: "dividend",
+    TREASURY_ACQUISITION: "treasury share buyback",
+    TREASURY_DISPOSAL: "treasury share disposal",
+    PROVISIONAL_RESULTS: "provisional revenue",
 }
 
 AS_FILED_SUFFIX = " (as filed)"
@@ -392,6 +475,9 @@ AS_FILED_SUFFIX = " (as filed)"
 _WITHHELD_NOTES: dict[str, str] = {
     SUPPLY_CONTRACT: "contract value withheld",
     FACILITY_INVESTMENT: "investment value withheld",
+    CASH_DIVIDEND: "dividend total withheld",
+    TREASURY_ACQUISITION: "buyback value withheld",
+    TREASURY_DISPOSAL: "disposal value withheld",
 }
 
 
@@ -426,12 +512,30 @@ def structured_headline(company: str, facts: StructuredFilingFacts) -> str | Non
         name = counterparty.text + (AS_FILED_SUFFIX if counterparty.as_filed else "")
         lead = f"{lead} with {name}"
 
+    # Per-share and share-count sit next to the total rather than
+    # replacing it: a dividend reader wants both the cheque and the
+    # rate, and a buyback reader wants both the spend and the float.
+    if facts.per_share_won is not None:
+        lead = f"{lead}, {exact_won(facts.per_share_won)} per common share"
+    elif facts.shares is not None:
+        lead = f"{lead} ({facts.shares:,} shares)"
+
     if facts.ratio_percent is not None:
         lead = f"{lead} ({facts.ratio_percent}% {facts.ratio_label})"
     elif facts.amount_won is None and "amount" in facts.withheld:
         lead = f"{lead} ({_WITHHELD_NOTES[facts.template]})"
 
     return f"{company} — {lead}"
+
+
+EXACT_NOTE_LABELS: dict[str, str] = {
+    SUPPLY_CONTRACT: "Contract value",
+    FACILITY_INVESTMENT: "Investment",
+    CASH_DIVIDEND: "Dividend total",
+    TREASURY_ACQUISITION: "Buyback value",
+    TREASURY_DISPOSAL: "Disposal value",
+    PROVISIONAL_RESULTS: "Revenue",
+}
 
 
 def exact_figure_note(facts: StructuredFilingFacts) -> str | None:
@@ -444,8 +548,75 @@ def exact_figure_note(facts: StructuredFilingFacts) -> str | None:
     to begin with."""
     if facts.amount_won is None:
         return None
-    label = "Contract value" if facts.template == SUPPLY_CONTRACT else "Investment"
+    label = EXACT_NOTE_LABELS.get(facts.template, "Value")
     note = f"{label} as filed: {exact_won(facts.amount_won)}."
     if facts.start_date and facts.end_date:
         note = f"{note} Term: {facts.start_date} to {facts.end_date}."
+    if facts.record_date:
+        note = f"{note} Record date: {facts.record_date}."
     return note
+
+
+# ============================================================
+# Provisional results (연결재무제표기준영업(잠정)실적)
+# ============================================================
+#
+# THE ONE TEMPLATE THAT IS NOT LABEL:VALUE. This disclosure prints a
+# TABLE — a header row of period columns, then one row per line item:
+#
+#   1. 연결실적내용 단위 : 백만원, %
+#   구분 당기실적 전기실적 전기대비 증감율(%) 전년동기실적 전년동기대비 증감율(%)
+#   매출액 당해실적 6,367,124 5,527,241 15.2 - 5,369,431 18.6 - 누계실적 17,429,200
+#
+# Positional reading of that row is exactly the kind of thing that
+# silently returns the wrong column when a filing carries one extra
+# "-" or omits a period. So this reads ONE cell: the first number in
+# the 매출액 row, which is 당기실적 — revenue for the period just
+# reported. The year-on-year percentage sits four columns further
+# along and is deliberately NOT read; it is worth more than the
+# revenue figure to a reader and is the single most likely cell to
+# come back wrong, so it waits for a verified column contract rather
+# than an inferred one.
+#
+# THE UNIT IS READ, NOT ASSUMED. The filing declares "단위 : 백만원"
+# and the cell is in millions of won. A filing that declares any other
+# unit, or none, is skipped rather than scaled by a guess — a wrong
+# multiplier here is a thousand-fold error in a headline.
+
+_RESULTS_TABLE_HEADING = "연결실적내용"      # 연결실적내용
+_RESULTS_UNIT_MILLIONS = "백만원"                        # 백만원
+_RESULTS_REVENUE_ROW = "매출액"                          # 매출액
+_RESULTS_THIS_PERIOD = "당해실적"                    # 당해실적
+_MILLION = 1_000_000
+
+
+def parse_provisional_results(excerpt: str | None) -> StructuredFilingFacts | None:
+    """Revenue for the period just reported, or None.
+
+    Every guard below has to hold: the table heading, the declared
+    unit, the revenue row, its 당해실적 marker, and a number straight
+    after it. Any one missing and this returns None rather than
+    reading a neighbouring cell."""
+    text = _normalise(excerpt or "")
+    if not text or is_amendment_body(text):
+        return None
+    if _RESULTS_TABLE_HEADING not in text or _RESULTS_UNIT_MILLIONS not in text:
+        return None
+
+    row = text.find(_RESULTS_REVENUE_ROW)
+    if row < 0:
+        return None
+    marker = text.find(_RESULTS_THIS_PERIOD, row)
+    if marker < 0:
+        return None
+    token = _first_numeric_token(text[marker + len(_RESULTS_THIS_PERIOD):])
+    if token is None or token in _WITHHELD_VALUES:
+        return None
+    millions = _as_int(token)
+    if millions is None:
+        return None
+
+    return StructuredFilingFacts(
+        template=PROVISIONAL_RESULTS,
+        amount_won=millions * _MILLION,
+    )

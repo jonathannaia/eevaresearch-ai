@@ -194,3 +194,109 @@ def test_there_is_no_exact_note_when_there_was_no_figure():
 ])
 def test_rounded_won(amount, expected):
     assert D.rounded_won(amount) == expected
+
+
+# ============================================================
+# Phase 2 templates
+# ============================================================
+
+DIVIDEND = (
+    "삼성전자/현금·현물배당 결정/(2026.07.30)현금·현물배당 결정 1. 배당구분 분기배당 "
+    "2. 배당종류 현금배당 - 현물자산의 상세내역 - "
+    "3. 1주당 배당금(원) 보통주식 374 종류주식 374 - 차등배당 여부 미해당 "
+    "4. 시가배당률(%) 보통주식 0.1 종류주식 0.2 5. 배당금총액(원) 2,455,894,601,644 "
+    "6. 배당기준일 2026-06-30 7. 배당금지급 예정일자 2026-08-28"
+)
+
+BUYBACK = (
+    "삼성전자/주요사항보고서(자기주식취득결정)/ 자기주식 취득 결정 "
+    "1. 취득예정주식(주) 보통주식 53,285,968 기타주식 - "
+    "2. 취득예정금액(원) 보통주식 14,999,999,992,000 기타주식 - "
+    "3. 취득예상기간 시작일 2026-08-24 종료일 2026-11-21 "
+    "4. 보유예상기간 시작일 - 종료일 - 5. 취득목적 임직원 주식보상"
+)
+
+RESULTS = (
+    "LG이노텍/연결재무제표기준영업(잠정)실적(공정공시)/(2026.10.27) "
+    "실적기간 당기실적 2026-07-01 ~ 2026-09-30 전기실적 2026-04-01 ~ 2026-06-30 "
+    "※ 동 정보는 잠정치로서 향후 확정치와는 다를 수 있음. 1. 연결실적내용 단위 : 백만원, % "
+    "구분 당기실적 전기실적 전기대비 증감율(%) 흑자적자전환여부 전년동기실적 전년동기대비 증감율(%) 흑자적자전환여부 "
+    "매출액 당해실적 6,367,124 5,527,241 15.2 - 5,369,431 18.6 - 누계실적 17,429,200"
+)
+
+
+def test_a_cash_dividend_reports_the_total_and_the_per_share_rate():
+    facts = D.parse_structured_fields(DIVIDEND)
+    assert facts.template == D.CASH_DIVIDEND
+    assert facts.amount_won == 2_455_894_601_644
+    assert facts.per_share_won == 374
+    assert facts.ratio_percent == Decimal("0.1")
+    assert D.structured_headline("Samsung Electronics", facts) == (
+        "Samsung Electronics — ₩2.5tn dividend, ₩374 per common share (0.1% dividend yield)"
+    )
+    assert D.exact_figure_note(facts) == (
+        "Dividend total as filed: ₩2,455,894,601,644. Record date: 2026-06-30."
+    )
+
+
+def test_the_first_share_class_is_the_one_reported():
+    """"보통주식 374 종류주식 374" — the label is followed by a share
+    class before its value, and scanning the span for any number
+    instead of reading past the sub-label is how the wrong class ends
+    up in a headline."""
+    facts = D.parse_structured_fields(DIVIDEND)
+    assert facts.per_share_won == 374
+
+
+def test_a_buyback_reports_the_spend_and_the_share_count():
+    facts = D.parse_structured_fields(BUYBACK)
+    assert facts.template == D.TREASURY_ACQUISITION
+    assert facts.amount_won == 14_999_999_992_000
+    assert facts.shares == 53_285_968
+    assert D.structured_headline("Samsung Electronics", facts) == (
+        "Samsung Electronics — ₩15.0tn treasury share buyback (53,285,968 shares)"
+    )
+
+
+def test_the_share_unit_in_a_label_is_not_mistaken_for_a_value():
+    """취득예정주식(주) — "(주)" is part of the label DART prints, and
+    reading it as the value makes the share count unparseable."""
+    assert D.parse_structured_fields(BUYBACK).shares == 53_285_968
+
+
+# --- the table-shaped one ---------------------------------------------
+
+def test_provisional_results_reads_revenue_in_the_filings_own_unit():
+    facts = D.parse_structured_fields(RESULTS)
+    assert facts.template == D.PROVISIONAL_RESULTS
+    assert facts.amount_won == 6_367_124 * 1_000_000
+    assert D.structured_headline("LG Innotek Co., Ltd.", facts) == (
+        "LG Innotek Co., Ltd. — ₩6.4tn provisional revenue"
+    )
+
+
+def test_the_year_on_year_figure_is_deliberately_not_read():
+    """18.6 sits four columns along the same row. It is worth more to
+    a reader than the revenue figure and is the single most likely
+    cell to come back wrong from positional reading, so it waits for a
+    verified column contract."""
+    facts = D.parse_structured_fields(RESULTS)
+    assert facts.ratio_percent is None
+    assert "18.6" not in D.structured_headline("LG Innotek Co., Ltd.", facts)
+
+
+@pytest.mark.parametrize("broken,why", [
+    (RESULTS.replace("백만원", "억원"), "a unit this module does not scale"),
+    (RESULTS.replace("연결실적내용", "기타내용"), "no results table heading"),
+    (RESULTS.replace("당해실적", "기타실적"), "no this-period marker on the revenue row"),
+    (RESULTS.replace("매출액 당해실적 6,367,124", "매출액 당해실적 -"), "revenue withheld"),
+])
+def test_a_results_table_missing_any_guard_is_skipped(broken, why):
+    assert D.parse_structured_fields(broken) is None, why
+
+
+def test_a_label_value_template_still_wins_over_the_table_reader():
+    """parse_provisional_results is tried last, so a disclosure that
+    is both is never read as the table."""
+    facts = D.parse_structured_fields(CROATIA)
+    assert facts.template == D.SUPPLY_CONTRACT

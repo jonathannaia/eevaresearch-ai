@@ -56,14 +56,12 @@ def main(argv: list[str] | None = None) -> int:
         if D.is_amendment_body(text):
             outcomes["amendment — correction table, not read"] += 1
             continue
-        template = D.detect_template(text)
-        if template is None:
+        facts = D.parse_structured_fields(text)
+        if facts is None:
             outcomes["no field table (periodic report etc.)"] += 1
             continue
-
-        facts = D.parse_structured_fields(text)
         company = filing.corp_name or filing.flr_nm or ""
-        headline = D.structured_headline(company, facts) if facts else None
+        headline = D.structured_headline(company, facts)
         if headline is None:
             outcomes["field table, but every headline figure withheld"] += 1
         else:
