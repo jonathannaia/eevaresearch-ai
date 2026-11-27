@@ -27,6 +27,8 @@ unless explicitly set. The caller checks it; this module stays pure so
 it can be exercised without a flag, a database or a worker."""
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.data_access.daily_news.dart_filing_candidate_adapter import map_dart_filing_to_candidate
@@ -39,7 +41,17 @@ from src.data_access.daily_news.filing_signal_tiers import (
     tier_for_amendment,
     tier_for_filing_category,
 )
+from src.data_access.daily_news import filing_event_headline
 from src.data_access.edgar import edgar_rules
+from src.logic.filing_display import (
+    EDINET_SOURCE_NAME,
+    extractive_summary,
+    is_readable_extracted_text,
+    issuer_display_names,
+    strip_dart_cover_page_header,
+    strip_edinet_summary_artifacts,
+    summary_is_substantive,
+)
 from src.models.daily_news_models import EditorialStory
 from src.models.models import FilingEvent
 
@@ -97,6 +109,25 @@ _DART_AMENDMENT_MARKER = "[기재정정]"
 PENDING_RECHECK_MAX_DAYS = 14
 
 _PENDING_ITEMS_CATEGORY = "material_event_8k_pending_items"
+
+
+@dataclass(frozen=True)
+class FilingDocumentContext:
+    """What the extraction path already knows about one filing's
+    document, handed to the projection so it does not have to go and
+    find it. All three fields are optional: a filing whose document was
+    never successfully extracted still projects, it simply gets the
+    fallback headline and no summary.
+
+    `item_anchor` is the recorded evidence-location section ("Item
+    5.02"), never a value parsed out of the excerpt text here."""
+
+    excerpt: str | None = None
+    excerpt_translated: str | None = None
+    item_anchor: str | None = None
+
+
+_NO_DOCUMENT = FilingDocumentContext()
 
 
 def has_pending_items(matched_rules: tuple[str, ...] | None) -> bool:
@@ -195,12 +226,162 @@ def card_label_for(category: str) -> str | None:
     return CATEGORY_CARD_LABELS.get(category)
 
 
+#: The one source whose documents are English. Everything else gets the
+#: curated document-type phrase instead of an extracted sentence — see
+#: filing_event_headline.py for why.
+_ENGLISH_NATIVE_SOURCE = "SEC EDGAR"
+
+
+def _event_headline(
+    filing: FilingEvent,
+    candidate,
+    category: str,
+    excerpt: str | None,
+    item_anchor: str | None,
+) -> filing_event_headline.HeadlineResult:
+    """The card's title line. Never the bare form name.
+
+    EDGAR goes through the extractive path, which returns a verified
+    span of the filing's own text or a fallback naming the company, the
+    event type and the document. DART and EDINET go through the curated
+    English document-type phrase joined to their own title."""
+    company = candidate.company_name
+    if filing.source_name == _ENGLISH_NATIVE_SOURCE:
+        return filing_event_headline.edgar_event_headline(
+            company=company,
+            category=category,
+            excerpt=excerpt,
+            form_type=filing.pblntf_ty,
+            item_anchor=item_anchor,
+            excerpt_is_readable=bool(excerpt) and is_readable_extracted_text(excerpt),
+        )
+    return filing_event_headline.native_filing_headline(
+        source_name=filing.source_name,
+        category=category,
+        title=candidate.title_translated or candidate.title_native,
+    )
+
+
+def _remaining_after(excerpt: str, sentence: str | None) -> str:
+    """The excerpt with the sentence already used as the headline
+    removed from the front.
+
+    Without this the card reads the same thing twice: an extracted
+    headline IS the excerpt's first event sentence, so showing the
+    excerpt underneath it repeats it verbatim. What the reader wants
+    below the headline is what came NEXT."""
+    normalized = " ".join((excerpt or "").split())
+    if not sentence:
+        return normalized
+    position = normalized.find(sentence)
+    if position < 0:
+        return normalized
+    return normalized[position + len(sentence):].strip()
+
+
+#: A translated cover page, once the issuer's own name and the form
+#: version marker are discounted, is two or three words of document
+#: type. Real content clears this easily — "Decision to Acquire Shares
+#: and Equity Securities of Other Corporations" is nine.
+_MIN_INFORMATIVE_SUMMARY_WORDS = 4
+
+_FORM_VERSION_TOKEN = re.compile(r"^\d{1,3}\.\d{1,3}$")
+_PLACEHOLDER_TOKEN = re.compile(r"^(?:0+|\d{8}|\d{6}-\d{7}|[A-Z])$")
+_SUMMARY_WORD = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+
+
+def _is_translated_document_masthead(text: str, issuer_names: tuple[str, ...]) -> bool:
+    """True for a translated DART/EDINET cover-page masthead — e.g.
+    "Semiannual Report 6.7 LG Innotek Co., Ltd." — which is a document
+    type, a form version and the issuer's own name, and tells the
+    reader nothing the card's title has not already said.
+
+    filing_display._is_dart_document_header() covers the same shape but
+    recognises it either by a Korean corporate registry number, which a
+    short masthead like the one above does not carry, or by matching
+    the words before the version marker against the display title,
+    which cannot work here: the summary is English and these filings'
+    titles are not translated, so there is no English title to compare
+    against. This reads the English text on its own terms instead."""
+    issuer_words = {
+        w.lower() for name in issuer_names for w in _SUMMARY_WORD.findall(name)
+    }
+    informative = 0
+    for token in " ".join(text.split()).split():
+        bare = token.strip(".,;:()[]{}\u00b7\u2014-/")
+        if not bare or _FORM_VERSION_TOKEN.match(bare) or _PLACEHOLDER_TOKEN.match(bare):
+            continue
+        informative += sum(
+            1 for w in _SUMMARY_WORD.findall(bare) if w.lower() not in issuer_words
+        )
+    return informative < _MIN_INFORMATIVE_SUMMARY_WORDS
+
+
+def _card_excerpt(
+    filing: FilingEvent,
+    *,
+    excerpt: str | None,
+    excerpt_translated: str | None,
+    headline: str,
+    headline_sentence: str | None,
+) -> str | None:
+    """The card's summary paragraph, or None.
+
+    Was unconditionally None, with the comment that a filing's excerpt
+    is extracted by a separate path — true, but the worker already HAS
+    that path's output by the time it calls this module, so the card was
+    showing no summary at all for every filing while the text sat one
+    function call away.
+
+    English-native text is shown directly. Korean and Japanese text is
+    shown only when a translation already exists; the native excerpt is
+    never shown untranslated, because an English feed's reader cannot
+    use it and this module is not permitted to translate.
+
+    Then the same three gates the Radar card applies, in the same
+    order, because the first dry run showed what skipping them costs:
+    nine of eighteen summaries were translated DART cover-page
+    mastheads — "Semiannual Report 6.7 LG Innotek Co., Ltd." — which
+    is a heading, a form-version marker and the issuer's own name, and
+    says nothing the card's title does not. is_readable_extracted_text
+    passes that text happily; summary_is_substantive is the function
+    written for exactly it, and its own docstring names this string.
+    Returning None here is the honest answer and leaves the card
+    showing its headline alone."""
+    is_english = filing.source_name == _ENGLISH_NATIVE_SOURCE
+    text = excerpt if is_english else excerpt_translated
+    if not text or not is_readable_extracted_text(text):
+        return None
+
+    if filing.source_name == EDINET_SOURCE_NAME:
+        text = strip_edinet_summary_artifacts(text)
+    elif not is_english:
+        text = strip_dart_cover_page_header(text)
+    elif headline_sentence:
+        text = _remaining_after(text, headline_sentence)
+
+    summary = extractive_summary(text)
+    if not summary:
+        return None
+    issuers = issuer_display_names(filing)
+    if not summary_is_substantive(
+        summary, headline, issuers,
+        dart_header_rules=not is_english and filing.source_name != EDINET_SOURCE_NAME,
+    ):
+        return None
+    if not is_english and _is_translated_document_masthead(summary, issuers):
+        return None
+    return summary
+
+
 def build_filing_signal_story(
     filing: FilingEvent,
     *,
     matched_rules: tuple[str, ...] | None,
     retrieved_at: str,
-    excerpt_for_item_recheck: str | None = None,
+    excerpt: str | None = None,
+    excerpt_translated: str | None = None,
+    item_anchor: str | None = None,
 ) -> EditorialStory | None:
     """One filing -> one EditorialStory, or None.
 
@@ -212,7 +393,7 @@ def build_filing_signal_story(
     # excerpt, before the adapter is asked — see the re-check block
     # above for why these were being lost outright.
     recovered_rules = recheck_pending_8k_items(
-        matched_rules, excerpt=excerpt_for_item_recheck,
+        matched_rules, excerpt=excerpt,
         filing_date=filing.filed_at or filing.rcept_dt, now=retrieved_at,
     )
     if recovered_rules is not None:
@@ -239,19 +420,22 @@ def build_filing_signal_story(
     if matched_rules:
         reasons.append(f"filing_rules:{','.join(matched_rules)}")
 
+    headline_result = _event_headline(filing, candidate, category, excerpt, item_anchor)
+    reasons.append(f"filing_headline:{headline_result.provenance}")
+
     company = candidate.company_name
     return EditorialStory(
         id=story_id_for(filing),
-        headline=candidate.title_translated or candidate.title_native,
+        headline=headline_result.headline,
         publisher=_PUBLISHER_BY_SOURCE.get(filing.source_name, filing.source_name),
         source_url=candidate.official_document_url or filing.source_url or "",
         published_at=candidate.filing_date,
         retrieved_at=retrieved_at,
-        # Deliberately None. A filing's excerpt is extracted by a
-        # separate path with its own quality states, and inventing a
-        # summary here is exactly the "Summary unavailable" problem one
-        # layer earlier.
-        excerpt=None,
+        excerpt=_card_excerpt(
+            filing, excerpt=excerpt, excerpt_translated=excerpt_translated,
+            headline=headline_result.headline,
+            headline_sentence=headline_result.source_sentence,
+        ),
         matched_companies=(company,),
         matched_themes=(),
         source_feed_id=_FEED_ID_BY_SOURCE.get(filing.source_name, "filing-unknown"),
@@ -265,7 +449,7 @@ def project_filing_signals(
     filings_with_rules: tuple[tuple[FilingEvent, tuple[str, ...]], ...],
     *,
     retrieved_at: str,
-    excerpts_by_story_id: dict[str, str] | None = None,
+    documents_by_story_id: dict[str, FilingDocumentContext] | None = None,
 ) -> tuple[EditorialStory, ...]:
     """Every projectable filing, in input order, one story per filing.
 
@@ -296,9 +480,12 @@ def project_filing_signals(
         story_id = story_id_for(filing)
         if story_id in seen_ids:
             continue
+        document = (documents_by_story_id or {}).get(story_id, _NO_DOCUMENT)
         story = build_filing_signal_story(
             filing, matched_rules=matched_rules, retrieved_at=retrieved_at,
-            excerpt_for_item_recheck=(excerpts_by_story_id or {}).get(story_id),
+            excerpt=document.excerpt,
+            excerpt_translated=document.excerpt_translated,
+            item_anchor=document.item_anchor,
         )
         if story is None:
             continue

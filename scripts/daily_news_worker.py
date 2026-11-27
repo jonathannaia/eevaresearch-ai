@@ -150,6 +150,7 @@ from src.data_access.state_db.daily_news_scan_status_repository import (
     DailyNewsSourceScanStatus,
     DailyNewsWorkerStatus,
 )
+from src.logic import filing_display
 
 _MIN_INTERVAL_SECONDS = 60  # defense-in-depth floor, regardless of a misconfigured tiny interval value
 
@@ -515,7 +516,7 @@ def _run_filing_signal_projection(worker_settings) -> None:
         ).date().isoformat()
 
         filings_with_rules: list[tuple[object, tuple[str, ...]]] = []
-        excerpts: dict[str, str] = {}
+        documents: dict[str, filing_signal_bridge.FilingDocumentContext] = {}
         for source in _FILING_SIGNAL_SOURCES:
             filing_repository = backend_factory.get_filing_event_repository(worker_settings, source)
             candidate_repository = backend_factory.get_candidate_repository(worker_settings, source)
@@ -529,13 +530,23 @@ def _run_filing_signal_projection(worker_settings) -> None:
                 candidate = candidates_by_key.get((filing.corp_code, filing.rcept_no))
                 matched_rules = tuple(candidate.matched_rules) if candidate else ()
                 filings_with_rules.append((filing, matched_rules))
-                if candidate and candidate.excerpt_original:
-                    excerpts[filing_signal_bridge.story_id_for(filing)] = candidate.excerpt_original
+                if candidate is not None:
+                    documents[filing_signal_bridge.story_id_for(filing)] = (
+                        filing_signal_bridge.FilingDocumentContext(
+                            excerpt=candidate.excerpt_original,
+                            excerpt_translated=(
+                                candidate.excerpt_translation.translated_text
+                                if candidate.excerpt_translation is not None
+                                else None
+                            ),
+                            item_anchor=filing_display.item_anchor_label(candidate.evidence_location),
+                        )
+                    )
 
         stories = filing_signal_bridge.project_filing_signals(
             tuple(filings_with_rules),
             retrieved_at=datetime.now(timezone.utc).isoformat(),
-            excerpts_by_story_id=excerpts,
+            documents_by_story_id=documents,
         )
         if stories:
             editorial_repository.upsert_new_stories(list(stories))

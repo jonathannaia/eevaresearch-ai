@@ -85,7 +85,7 @@ def test_a_pending_3_02_filing_now_recovers_into_the_feed():
     own re-extracted excerpt and is projected as Early."""
     story = build_filing_signal_story(
         _edgar(), matched_rules=PENDING, retrieved_at=NOW,
-        excerpt_for_item_recheck=LIVE_EXCERPTS["3.02"],
+        excerpt=LIVE_EXCERPTS["3.02"],
     )
     assert story is not None
     assert story.materiality_tier is NewsMaterialityTier.WATCHLIST
@@ -102,7 +102,7 @@ def test_procedural_items_are_named_and_still_not_projected(item):
     charter amendment are all procedural."""
     story = build_filing_signal_story(
         _edgar(), matched_rules=PENDING, retrieved_at=NOW,
-        excerpt_for_item_recheck=LIVE_EXCERPTS[item],
+        excerpt=LIVE_EXCERPTS[item],
     )
     assert story is None
 
