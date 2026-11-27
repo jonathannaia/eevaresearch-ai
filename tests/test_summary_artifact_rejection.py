@@ -143,14 +143,57 @@ def test_the_existing_strip_is_unchanged_and_still_misses_these_shapes():
 
 
 @pytest.mark.parametrize("text", [
+    # The stamp alone is not enough of a signal: a reader's own sentence
+    # can contain one, and stripping on the stamp alone cut this down to
+    # "and the note [Note 1] applies here." The title-case requirement in
+    # _reads_as_a_document_title is what keeps prose intact.
     "The lender is ABC_Bank_20260909153311 and the note [Note 1] applies here.",
     "Report 0101010_honbun_0088405703810.htm is referenced in paragraph two.",
     "当社は、2026年10月16日に覚書を締結しました。",
     "1.5 billion yen was paid on 2026-10-16.",
-    "Extraordinary Report_20260909153311 already handled by the existing strip.",
 ])
 def test_edinet_summary_strip_leaves_everything_else_alone(text):
     assert filing_display.strip_edinet_summary_artifacts(text) == text
+
+
+#: Observed live in the 2026-11-18..25 window, reaching the card with
+#: the stamp intact. Both are EDINET's own document title AFTER machine
+#: translation, which is why shape (a) cannot match them: it requires a
+#: whitespace-free run containing a native character, and an English
+#: title has spaces and no CJK.
+_EDINET_TRANSLATED_TITLE_ARTIFACTS = [
+    ("Extraordinary Report_20261125112259",
+     "1 [Reason for Submission] An event has occurred that has a significant impact."),
+    ("Registration Statement (Stock Certificates, Corporate Bonds, etc.)_20261118134108",
+     "Part I [Securities Information] Section 1 [Offering Summary]"),
+]
+
+
+@pytest.mark.parametrize("artifact, body", _EDINET_TRANSLATED_TITLE_ARTIFACTS)
+def test_a_translated_edinet_title_stamp_is_removed_too(artifact, body):
+    """This case previously sat in the list above, asserting the text
+    was left unchanged, under the label "already handled by the
+    existing strip". It was not handled — shape (a) needs a CJK
+    character — so the assertion pinned the defect rather than the
+    intent. Moved here and inverted."""
+    assert filing_display.strip_edinet_summary_artifacts(f"{artifact} {body}") == body
+
+
+@pytest.mark.parametrize("artifact, body", _EDINET_TRANSLATED_TITLE_ARTIFACTS)
+def test_the_leading_byte_order_mark_no_longer_defeats_the_strip(artifact, body):
+    """EDINET's extracted text begins with U+FEFF, which lands every
+    start-anchored pattern here one character short.
+    strip_edinet_machine_artifacts() has stripped it since that was
+    found; this function never did, so even the Japanese shape it WAS
+    written for missed whenever the BOM was present."""
+    assert filing_display.strip_edinet_summary_artifacts(
+        f"\ufeff {artifact} {body}"
+    ) == body
+
+
+def test_the_byte_order_mark_fix_reaches_the_japanese_shape_as_well():
+    text = f"\ufeff {_EDINET_CJK_TITLE_ARTIFACT} {_EDINET_CJK_BODY}"
+    assert filing_display.strip_edinet_summary_artifacts(text) == _EDINET_CJK_BODY
 
 
 def test_edinet_artifact_removal_alone_does_not_make_a_summary_substantive():
