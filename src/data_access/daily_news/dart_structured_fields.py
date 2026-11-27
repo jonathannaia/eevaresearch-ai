@@ -86,12 +86,16 @@ _TEMPLATES: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
-#: Which label identifies each template. Deliberately the AMOUNT field:
-#: a disclosure that does not state what kind of amount it is reporting
-#: is not one of these templates at all.
+#: Which label identifies each template: the AMOUNT field, AS THE
+#: TABLE PRINTS IT, followed by its "(\uc6d0)" unit. Samsung's
+#: \uc7a5\ub798\uc0ac\uc5c5\u00b7\uacbd\uc601\uacc4\ud68d disclosure mentions \ud22c\uc790\uae08\uc561 in running
+#: prose and was detected as a facility-investment table on that alone.
+#: It parsed to nothing and produced no headline, so nothing wrong
+#: reached a card — but a template this module cannot actually read
+#: should not be claimed in the first place.
 _TEMPLATE_SIGNATURES: tuple[tuple[str, str], ...] = (
-    (SUPPLY_CONTRACT, "\uacc4\uc57d\uae08\uc561"),
-    (FACILITY_INVESTMENT, "\ud22c\uc790\uae08\uc561"),
+    (SUPPLY_CONTRACT, "\uacc4\uc57d\uae08\uc561(\uc6d0)"),
+    (FACILITY_INVESTMENT, "\ud22c\uc790\uae08\uc561(\uc6d0)"),
 )
 
 #: Curated English for each template's two headline numbers. A hand
@@ -378,10 +382,28 @@ EVENT_LABELS: dict[str, str] = {
 
 AS_FILED_SUFFIX = " (as filed)"
 
+#: What the card says when the issuer filed "-" for the figure. A
+#: filing that withholds its value but NAMES ITS COUNTERPARTY is still
+#: worth a headline: who the contract is with is the news, and
+#: "withheld" is the honest label for the part the issuer chose not to
+#: disclose. Observed live on Hanwha Aerospace's 2026-08-31 contract
+#: with INDRA SISTEMAS S.A., where both figures were "-" and the
+#: counterparty was named in full.
+_WITHHELD_NOTES: dict[str, str] = {
+    SUPPLY_CONTRACT: "contract value withheld",
+    FACILITY_INVESTMENT: "investment value withheld",
+}
+
 
 def structured_headline(company: str, facts: StructuredFilingFacts) -> str | None:
-    """A headline built from the filed figures, or None when the filing
-    withheld everything that would make one worth reading.
+    """A headline built from the field table, or None when there is
+    nothing in it worth putting on a card.
+
+    A filing that withholds its figures but NAMES ITS COUNTERPARTY
+    still gets one — "Hanwha Aerospace Co., Ltd. — supply contract
+    with INDRA SISTEMAS S.A. (contract value withheld)". Who the
+    contract is with is the news, and it is strictly more than the
+    document-type card this would otherwise fall back to.
 
     Only four things ever reach it: the company name the registry
     already resolved, a curated English label for a statutory document
@@ -392,17 +414,38 @@ def structured_headline(company: str, facts: StructuredFilingFacts) -> str | Non
     out of the headline for that reason, and belongs on the card as
     filed."""
     event = EVENT_LABELS[facts.template]
-    if facts.amount_won is None and facts.ratio_percent is None:
+    counterparty = counterparty_for_display(facts.counterparty)
+    if facts.amount_won is None and facts.ratio_percent is None and counterparty is None:
+        # No figures and nobody named: the field table said nothing the
+        # document type has not already said.
         return None
 
     lead = f"{rounded_won(facts.amount_won)} {event}" if facts.amount_won is not None else event
 
-    counterparty = counterparty_for_display(facts.counterparty)
     if counterparty is not None:
         name = counterparty.text + (AS_FILED_SUFFIX if counterparty.as_filed else "")
         lead = f"{lead} with {name}"
 
     if facts.ratio_percent is not None:
         lead = f"{lead} ({facts.ratio_percent}% {facts.ratio_label})"
+    elif facts.amount_won is None and "amount" in facts.withheld:
+        lead = f"{lead} ({_WITHHELD_NOTES[facts.template]})"
 
     return f"{company} — {lead}"
+
+
+def exact_figure_note(facts: StructuredFilingFacts) -> str | None:
+    """The filed figure in full, for the card body.
+
+    The headline carries a rounded figure because twelve digits of won
+    cannot sit in one — this is the other half of that bargain, so the
+    exact number the issuer filed is always on the card and never only
+    recoverable by rounding backwards. None when there was no figure
+    to begin with."""
+    if facts.amount_won is None:
+        return None
+    label = "Contract value" if facts.template == SUPPLY_CONTRACT else "Investment"
+    note = f"{label} as filed: {exact_won(facts.amount_won)}."
+    if facts.start_date and facts.end_date:
+        note = f"{note} Term: {facts.start_date} to {facts.end_date}."
+    return note

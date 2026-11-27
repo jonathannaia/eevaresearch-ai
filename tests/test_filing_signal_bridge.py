@@ -471,3 +471,44 @@ def test_the_summary_does_not_repeat_the_sentence_used_as_the_headline():
     assert summary
     assert "announced its financial results" not in summary
     assert summary.startswith("The full text of the press release")
+
+
+# --- DART structured-field headlines ----------------------------------
+
+_CROATIA = (
+    "한화에어로스페이스/단일판매·공급계약 체결(자율공시)/(2026.09.11)단일판매·공급계약 체결(자율공시) "
+    "1. 판매·공급계약 구분 상품공급 2. 계약내역 계약금액(원) 641,095,389,786 "
+    "최근매출액(원) 26,702,901,248,815 매출액대비(%) 2.40 "
+    "3. 계약상대 크로아티아 국방부 (The Ministry of Defence of the Republic of Croatia) "
+    "- 회사와의 관계 - 5. 계약기간 시작일 2026-09-10 종료일 2030-09-09"
+)
+
+
+def test_a_dart_field_table_beats_the_curated_document_type():
+    """"Supply or Sales Contract — 단일판매·공급계약체결" says what KIND
+    of filing this is. The field table says what happened."""
+    from src.data_access.daily_news.filing_signal_bridge import _structured_dart_headline
+
+    result = _structured_dart_headline("Hanwha Aerospace Co., Ltd.", _CROATIA)
+    assert result is not None
+    assert result.provenance == "structured_fields"
+    assert result.headline == (
+        "Hanwha Aerospace Co., Ltd. — ₩641.1bn supply contract with "
+        "The Ministry of Defence of the Republic of Croatia (2.40% of recent revenue)"
+    )
+
+
+def test_a_dart_filing_with_no_field_table_still_gets_the_curated_phrase():
+    from src.data_access.daily_news.filing_signal_bridge import _structured_dart_headline
+
+    assert _structured_dart_headline("LG Innotek Co., Ltd.", "중대재해 발생 장소 사외기숙사") is None
+
+
+def test_the_exact_filed_figure_reaches_the_card_without_any_translation():
+    """These disclosures often have no translated excerpt at all, and
+    the bargain behind rounding the headline is that the filed number
+    is always on the card. It must not depend on a translation."""
+    korean = _edgar(source_name="OpenDART / DART", original_language="Korean")
+    assert _summary(korean, excerpt=_CROATIA, excerpt_translated=None) == (
+        "Contract value as filed: ₩641,095,389,786. Term: 2026-09-10 to 2030-09-09."
+    )

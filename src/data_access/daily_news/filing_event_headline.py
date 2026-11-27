@@ -75,6 +75,9 @@ _EVENT_SENTENCE_SEARCH_CHARS = 420
 _PROVENANCE_EXCERPT = "excerpt"
 _PROVENANCE_FALLBACK = "fallback"
 _PROVENANCE_NATIVE = "native_title"
+#: Built from a Korean disclosure's own field table — see
+#: dart_structured_fields.py.
+PROVENANCE_STRUCTURED = "structured_fields"
 
 _MONTHS = (
     "January|February|March|April|May|June|July|August|September|October|November|December"

@@ -1,0 +1,196 @@
+"""Structured facts from a Korean disclosure's field table.
+
+Every excerpt here is the real stored text of a real OpenDART filing,
+transcribed from the read-only survey in
+scripts/survey_dart_structured_fields.py. The two that matter most are
+the two that are NOT the happy path: Hanwha's 2026-08-31 contract,
+which withheld both figures while filing the company's own revenue in
+the next field, and Samsung's 장래사업·경영계획, which mentions an
+investment amount in running prose and is not a field table at all."""
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+
+from src.data_access.daily_news import dart_structured_fields as D
+
+CROATIA = (
+    "한화에어로스페이스/단일판매·공급계약 체결(자율공시)/(2026.09.11)단일판매·공급계약 체결(자율공시) "
+    "1. 판매·공급계약 구분 상품공급 - 세부내용 크로아티아 천무 다연장로켓 수출사업 "
+    "2. 계약내역 계약금액(원) 641,095,389,786 최근매출액(원) 26,702,901,248,815 "
+    "매출액대비(%) 2.40 대규모법인여부 해당 "
+    "3. 계약상대 크로아티아 국방부 (The Ministry of Defence of the Republic of Croatia) "
+    "- 회사와의 관계 - 4. 판매·공급지역 크로아티아 "
+    "5. 계약기간 시작일 2026-09-10 종료일 2030-09-09 6. 주요 계약조건 계약금·선급금 유무 유"
+)
+
+#: Both figures withheld, counterparty named, and the company's OWN
+#: revenue sitting in the very next field.
+INDRA = (
+    "한화에어로스페이스/단일판매·공급계약체결/(2026.08.31)단일판매·공급계약체결 "
+    "1. 판매·공급계약 구분 상품공급 - 체결계약명 스페인 K9 자주포 등 수출 실행계약 (Derivative Contract) "
+    "2. 계약내역 계약금액(원) - 최근매출액(원) 26,702,901,248,815 매출액대비(%) - 대규모법인여부 해당 "
+    "3. 계약상대 INDRA SISTEMAS S.A. - 회사와의 관계 -"
+)
+
+KAI = (
+    "한국항공우주/단일판매·공급계약체결/(2026.10.08)단일판매·공급계약체결 "
+    "1. 판매·공급계약 구분 상품공급 - 세부내용 MUH-1 4차 PBL(기체)사업 "
+    "2. 계약내역 계약금액(원) 109,085,117,769 매출액대비(%) 3.0 "
+    "3. 계약상대 방위사업청 - 회사와의 관계 - 5. 계약기간 시작일 2026-10-08 종료일 2031-12-31"
+)
+
+HYNIX_M17 = (
+    "SK하이닉스/신규시설투자등/(2026.08.07)신규시설투자등 1. 투자구분 신규시설투자 - 투자대상 청주 M17 건설 "
+    "2. 투자내역 투자금액(원) 19,100,000,000,000 자기자본(원) 120,666,750,890,698 "
+    "자기자본대비(%) 15.83 대규모법인여부 해당 3. 투자목적 메모리 수요 대응 위한 중장기 생산 기반 확보"
+)
+
+AMENDMENT = (
+    "SK하이닉스/타법인주식및출자증권취득결정/(2026.11.20)타법인주식및출자증권취득결정 정정신고(보고) "
+    "정정일자 2026-11-20 1. 정정관련 공시서류 타법인 주식 및 출자증권 취득결정 "
+    "2. 정정사항 정정항목 정정전 정정후 투자금액(원) 100 200"
+)
+
+SAMSUNG_PROSE = (
+    "삼성전자/장래사업·경영계획(공정공시)/(2026.10.29)장래사업·경영계획(공정공시) "
+    "투자금액 규모는 추후 확정 예정이며 이사회 결의 시 재공시할 예정입니다."
+)
+
+
+# --- the two numbers a headline is built from -------------------------
+
+def test_the_filed_figures_are_read_exactly():
+    facts = D.parse_structured_fields(CROATIA)
+    assert facts.template == D.SUPPLY_CONTRACT
+    assert facts.amount_won == 641_095_389_786
+    assert facts.ratio_percent == Decimal("2.40")
+    assert facts.start_date == "2026-09-10" and facts.end_date == "2030-09-09"
+
+
+def test_a_facility_investment_reads_its_own_pair():
+    facts = D.parse_structured_fields(HYNIX_M17)
+    assert facts.template == D.FACILITY_INVESTMENT
+    assert facts.amount_won == 19_100_000_000_000
+    assert facts.ratio_percent == Decimal("15.83")
+
+
+def test_a_value_never_runs_into_the_next_numbered_section():
+    """판매·공급지역 is followed by "5. 계약기간", whose label this
+    module does not track, so without a section-marker cut the region
+    reads as "크로아티아 5. 계약기간"."""
+    facts = D.parse_structured_fields(CROATIA)
+    assert facts.region == "크로아티아"
+    assert facts.detail == "크로아티아 천무 다연장로켓 수출사업"
+
+
+# --- the dash ---------------------------------------------------------
+
+def test_a_withheld_figure_is_never_filled_in_from_the_next_field():
+    """THE failure this module exists to avoid. 계약금액(원) is "-" and
+    최근매출액(원) — the company's OWN revenue — is the next number on
+    the line. Reaching for it publishes "₩26.7tn contract"."""
+    facts = D.parse_structured_fields(INDRA)
+    assert facts.amount_won is None
+    assert facts.ratio_percent is None
+    assert "amount" in facts.withheld and "ratio" in facts.withheld
+    assert "26,702,901,248,815" not in (D.structured_headline("Hanwha Aerospace Co., Ltd.", facts) or "")
+
+
+def test_a_named_counterparty_carries_a_headline_on_its_own():
+    facts = D.parse_structured_fields(INDRA)
+    assert D.structured_headline("Hanwha Aerospace Co., Ltd.", facts) == (
+        "Hanwha Aerospace Co., Ltd. — supply contract with INDRA SISTEMAS S.A. "
+        "(contract value withheld)"
+    )
+
+
+def test_withheld_figures_and_nobody_named_produces_nothing():
+    facts = D.parse_structured_fields(
+        "1. 판매·공급계약 구분 상품공급 2. 계약내역 계약금액(원) - 매출액대비(%) - 3. 계약상대 -"
+    )
+    assert D.structured_headline("Hanwha Aerospace Co., Ltd.", facts) is None
+
+
+# --- what is NOT read -------------------------------------------------
+
+def test_an_amendment_is_not_read_at_all():
+    """Its labels appear twice, once under 정정전 and once under
+    정정후, so picking a value is a coin flip between a superseded
+    figure and a current one."""
+    assert D.is_amendment_body(AMENDMENT)
+    assert D.parse_structured_fields(AMENDMENT) is None
+
+
+def test_a_prose_mention_of_an_amount_is_not_a_field_table():
+    """Samsung's 장래사업·경영계획 says an investment amount is still
+    to be determined. Matching the bare label claimed a template this
+    module cannot read; requiring the printed "(원)" unit does not."""
+    assert D.detect_template(SAMSUNG_PROSE) is None
+    assert D.parse_structured_fields(SAMSUNG_PROSE) is None
+
+
+# --- names ------------------------------------------------------------
+
+def test_the_filings_own_english_rendering_is_used_when_it_prints_one():
+    facts = D.parse_structured_fields(CROATIA)
+    name = D.counterparty_for_display(facts.counterparty)
+    assert name.text == "The Ministry of Defence of the Republic of Croatia"
+    assert name.as_filed is False
+
+
+def test_a_latin_script_counterparty_is_kept_exactly_as_filed():
+    facts = D.parse_structured_fields(INDRA)
+    name = D.counterparty_for_display(facts.counterparty)
+    assert name.text == "INDRA SISTEMAS S.A." and name.as_filed is False
+
+
+def test_a_korean_counterparty_is_shown_as_filed_and_never_romanised():
+    facts = D.parse_structured_fields(KAI)
+    name = D.counterparty_for_display(facts.counterparty)
+    assert name.text == "방위사업청"
+    assert name.as_filed is True
+    headline = D.structured_headline("Korea Aerospace Industries, Ltd.", facts)
+    assert headline == (
+        "Korea Aerospace Industries, Ltd. — ₩109.1bn supply contract with "
+        "방위사업청 (as filed) (3.0% of recent revenue)"
+    )
+
+
+def test_registry_resolution_matches_nothing_until_native_name_is_populated():
+    """Written, and currently inert by design: TrackedCompany.
+    native_name is empty for all twelve DART-tracked companies. The
+    point of asserting it is that the alternative — matching on a
+    romanisation this module invents — must never quietly appear."""
+    from src.config.tracked_companies import get_tracked_companies
+
+    dart = [c for c in get_tracked_companies() if c.source == "OpenDART / DART"]
+    assert dart, "the cohort should not be empty"
+    assert not any(c.native_name for c in dart)
+
+
+# --- figures on the card ----------------------------------------------
+
+def test_the_headline_rounds_and_the_card_keeps_the_filed_figure():
+    facts = D.parse_structured_fields(CROATIA)
+    assert "₩641.1bn" in D.structured_headline("Hanwha Aerospace Co., Ltd.", facts)
+    assert D.exact_figure_note(facts) == (
+        "Contract value as filed: ₩641,095,389,786. Term: 2026-09-10 to 2030-09-09."
+    )
+
+
+def test_there_is_no_exact_note_when_there_was_no_figure():
+    assert D.exact_figure_note(D.parse_structured_fields(INDRA)) is None
+
+
+@pytest.mark.parametrize("amount,expected", [
+    (641_095_389_786, "₩641.1bn"),
+    (19_100_000_000_000, "₩19.1tn"),
+    (35_224_600_000_000, "₩35.2tn"),
+    (109_085_117_769, "₩109.1bn"),
+    (4_500_000, "₩4.5m"),
+    (900, "₩900"),
+])
+def test_rounded_won(amount, expected):
+    assert D.rounded_won(amount) == expected
