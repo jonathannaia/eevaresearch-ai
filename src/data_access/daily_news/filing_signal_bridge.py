@@ -41,7 +41,7 @@ from src.data_access.daily_news.filing_signal_tiers import (
     tier_for_amendment,
     tier_for_filing_category,
 )
-from src.data_access.daily_news import filing_event_headline
+from src.data_access.daily_news import dart_structured_fields, filing_event_headline
 from src.data_access.edgar import edgar_rules
 from src.logic.filing_display import (
     EDINET_SOURCE_NAME,
@@ -232,6 +232,33 @@ def card_label_for(category: str) -> str | None:
 _ENGLISH_NATIVE_SOURCE = "SEC EDGAR"
 
 
+#: The Korean venue, whose major-decision disclosures carry a field
+#: table the card can read directly.
+_DART_SOURCE = "OpenDART / DART"
+
+
+def _structured_dart_headline(company: str, excerpt: str | None):
+    """A headline built from the filing's own field table, or None.
+
+    Tried before the curated document-type phrase because it is
+    strictly more specific: "₩641.1bn supply contract with The Ministry
+    of Defence of the Republic of Croatia (2.40% of recent revenue)"
+    against "Supply or Sales Contract — 단일판매·공급계약체결". Returns
+    None for every filing without a field table this module reads, for
+    an amendment, and for a table whose figures were all withheld with
+    no counterparty named — so the native-title path stays the default
+    rather than the exception."""
+    facts = dart_structured_fields.parse_structured_fields(excerpt)
+    if facts is None:
+        return None
+    headline = dart_structured_fields.structured_headline(company, facts)
+    if headline is None:
+        return None
+    return filing_event_headline.HeadlineResult(
+        headline, filing_event_headline.PROVENANCE_STRUCTURED,
+    )
+
+
 def _event_headline(
     filing: FilingEvent,
     candidate,
@@ -246,6 +273,10 @@ def _event_headline(
     event type and the document. DART and EDINET go through the curated
     English document-type phrase joined to their own title."""
     company = candidate.company_name
+    if filing.source_name == _DART_SOURCE:
+        structured = _structured_dart_headline(company, excerpt)
+        if structured is not None:
+            return structured
     if filing.source_name == _ENGLISH_NATIVE_SOURCE:
         return filing_event_headline.edgar_event_headline(
             company=company,
@@ -349,9 +380,21 @@ def _card_excerpt(
     Returning None here is the honest answer and leaves the card
     showing its headline alone."""
     is_english = filing.source_name == _ENGLISH_NATIVE_SOURCE
+
+    # The exact filed figure, whenever the headline carried a rounded
+    # one. Emitted independently of any translation: these disclosures
+    # frequently have no translated excerpt at all, and the bargain
+    # behind rounding the headline is that the filed number is always
+    # on the card.
+    exact_note = None
+    if filing.source_name == _DART_SOURCE:
+        facts = dart_structured_fields.parse_structured_fields(excerpt)
+        if facts is not None:
+            exact_note = dart_structured_fields.exact_figure_note(facts)
+
     text = excerpt if is_english else excerpt_translated
     if not text or not is_readable_extracted_text(text):
-        return None
+        return exact_note
 
     if filing.source_name == EDINET_SOURCE_NAME:
         text = strip_edinet_summary_artifacts(text)
@@ -362,16 +405,16 @@ def _card_excerpt(
 
     summary = extractive_summary(text)
     if not summary:
-        return None
+        return exact_note
     issuers = issuer_display_names(filing)
     if not summary_is_substantive(
         summary, headline, issuers,
         dart_header_rules=not is_english and filing.source_name != EDINET_SOURCE_NAME,
     ):
-        return None
+        return exact_note
     if not is_english and _is_translated_document_masthead(summary, issuers):
-        return None
-    return summary
+        return exact_note
+    return f"{exact_note} {summary}" if exact_note else summary
 
 
 def build_filing_signal_story(

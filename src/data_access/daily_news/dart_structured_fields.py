@@ -1,0 +1,451 @@
+"""Structured facts read out of a Korean disclosure's own field table.
+
+WHY THIS EXISTS. A DART card currently says "Supply or Sales Contract
+— 단일판매·공급계약체결": the document type, and nothing about the
+event. The filing itself is far more specific than that, and it is not
+prose — DART major-decision disclosures are FIELD TABLES with fixed
+statutory labels, printed into the extracted text in a fixed order:
+
+    1. 판매·공급계약 구분  상품공급
+     - 세부내용  크로아티아 천무 다연장로켓 수출사업
+    2. 계약내역  계약금액(원) 641,095,389,786  최근매출액(원)
+       26,702,901,248,815  매출액대비(%) 2.40  대규모법인여부 해당
+    3. 계약상대  크로아티아 국방부 (The Ministry of Defence of the
+       Republic of Croatia)
+    5. 계약기간  시작일 2026-09-10  종료일 2030-09-09
+
+Reading a labelled number out of that table is not translation and not
+interpretation. The labels are fixed strings this module matches
+literally; the values are copied out byte for byte. Nothing here
+renders Korean prose into English, and nothing here romanises or
+translates a name — see counterparty_for_display() for the one place
+that question arises and how it is answered without doing either.
+
+"-" IS NOT ZERO AND NOT ABSENT. Korean defence contractors routinely
+withhold the contract value as a trade secret and file "-" in
+계약금액(원) while still filing 최근매출액(원), the company's OWN
+revenue, in the very next field. A parser that treats "-" as missing
+and reaches for the next number on the line turns a withheld contract
+value into "₩26.7tn". Both observed live, in the same issuer, eleven
+days apart. Withheld fields are therefore recorded as withheld, never
+dropped, and the caller is expected to say so rather than guess.
+
+AMENDMENTS ARE NOT READ AT ALL. A 정정신고(보고) body is a
+정정전/정정후 correction table, not the original field table: the same
+labels appear, each with two competing values. Reading one would be a
+coin flip between the old figure and the new. is_amendment_body()
+detects them and parse_structured_fields() returns None."""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+
+from src.config.tracked_companies import get_tracked_companies
+
+#: A field filed as withheld. DART prints a bare hyphen (ASCII or the
+#: full-width form) where a value is not disclosed.
+_WITHHELD_VALUES: frozenset[str] = frozenset({"-", "\uff0d", "\u2013", "\u2014", ""})
+
+#: The amendment marker in a corrected disclosure's own body.
+_AMENDMENT_MARKERS: tuple[str, ...] = (
+    "\uc815\uc815\uc2e0\uace0",       # 정정신고
+    "\uc815\uc815\uc804",             # 정정전
+    "\uc815\uc815\ud6c4",             # 정정후
+    "[\uae30\uc7ac\uc815\uc815]",     # [기재정정]
+)
+
+SUPPLY_CONTRACT = "supply_contract"
+FACILITY_INVESTMENT = "facility_investment"
+
+#: field key -> the statutory label(s) DART prints, longest first so a
+#: label that contains another ("자기자본대비" vs "자기자본") cannot be
+#: matched by its own prefix.
+_TEMPLATES: dict[str, dict[str, tuple[str, ...]]] = {
+    SUPPLY_CONTRACT: {
+        "kind": ("\ud310\ub9e4\u00b7\uacf5\uae09\uacc4\uc57d \uad6c\ubd84", "\ud310\ub9e4\u00b7\uacf5\uae09\uacc4\uc57d\uad6c\ubd84"),
+        "detail": ("\uccb4\uacb0\uacc4\uc57d\uba85", "\uc138\ubd80\ub0b4\uc6a9"),
+        "amount": ("\uacc4\uc57d\uae08\uc561",),
+        "recent_revenue": ("\ucd5c\uadfc\ub9e4\ucd9c\uc561",),
+        "ratio": ("\ub9e4\ucd9c\uc561\ub300\ube44",),
+        "large_corporation": ("\ub300\uaddc\ubaa8\ubc95\uc778\uc5ec\ubd80",),
+        "counterparty": ("\uacc4\uc57d\uc0c1\ub300\ubc29", "\uacc4\uc57d\uc0c1\ub300"),
+        "relationship": ("\ud68c\uc0ac\uc640\uc758 \uad00\uacc4", "\ud68c\uc0ac\uc640\uc758\uad00\uacc4"),
+        "region": ("\ud310\ub9e4\u00b7\uacf5\uae09\uc9c0\uc5ed",),
+        "start_date": ("\uc2dc\uc791\uc77c",),
+        "end_date": ("\uc885\ub8cc\uc77c",),
+    },
+    FACILITY_INVESTMENT: {
+        "kind": ("\ud22c\uc790\uad6c\ubd84",),
+        "detail": ("\ud22c\uc790\ub300\uc0c1",),
+        "amount": ("\ud22c\uc790\uae08\uc561",),
+        "equity": ("\uc790\uae30\uc790\ubcf8",),
+        "ratio": ("\uc790\uae30\uc790\ubcf8\ub300\ube44",),
+        "large_corporation": ("\ub300\uaddc\ubaa8\ubc95\uc778\uc5ec\ubd80",),
+        "purpose": ("\ud22c\uc790\ubaa9\uc801",),
+    },
+}
+
+#: Which label identifies each template: the AMOUNT field, AS THE
+#: TABLE PRINTS IT, followed by its "(\uc6d0)" unit. Samsung's
+#: \uc7a5\ub798\uc0ac\uc5c5\u00b7\uacbd\uc601\uacc4\ud68d disclosure mentions \ud22c\uc790\uae08\uc561 in running
+#: prose and was detected as a facility-investment table on that alone.
+#: It parsed to nothing and produced no headline, so nothing wrong
+#: reached a card — but a template this module cannot actually read
+#: should not be claimed in the first place.
+_TEMPLATE_SIGNATURES: tuple[tuple[str, str], ...] = (
+    (SUPPLY_CONTRACT, "\uacc4\uc57d\uae08\uc561(\uc6d0)"),
+    (FACILITY_INVESTMENT, "\ud22c\uc790\uae08\uc561(\uc6d0)"),
+)
+
+#: Curated English for each template's two headline numbers. A hand
+#: translation of a fixed statutory label, written once — the same
+#: discipline as filing_display's category tables, and the only English
+#: this module introduces.
+AMOUNT_LABELS: dict[str, str] = {
+    SUPPLY_CONTRACT: "contract value",
+    FACILITY_INVESTMENT: "investment",
+}
+RATIO_LABELS: dict[str, str] = {
+    SUPPLY_CONTRACT: "of recent revenue",
+    FACILITY_INVESTMENT: "of equity",
+}
+
+_UNIT_SUFFIX_RE = re.compile(r"^\s*\((?:\uc6d0|%)\)\s*")
+#: DART numbers its sections "1. " "2. " "3. ". A value ends where the
+#: next numbered section begins, even when that section's own label is
+#: not one this module tracks — otherwise 판매·공급지역 reads as
+#: "크로아티아 5. 계약기간". The trailing space is required, so a
+#: decimal ratio ("2.40") and an ISO date are never mistaken for one.
+_SECTION_MARKER_RE = re.compile(r"\s\d{1,2}\.\s")
+_NUMBER_RE = re.compile(r"^-?[\d,]+(?:\.\d+)?$")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3]")
+#: A parenthesised run with no Hangul in it — the filing's own English
+#: rendering of a counterparty, which many DART filings print.
+_ENGLISH_PARENTHETICAL_RE = re.compile(r"\(([^()\uac00-\ud7a3]{3,120})\)")
+
+
+@dataclass(frozen=True)
+class StructuredFilingFacts:
+    """What the field table said. Every string is copied from the
+    filing; nothing is rephrased.
+
+    `withheld` names the fields the filing printed as "-", so a caller
+    can distinguish "the contract is worth nothing we can show" from
+    "we did not look"."""
+
+    template: str
+    amount_won: int | None = None
+    ratio_percent: Decimal | None = None
+    counterparty: str | None = None
+    detail: str | None = None
+    region: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    withheld: tuple[str, ...] = ()
+
+    @property
+    def amount_label(self) -> str:
+        return AMOUNT_LABELS[self.template]
+
+    @property
+    def ratio_label(self) -> str:
+        return RATIO_LABELS[self.template]
+
+    @property
+    def has_headline_numbers(self) -> bool:
+        return self.amount_won is not None or self.ratio_percent is not None
+
+
+def is_amendment_body(text: str) -> bool:
+    """True for a 정정신고(보고) correction table.
+
+    Its labels are the originals', each carrying a 정정전 (before) and a
+    정정후 (after) value, so picking "the" value is a coin flip between
+    a superseded figure and a current one."""
+    return any(marker in (text or "") for marker in _AMENDMENT_MARKERS)
+
+
+def _normalise(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def _label_positions(text: str, template: dict[str, tuple[str, ...]]) -> list[tuple[int, int, str]]:
+    """(start, end, field_key) for every label found, in document
+    order. Longer labels win over shorter ones that start at the same
+    place, so 자기자본대비 is never read as 자기자본."""
+    found: list[tuple[int, int, str]] = []
+    for key, labels in template.items():
+        for label in labels:
+            index = text.find(label)
+            if index >= 0:
+                found.append((index, index + len(label), key))
+                break
+    found.sort()
+    deduped: list[tuple[int, int, str]] = []
+    for start, end, key in found:
+        if deduped and start < deduped[-1][1]:
+            # Overlapping labels: keep whichever reaches further right,
+            # which is the longer, more specific one.
+            if end > deduped[-1][1]:
+                deduped[-1] = (deduped[-1][0], end, key)
+            continue
+        deduped.append((start, end, key))
+    return deduped
+
+
+def _value_after(text: str, end: int, next_start: int | None) -> str:
+    raw = text[end : next_start if next_start is not None else len(text)]
+    raw = _UNIT_SUFFIX_RE.sub("", raw)
+    section = _SECTION_MARKER_RE.search(raw)
+    if section is not None:
+        raw = raw[: section.start()]
+    # A trailing bullet belongs to the NEXT field's label, not to this
+    # value: "계약상대 <name> - 회사와의 관계" puts the hyphen that
+    # introduces the following line at the end of the name.
+    raw = re.sub(r"\s+[-\u2013\u2014\uff0d]\s*$", "", raw)
+    return raw.strip(" \t:\u00b7")
+
+
+def _as_int(value: str) -> int | None:
+    if not _NUMBER_RE.match(value):
+        return None
+    try:
+        return int(Decimal(value.replace(",", "")))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _as_decimal(value: str) -> Decimal | None:
+    if not _NUMBER_RE.match(value):
+        return None
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def detect_template(text: str) -> str | None:
+    for template, signature in _TEMPLATE_SIGNATURES:
+        if signature in text:
+            return template
+    return None
+
+
+def parse_structured_fields(excerpt: str | None) -> StructuredFilingFacts | None:
+    """The filing's own field values, or None.
+
+    None for an empty excerpt, an amendment body, or a document whose
+    field table this module does not know. Never a partial guess from a
+    document it could not identify."""
+    text = _normalise(excerpt or "")
+    if not text or is_amendment_body(text):
+        return None
+    template = detect_template(text)
+    if template is None:
+        return None
+
+    positions = _label_positions(text, _TEMPLATES[template])
+    values: dict[str, str] = {}
+    for index, (_, end, key) in enumerate(positions):
+        next_start = positions[index + 1][0] if index + 1 < len(positions) else None
+        values[key] = _value_after(text, end, next_start)
+
+    withheld = tuple(
+        key for key in ("amount", "ratio", "counterparty", "detail")
+        if key in values and values[key].strip() in _WITHHELD_VALUES
+    )
+
+    def present(key: str) -> str | None:
+        value = values.get(key, "").strip()
+        return None if value in _WITHHELD_VALUES else value
+
+    amount_text = present("amount")
+    ratio_text = present("ratio")
+    return StructuredFilingFacts(
+        template=template,
+        amount_won=_as_int(amount_text) if amount_text else None,
+        ratio_percent=_as_decimal(ratio_text) if ratio_text else None,
+        counterparty=present("counterparty"),
+        detail=present("detail"),
+        region=present("region"),
+        start_date=present("start_date"),
+        end_date=present("end_date"),
+        withheld=withheld,
+    )
+
+
+def _tracked_english_name(native: str) -> str | None:
+    """The registry's English name for a company filed under its Korean
+    name — resolved on TrackedCompany.native_name, never by
+    transliterating anything.
+
+    Currently inert: native_name is empty for all twelve DART-tracked
+    companies, so this returns None for every input until that column
+    is populated from an authoritative source. Written anyway because
+    the alternative — matching on a romanisation this module invents —
+    is the thing that must never happen."""
+    stripped = native.strip()
+    if not stripped:
+        return None
+    for company in get_tracked_companies():
+        if company.native_name and company.native_name.strip() == stripped:
+            return company.name
+    return None
+
+
+@dataclass(frozen=True)
+class CounterpartyName:
+    """`as_filed` is True when `text` is the filing's own Korean, which
+    the caller must label as such rather than present as English."""
+
+    text: str
+    as_filed: bool
+
+
+def counterparty_for_display(value: str | None) -> CounterpartyName | None:
+    """The counterparty as it may be shown, and whether it is Korean.
+
+    Four cases, in order, and none of them involves this module
+    producing a name of its own:
+
+      1. the registry already knows the company in English
+      2. the filing itself prints an English rendering in brackets —
+         "크로아티아 국방부 (The Ministry of Defence of the Republic of
+         Croatia)" — which is the FILING's English, not ours
+      3. the filed name is already Latin script, as many foreign
+         counterparties are
+      4. otherwise the Korean exactly as filed, flagged so the card can
+         say so
+
+    There is deliberately no romanisation step and no fifth case."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    tracked = _tracked_english_name(raw)
+    if tracked:
+        return CounterpartyName(tracked, as_filed=False)
+
+    english = _ENGLISH_PARENTHETICAL_RE.search(raw)
+    if english and _LATIN_RE.search(english.group(1)):
+        return CounterpartyName(english.group(1).strip(), as_filed=False)
+
+    if not _HANGUL_RE.search(raw):
+        return CounterpartyName(raw, as_filed=False)
+
+    return CounterpartyName(raw, as_filed=True)
+
+
+# ============================================================
+# Rendering
+# ============================================================
+
+#: Won is denominated small — a mid-size contract runs to twelve
+#: digits — so an exact figure cannot sit in a headline:
+#: "₩641,095,389,786 supply contract" is unreadable. The headline
+#: carries a rounded figure and the card carries the exact one, which
+#: is why exact_won() exists alongside this.
+_SCALES: tuple[tuple[int, str], ...] = (
+    (1_000_000_000_000, "tn"),
+    (1_000_000_000, "bn"),
+    (1_000_000, "m"),
+)
+_WON = "₩"
+
+
+def exact_won(amount: int) -> str:
+    """The figure exactly as filed, grouped. For the card body, never
+    the headline."""
+    return f"{_WON}{amount:,}"
+
+
+def rounded_won(amount: int) -> str:
+    """A rounded figure for the headline — DERIVED, not verbatim, which
+    is the one place this module's output is not a copy of the filing.
+    Always paired with exact_won() on the card so the filed figure is
+    never only available by rounding backwards."""
+    for scale, suffix in _SCALES:
+        if abs(amount) >= scale:
+            value = Decimal(amount) / Decimal(scale)
+            return f"{_WON}{value.quantize(Decimal('0.1'))}{suffix}"
+    return exact_won(amount)
+
+
+#: What the card calls each template's event. Curated English for a
+#: fixed statutory document type, same as filing_display's tables.
+EVENT_LABELS: dict[str, str] = {
+    SUPPLY_CONTRACT: "supply contract",
+    FACILITY_INVESTMENT: "new facility investment",
+}
+
+AS_FILED_SUFFIX = " (as filed)"
+
+#: What the card says when the issuer filed "-" for the figure. A
+#: filing that withholds its value but NAMES ITS COUNTERPARTY is still
+#: worth a headline: who the contract is with is the news, and
+#: "withheld" is the honest label for the part the issuer chose not to
+#: disclose. Observed live on Hanwha Aerospace's 2026-08-31 contract
+#: with INDRA SISTEMAS S.A., where both figures were "-" and the
+#: counterparty was named in full.
+_WITHHELD_NOTES: dict[str, str] = {
+    SUPPLY_CONTRACT: "contract value withheld",
+    FACILITY_INVESTMENT: "investment value withheld",
+}
+
+
+def structured_headline(company: str, facts: StructuredFilingFacts) -> str | None:
+    """A headline built from the field table, or None when there is
+    nothing in it worth putting on a card.
+
+    A filing that withholds its figures but NAMES ITS COUNTERPARTY
+    still gets one — "Hanwha Aerospace Co., Ltd. — supply contract
+    with INDRA SISTEMAS S.A. (contract value withheld)". Who the
+    contract is with is the news, and it is strictly more than the
+    document-type card this would otherwise fall back to.
+
+    Only four things ever reach it: the company name the registry
+    already resolved, a curated English label for a statutory document
+    type, a number copied from the filing, and a counterparty name that
+    is either the registry's, the filing's own English, or the filing's
+    Korean marked "(as filed)". No Korean prose is translated and no
+    name is romanised — 투자대상 ("청주 M17 건설") is deliberately left
+    out of the headline for that reason, and belongs on the card as
+    filed."""
+    event = EVENT_LABELS[facts.template]
+    counterparty = counterparty_for_display(facts.counterparty)
+    if facts.amount_won is None and facts.ratio_percent is None and counterparty is None:
+        # No figures and nobody named: the field table said nothing the
+        # document type has not already said.
+        return None
+
+    lead = f"{rounded_won(facts.amount_won)} {event}" if facts.amount_won is not None else event
+
+    if counterparty is not None:
+        name = counterparty.text + (AS_FILED_SUFFIX if counterparty.as_filed else "")
+        lead = f"{lead} with {name}"
+
+    if facts.ratio_percent is not None:
+        lead = f"{lead} ({facts.ratio_percent}% {facts.ratio_label})"
+    elif facts.amount_won is None and "amount" in facts.withheld:
+        lead = f"{lead} ({_WITHHELD_NOTES[facts.template]})"
+
+    return f"{company} — {lead}"
+
+
+def exact_figure_note(facts: StructuredFilingFacts) -> str | None:
+    """The filed figure in full, for the card body.
+
+    The headline carries a rounded figure because twelve digits of won
+    cannot sit in one — this is the other half of that bargain, so the
+    exact number the issuer filed is always on the card and never only
+    recoverable by rounding backwards. None when there was no figure
+    to begin with."""
+    if facts.amount_won is None:
+        return None
+    label = "Contract value" if facts.template == SUPPLY_CONTRACT else "Investment"
+    note = f"{label} as filed: {exact_won(facts.amount_won)}."
+    if facts.start_date and facts.end_date:
+        note = f"{note} Term: {facts.start_date} to {facts.end_date}."
+    return note
