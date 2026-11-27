@@ -810,6 +810,62 @@ _EDINET_CJK_TITLE_TIMESTAMP_RE = re.compile(
 _EDINET_MEMBER_FILENAME_RE = re.compile(
     r"^\d{4,12}_[A-Za-z][A-Za-z0-9]{0,30}_\d{6,24}\.html?(?=\s|$)\s*"
 )
+# (c) the TRANSLATED document-title label. Shape (a) requires the run to
+# be whitespace-free and to contain a native character, which is right
+# for EDINET's own Japanese title — "臨時報告書_20261125112259" — and
+# cannot match once that title has been machine-translated into English:
+# "Extraordinary Report_20261125112259" has a space and no CJK, and
+# "Registration Statement (Stock Certificates, Corporate Bonds,
+# etc.)_20261118134108" has spaces, commas, brackets and a period.
+# Both were observed live in the 2026-11-18..25 window, reaching the
+# card with the stamp intact.
+#
+# The "_" + exactly-14-digit stamp is doing the identification here, and
+# it is a strong signal on its own: EDINET appends it to the document
+# title and ordinary prose does not contain word_14digits. The two extra
+# constraints keep it from ever eating real text — the run must start at
+# position 0 and must contain no sentence break, so a stamp appearing
+# after a first sentence leaves that sentence alone.
+_EDINET_TRANSLATED_TITLE_TIMESTAMP_RE = re.compile(r"^([^\n]{1,160}?)_\d{14}(?=\s|$)\s*")
+
+#: Lower-case words a title may legitimately contain. Anything else
+#: lower-case means the run is a sentence, not a title.
+_TITLE_CASE_EXEMPT_WORDS: frozenset[str] = frozenset({
+    "a", "an", "and", "as", "at", "by", "etc", "for", "from", "in", "of",
+    "on", "or", "the", "to", "with",
+})
+_TITLE_WORD_RE = re.compile(r"[A-Za-z][A-Za-z.'\u2019-]*")
+
+
+def _reads_as_a_document_title(run: str) -> bool:
+    """True when every word in `run` is either capitalised or one of the
+    small words a title may carry in lower case.
+
+    This is what separates EDINET's translated title label from ordinary
+    prose that happens to contain an underscore and fourteen digits.
+    Without it, "The lender is ABC_Bank_20260909153311 and the note
+    applies" is stripped down to "and the note applies" — the stamp
+    alone is not enough of a signal, because a reader's own sentence can
+    contain one.
+
+      "Extraordinary Report"                                  -> True
+      "Registration Statement (Stock Certificates, ... etc.)" -> True
+      "The lender is ABC_Bank"                                -> False
+    """
+    words = _TITLE_WORD_RE.findall(run)
+    if not words:
+        return False
+    return all(
+        word[0].isupper() or word.strip(".'\u2019-").lower() in _TITLE_CASE_EXEMPT_WORDS
+        for word in words
+    )
+
+
+def _translated_title_stamp_match(text: str):
+    match = _EDINET_TRANSLATED_TITLE_TIMESTAMP_RE.match(text)
+    if match is None or not _reads_as_a_document_title(match.group(1)):
+        return None
+    return match
 _EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS = 3
 
 
@@ -821,12 +877,25 @@ def strip_edinet_summary_artifacts(text: str) -> str:
     A no-op for every already-clean text, and for any text where a
     matching shape exists but not at position 0. Bounded loop, never
     unbounded. No provider knowledge: the caller decides when to call
-    it (EDINET only)."""
+    it (EDINET only).
+
+    The leading U+FEFF run is stripped first, once, exactly as
+    strip_edinet_machine_artifacts() has always done — see
+    _LEADING_BOM_AND_WHITESPACE_RE's own comment for why every
+    start-anchored pattern below is otherwise defeated by it. That step
+    was present in the sibling function and missing here, which is why
+    EDINET summaries reached the card still carrying their title
+    stamp even for the Japanese shape (a) this function was written
+    for."""
     if not text:
         return text
-    cleaned = text
+    cleaned = _LEADING_BOM_AND_WHITESPACE_RE.sub("", text, count=1)
     for _ in range(_EDINET_SUMMARY_ARTIFACT_MAX_ITERATIONS):
-        match = _EDINET_CJK_TITLE_TIMESTAMP_RE.match(cleaned) or _EDINET_MEMBER_FILENAME_RE.match(cleaned)
+        match = (
+            _EDINET_CJK_TITLE_TIMESTAMP_RE.match(cleaned)
+            or _translated_title_stamp_match(cleaned)
+            or _EDINET_MEMBER_FILENAME_RE.match(cleaned)
+        )
         if not match:
             break
         cleaned = cleaned[match.end():]
