@@ -1,9 +1,13 @@
-"""Command palette (brief §12) — ⌘K/Ctrl+K fuzzy search over themes,
-signals, and actions. The former "Companies"/"Watchlists"/"Recent
-research"/"New research thread" groups were removed (reader-facing
-data-integrity pass, design/DECISIONS.md) along with the Company,
-Watchlists, and Research pages they pointed at — none had live real
-data.
+"""Command palette (brief §12) — ⌘K/Ctrl+K fuzzy search over companies,
+Research Theses, Radar Signals and actions.
+
+The Companies group is back (UI redesign item 1: "⌘K/search by ticker or
+company"). It was removed once before, in the reader-facing data-
+integrity pass, together with the Company/Watchlists/Research pages it
+pointed at — none of which had live real data. What makes it honest this
+time is that it searches the real issuer registry and routes at the real
+Companies index (src/ui/pages/companies.py), not at a page of invented
+rows. "Watchlists"/"Recent research"/"New research thread" stay gone.
 
 Streamlit has no native palette. Two things had to be tested for real
 feasibility (per the brief's own instruction) rather than assumed:
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.config.issuer_registry import SEED_ISSUERS
 from src.ui import theme
 from src.ui.ui import get_page
 
@@ -54,7 +59,7 @@ def render_palette_trigger(compact: bool = False) -> None:
     rule then constrains it to a small square via the same
     `st-key-cta-secondary-{PALETTE_TRIGGER_KEY}` container class either
     rendering already carries."""
-    label = ":material/search:" if compact else "Search…    ⌘K"
+    label = ":material/search:" if compact else "Ticker or company    ⌘K"
     help_text = "Search (⌘K)" if compact else None
     with st.container(key=f"cta-secondary-{PALETTE_TRIGGER_KEY}"):
         if st.button(label, key=PALETTE_TRIGGER_KEY, width="stretch", help=help_text):
@@ -82,14 +87,42 @@ def render_palette_trigger(compact: bool = False) -> None:
 
 def _index(ctx) -> list[dict]:
     items: list[dict] = []
+    # Companies first (UI redesign item 1: "⌘K/search by ticker or
+    # company"). Static registry read — no repository, no connection, so
+    # this group costs the dialog nothing. The destination is the
+    # Companies index, not a per-company page: those are item 3, and
+    # routing a result at a page that does not exist yet would be a dead
+    # end. `sub` carries the ticker so a reader typing "NVDA" sees why the
+    # row matched; _matches() searches it.
+    for issuer in SEED_ISSUERS:
+        ticker = issuer.primary_ticker or ""
+        exchange = issuer.primary_exchange or ""
+        items.append({
+            "group": "Companies",
+            "label": issuer.legal_name,
+            # The native name joins `sub` so a search in Japanese finds
+            # the company too, for the 13 seed issuers that have one. It
+            # is never synthesised — see src/ui/pages/companies.py.
+            "sub": " · ".join(p for p in (ticker, exchange, issuer.native_name) if p),
+            "go": "companies",
+        })
+    # "Research Theses" (route key "themes"), NOT the theme tag taxonomy
+    # the new Themes index lists — see src/logic/theme_taxonomy.py for the
+    # naming split. ctx.theme_repository is the curated-narrative one.
     for th in ctx.theme_repository.get_all_themes():
-        items.append({"group": "Themes", "label": th.name, "sub": f"{len(th.subthemes)} subcategories", "go": "themes"})
+        items.append({"group": "Research Theses", "label": th.name, "sub": f"{len(th.subthemes)} subcategories", "go": "themes"})
     for s in ctx.signal_repository.get_all_signals():
         # Product-naming separation (design/DECISIONS.md): "Signals" is
         # now the Daily News rework's own group; these are Radar-derived
         # filing signals, still routed to the unchanged "signals" page/
         # route key — only the group label moved.
         items.append({"group": "Radar Signals", "label": s.title, "sub": s.theme_slug, "go": "signals"})
+    # Filings (radar_inbox) left the sidebar in UI redesign item 1 and is
+    # not merged into the Feed until item 2, so this action is the one
+    # discoverable path to it in the meantime. Remove it once the Feed
+    # actually carries filings; until then it must stay.
+    items.append({"group": "Actions", "label": "Open Filings", "sub": "Radar filing list", "go": "radar_inbox"})
+    items.append({"group": "Actions", "label": "Open Themes", "sub": "Theme tag index", "go": "theme_index"})
     items.append({"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"})
     current = theme.current_preference()
     for preference, label in theme.LABELS.items():
@@ -105,6 +138,40 @@ def _matches(item: dict, query: str) -> bool:
     return q in item["label"].lower() or q in item["sub"].lower() or q in item["group"].lower()
 
 
+_PER_GROUP_LIMIT = 8
+
+
+def _capped_by_group(items: list[dict]) -> list[dict]:
+    """`items` truncated to _PER_GROUP_LIMIT rows per group, preserving
+    the caller's order, with a non-clickable "+N more" marker appended to
+    any group that was cut. Theme-switch commands (`go` starting
+    "theme:") are never capped — they are commands, not search results,
+    and must stay reachable however many companies match."""
+    out: list[dict] = []
+    counts: dict[str, int] = {}
+    held: dict[str, int] = {}
+    for item in items:
+        if item["go"].startswith("theme:"):
+            out.append(item)
+            continue
+        group = item["group"]
+        counts[group] = counts.get(group, 0) + 1
+        if counts[group] <= _PER_GROUP_LIMIT:
+            out.append(item)
+        else:
+            held[group] = held.get(group, 0) + 1
+    if not held:
+        return out
+    final: list[dict] = []
+    for n, item in enumerate(out):
+        final.append(item)
+        group = item["group"]
+        is_last_of_group = n + 1 == len(out) or out[n + 1]["group"] != group
+        if is_last_of_group and held.get(group):
+            final.append({"group": group, "label": "", "sub": f"+{held[group]} more — narrow the search", "go": ""})
+    return final
+
+
 def _open_palette() -> None:
     from src.data_access.container import get_repositories
 
@@ -117,7 +184,7 @@ def _open_palette() -> None:
         # custom component (see module docstring). The button below is an
         # explicit, honestly-labeled action instead of overloading Enter.
         query = st.text_input(
-            "Search", placeholder="Search themes, signals…",
+            "Search", placeholder="Ticker, company, thesis or signal…",
             label_visibility="collapsed", key="cmdk-query",
         )
         items = _index(ctx)
@@ -130,17 +197,30 @@ def _open_palette() -> None:
             return
 
         if not shown:
-            st.markdown('<div class="er-muted">No matches. Try a theme or signal.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="er-muted">No matches. Try a ticker, a company or a thesis.</div>', unsafe_allow_html=True)
             return
 
         last_group = None
-        # The list is capped for length, but the theme commands always stay
-        # reachable at the end, however many themes and signals match.
-        visible = shown[:25] + [i for i in shown[25:] if i["go"].startswith("theme:")]
+        # Capped PER GROUP, not as one flat slice. The Companies group
+        # added in UI redesign item 1 is 129 rows on its own — a flat
+        # shown[:25] would have filled the whole dialog with companies
+        # and pushed Research Theses, Radar Signals and every Action out
+        # of sight whenever the query was empty or broad. Each group now
+        # shows its first _PER_GROUP_LIMIT matches with a count of what
+        # it is holding back, so every group stays visible and a reader
+        # who wants more narrows the query. The theme commands are
+        # exempt and always render.
+        visible = _capped_by_group(shown)
         for n, item in enumerate(visible):
             if item["group"] != last_group:
                 st.markdown(f'<div class="er-section-label" style="margin-top:0.75rem;">{item["group"]}</div>', unsafe_allow_html=True)
                 last_group = item["group"]
+            # The "+N more" marker _capped_by_group() appends carries no
+            # label and no destination: it renders as muted text, never
+            # as a button that would look clickable and go nowhere.
+            if not item["go"]:
+                st.markdown(f'<div class="er-muted" style="font-size:11px;">{item["sub"]}</div>', unsafe_allow_html=True)
+                continue
             row_cols = st.columns([5, 2])
             with row_cols[0]:
                 label = f"**{item['label']}**" if n == 0 else item["label"]

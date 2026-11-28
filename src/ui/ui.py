@@ -26,38 +26,66 @@ METHODOLOGY_STATEMENT = (
     "does not provide investment advice."
 )
 
-# Primary sidebar nav ("WORKSPACE" group), in order — navigation-cleanup
-# pass (design/DECISIONS.md): the core destinations. Home and Company are
-# deliberately excluded (Home is first-visit-only with no sidebar at all;
-# Company is reached only by clicking a ticker). Coverage, Themes,
-# Radar Signals, and Research are intentionally NOT here any more — see
-# HIDDEN_FROM_NAV below; their pages/routes/data are untouched, they are
-# simply no longer linked from any visible sidebar group.
+# Sidebar nav, in order — UI redesign item 1: one flat list of six
+# destinations (Today · Feed · Companies · Themes · Theses · Coverage),
+# exactly as design/ui-redesign/main-dashboard.html's rail shows it.
+# PRIMARY_NAV/SYSTEM_NAV stay two tables because every breadcrumb group,
+# test and admin-visibility check already reads them that way; the only
+# visible change is that render_sidebar() no longer prints a group label
+# above either, so the reader sees a single six-item list.
+#
+# RENAMES ARE DISPLAY-ONLY. Every route key and url_path below is the one
+# it has always been, except the two new pages and the "themes"/"theses"
+# url_path swap called out in app.py's _URL_PATHS. "dashboard" is now
+# labelled "Today"; "daily_news" (internally still Daily News, see
+# src/ui/pages/daily_news.py) is now "Feed"; "coverage" is now plain
+# "Coverage" rather than "Methodology & Coverage" — Methodology keeps its
+# own route, reachable from Coverage's own cross-link and the footer.
 PRIMARY_NAV: list[tuple[str, str]] = [
-    ("dashboard", "Dashboard"),
-    ("radar_inbox", "Filings"),
-    # Daily News (Slice 1, design/DECISIONS.md), product-naming separation
-    # (design/DECISIONS.md) — an independent, separately-scoped autonomous
-    # discovery surface, not a Filings view (see the Radar-vs-Daily-News
-    # product clarification the same document records). Now user-facing
-    # "Signals": a selective, material, cross-source disclosure feed —
-    # distinct from "Radar Signals" (the Radar-derived, filing-only
-    # concept previously just called "Signals", see HIDDEN_FROM_NAV
-    # below). Route key/url_path stay "daily_news"/"daily-news" —
-    # unchanged — only this display label moved. Placed next to Filings
-    # for IA/UX grouping only ("what's new" feeds together) — this has no
-    # bearing on their code/data independence.
-    ("daily_news", "Signals"),
+    ("dashboard", "Today"),
+    # Redesign item 2 merges Radar's filings into this one Feed list. It
+    # has NOT happened yet: today "daily_news" is still the news-lane
+    # editorial feed and "radar_inbox" is still the filing list, and the
+    # six-item nav the redesign specifies has no room for both. Filings
+    # therefore moved to HIDDEN_FROM_NAV below — still a registered
+    # route, still reachable by direct URL and by the command palette's
+    # own "Open Filings" action — rather than being dropped. Item 2 is
+    # what makes that honest; until it lands, see the palette.
+    ("daily_news", "Feed"),
+    # The tracked-company index (src/ui/pages/companies.py). Per-company
+    # detail pages are item 3; this is the list only.
+    ("companies", "Companies"),
+    # The content-theme TAG TAXONOMY (src/ui/pages/theme_index.py) — the
+    # five slugs on Issuer.themes/EditorialStory.matched_themes. NOT the
+    # curated research narratives below, which this codebase also calls
+    # "theme" internally. See src/logic/theme_taxonomy.py's docstring for
+    # the full naming split; getting these two the wrong way round builds
+    # the wrong page.
+    ("theme_index", "Themes"),
+    # The curated, cross-company research narratives — route key "themes",
+    # page src/ui/pages/themes_research.py, user-facing "Research Theses"
+    # since that page was written, now shortened to "Theses" to fit the
+    # rail. Internal model/table/repository identifiers are untouched.
+    #
+    # This entry replaces render_sidebar()'s former conditional link,
+    # which appeared only once at least one Thesis was PUBLISHED
+    # (_has_published_themes(), a beta-launch gate). A fixed six-item nav
+    # cannot have an item that comes and goes, so the gate is gone from
+    # the nav: the item is always shown, and themes_research.py's own
+    # index empty-state is what a visitor sees when nothing is published
+    # yet. _published_theme_count() still drives the count badge, which
+    # correctly shows nothing at zero.
+    ("themes", "Theses"),
 ]
 
-# Lower-priority "SYSTEM" group in the sidebar (navigation-cleanup pass) —
-# reuses the existing Coverage page/route verbatim (smallest routing
-# footprint: same st.Page/url_path, only the sidebar link text differs) as
-# the one "Methodology & Coverage" entry. A "Settings" entry belongs here
-# too once a real Settings route exists; none does yet, so it's
-# deliberately omitted rather than inventing a new page for it.
+# Lower-priority "SYSTEM" group (navigation-cleanup pass) — still its own
+# table so _BREADCRUMB_GROUPS and the admin-visibility tests keep reading
+# it, but rendered without a group label of its own, as the last of the
+# six flat nav items. A "Settings" entry belongs here once a real
+# Settings route exists; none does yet, so it stays deliberately omitted
+# rather than inventing a page for it.
 SYSTEM_NAV: list[tuple[str, str]] = [
-    ("coverage", "Methodology & Coverage"),
+    ("coverage", "Coverage"),
 ]
 
 # Routes that stay fully registered and reachable — direct URL, the
@@ -70,30 +98,22 @@ SYSTEM_NAV: list[tuple[str, str]] = [
 # pass, design/DECISIONS.md) rather than kept as hidden routes — neither
 # had any live real data of its own; likewise Company, previously
 # reachable only via query params, not this list.
-#
-# Themes (beta UI polish pass, design/DECISIONS.md) — moved here from
-# PRIMARY_NAV: the public Themes page has no content-readiness gate of
-# its own, so a beta launch should not unconditionally link to it from
-# the sidebar. "themes" staying in this list only controls its
-# underlying st.Page's own (Streamlit-native, unused by this app's
-# custom sidebar) visibility="hidden" in app.py — it does NOT mean the
-# link never appears. render_sidebar() below adds its own manual,
-# conditional st.page_link (same pattern as the Admin Users link further
-# down this file) once at least one Theme is actually PUBLISHED — see
-# _has_published_themes(). The route, its data, repository, and the
-# separate internal authoring workflow (theme_workspace.py) are all
-# completely untouched — see src/ui/pages/themes_research.py's own
-# render()-level guard for what a non-admin visitor who reaches this
-# route directly sees instead of the real (possibly sparse) index.
 HIDDEN_FROM_NAV: list[tuple[str, str]] = [
+    # UI redesign item 1: moved here from PRIMARY_NAV because the
+    # six-item rail has no slot for it and item 2 is what merges its
+    # filings into the Feed. Route key, url_path, page, model and
+    # repository are all completely unchanged, and the command palette
+    # carries an explicit "Open Filings" action so the page is one ⌘K
+    # away in the meantime. Restore it to PRIMARY_NAV if item 2 is
+    # abandoned — do not leave the app with no path to the filing list.
+    ("radar_inbox", "Filings"),
     # Product-naming separation (design/DECISIONS.md): renamed from bare
     # "Signals" to "Radar Signals" once Daily News claimed "Signals" for
-    # its own, unrelated feed (see PRIMARY_NAV's "daily_news" entry
-    # above). Route key/url_path/model/repository are all unchanged.
+    # its own, unrelated feed. Route key/url_path/model/repository are
+    # all unchanged. ("Signals" is now the Feed, see PRIMARY_NAV.)
     ("signals", "Radar Signals"),
     ("methodology", "Methodology"),
     ("about", "About"),
-    ("themes", "Research Theses"),
 ]
 
 # Session-state keys for unread/last-seen tracking (brief §10) — defined
@@ -231,49 +251,36 @@ def is_admin(settings: Settings | None = None) -> bool:
     return bool(email) and email in settings.admin_emails
 
 
-# Themes sidebar visibility (design/DECISIONS.md) — the "Themes" link
-# below is the one WORKSPACE entry whose presence is data-driven rather
-# than static like every other PRIMARY_NAV/SYSTEM_NAV item: it appears
-# only once at least one Theme is actually PUBLISHED, so the beta
-# sidebar never links to what would otherwise be an empty index (see
-# src/ui/pages/themes_research.py's own empty-state). 60s, not per-
-# render: this check runs on every single page load across the whole
-# app (sidebar chrome, not just the Themes page itself), so an uncached
-# repository call here would add a DB round trip to every navigation
-# site-wide.
+# Research Theses count badge. The former _has_published_themes() gate
+# that used to live here is GONE (UI redesign item 1): "themes" is a
+# static PRIMARY_NAV entry now, always linked, so nothing needs to ask
+# whether anything is published before drawing the nav. What remains is
+# the count beside it, which is zero-safe by construction —
+# _nav_badge_counts() drops any count that is not > 0, so an empty
+# Theses index shows the item with no badge rather than "0".
+#
+# 60s, not per-render: this count runs on every single page load across
+# the whole app (sidebar chrome, not just the Theses page itself), so an
+# uncached repository call here would add a DB round trip to every
+# navigation site-wide.
 _THEMES_NAV_CACHE_TTL_SECONDS = 60
 
 
 @st.cache_data(show_spinner=False, ttl=_THEMES_NAV_CACHE_TTL_SECONDS)
 def _published_theme_count() -> int:
-    """Real count of PUBLISHED Research Theses through the same public,
-    published-only protocol _has_published_themes() reads — the sidebar's
-    "Research theses N" badge (redesign v2). Fails closed to 0."""
+    """Real count of PUBLISHED Research Theses through the public,
+    published-only protocol (backend_factory.get_theme_repository) — the
+    exact same read path src/ui/pages/themes_research.py itself uses,
+    never the private curator seam (get_theme_curator_repository), so an
+    INTERNAL, READY_TO_PUBLISH or ARCHIVED Thesis can never be counted
+    here. Fails closed to 0 on any repository error: global sidebar
+    chrome must never raise because of a Theme backend hiccup, matching
+    themes_research.py's own fail-closed convention for the same case."""
     settings = get_settings()
     try:
         return len(backend_factory.get_theme_repository(settings).list_published_themes())
-    except Exception:  # noqa: BLE001 — fail closed, sidebar chrome never raises
-        return 0
-
-
-@st.cache_data(show_spinner=False, ttl=_THEMES_NAV_CACHE_TTL_SECONDS)
-def _has_published_themes() -> bool:
-    """True only if at least one Theme is visible through the public,
-    published-only protocol (backend_factory.get_theme_repository) —
-    the exact same read path src/ui/pages/themes_research.py itself
-    uses, never the private curator seam
-    (get_theme_curator_repository), so an INTERNAL, READY_TO_PUBLISH,
-    or ARCHIVED Theme can never make this true. Fails closed (returns
-    False, keeping the sidebar link hidden) on any repository error —
-    global sidebar chrome must never raise because of a Theme backend
-    hiccup, matching themes_research.py's own fail-closed convention
-    for the exact same failure case."""
-    settings = get_settings()
-    try:
-        repository = backend_factory.get_theme_repository(settings)
-        return len(repository.list_published_themes()) > 0
     except Exception:  # noqa: BLE001 — fail closed, see docstring above
-        return False
+        return 0
 
 
 def _nav_badge_counts() -> dict[str, int]:
@@ -400,7 +407,7 @@ def render_sidebar(current_key: str) -> None:
         from src.ui.components.command_palette import render_palette_trigger
 
         st.markdown('<div class="er-rail-brand">', unsafe_allow_html=True)
-        brand_cols = st.columns([1, 4, 1], vertical_alignment="center")
+        brand_cols = st.columns([1, 5], vertical_alignment="center")
         with brand_cols[0]:
             st.markdown(f'<span class="er-rail-logo">{brand_mark_html()}</span>', unsafe_allow_html=True)
         with brand_cols[1]:
@@ -408,16 +415,41 @@ def render_sidebar(current_key: str) -> None:
                 st.page_link(brand_page, label="EevaResearch")
             else:
                 st.markdown('<span class="er-rail-word">EevaResearch</span>', unsafe_allow_html=True)
-        with brand_cols[2]:
-            render_palette_trigger(compact=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # WORKSPACE — the four core visible destinations (navigation-cleanup
-        # pass, design/DECISIONS.md). Coverage/Themes/Signals/Research and
-        # the old "My watchlists"/per-list-shortcut/"Recent research"
-        # sections are gone from here — see PRIMARY_NAV/HIDDEN_FROM_NAV.
-        st.markdown('<div class="er-rail-group-label">Workspace</div>', unsafe_allow_html=True)
-        for key, label in PRIMARY_NAV:
+        # UI redesign item 1 — the search box. The trigger moved out of
+        # the brand row (where it was a 34px icon button, compact=True)
+        # to its own full-width row directly beneath it, reading "Ticker
+        # or company    ⌘K", which is what design/ui-redesign/
+        # main-dashboard.html's rail shows and what the search is now
+        # actually for: the palette indexes all 129 tracked companies by
+        # name, ticker and native name (see command_palette._index).
+        #
+        # Still the SAME trigger — one call per page render, the same
+        # st.dialog, the same working global ⌘K listener (that listener
+        # keys off the button's own st-key-cmdk-trigger class, which is
+        # unchanged by this move). Only `compact` flipped, which only
+        # ever changed this control's own rendering. assets/styles.css
+        # gives the full-width rendering an input-like box treatment
+        # inside the rail, so it reads as a search field rather than a
+        # button.
+        with st.container(key="rail-search"):
+            render_palette_trigger()
+
+        # The six flat nav destinations (UI redesign item 1): no
+        # "Workspace"/"System" group label above either table any more —
+        # design/ui-redesign/main-dashboard.html's rail is one
+        # uninterrupted list, and two labels over a five-item and a
+        # one-item group read as structure the reader does not need. The
+        # tables themselves still exist and still mean what they did (see
+        # PRIMARY_NAV/SYSTEM_NAV above and _BREADCRUMB_GROUPS below).
+        #
+        # The former conditional "Research Theses" link that sat between
+        # these two loops is gone: "themes" is a real PRIMARY_NAV entry
+        # now, always shown, with no _has_published_themes() gate. See
+        # PRIMARY_NAV's own comment for why a fixed six-item rail cannot
+        # have an item that appears and disappears.
+        for key, label in PRIMARY_NAV + SYSTEM_NAV:
             page = pages.get(key)
             if page is None:
                 continue
@@ -437,30 +469,8 @@ def render_sidebar(current_key: str) -> None:
             # already renders correctly nested — this container's own
             # key — instead: a real "st-key-navitem-{key}-active" class
             # exists only when this item is active, and assets/
-            # styles.css's nav-item rules now key off that directly. See
-            # this file's own docstring-level "why" note is intentionally
-            # kept local to this one call site — the mechanism is small
-            # enough not to need a separate module-level explanation.
+            # styles.css's nav-item rules now key off that directly.
             _nav_item(page, key, label, current_key, badges.get(key))
-
-        # Themes — data-driven WORKSPACE entry (design/DECISIONS.md): not
-        # in PRIMARY_NAV/HIDDEN_FROM_NAV's static split at all, since its
-        # visibility depends on published content, not a fixed nav table.
-        # Same styling/active-state as the PRIMARY_NAV loop above; the
-        # underlying "themes" page/route is unaffected either way (still
-        # registered, still reachable by direct URL, still visibility=
-        # "hidden" in app.py's own st.Page — only this manual link is new).
-        themes_page = pages.get("themes")
-        if themes_page is not None and _has_published_themes():
-            _nav_item(themes_page, "themes", "Research Theses", current_key, badges.get("themes"))
-
-        # SYSTEM — lower-priority destinations (navigation-cleanup pass).
-        # A Settings entry belongs here once a real Settings route exists.
-        st.markdown('<div class="er-rail-group-label">System</div>', unsafe_allow_html=True)
-        for key, label in SYSTEM_NAV:
-            page = pages.get(key)
-            if page is not None:
-                _nav_item(page, key, label, current_key)
 
         # Admin Users v1 (design/DECISIONS.md) — cosmetic only: hiding
         # this link from a non-admin is not authorization (the page's own

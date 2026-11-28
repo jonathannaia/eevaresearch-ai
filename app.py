@@ -43,6 +43,7 @@ from src.ui.pages import (
     about,
     admin_users,
     agent_review,
+    companies,
     company_discovery_admin,
     coverage,
     daily_news,
@@ -56,6 +57,7 @@ from src.ui.pages import (
     research_cases,
     root,
     signals,
+    theme_index,
     theme_workspace,
     themes_research,
     verified_updates,
@@ -86,6 +88,8 @@ _RENDER_FNS = {
     "dashboard": dashboard.render,
     "radar_inbox": radar_inbox.render,
     "daily_news": daily_news.render,
+    "companies": companies.render,
+    "theme_index": theme_index.render,
     "coverage": coverage.render,
     "themes": themes_research.render,
     "signals": signals.render,
@@ -93,12 +97,28 @@ _RENDER_FNS = {
     "about": about.render,
 }
 
+# UI redesign item 1 — the one url_path change in this table:
+#
+#   "theme_index" (the content-theme TAG TAXONOMY, new page) takes
+#   /themes, and "themes" (the curated Research Theses, unchanged page)
+#   moves from /themes to /theses.
+#
+# Both labels now match their own URL, which they could not both do: a
+# Streamlit url_path belongs to exactly one page. The cost is that an
+# existing /themes bookmark lands on the Themes index instead of the
+# Theses list — the closest page there is, one nav click from where it
+# used to go, and the one visible place the word "Themes" now points.
+# Every in-code reference goes through get_page("themes") and is
+# unaffected by the path move; nothing in the app hardcodes either URL
+# except src/ui/theme.py's path list, updated alongside this.
 _URL_PATHS = {
     "dashboard": "dashboard",
     "radar_inbox": "radar-inbox",
     "daily_news": "daily-news",
+    "companies": "companies",
+    "theme_index": "themes",
     "coverage": "coverage",
-    "themes": "themes",
+    "themes": "theses",
     "signals": "signals",
     "methodology": "methodology",
     "about": "about",

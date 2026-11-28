@@ -134,34 +134,45 @@ def test_the_hidden_root_page_owns_the_root_on_every_visit(monkeypatch):
 
 
 def test_every_registered_page_key_present_with_no_change_to_labels_or_order(monkeypatch):
-    """Regression guard for the navigation-cleanup pass (design/DECISIONS.md)
-    — asserts the exact visible WORKSPACE/SYSTEM nav tables app.py reads
-    from, that Coverage/Signals/Methodology/About/Themes are still
-    registered (just no longer linked from any visible sidebar group),
-    and that every expected dict key exists post-registration."""
-    assert [k for k, _ in PRIMARY_NAV] == ["dashboard", "radar_inbox", "daily_news"]
-    # Product-naming separation (design/DECISIONS.md): "Daily News"
-    # renamed to "Signals" — route key stays "daily_news".
-    assert [label for _, label in PRIMARY_NAV] == ["Dashboard", "Filings", "Signals"]
+    """Regression guard for the exact nav tables app.py reads from — now
+    the UI redesign's six-item rail (item 1): Today · Feed · Companies ·
+    Themes · Theses · Coverage. Also asserts that everything taken out of
+    the rail over successive passes is still a registered route, and that
+    every expected dict key exists post-registration."""
+    assert [k for k, _ in PRIMARY_NAV] == [
+        "dashboard", "daily_news", "companies", "theme_index", "themes",
+    ]
+    # Display labels only — every route key above is the one it has
+    # always been. "dashboard" -> "Today", "daily_news" -> "Feed"
+    # (internally still Daily News), and "themes" -> "Theses" (the
+    # curated research narratives, user-facing "Research Theses" since
+    # that page was written, shortened to fit the rail).
+    assert [label for _, label in PRIMARY_NAV] == [
+        "Today", "Feed", "Companies", "Themes", "Theses",
+    ]
     assert [k for k, _ in SYSTEM_NAV] == ["coverage"]
-    assert [label for _, label in SYSTEM_NAV] == ["Methodology & Coverage"]
-    # Beta UI polish pass (design/DECISIONS.md): "themes" moved back out
-    # of PRIMARY_NAV into here — the public Themes index has no content-
-    # readiness gate of its own, so it's unlinked from the sidebar until
-    # there's enough published content for a beta launch. Its route,
-    # data, repository, and the separate internal authoring workflow are
-    # unaffected (see src/ui/pages/themes_research.py's own render()
-    # guard for what a non-admin direct visit sees instead). The legacy
-    # demo ticker/theme/subtheme browser that used to occupy this slot,
-    # and Watchlists/Research (canned-demo-answer chat)/Company, were
-    # removed entirely (reader-facing data-integrity pass, design/
-    # DECISIONS.md) rather than kept as hidden routes — none had any
-    # live real data of their own.
-    assert [k for k, _ in HIDDEN_FROM_NAV] == ["signals", "methodology", "about", "themes"]
+    assert [label for _, label in SYSTEM_NAV] == ["Coverage"]
+
+    # The two route keys whose labels are one letter apart in meaning and
+    # must never be swapped: "theme_index" is the content-theme TAG
+    # TAXONOMY (src/ui/pages/theme_index.py, five slugs), "themes" is the
+    # curated Research Theses (src/ui/pages/themes_research.py). See
+    # src/logic/theme_taxonomy.py's docstring for the naming split.
+    assert dict(PRIMARY_NAV)["theme_index"] == "Themes"
+    assert dict(PRIMARY_NAV)["themes"] == "Theses"
+
+    # Filings (radar_inbox) moved out of the rail in item 1 — the
+    # six-item nav has no slot for it, and item 2 is what merges its
+    # filings into the Feed. It stays a fully registered route reachable
+    # by direct URL and by the command palette's "Open Filings" action.
+    # If item 2 is ever abandoned, put it back in PRIMARY_NAV rather than
+    # leaving the app with no path to the filing list.
+    assert [k for k, _ in HIDDEN_FROM_NAV] == ["radar_inbox", "signals", "methodology", "about"]
+    assert [label for k, label in HIDDEN_FROM_NAV if k == "radar_inbox"] == ["Filings"]
     # Product-naming separation (design/DECISIONS.md): "Signals" (the
     # Radar-derived concept, route key "signals") renamed to "Radar
-    # Signals" once Daily News's PRIMARY_NAV entry above claimed the bare
-    # "Signals" label for its own, unrelated feed.
+    # Signals" once Daily News claimed the bare "Signals" label. That
+    # label is now "Feed", and "Radar Signals" is unchanged.
     assert [label for k, label in HIDDEN_FROM_NAV if k == "signals"] == ["Radar Signals"]
 
     _sign_in_as(monkeypatch)

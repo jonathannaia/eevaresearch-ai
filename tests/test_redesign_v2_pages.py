@@ -276,9 +276,11 @@ class _ThemeRepo:
 def _run_theses(monkeypatch, repo, tracked=()) -> AppTest:
     monkeypatch.setattr(themes_research.backend_factory, "get_theme_repository", lambda settings: repo)
     monkeypatch.setattr(themes_research, "get_tracked_companies", lambda: tuple(tracked))
+    # No _has_published_themes patch any more: that gate is gone (UI
+    # redesign item 1 made Theses a static nav item), so the rail draws
+    # without asking the repository whether anything is published.
     with patch("src.ui.ui._nav_badge_counts", return_value={}), \
-         patch("src.ui.ui._latest_filings_refresh_label", return_value=None), \
-         patch("src.ui.ui._has_published_themes", return_value=True):
+         patch("src.ui.ui._latest_filings_refresh_label", return_value=None):
         at = AppTest.from_file(str(_THESES), default_timeout=15)
         at.run()
     assert not at.exception, at.exception

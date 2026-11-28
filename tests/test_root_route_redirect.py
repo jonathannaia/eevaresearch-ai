@@ -47,8 +47,17 @@ DEEP_ROUTES = {
     "dashboard": "dashboard",
     "radar_inbox": "radar-inbox",
     "daily_news": "daily-news",
+    "companies": "companies",
+    # UI redesign item 1 deliberately moved these two, the one url_path
+    # change in the app's history of this table: "theme_index" (the new
+    # content-theme tag index) took /themes, and "themes" (the curated
+    # Research Theses page, unchanged) moved to /theses so that both
+    # labels match their own URL. See app.py's _URL_PATHS comment for
+    # the bookmark cost. Everything else in this table is still pinned
+    # against moving.
+    "theme_index": "themes",
+    "themes": "theses",
     "coverage": "coverage",
-    "themes": "themes",
     "signals": "signals",
     "methodology": "methodology",
     "about": "about",
@@ -171,7 +180,9 @@ def test_the_sidebar_dashboard_link_href_is_not_empty(monkeypatch):
     """href="" resolves to the current URL, so an empty one does not fail
     loudly -- it silently strands the reader on the page they are on."""
     at = _run_app(monkeypatch)
-    hrefs = _links_labelled(at, "Dashboard")
+    # Labelled "Today" since UI redesign item 1; the route key and
+    # url_path are both still "dashboard", which is what this guards.
+    hrefs = _links_labelled(at, "Today")
     assert hrefs, "no sidebar Dashboard link rendered"
     assert all(href == "dashboard" for href in hrefs), hrefs
 
@@ -361,7 +372,7 @@ def test_the_active_marker_is_never_keyed_off_the_default_page(monkeypatch):
     rendered href -- since the frontend's matching itself lives in the
     compiled bundle."""
     at = _run_app(monkeypatch)
-    assert _links_labelled(at, "Dashboard") == ["dashboard"]
+    assert _links_labelled(at, "Today") == ["dashboard"]
 
 
 # --- 8. nothing points back at either redirect ----------------------------------------

@@ -107,18 +107,25 @@ def test_brand_block_renders_first_at_the_sidebar_top():
     assert wordmark_links or "er-rail-word" in brand_block_values
 
 
-def test_search_trigger_is_compact_with_an_accessible_tooltip_and_reaches_the_real_search():
+def test_search_trigger_is_a_full_width_search_box_and_reaches_the_real_search():
     at = AppTest.from_file(str(HARNESS_DIR / "sidebar_rail.py"), default_timeout=10)
     at.run()
     assert not at.exception
     search_buttons = [b for b in at.sidebar.get("button") if b.key == "cmdk-trigger"]
     assert len(search_buttons) == 1, "expected exactly one search trigger in the sidebar"
     button = search_buttons[0]
-    # Icon-only (Material Symbols shorthand, not the spelled-out "Search…
-    # ⌘K" label default rendering uses elsewhere) — the accessible label/
-    # tooltip an icon-only control needs comes from `help`, not the label.
-    assert button.label == ":material/search:"
-    assert button.help == "Search (⌘K)"
+    # UI redesign item 1: no longer the 34px icon-only button that sat in
+    # the brand row (compact=True). It is a full-width row of its own
+    # below the brand, spelling out what it searches — the palette now
+    # indexes every tracked company by name, ticker and native name — and
+    # the ⌘K hint, exactly as design/ui-redesign/main-dashboard.html's
+    # rail shows it. assets/styles.css gives it the input-like box
+    # treatment; it is still a real st.button because the dialog and the
+    # global ⌘K listener both key off it.
+    assert button.label == "Ticker or company    ⌘K"
+    # No `help` tooltip: the label says it in full now, which an
+    # icon-only control could not.
+    assert not button.help
     # Same widget key as every other rendering of this trigger
     # (src/ui/components/command_palette.py's own PALETTE_TRIGGER_KEY) —
     # proof this is the identical existing search mechanism (same button,
@@ -154,14 +161,17 @@ def test_account_control_is_present_and_rendered_after_navigation():
     # popover's own (unset) key, not its container's.
 
     # "Rendered after navigation": the account block's own wrapper div
-    # must come after the Workspace/System nav group labels in source
-    # order, not interleaved with or before them.
+    # must come after every nav destination in source order, not
+    # interleaved with or before them. The "Workspace"/"System" group
+    # labels this used to anchor on are gone (UI redesign item 1 renders
+    # one flat six-item list), so anchor on the brand block at the top
+    # and on the account block being last instead.
     sidebar_markdown_values = [m.value for m in at.sidebar.get("markdown")]
-    workspace_idx = sidebar_markdown_values.index('<div class="er-rail-group-label">Workspace</div>')
-    system_idx = sidebar_markdown_values.index('<div class="er-rail-group-label">System</div>')
+    assert not any("er-rail-group-label" in m for m in sidebar_markdown_values)
+    brand_idx = sidebar_markdown_values.index('<div class="er-rail-brand">')
     account_idx = sidebar_markdown_values.index('<div class="er-rail-account">')
-    assert workspace_idx < account_idx
-    assert system_idx < account_idx
+    assert brand_idx < account_idx
+    assert account_idx == len(sidebar_markdown_values) - 2, sidebar_markdown_values[-4:]
 
 
 def test_account_control_shows_not_signed_in_when_no_user_session():
