@@ -345,3 +345,42 @@ def test_native_theme_fonts_match_the_stylesheet_stacks():
     assert 'font = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=Inter:' in _CONFIG_TEXT
     assert 'headingFont = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:' in _CONFIG_TEXT
     assert 'codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:' in _CONFIG_TEXT
+
+
+def test_the_nav_count_badge_is_pinned_to_its_own_row():
+    """Live bug this guards: the badge was positioned by absolutely
+    positioning the stMarkdown inside the nav row. Streamlit gives
+    stElementContainer a position (and a transform) of its own, so the
+    badge anchored to that container instead of the row — it rendered at
+    the BOTTOM of its row, visually beside the NEXT item, and kept the
+    element container in the flow, making badged rows 48px tall against
+    33px. In production "14" (Feed's High Signals) read as a count on
+    Companies and "2" (published Theses) as a count on Coverage.
+
+    The contract now: the element container is taken OUT of the flow and
+    stretched over the row, and the badge SPAN does its own centring —
+    Streamlit does not style that span, so top/transform behave there.
+    """
+    container = _rule(
+        r'\[class\*="st-key-navitem-"\] \[data-testid="stElementContainer"\]:has\(\.er-rail-count\)'
+    )
+    assert "position: absolute" in container
+    for edge in ("top: 0", "bottom: 0"):
+        assert edge in container, edge
+
+    badge = _rule(r'\[class\*="st-key-navitem-"\] \.er-rail-count')
+    assert "position: absolute" in badge
+    assert "top: 50%" in badge and "translateY(-50%)" in badge
+
+    # The old approach must not come back: positioning the stMarkdown is
+    # what anchored the badge to the wrong element.
+    markdown = _rule(r'\[class\*="st-key-navitem-"\] \[data-testid="stMarkdown"\]')
+    assert "position: static" in markdown
+    assert "position: absolute" not in markdown
+
+
+def test_a_two_digit_count_cannot_wrap():
+    """The badge shrink-wraps to the space left of the rail's edge now
+    that it is absolutely positioned, so "14" rendered as one digit per
+    line until nowrap was added."""
+    assert "white-space: nowrap" in _rule(r"\.er-rail-count")
