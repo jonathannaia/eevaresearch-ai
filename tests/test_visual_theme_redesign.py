@@ -265,11 +265,14 @@ def test_cards_step_their_border_up_on_hover_without_a_shadow():
 _CONFIG_TEXT = (REPO_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
 
 
-def test_font_families_are_ibm_plex_with_source_serif_and_the_noto_serif_kr_fallback():
+def test_font_families_are_inter_jetbrains_mono_and_source_serif_with_the_cjk_fallbacks():
+    """The three families the mockups specify, plus the CJK families they
+    do not mention and the app cannot do without — see the @import
+    comment in assets/styles.css."""
     imports = re.findall(r"@import url\('([^']+)'\)", _CSS)
     assert len(imports) == 1
     url = imports[0]
-    for family in ("family=IBM+Plex+Sans:wght@400;500;600", "family=IBM+Plex+Mono:wght@400;500",
+    for family in ("family=Inter:wght@400;500;600;700", "family=JetBrains+Mono:wght@400;500",
                    "family=IBM+Plex+Sans+KR:wght@400;500;600", "family=IBM+Plex+Sans+JP:wght@400;500;600",
                    "family=Source+Serif+4:opsz,wght@8..60,400;8..60,600", "family=Noto+Serif+KR:wght@400;600"):
         assert family in url, family
@@ -278,9 +281,13 @@ def test_font_families_are_ibm_plex_with_source_serif_and_the_noto_serif_kr_fall
 
 
 def test_role_stacks_put_the_right_face_first_and_keep_cjk_fallbacks():
-    assert '--font-ui: "IBM Plex Sans", "IBM Plex Sans KR", "IBM Plex Sans JP",' in _CSS
-    assert '--font-ui-ja: "IBM Plex Sans", "IBM Plex Sans JP", "IBM Plex Sans KR",' in _CSS
-    assert '--font-mono: "IBM Plex Mono",' in _CSS
+    """Inter and JetBrains Mono carry no Hangul or kana at all, so a
+    stack that names only the Latin face silently drops every Korean and
+    Japanese company name, filing title and excerpt onto an OS default.
+    Every stack must still name its CJK fallback."""
+    assert '--font-ui: "Inter", "IBM Plex Sans KR", "IBM Plex Sans JP",' in _CSS
+    assert '--font-ui-ja: "Inter", "IBM Plex Sans JP", "IBM Plex Sans KR",' in _CSS
+    assert '--font-mono: "JetBrains Mono", "IBM Plex Sans KR", "IBM Plex Sans JP",' in _CSS
     assert '--font-serif: "Source Serif 4", "Noto Serif KR",' in _CSS
     assert '--font-serif-ja: "Source Serif 4",' in _CSS
 
@@ -329,6 +336,6 @@ def test_serif_is_reserved_for_verbatim_excerpts_and_thesis_type():
 
 
 def test_native_theme_fonts_match_the_stylesheet_stacks():
-    assert 'font = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:' in _CONFIG_TEXT
-    assert 'headingFont = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:' in _CONFIG_TEXT
-    assert 'codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:' in _CONFIG_TEXT
+    assert 'font = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=Inter:' in _CONFIG_TEXT
+    assert 'headingFont = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:' in _CONFIG_TEXT
+    assert 'codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:' in _CONFIG_TEXT

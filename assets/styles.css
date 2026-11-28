@@ -23,14 +23,21 @@
      --*-tint                 derived with color-mix() from the tokens
                               above, never given colors of their own.
    No gradients, glows, or theme-transition animations anywhere. */
-/* Typography: IBM Plex Sans (UI and metadata) with IBM Plex Sans KR / JP
-   for Korean and Japanese UI text, IBM Plex Mono (timestamps, tickers,
-   filing codes, receipt numbers, counts, uppercase labels), Source Serif 4
-   (verbatim excerpts, thesis titles, thesis key questions) with Noto Serif
-   KR as the Korean excerpt fallback. Google Fonts serves the KR/JP families
-   as unicode-range slices, so a browser downloads only the slices whose
-   glyphs actually appear on the page. */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Noto+Serif+KR:wght@400;600&display=swap');
+/* Typography (UI redesign): Inter (UI and metadata), JetBrains Mono
+   (timestamps, tickers, filing codes, receipt numbers, counts, uppercase
+   labels) and Source Serif 4 (verbatim excerpts, thesis titles, thesis
+   key questions) — the three families the mockups specify.
+
+   IBM Plex Sans KR / JP and Noto Serif KR STAY, as fallbacks only.
+   Neither Inter nor JetBrains Mono ships a single Hangul or kana glyph,
+   and this app puts Korean and Japanese company names, filing titles and
+   verbatim excerpts on nearly every page; without these families named
+   after the Latin one, every one of them would fall back to whatever the
+   OS happened to pick. Google Fonts serves the KR/JP families as
+   unicode-range slices, so a browser downloads only the slices whose
+   glyphs actually appear on the page — naming them costs a Latin-only
+   page nothing. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Noto+Serif+KR:wght@400;600&display=swap');
 
 /* Non-color tokens. Color tokens: src/ui/theme_tokens.py. */
 :root {
@@ -40,9 +47,9 @@
     /* Hangul falls through Plex Sans to Plex Sans KR; Japanese text
        (lang="ja") swaps to the JP-first stack so kanji take Japanese
        glyph forms rather than the KR font's. */
-    --font-ui: "IBM Plex Sans", "IBM Plex Sans KR", "IBM Plex Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-ui-ja: "IBM Plex Sans", "IBM Plex Sans JP", "IBM Plex Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "IBM Plex Mono", "IBM Plex Sans KR", "IBM Plex Sans JP", "SFMono-Regular", Menlo, monospace;
+    --font-ui: "Inter", "IBM Plex Sans KR", "IBM Plex Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui-ja: "Inter", "IBM Plex Sans JP", "IBM Plex Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", "IBM Plex Sans KR", "IBM Plex Sans JP", "SFMono-Regular", Menlo, monospace;
     --font-serif: "Source Serif 4", "Noto Serif KR", Georgia, serif;
     --font-serif-ja: "Source Serif 4", "Hiragino Mincho ProN", "Yu Mincho", "IBM Plex Sans JP", Georgia, serif;
     /* Type scale fixed points. */
@@ -315,7 +322,11 @@ a:hover { color: var(--link-hover); }
    status tint; never an evidence hue. */
 .er-status-tag.er-tag-neutral { background: var(--surface-chip); color: var(--text-secondary); }
 .er-status-tag.er-tag-info { background: var(--selected-bg); color: var(--text); border: 1px solid var(--selected-ring); }
-.er-status-tag.er-tag-watchlist,
+/* The Early tier now has a colour of its own (UI redesign): it used to
+   render in the neutral chip style, which left High as the only tier a
+   reader could pick out at a glance — the mockups give Early its own
+   blue. "Attention" is a different badge and keeps the neutral style. */
+.er-status-tag.er-tag-watchlist { background: var(--early-bg); color: var(--early-text); }
 .er-status-tag.er-tag-attention { background: var(--surface-chip); color: var(--text); border: 1px solid var(--border-strong); }
 .er-status-tag.er-tag-high-signal { background: var(--high-signal-bg); color: var(--high-signal-text); }
 .er-status-tag.er-tag-live { background: var(--surface-chip); color: var(--text); }
