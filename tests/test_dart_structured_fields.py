@@ -14,6 +14,8 @@ from decimal import Decimal
 import pytest
 
 from src.data_access.daily_news import dart_structured_fields as D
+from src.data_access.daily_news.filing_signal_tiers import tier_for_structured_facts
+from src.models.daily_news_models import NewsMaterialityTier
 
 CROATIA = (
     "한화에어로스페이스/단일판매·공급계약 체결(자율공시)/(2026.09.11)단일판매·공급계약 체결(자율공시) "
@@ -339,3 +341,107 @@ def test_a_label_value_template_still_wins_over_the_table_reader():
     is both is never read as the table."""
     facts = D.parse_structured_fields(CROATIA)
     assert facts.template == D.SUPPLY_CONTRACT
+
+
+# ============================================================
+# Operating profit
+# ============================================================
+
+DOOSAN_LOSS = (
+    "두산로보틱스/연결재무제표기준영업(잠정)실적(공정공시)/(2026.10.30) 1. 연결실적내용 단위 : 백만원, % "
+    "매출액 당해실적 16,175 10,167 59.1 - 10,167 59.1 - 누계실적 39,000 "
+    "영업이익 당해실적 -13,404 -14,417 7.0 - -15,265 12.2 - 누계실적 -39,891"
+)
+
+
+def test_operating_profit_is_read_with_the_same_contract_as_revenue():
+    facts = D.parse_structured_fields(HYNIX_RESULTS)
+    assert facts.operating_profit_won == 60_542_608 * 1_000_000
+    assert facts.operating_profit_yoy == Decimal("557.2")
+    assert D.structured_headline("SK Hynix", facts) == (
+        "SK Hynix — ₩79.3tn provisional revenue (+256.8% year on year), "
+        "₩60.5tn operating profit (+557.2%)"
+    )
+
+
+def test_a_negative_operating_result_is_named_a_loss_and_loses_its_percentage():
+    """두산로보틱스 filed -13,404 for the quarter against a 12.2 change.
+    "+12.2%" beside a loss cannot be read without the filing's own sign
+    convention, and "₩-13.4bn operating profit" is worse."""
+    facts = D.parse_structured_fields(DOOSAN_LOSS)
+    assert facts.operating_profit_won == -13_404 * 1_000_000
+    headline = D.structured_headline("Doosan Robotics Inc.", facts)
+    assert headline.endswith("₩13.4bn operating loss")
+    assert "12.2" not in headline
+
+
+def test_a_missing_operating_row_never_costs_the_revenue_figure():
+    """The excerpt is capped and this row sits below the revenue one,
+    so it is the first thing a cap removes."""
+    revenue_only = HYNIX_RESULTS.split("영업이익")[0]
+    facts = D.parse_structured_fields(revenue_only)
+    assert facts.amount_won == 79_318_746 * 1_000_000
+    assert facts.operating_profit_won is None
+    assert "operating" not in D.structured_headline("SK Hynix", facts)
+
+
+# ============================================================
+# Tiers the filing's own numbers decide
+# ============================================================
+
+def _facts(template, **kw):
+    return D.StructuredFilingFacts(template=template, **kw)
+
+
+@pytest.mark.parametrize("amount,expected", [
+    (15_000_000_000_000, NewsMaterialityTier.HIGH_SIGNAL),   # Samsung ₩15.0tn
+    (40_000_000_000_000, NewsMaterialityTier.HIGH_SIGNAL),   # SK Hynix ₩40.0tn
+    (149_600_000_000, NewsMaterialityTier.WATCHLIST),        # Hanwha ₩149.6bn
+])
+def test_a_buyback_is_tiered_on_what_it_costs(amount, expected):
+    assert tier_for_structured_facts(_facts(D.TREASURY_ACQUISITION, amount_won=amount)) is expected
+
+
+@pytest.mark.parametrize("amount,expected", [
+    (1_134_980_000, NewsMaterialityTier.BACKGROUND),         # Samsung ₩1.1bn
+    (122_590_000, NewsMaterialityTier.BACKGROUND),           # SK Hynix ₩122.6m
+    (5_000_000_000_000, NewsMaterialityTier.WATCHLIST),
+])
+def test_a_disposal_starts_at_background(amount, expected):
+    """The issuer selling its own shares back into the market is
+    routine at any ordinary size."""
+    assert tier_for_structured_facts(_facts(D.TREASURY_DISPOSAL, amount_won=amount)) is expected
+
+
+def test_a_treasury_filing_that_withheld_its_amount_is_left_to_the_category():
+    """A rule that cannot be evaluated must not quietly pick a side."""
+    assert tier_for_structured_facts(_facts(D.TREASURY_ACQUISITION)) is None
+
+
+def test_a_dividend_is_early_unless_the_filing_calls_it_special():
+    assert tier_for_structured_facts(
+        D.parse_structured_fields(DIVIDEND)
+    ) is NewsMaterialityTier.WATCHLIST
+
+
+def test_no_dividend_in_this_corpus_declares_itself_special():
+    """Samsung's ₩4,601-per-share dividend is special against its own
+    ₩374 quarterly, and the filing still says 분기배당. Detecting that
+    means comparing an issuer against its own previous filing, which
+    is not a field-table question — so this asserts the gap rather
+    than papering over it."""
+    assert D.parse_structured_fields(DIVIDEND).kind == "분기배당"
+    assert not D.parse_structured_fields(DIVIDEND).is_special_dividend
+
+
+def test_provisional_results_are_always_high():
+    assert tier_for_structured_facts(
+        _facts(D.PROVISIONAL_RESULTS, amount_won=1)
+    ) is NewsMaterialityTier.HIGH_SIGNAL
+
+
+@pytest.mark.parametrize("template", [D.SUPPLY_CONTRACT, D.FACILITY_INVESTMENT])
+def test_the_two_shipped_templates_keep_their_category_tier(template):
+    """Nobody asked for those to move, and a threshold nobody has
+    reviewed is worse than a consistent rule."""
+    assert tier_for_structured_facts(_facts(template, amount_won=10**15)) is None

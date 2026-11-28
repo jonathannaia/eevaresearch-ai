@@ -25,6 +25,10 @@ from collections import Counter
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import dart_structured_fields as D
+from src.data_access.daily_news.filing_signal_tiers import (
+    tier_for_filing_category,
+    tier_for_structured_facts,
+)
 
 _SOURCE = "OpenDART / DART"
 
@@ -76,8 +80,14 @@ def main(argv: list[str] | None = None) -> int:
     shown = [r for r in rows if r[2] is not None] if args.with_headline else rows
     if args.limit:
         shown = shown[: args.limit]
-    for i, (filing, facts, headline, text) in enumerate(shown, 1):
+    for i, (filing, facts, headline, text, candidate) in enumerate(shown, 1):
+        structured_tier = tier_for_structured_facts(facts)
+        tier = structured_tier or tier_for_filing_category(
+            next((r.split(":", 1)[0] for r in candidate.matched_rules if ":" in r), ""),
+        )
         print(f"--- [{i}] {filing.corp_name} / {filing.rcept_dt} / {filing.rcept_no}")
+        print(f"    tier:       {tier.value if tier else 'NOT PROJECTED'}"
+              f"{'  (from the filing\'s own figures)' if structured_tier else '  (document type)'}")
         print(f"    today:      {(filing.report_nm or '')!r}")
         print(f"    structured: {headline!r}")
         if facts is not None:

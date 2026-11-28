@@ -415,9 +415,10 @@ def test_raw_xbrl_is_never_shown_as_a_summary():
 
 
 def _summary(filing, **kw):
-    from src.data_access.daily_news.filing_signal_bridge import _card_excerpt
+    from src.data_access.daily_news.filing_signal_bridge import _card_excerpt, _dart_facts
 
     kw.setdefault("excerpt", None)
+    kw.setdefault("facts", _dart_facts(filing, kw.get("excerpt")))
     kw.setdefault("excerpt_translated", None)
     kw.setdefault("headline", "Some headline")
     kw.setdefault("headline_sentence", None)
@@ -487,9 +488,13 @@ _CROATIA = (
 def test_a_dart_field_table_beats_the_curated_document_type():
     """"Supply or Sales Contract — 단일판매·공급계약체결" says what KIND
     of filing this is. The field table says what happened."""
+    from src.data_access.daily_news import dart_structured_fields
     from src.data_access.daily_news.filing_signal_bridge import _structured_dart_headline
 
-    result = _structured_dart_headline("Hanwha Aerospace Co., Ltd.", _CROATIA)
+    result = _structured_dart_headline(
+        "Hanwha Aerospace Co., Ltd.",
+        dart_structured_fields.parse_structured_fields(_CROATIA),
+    )
     assert result is not None
     assert result.provenance == "structured_fields"
     assert result.headline == (
@@ -499,9 +504,13 @@ def test_a_dart_field_table_beats_the_curated_document_type():
 
 
 def test_a_dart_filing_with_no_field_table_still_gets_the_curated_phrase():
+    from src.data_access.daily_news import dart_structured_fields
     from src.data_access.daily_news.filing_signal_bridge import _structured_dart_headline
 
-    assert _structured_dart_headline("LG Innotek Co., Ltd.", "중대재해 발생 장소 사외기숙사") is None
+    assert _structured_dart_headline(
+        "LG Innotek Co., Ltd.",
+        dart_structured_fields.parse_structured_fields("중대재해 발생 장소 사외기숙사"),
+    ) is None
 
 
 def test_the_exact_filed_figure_reaches_the_card_without_any_translation():

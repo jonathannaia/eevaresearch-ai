@@ -55,6 +55,9 @@ _AMENDMENT_MARKERS: tuple[str, ...] = (
     "[\uae30\uc7ac\uc815\uc815]",     # [기재정정]
 )
 
+#: 특별배당 — the marker a filing uses to call a dividend special.
+_SPECIAL_DIVIDEND = "\ud2b9\ubcc4"
+
 SUPPLY_CONTRACT = "supply_contract"
 FACILITY_INVESTMENT = "facility_investment"
 CASH_DIVIDEND = "cash_dividend"
@@ -171,10 +174,13 @@ class StructuredFilingFacts:
     "we did not look"."""
 
     template: str
+    kind: str | None = None
     amount_won: int | None = None
     ratio_percent: Decimal | None = None
     counterparty: str | None = None
     per_share_won: int | None = None
+    operating_profit_won: int | None = None
+    operating_profit_yoy: Decimal | None = None
     record_date: str | None = None
     shares: int | None = None
     detail: str | None = None
@@ -190,6 +196,19 @@ class StructuredFilingFacts:
     @property
     def ratio_label(self) -> str:
         return RATIO_LABELS[self.template]
+
+    @property
+    def is_special_dividend(self) -> bool:
+        """True when the filing itself calls this a special dividend.
+
+        Currently never true in this corpus: every dividend filing in
+        the store declares 배당구분 분기배당 (quarterly), including
+        Samsung's ₩4,601-per-share one, which a reader would plainly
+        call special against its own ₩374 quarterly. The filing does
+        not say so, and this module does not infer it — comparing an
+        issuer's dividend against its own previous filing is a
+        cross-filing question, not a field-table one."""
+        return self.template == CASH_DIVIDEND and _SPECIAL_DIVIDEND in (self.kind or "")
 
     @property
     def has_headline_numbers(self) -> bool:
@@ -341,6 +360,7 @@ def parse_structured_fields(excerpt: str | None) -> StructuredFilingFacts | None
     shares_text = numeric("shares")
     return StructuredFilingFacts(
         template=template,
+        kind=present("kind"),
         amount_won=_as_int(amount_text) if amount_text else None,
         ratio_percent=_as_decimal(ratio_text) if ratio_text else None,
         per_share_won=_as_int(per_share_text) if per_share_text else None,
@@ -531,6 +551,22 @@ def structured_headline(company: str, facts: StructuredFilingFacts) -> str | Non
     elif facts.amount_won is None and "amount" in facts.withheld:
         lead = f"{lead} ({_WITHHELD_NOTES[facts.template]})"
 
+    if facts.operating_profit_won is not None:
+        if facts.operating_profit_won < 0:
+            # A percentage change on a loss is ambiguous without the
+            # filing's own sign convention — 두산로보틱스 filed "12.2"
+            # against a loss that narrowed — so the figure is named a
+            # loss and the percentage is left off.
+            lead = f"{lead}, {rounded_won(abs(facts.operating_profit_won))} operating loss"
+        elif facts.operating_profit_yoy is not None:
+            sign = "+" if facts.operating_profit_yoy >= 0 else ""
+            lead = (
+                f"{lead}, {rounded_won(facts.operating_profit_won)} operating profit "
+                f"({sign}{facts.operating_profit_yoy}%)"
+            )
+        else:
+            lead = f"{lead}, {rounded_won(facts.operating_profit_won)} operating profit"
+
     return f"{company} — {lead}"
 
 
@@ -609,6 +645,7 @@ _RESULTS_TABLE_HEADING = "연결실적내용"      # 연결실적내용
 _RESULTS_UNIT_MILLIONS = "백만원"                        # 백만원
 _RESULTS_REVENUE_ROW = "매출액"                          # 매출액
 _RESULTS_THIS_PERIOD = "당해실적"                    # 당해실적
+_RESULTS_OPERATING_ROW = "\uc601\uc5c5\uc774\uc775"   # 영업이익
 _MILLION = 1_000_000
 
 
@@ -638,11 +675,40 @@ def parse_provisional_results(excerpt: str | None) -> StructuredFilingFacts | No
     if millions is None:
         return None
 
+    operating, operating_yoy = _operating_profit(text)
     return StructuredFilingFacts(
         template=PROVISIONAL_RESULTS,
         amount_won=millions * _MILLION,
         ratio_percent=_year_on_year_percent(text[marker + len(_RESULTS_THIS_PERIOD):]),
+        operating_profit_won=operating,
+        operating_profit_yoy=operating_yoy,
     )
+
+
+def _operating_profit(text: str) -> tuple[int | None, Decimal | None]:
+    """The 영업이익 row, read with the same contract as the revenue
+    row. (None, None) when the row is absent or truncated — the
+    excerpt is capped and this row sits below the revenue one, so it
+    is the first thing a cap removes. Revenue is never affected by
+    this returning nothing.
+
+    The figure is signed: 두산로보틱스 filed -13,404 for the quarter,
+    which is an operating LOSS, and dropping the sign would turn it
+    into a profit."""
+    row = text.find(_RESULTS_OPERATING_ROW)
+    if row < 0:
+        return None, None
+    marker = text.find(_RESULTS_THIS_PERIOD, row)
+    if marker < 0:
+        return None, None
+    rest = text[marker + len(_RESULTS_THIS_PERIOD):]
+    token = _first_numeric_token(rest)
+    if token is None or token in _WITHHELD_VALUES:
+        return None, None
+    millions = _as_int(token)
+    if millions is None:
+        return None, None
+    return millions * _MILLION, _year_on_year_percent(rest)
 
 
 #: this | prior quarter | QoQ% | swing flag | year-ago | YoY% | swing flag
