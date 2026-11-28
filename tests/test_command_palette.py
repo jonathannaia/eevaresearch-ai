@@ -66,15 +66,94 @@ def test_no_bare_signals_group_exists_anywhere_in_the_index():
     ))
     groups = {i["group"] for i in items}
     assert "Signals" not in groups
-    assert groups == {"Themes", "Radar Signals", "Actions", "Switch theme"}
+    # "Companies" is back (UI redesign item 1), and "Themes" is the real
+    # tag taxonomy rather than demo rows — see below.
+    assert groups == {"Companies", "Themes", "Radar Signals", "Actions", "Switch theme"}
 
 
-def test_themes_are_indexed_under_the_unchanged_themes_group():
-    items = command_palette._index(_ctx(themes=[_theme(name="My Theme")]))
-    theme_items = [i for i in items if i["label"] == "My Theme"]
-    assert len(theme_items) == 1
-    assert theme_items[0]["group"] == "Themes"
-    assert theme_items[0]["go"] == "themes"
+def test_the_themes_group_is_the_real_taxonomy_and_never_demo_rows():
+    """This group used to read ctx.theme_repository, which is
+    DemoThemeRepository (src/data_access/container.py) — demo data,
+    routed at the Research Theses page, which has nothing to do with it.
+    It now reads the registry-backed taxonomy and routes at the Themes
+    index, so a demo row can no longer reach the palette at all."""
+    from src.logic.theme_taxonomy import company_counts_by_theme, theme_display_name
+
+    # A demo theme named something unmistakable must NOT appear, even
+    # when the context supplies one.
+    items = command_palette._index(_ctx(themes=[_theme(name="A Demo Theme Row")]))
+    assert "A Demo Theme Row" not in [i["label"] for i in items]
+
+    theme_items = [i for i in items if i["group"] == "Themes"]
+    counts = company_counts_by_theme()
+    assert [i["label"] for i in theme_items] == [theme_display_name(s) for s in counts]
+    assert {i["go"] for i in theme_items} == {"theme_index"}
+    assert theme_items[0]["sub"] == f"{list(counts.values())[0]} companies"
+    # Nothing in the palette routes at the Research Theses page any more;
+    # indexing published theses is a separate capability.
+    assert "themes" not in {i["go"] for i in items}
+
+
+def test_every_tracked_company_is_searchable_by_name_and_by_ticker():
+    """UI redesign item 1: "⌘K/search by ticker or company". The index
+    reads the real issuer registry, and _matches() has to find a company
+    from either field."""
+    from src.config.issuer_registry import SEED_ISSUERS
+
+    items = command_palette._index(_ctx())
+    company_items = [i for i in items if i["group"] == "Companies"]
+    assert len(company_items) == len(SEED_ISSUERS)
+    assert [i["go"] for i in company_items] == ["companies"] * len(SEED_ISSUERS)
+
+    nvidia = next(i for i in company_items if i["label"] == "NVIDIA")
+    assert command_palette._matches(nvidia, "nvidia")
+    assert command_palette._matches(nvidia, "NVDA"), "ticker search must work"
+
+    # The 13 EDINET issuers carry a native name, which joins `sub` so a
+    # search in Japanese finds them too. Nothing is romanized: an issuer
+    # without a native name in the registry simply has none here.
+    with_native = [i for i in SEED_ISSUERS if i.native_name]
+    assert with_native
+    softbank = next(i for i in company_items if i["label"] == with_native[0].legal_name)
+    assert command_palette._matches(softbank, with_native[0].native_name)
+
+
+def test_the_filings_action_exists_while_filings_is_off_the_rail():
+    """radar_inbox left the sidebar in item 1 and is not merged into the
+    Feed until item 2, so this action is the one discoverable path to it
+    in the meantime. Remove it when the Feed actually carries filings —
+    until then it must stay."""
+    items = command_palette._index(_ctx())
+    filings = [i for i in items if i["go"] == "radar_inbox"]
+    assert len(filings) == 1
+    assert filings[0] == {"group": "Actions", "label": "Open Filings", "sub": "Radar filing list", "go": "radar_inbox"}
+
+
+def test_results_are_capped_per_group_so_no_group_is_pushed_out_of_sight():
+    """With 129 companies in the index, the former flat shown[:25] slice
+    filled the whole dialog with companies and hid Research Theses,
+    Radar Signals and every action whenever the query was empty."""
+    rows = [{"group": "Companies", "label": f"C{n}", "sub": "", "go": "companies"} for n in range(40)]
+    rows += [{"group": "Actions", "label": "Open Filings", "sub": "", "go": "radar_inbox"}]
+    rows += [{"group": "Switch theme", "label": "Switch theme: Dark", "sub": "", "go": "theme:dark"}]
+
+    capped = command_palette._capped_by_group(rows)
+    companies = [i for i in capped if i["group"] == "Companies" and i["go"]]
+    assert len(companies) == command_palette._PER_GROUP_LIMIT
+    # The held-back count is stated rather than silently dropped, and the
+    # marker carries no destination so it renders as text, not a button.
+    marker = next(i for i in capped if not i["go"])
+    assert marker["sub"] == f"+{40 - command_palette._PER_GROUP_LIMIT} more — narrow the search"
+    # Every other group survives the cap.
+    assert {"Actions", "Switch theme"} <= {i["group"] for i in capped}
+
+
+def test_theme_switch_commands_are_never_capped():
+    """They are commands, not search results: however many companies
+    match, the theme switcher stays reachable."""
+    rows = [{"group": "Switch theme", "label": f"Switch theme: {n}", "sub": "", "go": f"theme:{n}"} for n in range(20)]
+    capped = command_palette._capped_by_group(rows)
+    assert len(capped) == 20
 
 
 def test_index_always_includes_the_open_methodology_action():
@@ -82,12 +161,23 @@ def test_index_always_includes_the_open_methodology_action():
     assert {"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"} in items
 
 
-def test_empty_repositories_produce_only_the_static_action_and_theme_commands():
+def test_empty_repositories_produce_only_companies_actions_and_theme_commands():
+    """With no themes and no signals persisted, what remains is the
+    static registry-backed Companies group plus the fixed commands —
+    never an invented row."""
     items = command_palette._index(_ctx())
-    assert [i["label"] for i in items] == [
-        "Open Methodology", "Switch theme: System", "Switch theme: Dark", "Switch theme: Light",
+    from src.logic.theme_taxonomy import company_counts_by_theme, theme_display_name
+
+    non_company = [i["label"] for i in items if i["group"] != "Companies"]
+    non_company = [l for l in non_company if l not in
+                   {theme_display_name(s) for s in company_counts_by_theme()}]
+    assert non_company == [
+        "Open Filings", "Open Methodology",
+        "Switch theme: System", "Switch theme: Dark", "Switch theme: Light",
     ]
-    assert [i["go"] for i in items[1:]] == ["theme:system", "theme:dark", "theme:light"]
+    assert [i["go"] for i in items if i["go"].startswith("theme:")] == [
+        "theme:system", "theme:dark", "theme:light",
+    ]
 
 
 # --- _matches(): search should still find Radar Signals items by their new group name ---

@@ -980,6 +980,7 @@ a:hover { color: var(--link-hover); }
 .er-theme-memory { background: var(--cat-memory); }
 .er-theme-space { background: var(--cat-space); }
 .er-theme-photonics { background: var(--cat-photonics); }
+.er-theme-humanoids { background: var(--cat-humanoids); }
 /* Evidence bar — segments fill by real count; the track shows through
    when every count is zero. Context is a neutral fill, never text. */
 .er-evbar { display: flex; height: 6px; border-radius: 999px; background: var(--surface-chip); overflow: hidden; gap: 2px; }
@@ -1134,4 +1135,129 @@ table.er-table .er-mono { font-size: 0.8rem; }
    the generic :lang(ja) UI rule by source order. */
 .er-excerpt:lang(ja), .er-filing-native:lang(ja), .er-serif-title:lang(ja), .er-serif-question:lang(ja) {
     font-family: var(--font-serif-ja);
+}
+
+/* ---------- UI redesign item 1: rail search box, Companies index,
+     Themes index ----------
+   Colors come only from the existing semantic tokens (src/ui/
+   theme_tokens.py); tests/test_no_hardcoded_colors.py forbids a literal
+   here — which is also why the redesign brief's own dark palette and
+   type stack are NOT applied in this pass: that is one cross-cutting
+   change to every page in both themes at once, it belongs in
+   theme_tokens.py rather than in any rule below, and the mockups define
+   no Light values to derive the other theme from. */
+
+/* The rail search trigger, in its own full-width row under the brand
+   (render_palette_trigger() with compact=False, wrapped in the
+   st-key-rail-search container). Restyled from a button into a search
+   FIELD: left-aligned placeholder-weight text, input surface, input
+   border. It is still a real st.button — the dialog and the ⌘K listener
+   both need it to be — so this is appearance only. */
+.st-key-rail-search { margin: 0 0.25rem 0.25rem 0.25rem; }
+.st-key-rail-search [data-testid="stBaseButton-secondary"] {
+    background: var(--surface-input) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-muted) !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    font-weight: 400 !important;
+    padding: 0.4rem 0.6rem !important;
+    border-radius: var(--r-md) !important;
+}
+.st-key-rail-search [data-testid="stBaseButton-secondary"] p {
+    font-size: 0.8rem !important; font-weight: 400 !important;
+    white-space: pre; /* keeps the gap between the prompt and "⌘K" */
+}
+.st-key-rail-search [data-testid="stBaseButton-secondary"]:hover {
+    border-color: var(--accent) !important; color: var(--text-secondary) !important;
+    background: var(--surface-hover) !important;
+}
+
+/* Companies index (src/ui/pages/companies.py). A four-column grid per
+   row — identity | ticker | venue | themes — that collapses to a stacked
+   block under 640px, so 129 rows stay readable on a phone. */
+.er-company-list { display: flex; flex-direction: column; }
+.er-company-row {
+    display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1.4fr) auto minmax(0, 2fr);
+    gap: var(--space-4); align-items: center;
+    padding: 0.55rem 0.25rem; border-bottom: 1px solid var(--border-subtle);
+}
+.er-company-row:last-child { border-bottom: 0; }
+.er-company-name { color: var(--text); font-size: 0.9rem; line-height: 1.35; }
+/* The native legal name, smaller and secondary under the English one.
+   Serif to match the verbatim-source treatment elsewhere; the
+   :lang(ja) rule at the end of this file already swaps in the Japanese
+   serif stack for the runs cjk_html() tags. */
+.er-company-native {
+    font-family: var(--font-serif); font-size: 0.78rem; color: var(--text-muted);
+    line-height: 1.35; margin-top: 0.1rem;
+}
+.er-company-ticker {
+    font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-secondary);
+    display: flex; flex-direction: column; gap: 0.1rem;
+}
+.er-company-exchange { color: var(--text-muted); font-size: 0.7rem; letter-spacing: 0.04em; }
+.er-company-themes { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+.er-company-theme {
+    display: inline-flex; align-items: center; font-size: 0.74rem; color: var(--text-secondary);
+    white-space: nowrap;
+}
+@media (max-width: 640px) {
+    .er-company-row { grid-template-columns: 1fr; gap: var(--space-2); }
+    .er-company-themes { justify-content: flex-start; }
+}
+
+/* Themes index (src/ui/pages/theme_index.py). */
+.er-theme-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.er-theme-subthemes { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+.er-theme-companies {
+    display: flex; flex-wrap: wrap; column-gap: var(--space-4); row-gap: 0.3rem;
+    margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px solid var(--border-subtle);
+}
+.er-theme-company { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+.er-theme-company-native {
+    font-family: var(--font-serif); font-size: 0.74rem; color: var(--text-muted); margin-left: 0.3rem;
+}
+
+/* Command-palette result rows. Streamlit's secondary button centres its
+   label and paints a full card; a 129-company result list reads as a
+   stack of centred cards rather than as search results. Scoped to the
+   dialog's own result keys (cmdk-result-N, see
+   src/ui/components/command_palette.py), never a global button
+   override: left-aligned name, compact row height, no resting fill, and
+   the surface only on hover so the pointer still shows what it is on. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] {
+    justify-content: flex-start !important;
+    text-align: left !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    padding: 0.25rem 0.5rem !important;
+    min-height: 0 !important;
+}
+/* Streamlit nests the label several wrappers deep (button > div > span >
+   stMarkdownContainer > p), each of them shrink-wrapped and centred, so
+   left-aligning the button and the <p> alone leaves a 122px paragraph
+   floating in the middle of a full-width row. Every wrapper in that
+   chain has to stretch before the text can sit at the left edge. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] > div,
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] > div > span,
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] [data-testid="stMarkdownContainer"] {
+    width: 100% !important; justify-content: flex-start !important; text-align: left !important;
+}
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] p {
+    font-size: 0.85rem !important; font-weight: 400 !important;
+    text-align: left !important; width: 100% !important;
+}
+/* The first result stays bolded (the dialog marks it with **…**), which
+   is what "Open top result" acts on. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] p strong { font-weight: 600 !important; }
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"]:hover {
+    background: var(--surface-hover) !important; border-color: var(--border) !important;
+}
+/* The ticker · exchange column beside each result row, baseline-aligned
+   with the compact name button to its left. */
+.er-cmdk-sub {
+    text-align: right; font-family: var(--font-mono); font-size: 0.72rem;
+    color: var(--text-muted); padding-top: 0.3rem; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
 }

@@ -36,15 +36,12 @@ from src.data_access.daily_news.editorial_pipeline import (
     select_visible_editorial_stories_for_company,
 )
 from src.logic.formatting import fmt_datetime_local, fmt_time_local
+# One display-name map for the theme tag taxonomy, shared with the
+# Themes index page (src/ui/pages/theme_index.py) — this module used to
+# carry its own private copy of the same five labels.
+from src.logic.theme_taxonomy import theme_display_name
+from src.ui.components.tier_labels import tier_display_label
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
-
-_THEME_DISPLAY_NAMES: dict[str, str] = {
-    "ai-buildout": "AI Buildout",
-    "memory": "Memory",
-    "space": "Space",
-    "photonics": "Photonics",
-    "humanoids": "Humanoids",
-}
 
 _DEFAULT_BADGE_LABEL = "Market news"
 
@@ -64,7 +61,7 @@ _TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
 
 def _tier_badge_html(tier: NewsMaterialityTier) -> str:
     css_class = _TIER_BADGE_CLASS.get(tier, "er-tag-neutral")
-    return f'<span class="er-status-tag {css_class}">{tier.value}</span>'
+    return f'<span class="er-status-tag {css_class}">{tier_display_label(tier)}</span>'
 
 # Government / Public Sector Daily News lane (design/DECISIONS.md) —
 # badge label derived at render time from the story's own already-
@@ -89,9 +86,7 @@ def _esc(value: object) -> str:
 
 
 def _tag_chips_html(matched_companies: tuple[str, ...], matched_themes: tuple[str, ...]) -> str:
-    labels = list(matched_companies) + [
-        _THEME_DISPLAY_NAMES.get(slug, slug) for slug in matched_themes
-    ]
+    labels = list(matched_companies) + [theme_display_name(slug) for slug in matched_themes]
     chips = "".join(
         f'<span class="er-chip er-chip-inference" style="margin-right:0.4rem;">{_esc(label)}</span>'
         for label in labels
@@ -129,10 +124,6 @@ def get_editorial_stories_for_company(settings: Settings, company_name: str) -> 
 def badge_label(source_feed_id: str) -> str:
     """Public alias of the per-feed item-type label (e.g. "Market news")."""
     return _badge_label(source_feed_id)
-
-
-def theme_display_name(slug: str) -> str:
-    return _THEME_DISPLAY_NAMES.get(slug, slug)
 
 
 def render_editorial_card(story: EditorialStory, tier: NewsMaterialityTier | None = None) -> None:

@@ -136,6 +136,7 @@ from src.data_access.translation.deepl_provider import DeepLProvider
 from src.logic.daily_news_freshness import empty_feed_explanation
 from src.logic.daily_news_grouping import FeedSlot, group_feed_slots
 from src.logic.formatting import fmt_datetime_local, fmt_day_label, fmt_time_local, local_date, today_local
+from src.ui.components.tier_labels import tier_display_label
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier, NewsStory, NewsStoryStatus, SourceClass
 from src.ui import render_timing
 from src.ui.components.editorial_coverage import (
@@ -353,7 +354,7 @@ def _effective_tier(item: NewsStory | EditorialStory) -> NewsMaterialityTier:
 
 def _tier_badge_html(tier: NewsMaterialityTier) -> str:
     css_class = _TIER_BADGE_CLASS.get(tier, "er-tag-neutral")
-    return f'<span class="er-status-tag {css_class}">{tier.value}</span>'
+    return f'<span class="er-status-tag {css_class}">{tier_display_label(tier)}</span>'
 
 
 def _published_stories(settings: Settings) -> list[NewsStory]:

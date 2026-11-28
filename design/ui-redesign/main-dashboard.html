@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EevaResearch — Dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0E1013;font-family:Inter,system-ui,sans-serif;color:#E7E9EC}
+a{color:#E7E9EC;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 100vh; background: #0E1013">
+
+<nav aria-label="Main" style="flex: 1 1 200px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #23272E; background: #0B0D10; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<div style="width: 28px; height: 28px; border-radius: 7px; background: #13233A; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #F2F2EE">e</div>
+<span style="font-weight: 600; font-size: 15px">EevaResearch</span>
+</div>
+<label style="display: flex; align-items: center; gap: 8px; border: 1px solid #2A2F37; border-radius: 8px; padding: 8px 10px; background: #121418; color: #9AA1AC; font-size: 13px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+<input aria-label="Search companies or tickers" placeholder="Ticker or company" style="background: transparent; border: 0; outline: none; color: #E7E9EC; font: inherit; width: 100%">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #848B97">⌘K</span>
+</label>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<a href="Main.dc.html" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; background: #1A1E25; font-size: 14px; font-weight: 500">Today</a>
+<a href="Feed.dc.html" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; font-size: 14px; color: #B8BEC7">Feed<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #F5B66A">14 new</span></a>
+<a href="Company.dc.html" style="padding: 10px 12px; border-radius: 8px; font-size: 14px; color: #B8BEC7">Companies</a>
+<a href="#" style="padding: 10px 12px; border-radius: 8px; font-size: 14px; color: #B8BEC7">Themes</a>
+<a href="#" style="padding: 10px 12px; border-radius: 8px; font-size: 14px; color: #B8BEC7">Theses</a>
+<a href="#" style="padding: 10px 12px; border-radius: 8px; font-size: 14px; color: #B8BEC7">Coverage</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 0 12px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #848B97">MY WATCHLIST</span>
+<a href="Company.dc.html" style="font-size: 13px; color: #B8BEC7; display: flex; justify-content: space-between">NVIDIA<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #F5B66A">2</span></a>
+<a href="#" style="font-size: 13px; color: #B8BEC7; display: flex; justify-content: space-between">SK hynix<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #848B97">0</span></a>
+<a href="#" style="font-size: 13px; color: #B8BEC7; display: flex; justify-content: space-between">Tokyo Electron<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8DBDF5">1</span></a>
+<a href="#" style="font-size: 13px; color: #B8BEC7; display: flex; justify-content: space-between">Samsung Electronics<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #F5B66A">1</span></a>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px">
+
+<header style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; color: #848B97">MONDAY · NOV 23, 2026 · UPDATED 17:32 EST</span>
+<h1 style="margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em">What matters today</h1>
+<p style="margin: 0; color: #9AA1AC; font-size: 14px">5 high-signal events across your coverage · 14 new since your last visit</p>
+</div>
+<a href="Feed.dc.html" style="padding: 10px 16px; border-radius: 8px; background: {{accent}}; color: #0B0D10; font-weight: 600; font-size: 14px">Open full feed →</a>
+</header>
+
+<section aria-label="Top events" style="display: flex; flex-direction: column; border: 1px solid #23272E; border-radius: 12px; background: #121418; overflow: hidden">
+
+<article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #23272E">
+<div style="flex: 0 0 64px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #848B97; padding-top: 3px">NOV 23</div>
+<div style="flex: 1 1 480px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: rgba(240,163,74,0.14); color: #F5B66A">HIGH</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #2A2F37; color: #B8BEC7">FILING · 8-K ITEM 5.02</span>
+<span style="font-size: 12px; color: #848B97">AI Buildout</span>
+</div>
+<a href="Company.dc.html" style="font-size: 18px; font-weight: 600; line-height: 1.35">NVIDIA reinstates Jen-Hsun Huang as President and CEO, effective immediately</a>
+<p style="margin: 0; font-size: 14px; color: #9AA1AC; line-height: 1.5"><span style="color: #8DBDF5; font-family: 'JetBrains Mono', monospace; font-size: 11px">WHY IT MATTERS · INTERPRETATION</span>  Leadership change at the largest AI-compute supplier in your coverage. Korean memory names moved on the news.</p>
+</div>
+<div style="flex: 0 0 140px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px">
+<a href="Company.dc.html" style="font-weight: 600">NVDA</a>
+<span style="color: #848B97; font-size: 12px">SEC EDGAR</span>
+</div>
+</article>
+
+<article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #23272E">
+<div style="flex: 0 0 64px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #848B97; padding-top: 3px">NOV 23</div>
+<div style="flex: 1 1 480px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: rgba(240,163,74,0.14); color: #F5B66A">HIGH</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #2A2F37; color: #B8BEC7">FILING · 8-K 2.02 + 10-K</span>
+<span style="font-size: 12px; color: #848B97">Humanoids</span>
+</div>
+<a href="#" style="font-size: 18px; font-weight: 600; line-height: 1.35">Symbotic reports results for fiscal year ended September 26, 2026 and files annual report</a>
+</div>
+<div style="flex: 0 0 140px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px">
+<span style="font-weight: 600">SYM</span>
+<span style="color: #848B97; font-size: 12px">SEC EDGAR</span>
+</div>
+</article>
+
+<article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #23272E">
+<div style="flex: 0 0 64px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #848B97; padding-top: 3px">NOV 20</div>
+<div style="flex: 1 1 480px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: rgba(240,163,74,0.14); color: #F5B66A">HIGH</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #2A2F37; color: #B8BEC7">COMPANY RELEASE</span>
+<span style="font-size: 12px; color: #848B97">Memory</span>
+</div>
+<a href="#" style="font-size: 18px; font-weight: 600; line-height: 1.35">Samsung names Sang Joon Hwang head of its Memory business; Sangyeun Cho to lead System LSI</a>
+</div>
+<div style="flex: 0 0 140px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px">
+<span style="font-weight: 600">005930</span>
+<span style="color: #848B97; font-size: 12px">Samsung IR</span>
+</div>
+</article>
+
+<article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #23272E">
+<div style="flex: 0 0 64px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #848B97; padding-top: 3px">NOV 18</div>
+<div style="flex: 1 1 480px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: rgba(240,163,74,0.14); color: #F5B66A">HIGH</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #2A2F37; color: #B8BEC7">COMPANY RELEASE</span>
+<span style="font-size: 12px; color: #848B97">Humanoids</span>
+</div>
+<a href="#" style="font-size: 18px; font-weight: 600; line-height: 1.35">Rockwell Automation signs definitive agreement to acquire AGILOX</a>
+</div>
+<div style="flex: 0 0 140px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px">
+<span style="font-weight: 600">ROK</span>
+<span style="color: #848B97; font-size: 12px">Rockwell IR</span>
+</div>
+</article>
+
+<article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 24px">
+<div style="flex: 0 0 64px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #848B97; padding-top: 3px">NOV 17</div>
+<div style="flex: 1 1 480px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: rgba(240,163,74,0.14); color: #F5B66A">HIGH</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #2A2F37; color: #B8BEC7">COMPANY RELEASE</span>
+<span style="font-size: 12px; color: #848B97">AI Buildout</span>
+</div>
+<a href="Company.dc.html" style="font-size: 18px; font-weight: 600; line-height: 1.35">NVIDIA adds substrate capacity through new agreements with Kinsus and Samsung Electro-Mechanics</a>
+</div>
+<div style="flex: 0 0 140px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px">
+<a href="Company.dc.html" style="font-weight: 600">NVDA</a>
+<span style="color: #848B97; font-size: 12px">NVIDIA IR</span>
+</div>
+</article>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px">
+
+<section aria-label="Themes" style="border: 1px solid #23272E; border-radius: 12px; background: #121418; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Themes</h2>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #848B97">ITEMS · 14D</span>
+</div>
+<a href="#" style="display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid #1D2127">AI Buildout<span style="font-family: 'JetBrains Mono', monospace; color: #B8BEC7">116</span></a>
+<a href="#" style="display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid #1D2127">Space<span style="font-family: 'JetBrains Mono', monospace; color: #B8BEC7">19</span></a>
+<a href="#" style="display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid #1D2127">Humanoids<span style="font-family: 'JetBrains Mono', monospace; color: #B8BEC7">17</span></a>
+<a href="#" style="display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0">Memory<span style="font-family: 'JetBrains Mono', monospace; color: #B8BEC7">16</span></a>
+</section>
+
+<section aria-label="Active thesis" style="border: 1px solid #23272E; border-radius: 12px; background: #121418; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Active thesis</h2>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #848B97">SECOND-ORDER EFFECT</span>
+</div>
+<a href="#" style="font-size: 15px; font-weight: 500; line-height: 1.4">Japan semiconductor supply chain: buybacks alongside AI-driven capacity investment</a>
+<div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px">
+<div style="flex: 12; background: #2DBFA8"></div><div style="flex: 1; background: #F5B66A"></div><div style="flex: 5; background: #4A505A"></div>
+</div>
+<p style="margin: 0; font-size: 13px; color: #9AA1AC">12 supports · 1 mixed · 0 contradicts · 5 context</p>
+<p style="margin: 0; font-size: 13px; color: #F5B66A">1 new filing to review: Tokyo Electron shelf registration (Nov 20)</p>
+</section>
+
+<section aria-label="Coverage health" style="border: 1px solid #23272E; border-radius: 12px; background: #121418; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Coverage health</h2>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #848B97">REPORTING / TRACKED</span>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 14px"><span>SEC EDGAR · US</span><span style="font-family: 'JetBrains Mono', monospace; color: #2DBFA8">76 / 90</span></div>
+<div style="display: flex; justify-content: space-between; font-size: 14px"><span>DART · Korea</span><span style="font-family: 'JetBrains Mono', monospace; color: #2DBFA8">10 / 12</span></div>
+<div style="display: flex; justify-content: space-between; font-size: 14px"><span>EDINET · Japan</span><span style="font-family: 'JetBrains Mono', monospace; color: #F5B66A">1 / 27</span></div>
+<p style="margin: 0; font-size: 12px; color: #848B97">Gaps are shown, never hidden. Taiwan and China not yet connected.</p>
+</section>
+</div>
+
+<footer style="font-size: 12px; color: #848B97">Evidence-first research · Not investment advice</footer>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#2DBFA8","options":["#2DBFA8","#6AA8F0","#F5B66A"]},"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#2DBFA8' };
+}
+}
+</script>
+</body>
+</html>

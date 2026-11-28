@@ -45,7 +45,8 @@ LABELS: dict[ThemePreference, str] = {"system": "System", "dark": "Dark", "light
 # writing all of them means a later full load of any page already
 # agrees, and the current path is always written as well.
 ROUTE_PATHS: tuple[str, ...] = (
-    "/", "/dashboard", "/radar-inbox", "/daily-news", "/coverage", "/themes", "/signals", "/methodology", "/about",
+    "/", "/dashboard", "/radar-inbox", "/daily-news", "/companies", "/themes", "/theses", "/coverage",
+    "/signals", "/methodology", "/about",
     "/disclaimer", "/daily-news-admin", "/research-cases", "/theme-workspace", "/company-discovery-admin",
     "/verified-updates", "/admin-users", "/feedback", "/agent-review", "/home",
 )

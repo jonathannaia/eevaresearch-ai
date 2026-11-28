@@ -32,8 +32,8 @@ def _published_theme(title="Test theme", created_at="2026-09-14T00:00:00+00:00")
 
 class _FakeThemeRepo:
     """Minimal stand-in for ThemeRepositoryProtocol — only
-    list_published_themes() is ever called by the sidebar's own
-    _has_published_themes() check."""
+    list_published_themes() is ever called by the sidebar, now by
+    _published_theme_count() for the Theses count badge."""
 
     def __init__(self, published_themes=()):
         self._published_themes = tuple(published_themes)
@@ -65,19 +65,21 @@ def _run_to_dashboard(monkeypatch, published_themes=()) -> AppTest:
     )
     monkeypatch.delenv("EDGE_PRIVATE_BETA_ALLOWED_EMAILS", raising=False)
 
-    # Themes sidebar visibility (design/DECISIONS.md) is data-driven —
-    # every test in this file gets a deterministic, explicitly-controlled
-    # theme repository (default: zero published themes) rather than
+    # Every test in this file gets a deterministic, explicitly-controlled
+    # theme repository (default: zero published Theses) rather than
     # depending on whatever happens to be in the local data/cache/
-    # directory on disk. _has_published_themes() is st.cache_data-backed
-    # (process-wide, not per-test) — cleared before every run so one
-    # test's fake repository result can never leak into the next (same
-    # .clear()-before-use convention already established for
-    # _load_dashboard_snapshot elsewhere in this test suite).
+    # directory on disk. Since UI redesign item 1 this no longer decides
+    # whether the Theses nav item exists — it is a static PRIMARY_NAV
+    # entry now — only whether a count badge renders beside it.
+    # _published_theme_count() is st.cache_data-backed (process-wide, not
+    # per-test) — cleared before every run so one test's fake repository
+    # result can never leak into the next (same .clear()-before-use
+    # convention already established for _load_dashboard_snapshot
+    # elsewhere in this test suite).
     monkeypatch.setattr(
         ui_module.backend_factory, "get_theme_repository", lambda settings: _FakeThemeRepo(published_themes)
     )
-    ui_module._has_published_themes.clear()
+    ui_module._published_theme_count.clear()
 
     # First run of a fresh AppTest session lands on Home (show_sidebar=
     # False, per app.py) — a second run flips dashboard_is_default and
@@ -93,110 +95,72 @@ def _sidebar_page_links(at: AppTest):
     return list(at.sidebar.get("page_link"))
 
 
-def test_workspace_shows_exactly_dashboard_filings_signals(monkeypatch):
-    # Watchlists was removed entirely (reader-facing data-integrity
-    # pass, design/DECISIONS.md) — session-only, seeded from illustrative
-    # data, no live real data of its own. "Research Theses" is absent
-    # here because this test's default theme repository has zero
-    # published Theses — see
-    # test_themes_nav_item_appears_once_a_theme_is_published below for
-    # the positive case now that its visibility is data-driven, not a
-    # fixed removal.
+def test_the_rail_shows_exactly_the_six_redesign_destinations(monkeypatch):
+    """UI redesign item 1: Today · Feed · Companies · Themes · Theses ·
+    Coverage, and nothing else. Every label removed by an earlier pass
+    stays removed."""
     at = _run_to_dashboard(monkeypatch)
     labels = [pl.label for pl in _sidebar_page_links(at)]
-    for expected in ("Dashboard", "Filings", "Signals"):
-        assert expected in labels
-    assert "Watchlists" not in labels
-    assert "Research Theses" not in labels
+    nav = [l for l in labels if l not in {"EevaResearch", "Disclaimer"}]
+    assert nav == ["Today", "Feed", "Companies", "Themes", "Theses", "Coverage"]
+    for gone in ("Watchlists", "Research", "Theme Browser", "Radar Signals", "Dashboard", "Signals"):
+        assert gone not in labels, gone
 
 
-def test_filings_label_is_filings_not_radar_or_radar_inbox_in_the_sidebar(monkeypatch):
+def test_theses_is_always_in_the_rail_even_with_nothing_published(monkeypatch):
+    """The former _has_published_themes() gate is gone: a fixed six-item
+    rail cannot have an item that appears and disappears, so Theses is
+    always linked and themes_research.py's own index empty-state is what
+    a visitor sees when nothing is published yet."""
+    at = _run_to_dashboard(monkeypatch, published_themes=())
+    labels = [pl.label for pl in _sidebar_page_links(at)]
+    assert "Theses" in labels
+    # ...and no "0" badge beside it: _nav_badge_counts() drops any count
+    # that is not greater than zero.
+    assert not any("er-rail-count" in m.value for m in at.sidebar.get("markdown"))
+
+
+def test_theses_count_badge_appears_once_theses_are_published(monkeypatch):
+    at = _run_to_dashboard(monkeypatch, published_themes=[_published_theme(), _published_theme("Second", "2026-09-15T00:00:00+00:00")])
+    assert "Theses" in [pl.label for pl in _sidebar_page_links(at)]
+    badges = [m.value for m in at.sidebar.get("markdown") if "er-rail-count" in m.value]
+    assert badges == ['<span class="er-rail-count">2</span>'], badges
+
+
+def test_filings_left_the_rail_but_the_route_and_its_label_survive(monkeypatch):
+    """Filings (radar_inbox) moved to HIDDEN_FROM_NAV in item 1 — the
+    six-item rail has no slot for it and item 2 is what merges its
+    filings into the Feed. The rendered rail must not link it, and the
+    route must still exist: the command palette's "Open Filings" action
+    is the interim path to it."""
     at = _run_to_dashboard(monkeypatch)
     labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Filings" in labels
-    assert "Radar" not in labels
-    assert "Radar Inbox" not in labels
+    assert "Filings" not in labels
+    assert "Radar" not in labels and "Radar Inbox" not in labels
+    assert at.session_state["_pages"]["radar_inbox"] is not None
+    assert ("radar_inbox", "Filings") in ui_module.HIDDEN_FROM_NAV
 
 
-def test_coverage_radar_signals_research_themes_are_not_visible_sidebar_items(monkeypatch):
-    """The Evidence-First Themes MVP (design/DECISIONS.md) had
-    reintroduced a "Themes" sidebar entry pointing at a new public
-    research page, distinct from the legacy demo ticker/theme/subtheme
-    browser this original navigation-cleanup pass had removed from
-    visible nav (that legacy page — once moved to a hidden "Theme
-    Browser" route — was later removed entirely, not just hidden;
-    reader-facing data-integrity pass, design/DECISIONS.md, no live
-    real data of its own). The beta UI polish pass (design/DECISIONS.md)
-    moved "Themes" out of the always-visible sidebar; a later pass made
-    it appear again, but only once real content exists to justify it —
-    see test_themes_nav_item_appears_once_a_theme_is_published below.
-    This test's default (zero published Themes) still keeps it hidden.
-    Coverage/Radar Signals/Research remain unconditionally absent
-    regardless. Product-naming separation (design/DECISIONS.md): bare
-    "Signals" is deliberately NOT in this removed-label list any more —
-    it's the Daily News rework's own, now-visible PRIMARY_NAV entry (see
-    test_workspace_shows_exactly_dashboard_filings_signals above); only
-    the Radar-derived "Radar Signals" page stays hidden. Its route/data/
-    repository/internal-authoring-workflow are unaffected — only sidebar
-    visibility changed (see
-    test_coverage_themes_signals_routes_remain_registered below)."""
+def test_the_two_theme_nav_items_point_at_two_different_pages(monkeypatch):
+    """The naming trap this repository sets: "Themes" is the content-tag
+    index (route key "theme_index") and "Theses" is the curated research
+    narratives (route key "themes", page themes_research.py, internally
+    also called "theme"). Getting them the wrong way round would put the
+    wrong page behind both labels, which no label-only assertion would
+    catch — so this asserts the two route keys resolve to two distinct
+    registered pages."""
     at = _run_to_dashboard(monkeypatch)
-    labels = {pl.label for pl in _sidebar_page_links(at)}
-    # Exact-label check, not substring — "Methodology & Coverage" legitimately
-    # contains "Coverage" as a substring, so a naive "not in joined text"
-    # check would false-fail on the one entry that's supposed to remain.
-    for removed_label in ("Coverage", "Radar Signals", "Research", "Research Theses"):
-        assert removed_label not in labels
-    assert "Theme Browser" not in labels
+    pages = at.session_state["_pages"]
+    assert pages["theme_index"] is not None
+    assert pages["themes"] is not None
+    assert pages["theme_index"] is not pages["themes"]
+    assert dict(ui_module.PRIMARY_NAV)["theme_index"] == "Themes"
+    assert dict(ui_module.PRIMARY_NAV)["themes"] == "Theses"
 
 
 # ============================================================
-# Themes sidebar visibility — data-driven (design/DECISIONS.md)
+# The Theses page itself (its nav presence is covered above)
 # ============================================================
-
-
-def test_no_themes_nav_item_when_zero_published_themes(monkeypatch):
-    at = _run_to_dashboard(monkeypatch, published_themes=())
-    labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Research Theses" not in labels
-
-
-def test_themes_nav_item_appears_once_a_theme_is_published(monkeypatch):
-    at = _run_to_dashboard(monkeypatch, published_themes=[_published_theme()])
-    labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Research Theses" in labels
-
-
-def test_internal_only_theme_does_not_make_the_nav_item_appear(monkeypatch):
-    # The fake repository's list_published_themes() already only ever
-    # returns PUBLISHED rows (matching the real repository's own
-    # server-side filter), so an internal theme is modeled here exactly
-    # as it behaves in production: it simply never appears in that list
-    # at all — proving the sidebar link's absence is not a coincidence
-    # of an empty fixture, but the direct, correct consequence of
-    # _has_published_themes() reading the PUBLISHED-only protocol.
-    internal_theme = ResearchTheme(
-        id=theme_store.build_theme_id("Internal only", "2026-09-14T00:00:00+00:00"),
-        category=ThemeCategory.BOTTLENECK, status=ThemeStatus.NEW, visibility=ThemeVisibility.INTERNAL,
-        title="Internal only", key_question="q", hypothesis="h", working_thesis="w", why_it_matters="y",
-        what_could_change_the_view="c", what_to_watch_next="n",
-        created_at="2026-09-14T00:00:00+00:00", updated_at="2026-09-14T00:00:00+00:00",
-    )
-    assert internal_theme.visibility != ThemeVisibility.PUBLISHED
-    # A real ThemeRepositoryProtocol implementation would never include
-    # this row in list_published_themes() at all (see
-    # theme_store.list_published_themes()'s own server-side filter) —
-    # modeled here by simply not adding it to the fake repo's tuple.
-    at = _run_to_dashboard(monkeypatch, published_themes=())
-    labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Research Theses" not in labels
-
-
-def test_themes_nav_item_points_to_the_real_themes_page(monkeypatch):
-    at = _run_to_dashboard(monkeypatch, published_themes=[_published_theme()])
-    themes_links = [pl for pl in _sidebar_page_links(at) if pl.label == "Research Theses"]
-    assert len(themes_links) == 1
-    assert at.session_state["_pages"]["themes"] is not None
 
 
 def test_public_themes_page_still_shows_published_only_content(monkeypatch):
@@ -253,11 +217,18 @@ def test_public_themes_page_still_shows_published_only_content(monkeypatch):
     assert "Internal Theme" not in all_html
 
 
-def test_methodology_and_coverage_appears_in_the_system_group(monkeypatch):
+def test_coverage_is_the_last_rail_item_and_methodology_is_not_duplicated(monkeypatch):
+    """"Methodology & Coverage" shortened to plain "Coverage" (UI redesign
+    item 1) — same route, same page. Methodology keeps its own hidden
+    route, reachable from Coverage's cross-link and the footer, and must
+    not appear as a second rail item."""
     at = _run_to_dashboard(monkeypatch)
-    labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert "Methodology & Coverage" in labels
-    assert "Methodology" not in labels  # the standalone entry is retired, not duplicated
+    labels = [pl.label for pl in _sidebar_page_links(at)]
+    assert "Coverage" in labels
+    assert "Methodology & Coverage" not in labels
+    assert "Methodology" not in labels
+    nav = [l for l in labels if l not in {"EevaResearch", "Disclaimer"}]
+    assert nav[-1] == "Coverage"
 
 
 def test_settings_is_not_invented_since_no_settings_route_exists(monkeypatch):
@@ -275,9 +246,9 @@ def test_coverage_themes_signals_routes_remain_registered(monkeypatch):
     # not just hidden — it had no live real data.
     at = _run_to_dashboard(monkeypatch)
     pages = at.session_state["_pages"]
-    for key in ("coverage", "themes", "signals", "methodology", "about"):
-        assert key in pages
-        assert pages[key] is not None
+    for key in ("coverage", "themes", "theme_index", "companies", "radar_inbox", "signals", "methodology", "about"):
+        assert key in pages, key
+        assert pages[key] is not None, key
     assert "research" not in pages
 
 
@@ -297,19 +268,20 @@ def test_no_duplicate_nav_labels_in_the_rendered_sidebar(monkeypatch):
     assert len(workspace_and_system) == len(set(workspace_and_system)), workspace_and_system
 
 
-def test_no_empty_workspace_or_system_group_in_the_rendered_sidebar(monkeypatch):
+def test_the_rail_renders_no_group_label_at_all(monkeypatch):
+    """UI redesign item 1 replaced the WORKSPACE/SYSTEM group headings
+    with one flat six-item list, as the mockup rail shows it. This
+    guards the opposite of what it used to: a heading reappearing above
+    a five-item and a one-item group is the regression now. The Admin
+    group label is separate (admins only) and is not rendered here —
+    this session's tester is not an admin."""
     at = _run_to_dashboard(monkeypatch)
     sidebar_markdown = " ".join(m.value for m in at.sidebar.get("markdown"))
-    assert "er-rail-group-label" in sidebar_markdown  # groups render at all
-    # Both group headings actually have at least one link under them —
-    # proven indirectly: every item asserted present above resolves to a
-    # real page_link, so a genuinely empty group would already show up as
-    # a missing label in the tests above. This test only guards against a
-    # future edit leaving a bare heading with a real page dict that's
-    # simply empty for that group.
+    assert "er-rail-group-label" not in sidebar_markdown
+    # Every one of the six is a real page_link, so no "flat list" claim
+    # can be satisfied by a group that silently rendered empty.
     labels = {pl.label for pl in _sidebar_page_links(at)}
-    assert labels & {"Dashboard", "Filings", "Signals", "Watchlists"}
-    assert labels & {"Methodology & Coverage"}
+    assert {"Today", "Feed", "Companies", "Themes", "Theses", "Coverage"} <= labels
 
 
 def test_no_theme_pulse_anywhere_in_the_ui_shell_or_entry_point():

@@ -77,11 +77,18 @@ _PAIRS: dict[str, tuple[str, str]] = {
     "venue-cninfo-text": ("#E8B79C", "#8A4B2E"),
     "venue-hkex-bg": ("#25271B", "#F1F2E2"),
     "venue-hkex-text": ("#CFD39A", "#5E6328"),
-    # Taxonomy categories — never evidence
+    # Taxonomy categories — never evidence. One distinct hue per theme in
+    # src/logic/theme_taxonomy.py, and all five must stay mutually
+    # distinguishable: these render as the only differentiator between
+    # otherwise identical dots on the Companies and Themes indexes.
+    # Photonics was #E0B060, an amber a reader could not tell apart from
+    # AI Buildout's orange at 8px; Humanoids had no token at all and fell
+    # through to the grey "other" dot.
     "cat-ai-buildout": ("#D39A68", "#B87A45"),
     "cat-memory": ("#8FB4E8", "#4F74B8"),
     "cat-space": ("#C9A0E8", "#8E62B0"),
-    "cat-photonics": ("#E0B060", "#C08A2A"),
+    "cat-photonics": ("#5FC2C8", "#2E7F85"),
+    "cat-humanoids": ("#D98FA8", "#A34D68"),
 }
 
 TOKENS: dict[ThemeName, dict[str, str]] = {

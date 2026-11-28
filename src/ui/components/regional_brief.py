@@ -150,7 +150,16 @@ def _render_region_tab(
     radar_page = get_page("radar_inbox")
     if radar_page is not None:
         with st.container(key=f"cta-tertiary-brief-radar-{region.replace(' ', '-').lower()}"):
-            st.page_link(radar_page, label="Open Radar Inbox →")
+            # "Filings", not "Radar Inbox": that is the name the app uses
+            # for this page everywhere else (HIDDEN_FROM_NAV's own label),
+            # and "Radar Inbox" is an internal name the UI retired. Kept
+            # as a link, unlike the Today header's former "View filings"
+            # button, because this one sits at the foot of a list OF
+            # filings — it is the in-context path to more of what the
+            # reader is already looking at, not a nav shortcut to a
+            # destination the rail denies exists. Item 2 repoints it at
+            # the merged Feed.
+            st.page_link(radar_page, label="Open filings →")
 
 
 def _render_china_tab() -> None:

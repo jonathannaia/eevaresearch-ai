@@ -4,8 +4,26 @@
     {
       "name": "edge-research-agent",
       "runtimeExecutable": ".venv/bin/streamlit",
-      "runtimeArgs": ["run", "app.py", "--server.headless", "true"],
+      "runtimeArgs": [
+        "run",
+        "app.py",
+        "--server.headless",
+        "true"
+      ],
       "port": 8501
+    },
+    {
+      "name": "ui-redesign-shots",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "/private/tmp/claude-501/-Users-naia-edge-research-agent/bf07a616-6bdb-4be8-872a-28205af162b3/scratchpad/shot.py",
+        "--server.headless",
+        "true",
+        "--server.port",
+        "8512"
+      ],
+      "port": 8512
     }
   ]
 }
