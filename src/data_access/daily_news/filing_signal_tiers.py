@@ -27,6 +27,15 @@ from __future__ import annotations
 
 import re
 
+from src.data_access.daily_news.dart_structured_fields import (
+    CASH_DIVIDEND,
+    FACILITY_INVESTMENT,
+    PROVISIONAL_RESULTS,
+    SUPPLY_CONTRACT,
+    TREASURY_ACQUISITION,
+    TREASURY_DISPOSAL,
+    StructuredFilingFacts,
+)
 from src.models.daily_news_models import NewsMaterialityTier
 
 #: Category -> tier. Source-system-agnostic on purpose: EDGAR, DART and
@@ -165,3 +174,75 @@ def tier_for_amendment(category: str, title: str, *, previous_title: str | None 
         return _AMENDMENT_TIER
     base_tier = FILING_CATEGORY_TIERS.get(base_category_of(category))
     return base_tier or _AMENDMENT_TIER
+
+
+# ============================================================
+# Tiers a filing's own numbers decide
+# ============================================================
+#
+# The table above answers "what tier does this DOCUMENT TYPE get",
+# which is the right question for a filing whose materiality comes
+# from what it is. Four Korean disclosure types are different: a
+# treasury-share decision is routine at ₩1bn and front-page at ₩15tn,
+# and the document type is identical either way. Where the filing
+# states the size, the size decides.
+#
+# This runs BEFORE the document-type table and overrides it, and only
+# for the templates named below — a supply contract and a facility
+# investment keep their category tier, because nobody asked for those
+# to move and a threshold nobody has reviewed is worse than a
+# consistent rule.
+
+#: "A meaningful amount". One trillion won is roughly where a Korean
+#: large-cap's treasury action stops being housekeeping: Samsung's
+#: ₩15.0tn buyback and SK Hynix's ₩40.0tn clear it, Hanwha
+#: Aerospace's ₩149.6bn does not.
+LARGE_TREASURY_ACTION_WON = 1_000_000_000_000
+
+#: Deliberately absent: "≥1% of shares outstanding", which the brief
+#: also offered. A Korean treasury filing does NOT state the action as
+#: a percentage of shares outstanding. It states EXISTING treasury
+#: holdings as a percentage ("취득 전 자기주식 보유현황 ... 비율(%)
+#: 1.4"), which is a different number about a different quantity.
+#: Shares outstanding could be back-computed from that pair, but 1.4%
+#: carries two significant figures, so the result would be ±3% — and
+#: Samsung's buyback lands at 0.93% of the implied total, right on the
+#: threshold where that error decides the tier. The amount test is
+#: exact; the ratio test would be a coin flip dressed as arithmetic.
+
+
+def tier_for_structured_facts(facts: StructuredFilingFacts | None) -> NewsMaterialityTier | None:
+    """The tier this filing's own figures justify, or None to leave
+    the document-type table in charge.
+
+    None rather than a default for the two templates not covered, and
+    None whenever the figure the rule needs was withheld — a rule that
+    cannot be evaluated must not quietly pick a side."""
+    if facts is None or facts.template in (SUPPLY_CONTRACT, FACILITY_INVESTMENT):
+        return None
+
+    if facts.template == PROVISIONAL_RESULTS:
+        return NewsMaterialityTier.HIGH_SIGNAL
+
+    if facts.template == CASH_DIVIDEND:
+        # Early unless the filing calls it special. See
+        # StructuredFilingFacts.is_special_dividend for why the
+        # "changed against last year" half of this rule is not
+        # implemented here rather than guessed at.
+        return (
+            NewsMaterialityTier.HIGH_SIGNAL if facts.is_special_dividend
+            else NewsMaterialityTier.WATCHLIST
+        )
+
+    if facts.template in (TREASURY_ACQUISITION, TREASURY_DISPOSAL):
+        if facts.amount_won is None:
+            return None
+        large = facts.amount_won >= LARGE_TREASURY_ACTION_WON
+        if facts.template == TREASURY_ACQUISITION:
+            return NewsMaterialityTier.HIGH_SIGNAL if large else NewsMaterialityTier.WATCHLIST
+        # A disposal is the issuer selling its own shares back into
+        # the market. Routine at any ordinary size, which is why it
+        # starts at Background rather than Early.
+        return NewsMaterialityTier.WATCHLIST if large else NewsMaterialityTier.BACKGROUND
+
+    return None

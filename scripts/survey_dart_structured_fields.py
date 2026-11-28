@@ -25,6 +25,10 @@ from collections import Counter
 from src.config.settings import get_settings
 from src.data_access import backend_factory
 from src.data_access.daily_news import dart_structured_fields as D
+from src.data_access.daily_news.filing_signal_tiers import (
+    tier_for_filing_category,
+    tier_for_structured_facts,
+)
 
 _SOURCE = "OpenDART / DART"
 
@@ -56,19 +60,17 @@ def main(argv: list[str] | None = None) -> int:
         if D.is_amendment_body(text):
             outcomes["amendment — correction table, not read"] += 1
             continue
-        template = D.detect_template(text)
-        if template is None:
+        facts = D.parse_structured_fields(text)
+        if facts is None:
             outcomes["no field table (periodic report etc.)"] += 1
             continue
-
-        facts = D.parse_structured_fields(text)
         company = filing.corp_name or filing.flr_nm or ""
-        headline = D.structured_headline(company, facts) if facts else None
+        headline = D.structured_headline(company, facts)
         if headline is None:
             outcomes["field table, but every headline figure withheld"] += 1
         else:
             outcomes["structured headline produced"] += 1
-        rows.append((filing, facts, headline, text))
+        rows.append((filing, facts, headline, text, candidate))
 
     print("OpenDART filings in the store:", sum(outcomes.values()))
     for name, count in outcomes.most_common():
@@ -78,10 +80,16 @@ def main(argv: list[str] | None = None) -> int:
     shown = [r for r in rows if r[2] is not None] if args.with_headline else rows
     if args.limit:
         shown = shown[: args.limit]
-    for i, (filing, facts, headline, text) in enumerate(shown, 1):
+    for i, (filing, facts, headline, text, candidate) in enumerate(shown, 1):
+        structured_tier = tier_for_structured_facts(facts)
+        tier = structured_tier or tier_for_filing_category(
+            next((r.split(":", 1)[0] for r in candidate.matched_rules if ":" in r), ""),
+        )
         print(f"--- [{i}] {filing.corp_name} / {filing.rcept_dt} / {filing.rcept_no}")
         print(f"    today:      {(filing.report_nm or '')!r}")
         print(f"    structured: {headline!r}")
+        print(f"    tier:       {tier.value if tier else 'NOT PROJECTED'}"
+              f"{'  (from the filing\'s own figures)' if structured_tier else '  (document type)'}")
         if facts is not None:
             print(f"    template={facts.template} amount={facts.amount_won} "
                   f"ratio={facts.ratio_percent} withheld={facts.withheld}")

@@ -40,6 +40,7 @@ from src.data_access.daily_news.filing_signal_tiers import (
     is_amendment_category,
     tier_for_amendment,
     tier_for_filing_category,
+    tier_for_structured_facts,
 )
 from src.data_access.daily_news import dart_structured_fields, filing_event_headline
 from src.data_access.edgar import edgar_rules
@@ -237,7 +238,18 @@ _ENGLISH_NATIVE_SOURCE = "SEC EDGAR"
 _DART_SOURCE = "OpenDART / DART"
 
 
-def _structured_dart_headline(company: str, excerpt: str | None):
+def _dart_facts(filing: FilingEvent, excerpt: str | None):
+    """The filing's own field table, parsed once per story.
+
+    Three things need it — the tier, the headline and the exact figure
+    on the card — and parsing it three times was both wasteful and a
+    way for them to disagree after a future edit."""
+    if filing.source_name != _DART_SOURCE:
+        return None
+    return dart_structured_fields.parse_structured_fields(excerpt)
+
+
+def _structured_dart_headline(company: str, facts):
     """A headline built from the filing's own field table, or None.
 
     Tried before the curated document-type phrase because it is
@@ -248,7 +260,6 @@ def _structured_dart_headline(company: str, excerpt: str | None):
     an amendment, and for a table whose figures were all withheld with
     no counterparty named — so the native-title path stays the default
     rather than the exception."""
-    facts = dart_structured_fields.parse_structured_fields(excerpt)
     if facts is None:
         return None
     headline = dart_structured_fields.structured_headline(company, facts)
@@ -265,6 +276,7 @@ def _event_headline(
     category: str,
     excerpt: str | None,
     item_anchor: str | None,
+    facts=None,
 ) -> filing_event_headline.HeadlineResult:
     """The card's title line. Never the bare form name.
 
@@ -274,7 +286,7 @@ def _event_headline(
     English document-type phrase joined to their own title."""
     company = candidate.company_name
     if filing.source_name == _DART_SOURCE:
-        structured = _structured_dart_headline(company, excerpt)
+        structured = _structured_dart_headline(company, facts)
         if structured is not None:
             return structured
     if filing.source_name == _ENGLISH_NATIVE_SOURCE:
@@ -355,6 +367,7 @@ def _card_excerpt(
     excerpt_translated: str | None,
     headline: str,
     headline_sentence: str | None,
+    facts=None,
 ) -> str | None:
     """The card's summary paragraph, or None.
 
@@ -386,11 +399,9 @@ def _card_excerpt(
     # frequently have no translated excerpt at all, and the bargain
     # behind rounding the headline is that the filed number is always
     # on the card.
-    exact_note = None
-    if filing.source_name == _DART_SOURCE:
-        facts = dart_structured_fields.parse_structured_fields(excerpt)
-        if facts is not None:
-            exact_note = dart_structured_fields.exact_figure_note(facts)
+    exact_note = (
+        dart_structured_fields.exact_figure_note(facts) if facts is not None else None
+    )
 
     text = excerpt if is_english else excerpt_translated
     if not text or not is_readable_extracted_text(text):
@@ -447,10 +458,19 @@ def build_filing_signal_story(
         return None
 
     category = candidate.event_category
-    if is_amendment_category(category) or _DART_AMENDMENT_MARKER in (filing.report_nm or ""):
-        tier = tier_for_amendment(category, filing.report_nm or "")
-    else:
-        tier = tier_for_filing_category(category)
+    facts = _dart_facts(filing, excerpt)
+
+    # The filing's own figures come first: a treasury-share decision is
+    # routine at ₩1bn and front-page at ₩15tn under one document type,
+    # so where the filing states the size, the size decides. None from
+    # here leaves the document-type table in charge, which is every
+    # EDGAR and EDINET filing and most Korean ones.
+    tier = tier_for_structured_facts(facts)
+    if tier is None:
+        if is_amendment_category(category) or _DART_AMENDMENT_MARKER in (filing.report_nm or ""):
+            tier = tier_for_amendment(category, filing.report_nm or "")
+        else:
+            tier = tier_for_filing_category(category)
     if tier is None:
         # An unmapped category is not guessed at. See
         # filing_signal_tiers for why there is no default.
@@ -463,7 +483,7 @@ def build_filing_signal_story(
     if matched_rules:
         reasons.append(f"filing_rules:{','.join(matched_rules)}")
 
-    headline_result = _event_headline(filing, candidate, category, excerpt, item_anchor)
+    headline_result = _event_headline(filing, candidate, category, excerpt, item_anchor, facts)
     reasons.append(f"filing_headline:{headline_result.provenance}")
 
     company = candidate.company_name
@@ -478,6 +498,7 @@ def build_filing_signal_story(
             filing, excerpt=excerpt, excerpt_translated=excerpt_translated,
             headline=headline_result.headline,
             headline_sentence=headline_result.source_sentence,
+            facts=facts,
         ),
         matched_companies=(company,),
         matched_themes=(),

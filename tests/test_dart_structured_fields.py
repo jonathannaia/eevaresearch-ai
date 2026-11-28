@@ -14,6 +14,8 @@ from decimal import Decimal
 import pytest
 
 from src.data_access.daily_news import dart_structured_fields as D
+from src.data_access.daily_news.filing_signal_tiers import tier_for_structured_facts
+from src.models.daily_news_models import NewsMaterialityTier
 
 CROATIA = (
     "한화에어로스페이스/단일판매·공급계약 체결(자율공시)/(2026.09.11)단일판매·공급계약 체결(자율공시) "
@@ -194,3 +196,252 @@ def test_there_is_no_exact_note_when_there_was_no_figure():
 ])
 def test_rounded_won(amount, expected):
     assert D.rounded_won(amount) == expected
+
+
+# ============================================================
+# Phase 2 templates
+# ============================================================
+
+DIVIDEND = (
+    "삼성전자/현금·현물배당 결정/(2026.07.30)현금·현물배당 결정 1. 배당구분 분기배당 "
+    "2. 배당종류 현금배당 - 현물자산의 상세내역 - "
+    "3. 1주당 배당금(원) 보통주식 374 종류주식 374 - 차등배당 여부 미해당 "
+    "4. 시가배당률(%) 보통주식 0.1 종류주식 0.2 5. 배당금총액(원) 2,455,894,601,644 "
+    "6. 배당기준일 2026-06-30 7. 배당금지급 예정일자 2026-08-28"
+)
+
+BUYBACK = (
+    "삼성전자/주요사항보고서(자기주식취득결정)/ 자기주식 취득 결정 "
+    "1. 취득예정주식(주) 보통주식 53,285,968 기타주식 - "
+    "2. 취득예정금액(원) 보통주식 14,999,999,992,000 기타주식 - "
+    "3. 취득예상기간 시작일 2026-08-24 종료일 2026-11-21 "
+    "4. 보유예상기간 시작일 - 종료일 - 5. 취득목적 임직원 주식보상"
+)
+
+RESULTS = (
+    "LG이노텍/연결재무제표기준영업(잠정)실적(공정공시)/(2026.10.27) "
+    "실적기간 당기실적 2026-07-01 ~ 2026-09-30 전기실적 2026-04-01 ~ 2026-06-30 "
+    "※ 동 정보는 잠정치로서 향후 확정치와는 다를 수 있음. 1. 연결실적내용 단위 : 백만원, % "
+    "구분 당기실적 전기실적 전기대비 증감율(%) 흑자적자전환여부 전년동기실적 전년동기대비 증감율(%) 흑자적자전환여부 "
+    "매출액 당해실적 6,367,124 5,527,241 15.2 - 5,369,431 18.6 - 누계실적 17,429,200"
+)
+
+
+def test_a_cash_dividend_reports_the_total_and_the_per_share_rate():
+    facts = D.parse_structured_fields(DIVIDEND)
+    assert facts.template == D.CASH_DIVIDEND
+    assert facts.amount_won == 2_455_894_601_644
+    assert facts.per_share_won == 374
+    assert facts.ratio_percent == Decimal("0.1")
+    assert D.structured_headline("Samsung Electronics", facts) == (
+        "Samsung Electronics — ₩2.5tn dividend, ₩374 per common share (0.1% dividend yield)"
+    )
+    assert D.exact_figure_note(facts) == (
+        "Dividend total as filed: ₩2,455,894,601,644. Record date: 2026-06-30."
+    )
+
+
+def test_the_first_share_class_is_the_one_reported():
+    """"보통주식 374 종류주식 374" — the label is followed by a share
+    class before its value, and scanning the span for any number
+    instead of reading past the sub-label is how the wrong class ends
+    up in a headline."""
+    facts = D.parse_structured_fields(DIVIDEND)
+    assert facts.per_share_won == 374
+
+
+def test_a_buyback_reports_the_spend_and_the_share_count():
+    facts = D.parse_structured_fields(BUYBACK)
+    assert facts.template == D.TREASURY_ACQUISITION
+    assert facts.amount_won == 14_999_999_992_000
+    assert facts.shares == 53_285_968
+    assert D.structured_headline("Samsung Electronics", facts) == (
+        "Samsung Electronics — ₩15.0tn treasury share buyback (53,285,968 shares)"
+    )
+
+
+def test_the_share_unit_in_a_label_is_not_mistaken_for_a_value():
+    """취득예정주식(주) — "(주)" is part of the label DART prints, and
+    reading it as the value makes the share count unparseable."""
+    assert D.parse_structured_fields(BUYBACK).shares == 53_285_968
+
+
+# --- the table-shaped one ---------------------------------------------
+
+def test_provisional_results_reads_revenue_in_the_filings_own_unit():
+    facts = D.parse_structured_fields(RESULTS)
+    assert facts.template == D.PROVISIONAL_RESULTS
+    assert facts.amount_won == 6_367_124 * 1_000_000
+    assert D.structured_headline("LG Innotek Co., Ltd.", facts) == (
+        "LG Innotek Co., Ltd. — ₩6.4tn provisional revenue (+18.6% year on year)"
+    )
+
+
+HYNIX_RESULTS = (
+    "SK하이닉스/연결재무제표기준영업(잠정)실적(공정공시)/(2026.07.29) 1. 연결실적내용 단위 : 백만원, % "
+    "구분 당기실적 전기실적 전기대비 전년동기실적 전년동기대비 (2026년 2분기)(2026년 1분기) 증감율(%) "
+    "흑자적자전환여부 (2025년 2분기) 증감율(%) 흑자적자전환여부 "
+    "매출액 당해실적 79,318,746 52,576,287 50.9 - 22,231,952 256.8 - "
+    "누계실적 131,895,033 - - - 39,871,093 230.8 - "
+    "영업이익 당해실적 60,542,608 37,610,283 61.0 - 9,212,851 557.2 -"
+)
+
+
+@pytest.mark.parametrize("text,company,revenue,yoy", [
+    (RESULTS, "LG Innotek Co., Ltd.", 6_367_124, Decimal("18.6")),
+    (HYNIX_RESULTS, "SK Hynix", 79_318_746, Decimal("256.8")),
+])
+def test_the_year_on_year_cell_is_read_from_the_verified_column_contract(
+    text, company, revenue, yoy,
+):
+    """Two real filings establish the row shape, and both are asserted
+    here, because a contract proved by one sample is a guess."""
+    facts = D.parse_structured_fields(text)
+    assert facts.amount_won == revenue * 1_000_000
+    assert facts.ratio_percent == yoy
+
+
+def test_the_year_on_year_cell_is_the_right_one_of_the_two_percentages():
+    """50.9 is quarter on quarter and sits three cells earlier.
+    Reading it would tell a reader SK Hynix grew 50.9% when it grew
+    256.8% — the exact failure the shape check exists to prevent."""
+    facts = D.parse_structured_fields(HYNIX_RESULTS)
+    headline = D.structured_headline("SK Hynix", facts)
+    assert "+256.8% year on year" in headline
+    assert "50.9" not in headline
+
+
+@pytest.mark.parametrize("row,why", [
+    ("매출액 당해실적 6,367,124 5,527,241 15.2 - 5,369,431", "row truncated before the cell"),
+    ("매출액 당해실적 6,367,124 5,527,241 15.2 5,369,431 18.6 - -", "a swing-flag column missing"),
+    ("매출액 당해실적 6,367,124 - - - - - -", "no comparative periods filed"),
+])
+def test_a_row_that_does_not_match_the_shape_loses_only_the_percentage(row, why):
+    """The revenue figure is the first cell and needs no contract, so
+    it survives; the percentage does not."""
+    facts = D.parse_structured_fields(
+        "x 1. 연결실적내용 단위 : 백만원, % " + row
+    )
+    assert facts is not None and facts.amount_won == 6_367_124 * 1_000_000, why
+    assert facts.ratio_percent is None, why
+
+
+@pytest.mark.parametrize("broken,why", [
+    (RESULTS.replace("백만원", "억원"), "a unit this module does not scale"),
+    (RESULTS.replace("연결실적내용", "기타내용"), "no results table heading"),
+    (RESULTS.replace("당해실적", "기타실적"), "no this-period marker on the revenue row"),
+    (RESULTS.replace("매출액 당해실적 6,367,124", "매출액 당해실적 -"), "revenue withheld"),
+])
+def test_a_results_table_missing_any_guard_is_skipped(broken, why):
+    assert D.parse_structured_fields(broken) is None, why
+
+
+def test_a_label_value_template_still_wins_over_the_table_reader():
+    """parse_provisional_results is tried last, so a disclosure that
+    is both is never read as the table."""
+    facts = D.parse_structured_fields(CROATIA)
+    assert facts.template == D.SUPPLY_CONTRACT
+
+
+# ============================================================
+# Operating profit
+# ============================================================
+
+DOOSAN_LOSS = (
+    "두산로보틱스/연결재무제표기준영업(잠정)실적(공정공시)/(2026.10.30) 1. 연결실적내용 단위 : 백만원, % "
+    "매출액 당해실적 16,175 10,167 59.1 - 10,167 59.1 - 누계실적 39,000 "
+    "영업이익 당해실적 -13,404 -14,417 7.0 - -15,265 12.2 - 누계실적 -39,891"
+)
+
+
+def test_operating_profit_is_read_with_the_same_contract_as_revenue():
+    facts = D.parse_structured_fields(HYNIX_RESULTS)
+    assert facts.operating_profit_won == 60_542_608 * 1_000_000
+    assert facts.operating_profit_yoy == Decimal("557.2")
+    assert D.structured_headline("SK Hynix", facts) == (
+        "SK Hynix — ₩79.3tn provisional revenue (+256.8% year on year), "
+        "₩60.5tn operating profit (+557.2%)"
+    )
+
+
+def test_a_negative_operating_result_is_named_a_loss_and_loses_its_percentage():
+    """두산로보틱스 filed -13,404 for the quarter against a 12.2 change.
+    "+12.2%" beside a loss cannot be read without the filing's own sign
+    convention, and "₩-13.4bn operating profit" is worse."""
+    facts = D.parse_structured_fields(DOOSAN_LOSS)
+    assert facts.operating_profit_won == -13_404 * 1_000_000
+    headline = D.structured_headline("Doosan Robotics Inc.", facts)
+    assert headline.endswith("₩13.4bn operating loss")
+    assert "12.2" not in headline
+
+
+def test_a_missing_operating_row_never_costs_the_revenue_figure():
+    """The excerpt is capped and this row sits below the revenue one,
+    so it is the first thing a cap removes."""
+    revenue_only = HYNIX_RESULTS.split("영업이익")[0]
+    facts = D.parse_structured_fields(revenue_only)
+    assert facts.amount_won == 79_318_746 * 1_000_000
+    assert facts.operating_profit_won is None
+    assert "operating" not in D.structured_headline("SK Hynix", facts)
+
+
+# ============================================================
+# Tiers the filing's own numbers decide
+# ============================================================
+
+def _facts(template, **kw):
+    return D.StructuredFilingFacts(template=template, **kw)
+
+
+@pytest.mark.parametrize("amount,expected", [
+    (15_000_000_000_000, NewsMaterialityTier.HIGH_SIGNAL),   # Samsung ₩15.0tn
+    (40_000_000_000_000, NewsMaterialityTier.HIGH_SIGNAL),   # SK Hynix ₩40.0tn
+    (149_600_000_000, NewsMaterialityTier.WATCHLIST),        # Hanwha ₩149.6bn
+])
+def test_a_buyback_is_tiered_on_what_it_costs(amount, expected):
+    assert tier_for_structured_facts(_facts(D.TREASURY_ACQUISITION, amount_won=amount)) is expected
+
+
+@pytest.mark.parametrize("amount,expected", [
+    (1_134_980_000, NewsMaterialityTier.BACKGROUND),         # Samsung ₩1.1bn
+    (122_590_000, NewsMaterialityTier.BACKGROUND),           # SK Hynix ₩122.6m
+    (5_000_000_000_000, NewsMaterialityTier.WATCHLIST),
+])
+def test_a_disposal_starts_at_background(amount, expected):
+    """The issuer selling its own shares back into the market is
+    routine at any ordinary size."""
+    assert tier_for_structured_facts(_facts(D.TREASURY_DISPOSAL, amount_won=amount)) is expected
+
+
+def test_a_treasury_filing_that_withheld_its_amount_is_left_to_the_category():
+    """A rule that cannot be evaluated must not quietly pick a side."""
+    assert tier_for_structured_facts(_facts(D.TREASURY_ACQUISITION)) is None
+
+
+def test_a_dividend_is_early_unless_the_filing_calls_it_special():
+    assert tier_for_structured_facts(
+        D.parse_structured_fields(DIVIDEND)
+    ) is NewsMaterialityTier.WATCHLIST
+
+
+def test_no_dividend_in_this_corpus_declares_itself_special():
+    """Samsung's ₩4,601-per-share dividend is special against its own
+    ₩374 quarterly, and the filing still says 분기배당. Detecting that
+    means comparing an issuer against its own previous filing, which
+    is not a field-table question — so this asserts the gap rather
+    than papering over it."""
+    assert D.parse_structured_fields(DIVIDEND).kind == "분기배당"
+    assert not D.parse_structured_fields(DIVIDEND).is_special_dividend
+
+
+def test_provisional_results_are_always_high():
+    assert tier_for_structured_facts(
+        _facts(D.PROVISIONAL_RESULTS, amount_won=1)
+    ) is NewsMaterialityTier.HIGH_SIGNAL
+
+
+@pytest.mark.parametrize("template", [D.SUPPLY_CONTRACT, D.FACILITY_INVESTMENT])
+def test_the_two_shipped_templates_keep_their_category_tier(template):
+    """Nobody asked for those to move, and a threshold nobody has
+    reviewed is worse than a consistent rule."""
+    assert tier_for_structured_facts(_facts(template, amount_won=10**15)) is None
