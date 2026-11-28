@@ -30,11 +30,16 @@ EVIDENCE_DIRECTIONS: tuple[tuple[str, str], ...] = (
     ("Context", "context"),
 )
 
+# One entry per slug in src/logic/theme_taxonomy.py. A slug missing here
+# falls through to the grey "other" dot, which is how Humanoids rendered
+# as an unlabelled grey before it was added — indistinguishable from "no
+# theme" rather than from the other four.
 _THEME_CLASS: dict[str, str] = {
     "ai-buildout": "ai-buildout",
     "memory": "memory",
     "space": "space",
     "photonics": "photonics",
+    "humanoids": "humanoids",
 }
 
 _LANG_ATTR: dict[str, str] = {"Korean": "ko", "Japanese": "ja"}

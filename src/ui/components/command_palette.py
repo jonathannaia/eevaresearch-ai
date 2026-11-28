@@ -242,7 +242,11 @@ def _open_palette() -> None:
                 if st.button(label, key=f"cmdk-result-{n}", width="stretch"):
                     _navigate(item)
             with row_cols[1]:
-                st.markdown(f'<div class="er-muted" style="text-align:right; padding-top:0.4rem;">{item["sub"]}</div>', unsafe_allow_html=True)
+                # er-cmdk-sub, not an inline padding: the row is compact
+                # now (assets/styles.css), and the 0.4rem top padding
+                # this used to carry was sized for the old full-height
+                # button, leaving the ticker floating below its name.
+                st.markdown(f'<div class="er-cmdk-sub">{item["sub"]}</div>', unsafe_allow_html=True)
 
         st.markdown(
             '<div class="er-muted" style="margin-top:0.75rem; font-size:11px;">'

@@ -980,6 +980,7 @@ a:hover { color: var(--link-hover); }
 .er-theme-memory { background: var(--cat-memory); }
 .er-theme-space { background: var(--cat-space); }
 .er-theme-photonics { background: var(--cat-photonics); }
+.er-theme-humanoids { background: var(--cat-humanoids); }
 /* Evidence bar — segments fill by real count; the track shows through
    when every count is zero. Context is a neutral fill, never text. */
 .er-evbar { display: flex; height: 6px; border-radius: 999px; background: var(--surface-chip); overflow: hidden; gap: 2px; }
@@ -1216,4 +1217,47 @@ table.er-table .er-mono { font-size: 0.8rem; }
 .er-theme-company { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
 .er-theme-company-native {
     font-family: var(--font-serif); font-size: 0.74rem; color: var(--text-muted); margin-left: 0.3rem;
+}
+
+/* Command-palette result rows. Streamlit's secondary button centres its
+   label and paints a full card; a 129-company result list reads as a
+   stack of centred cards rather than as search results. Scoped to the
+   dialog's own result keys (cmdk-result-N, see
+   src/ui/components/command_palette.py), never a global button
+   override: left-aligned name, compact row height, no resting fill, and
+   the surface only on hover so the pointer still shows what it is on. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] {
+    justify-content: flex-start !important;
+    text-align: left !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    padding: 0.25rem 0.5rem !important;
+    min-height: 0 !important;
+}
+/* Streamlit nests the label several wrappers deep (button > div > span >
+   stMarkdownContainer > p), each of them shrink-wrapped and centred, so
+   left-aligning the button and the <p> alone leaves a 122px paragraph
+   floating in the middle of a full-width row. Every wrapper in that
+   chain has to stretch before the text can sit at the left edge. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] > div,
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] > div > span,
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] [data-testid="stMarkdownContainer"] {
+    width: 100% !important; justify-content: flex-start !important; text-align: left !important;
+}
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] p {
+    font-size: 0.85rem !important; font-weight: 400 !important;
+    text-align: left !important; width: 100% !important;
+}
+/* The first result stays bolded (the dialog marks it with **…**), which
+   is what "Open top result" acts on. */
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"] p strong { font-weight: 600 !important; }
+[class*="st-key-cmdk-result-"] [data-testid="stBaseButton-secondary"]:hover {
+    background: var(--surface-hover) !important; border-color: var(--border) !important;
+}
+/* The ticker · exchange column beside each result row, baseline-aligned
+   with the compact name button to its left. */
+.er-cmdk-sub {
+    text-align: right; font-family: var(--font-mono); font-size: 0.72rem;
+    color: var(--text-muted); padding-top: 0.3rem; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
 }

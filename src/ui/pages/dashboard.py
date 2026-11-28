@@ -96,12 +96,15 @@ def _render_header() -> None:
         st.markdown(f'<div class="er-greeting">{_esc(greeting)}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="er-page-subtitle" style="margin-bottom:0;">{_esc(_SUBTITLE)}</div>', unsafe_allow_html=True)
     with right:
-        filings_page = get_page("radar_inbox")
+        # "View filings" (-> radar_inbox) is deliberately absent until UI
+        # redesign item 2 merges filings into the Feed. Filings left the
+        # nav in item 1, so a header button pointing at an off-nav page
+        # would be the only link to a destination the rail denies exists
+        # — the command palette's "Open Filings" action covers the gap
+        # instead. Item 2 restores a filings entry point here, pointing
+        # at the merged Feed rather than at radar_inbox.
         signals_page = get_page("daily_news")
         action_cols = st.columns([1, 1.2])
-        if filings_page is not None:
-            with action_cols[0], st.container(key="cta-secondary-dashboard-view-filings"):
-                st.page_link(filings_page, label="View filings")
         if signals_page is not None:
             with action_cols[1], st.container(key="cta-primary-dashboard-review-high-signals"):
                 st.page_link(signals_page, label="Review high signals →", query_params={"tier": "high_signal"})

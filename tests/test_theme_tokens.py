@@ -67,7 +67,8 @@ _APPROVED = {
     "cat-ai-buildout": ("#D39A68", "#B87A45"),
     "cat-memory": ("#8FB4E8", "#4F74B8"),
     "cat-space": ("#C9A0E8", "#8E62B0"),
-    "cat-photonics": ("#E0B060", "#C08A2A"),
+    "cat-photonics": ("#5FC2C8", "#2E7F85"),
+    "cat-humanoids": ("#D98FA8", "#A34D68"),
 }
 
 
@@ -301,3 +302,26 @@ def test_derived_tokens_are_declared_once_and_every_consumed_token_exists():
 
 def test_token_helper_reads_the_single_source():
     assert theme_tokens.token("light", "text-muted") == "#625E57"
+
+
+def test_every_theme_slug_has_its_own_distinct_category_colour():
+    """The dot beside a theme name is the only thing distinguishing one
+    theme from another on the Companies and Themes indexes, so every
+    slug the taxonomy carries needs a token, and no two may share a
+    value. Photonics used to be an amber indistinguishable from AI
+    Buildout's orange, and Humanoids had no token at all — it fell
+    through to the grey "other" dot, reading as "no theme" rather than
+    as its own.
+    """
+    from src.logic.theme_taxonomy import known_theme_slugs
+    from src.ui.components.primitives import _THEME_CLASS
+
+    for theme in THEMES:
+        values = {}
+        for slug in known_theme_slugs():
+            assert slug in _THEME_CLASS, f"{slug} renders as the grey 'other' dot"
+            name = f"cat-{_THEME_CLASS[slug]}"
+            assert name in TOKENS[theme], name
+            value = TOKENS[theme][name]
+            assert value not in values, f"{theme}: {slug} shares {value} with {values[value]}"
+            values[value] = slug
