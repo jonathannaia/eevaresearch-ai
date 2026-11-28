@@ -227,12 +227,24 @@ def test_theme_index_labels_its_counts_as_companies_not_events():
         assert f"{misleading} " not in html.lower().split("Counts are")[-1][:40], misleading
 
 
-def test_the_filing_bridge_still_carries_no_themes_so_the_label_stays_honest():
-    """The reason the count above is companies rather than events, pinned
-    at its source. When this stops being true, the Themes index can show
-    a real event count — and this test is the reminder."""
+def test_filing_derived_stories_now_carry_their_issuer_s_themes():
+    """The reminder this replaces asserted the opposite — that the bridge
+    set matched_themes=() — and said the Themes index could show a real
+    event count once that changed. This is that change.
+
+    Asserted on a projected story, not on the source text: what matters
+    is that a filing comes out of the bridge tagged with the themes its
+    issuer carries in the registry."""
+    from src.data_access.daily_news import filing_signal_bridge
+    from src.logic.theme_taxonomy import themes_for_company
+
     source = (REPO_ROOT / "src" / "data_access" / "daily_news" / "filing_signal_bridge.py").read_text(encoding="utf-8")
-    assert "matched_themes=()," in source
+    assert "matched_themes=()," not in source
+    assert "matched_themes=themes_for_company(company)," in source
+    # And the themes it uses are the registry's, for a real issuer.
+    nvidia = next(i for i in SEED_ISSUERS if i.legal_name == "NVIDIA")
+    assert themes_for_company(nvidia.legal_name) == nvidia.themes
+    assert nvidia.themes, "fixture check: NVIDIA should carry at least one theme"
 
 
 def test_theme_index_caps_the_company_list_and_says_how_many_it_held_back():

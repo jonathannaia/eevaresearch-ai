@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import psycopg
 
-CURRENT_SCHEMA_VERSION = 31
+CURRENT_SCHEMA_VERSION = 32
 
 _V1_STATEMENTS: tuple[str, ...] = (
     """
@@ -1068,6 +1068,26 @@ _V31_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_V32_STATEMENTS: tuple[str, ...] = (
+    # The themes a story carried BEFORE a revision, for the same reason
+    # V31 added old_reasons_json: a revision row that records THAT a
+    # value changed without recording what it was is the gap the
+    # 2026-11-25 repair ran into.
+    #
+    # Added for scripts/backfill_filing_story_themes.py, which fills in
+    # matched_themes on filing-derived stories projected before the
+    # bridge started tagging them. That backfill changes neither tier
+    # nor companies, so without this column its revision rows would say
+    # old_tier == new_tier, old_companies == new_companies and nothing
+    # else — a log entry that proves only that something happened.
+    #
+    # Nullable: every revision row written before this column existed
+    # genuinely has no recorded prior themes, and claiming otherwise
+    # would be worse than admitting the gap.
+    "ALTER TABLE editorial_story_revisions ADD COLUMN old_themes_json TEXT",
+)
+
+
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (1, _V1_STATEMENTS),
     (2, _V2_STATEMENTS),
@@ -1100,6 +1120,7 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (29, _V29_STATEMENTS),
     (30, _V30_STATEMENTS),
     (31, _V31_STATEMENTS),
+    (32, _V32_STATEMENTS),
 )
 
 
