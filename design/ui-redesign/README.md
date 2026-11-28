@@ -74,3 +74,31 @@ column stay `Watchlist`, so there is no migration and no rewrite of
 the strings already written into `editorial_story_revisions`
 (`tier:High Signal->Watchlist`). Renaming the stored value would
 rewrite history that exists precisely to be immutable.
+
+## Observed on production, to fix in item 5 (Today)
+
+Both found by the user on the live Today page on 2026-11-28, after item
+1 shipped. Neither is a regression from the redesign — both predate it —
+and both belong to the Today rebuild rather than to a nav or palette
+pass, so they are recorded here instead of being fixed in passing.
+
+1. **Theme activity shows Korean names as the primary name.** Rows read
+   `SK하이닉스` and `한화에어로스페이스` where every other surface now
+   shows the English name with the native name smaller underneath. The
+   cross-cutting rule for the redesign is English first, native
+   underneath, so the Today theme-activity component has to use the same
+   treatment as `src/ui/pages/companies.py`.
+
+   Note the ordering dependency: the issuer registry holds **no Korean
+   `native_name` at all** (13 of 129 issuers have one, all Japanese), so
+   these Korean strings are coming from somewhere else — most likely the
+   DART filing's own `corp_name`. Whatever supplies them is the same
+   source the Korean-native-name backfill will read, so do that backfill
+   first and then have Today render English-primary from the registry
+   with the native name underneath.
+
+2. **"Latest signals" shows only news.** Filing-derived stories are
+   absent, so the one block on Today labelled as the latest signals is
+   really the latest *news* signals. Item 5 should include filings, or
+   label the block for what it actually contains. This is the same split
+   item 2 closes on the Feed.

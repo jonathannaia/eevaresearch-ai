@@ -115,8 +115,14 @@ def test_nav_icons_are_token_painted_masks_with_no_color_of_their_own():
     assert "background-color: var(--text-muted)" in base
     active = _rule(r'\[class\*="st-key-navitem-"\]\[class\*="-active"\] \[data-testid="stPageLink"\] a::before')
     assert "background-color: var(--accent)" in active
-    for item in ("dashboard", "radar_inbox", "daily_news", "themes", "coverage", "admin_users"):
-        body = _rule(rf'\.st-key-navitem-{item} \[data-testid="stPageLink"\] a::before')
+    # Prefix match, not an exact class: the active item's container key
+    # is "navitem-{key}-active", so .st-key-navitem-{key} stops matching
+    # exactly when the item is the current page — which is how every
+    # active nav item came to paint a solid accent square instead of its
+    # own icon. See tests/test_shell_v2.py for the guard on all six.
+    for item in ("dashboard", "radar_inbox", "daily_news", "companies", "theme_index",
+                 "themes", "coverage", "admin_users"):
+        body = _rule(rf'\[class\*="st-key-navitem-{item}"\] \[data-testid="stPageLink"\] a::before')
         assert "mask-image: url(" in body and "stroke%3D%22currentColor%22" in body
         assert "background-image" not in body
     assert "-active [data-testid=\"stPageLink\"] a::before {\n    background-image" not in _CSS

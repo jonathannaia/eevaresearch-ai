@@ -508,19 +508,41 @@ a:hover { color: var(--link-hover); }
 [class*="st-key-navitem-"][class*="-active"] [data-testid="stPageLink"] a::before {
     background-color: var(--accent);
 }
-.st-key-navitem-dashboard [data-testid="stPageLink"] a::before {
+[class*="st-key-navitem-dashboard"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Crect%20x%3D%221.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%221.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%221.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3Crect%20x%3D%228.5%22%20y%3D%228.5%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221.2%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-radar_inbox [data-testid="stPageLink"] a::before {
+[class*="st-key-navitem-radar_inbox"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M3.5%201.5h6l3%203v10a.5.5%200%200%201-.5.5h-8.5a.5.5%200%200%201-.5-.5v-13z%22/%3E%3Cpath%20d%3D%22M9.5%201.5v3h3%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M5%208.5h6M5%2011h6%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-daily_news [data-testid="stPageLink"] a::before {
+[class*="st-key-navitem-daily_news"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M4%206.5a4%204%200%200%201%208%200c0%203%201%204%201%204h-10s1-1%201-4z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M6.5%2012.5a1.5%201.5%200%200%200%203%200%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-themes [data-testid="stPageLink"] a::before {
+/* Companies and Themes (UI redesign item 1 added the routes; these
+   are their icons). A nav key with no rule here is not iconless --
+   the shared ::before paints a 16x16 box with background-color and
+   no mask, so it renders as a SOLID SQUARE.
+
+   Every icon selector above and below uses [class*="st-key-navitem-X"]
+   rather than .st-key-navitem-X, and that is load-bearing: the ACTIVE
+   item's container key is "navitem-{key}-active" (see _nav_item() in
+   src/ui/ui.py), which is a different class token, so an exact-class
+   selector silently stops matching the moment an item becomes the
+   current page. Every active nav item was painting a solid
+   accent-coloured square instead of its own icon; it only became
+   obvious once the accent turned vivid teal. tests/test_shell_v2.py
+   asserts both states for every nav key. */
+[class*="st-key-navitem-companies"] [data-testid="stPageLink"] a::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%2014V3.2a.7.7%200%200%201%20.7-.7h5.1a.7.7%200%200%201%20.7.7V14%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M9%207h3.8a.7.7%200%200%201%20.7.7V14%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M1.5%2014h13%22/%3E%3Cpath%20d%3D%22M4.7%205.3h2M4.7%208.2h2M4.7%2011.1h2M11%2010h1%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%2014V3.2a.7.7%200%200%201%20.7-.7h5.1a.7.7%200%200%201%20.7.7V14%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M9%207h3.8a.7.7%200%200%201%20.7.7V14%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M1.5%2014h13%22/%3E%3Cpath%20d%3D%22M4.7%205.3h2M4.7%208.2h2M4.7%2011.1h2M11%2010h1%22/%3E%3C/svg%3E");
+}
+[class*="st-key-navitem-theme_index"] [data-testid="stPageLink"] a::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M7.9%201.8h6.3v6.3l-6.4%206.4a1.1%201.1%200%200%201-1.6%200L1.8%209.1a1.1%201.1%200%200%201%200-1.6z%22%20stroke-linejoin%3D%22round%22/%3E%3Ccircle%20cx%3D%2211.3%22%20cy%3D%224.7%22%20r%3D%221.15%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M7.9%201.8h6.3v6.3l-6.4%206.4a1.1%201.1%200%200%201-1.6%200L1.8%209.1a1.1%201.1%200%200%201%200-1.6z%22%20stroke-linejoin%3D%22round%22/%3E%3Ccircle%20cx%3D%2211.3%22%20cy%3D%224.7%22%20r%3D%221.15%22/%3E%3C/svg%3E");
+}
+[class*="st-key-navitem-themes"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%226.5%22/%3E%3Cpath%20d%3D%22M10.2%205.8%208.9%208.9%205.8%2010.2%207.1%207.1z%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E");
 }
@@ -1054,11 +1076,11 @@ table.er-table .er-mono { font-size: 0.8rem; }
 [class*="st-key-navitem-"][class*="-active"] .er-rail-count { background: var(--selected-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--selected-ring); }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a p { font-size: 0.9rem; }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a { padding: 0.45rem 0.6rem 0.45rem calc(0.6rem - 2px) !important; }
-.st-key-navitem-coverage [data-testid="stPageLink"] a::before {
+[class*="st-key-navitem-coverage"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M2.5%202.5h4.5a1.5%201.5%200%200%201%201%20.4%201.5%201.5%200%200%201%201-.4h4.5v10.5H9.2a1.2%201.2%200%200%200-1.2.8%201.2%201.2%200%200%200-1.2-.8H2.5z%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M8%203v10.3%22/%3E%3C/svg%3E");
 }
-.st-key-navitem-admin_users [data-testid="stPageLink"] a::before {
+[class*="st-key-navitem-admin_users"] [data-testid="stPageLink"] a::before {
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%221.5%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225.5%22%20r%3D%222.5%22/%3E%3Cpath%20d%3D%22M1.5%2013.5c0-2.5%202-4%204.5-4s4.5%201.5%204.5%204%22/%3E%3Cpath%20d%3D%22M11%208.5a2.2%202.2%200%201%200%200-4.4M14.5%2013.5c0-2-1.3-3.4-3.2-3.8%22/%3E%3C/svg%3E");
 }
