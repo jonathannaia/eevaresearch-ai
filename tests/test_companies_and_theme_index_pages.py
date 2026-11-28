@@ -261,3 +261,19 @@ def test_theme_index_shows_subtheme_slugs_as_filed_without_inventing_labels():
     assert "dram" in memory_subthemes
     for slug in memory_subthemes:
         assert slug in html, slug
+
+
+def test_a_native_name_can_never_wrap_away_from_its_own_company():
+    """The theme card's company list is a wrapping flex row. Emitting the
+    English name and the native name as two sibling spans makes them two
+    flex items, and the list then renders "FANUC CORPORATION" and
+    "ファナック株式会社" as two separate companies. They must share one
+    span."""
+    at = _run("theme_index_page.py")
+    html = _main_html(at)
+    fanuc = next(i for i in SEED_ISSUERS if i.legal_name == "FANUC CORPORATION")
+    assert fanuc.native_name, "fixture check: FANUC should carry a native name"
+    assert (
+        f'<span class="er-theme-company">{fanuc.legal_name}'
+        f'<span class="er-theme-company-native">' in html
+    ), "the native name must be nested inside the company's own span"

@@ -1,5 +1,5 @@
 """Command palette (brief §12) — ⌘K/Ctrl+K fuzzy search over companies,
-Research Theses, Radar Signals and actions.
+themes, Radar Signals and actions.
 
 The Companies group is back (UI redesign item 1: "⌘K/search by ticker or
 company"). It was removed once before, in the reader-facing data-
@@ -39,6 +39,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.config.issuer_registry import SEED_ISSUERS
+from src.logic.theme_taxonomy import company_counts_by_theme, theme_display_name
 from src.ui import theme
 from src.ui.ui import get_page
 
@@ -106,11 +107,26 @@ def _index(ctx) -> list[dict]:
             "sub": " · ".join(p for p in (ticker, exchange, issuer.native_name) if p),
             "go": "companies",
         })
-    # "Research Theses" (route key "themes"), NOT the theme tag taxonomy
-    # the new Themes index lists — see src/logic/theme_taxonomy.py for the
-    # naming split. ctx.theme_repository is the curated-narrative one.
-    for th in ctx.theme_repository.get_all_themes():
-        items.append({"group": "Research Theses", "label": th.name, "sub": f"{len(th.subthemes)} subcategories", "go": "themes"})
+    # Themes — the content-tag taxonomy, from the issuer registry.
+    #
+    # This group used to read ctx.theme_repository, which is
+    # DemoThemeRepository (src/data_access/container.py): DEMO DATA,
+    # routed at the Research Theses page, which has nothing to do with
+    # it. A reader searching "memory" was being offered a demo row
+    # dressed as a research thesis. It now reads the real taxonomy and
+    # routes at the real Themes index (src/ui/pages/theme_index.py), so
+    # the label, the data and the destination finally agree — and the
+    # palette no longer depends on demo data at all.
+    #
+    # Published Research Theses are deliberately NOT indexed here yet:
+    # that needs backend_factory.get_theme_repository(), a repository
+    # read inside the dialog, and it is a new capability rather than
+    # part of "search by ticker or company".
+    for slug, count in company_counts_by_theme().items():
+        items.append({
+            "group": "Themes", "label": theme_display_name(slug),
+            "sub": f"{count} companies", "go": "theme_index",
+        })
     for s in ctx.signal_repository.get_all_signals():
         # Product-naming separation (design/DECISIONS.md): "Signals" is
         # now the Daily News rework's own group; these are Radar-derived
@@ -122,7 +138,6 @@ def _index(ctx) -> list[dict]:
     # discoverable path to it in the meantime. Remove it once the Feed
     # actually carries filings; until then it must stay.
     items.append({"group": "Actions", "label": "Open Filings", "sub": "Radar filing list", "go": "radar_inbox"})
-    items.append({"group": "Actions", "label": "Open Themes", "sub": "Theme tag index", "go": "theme_index"})
     items.append({"group": "Actions", "label": "Open Methodology", "sub": "", "go": "methodology"})
     current = theme.current_preference()
     for preference, label in theme.LABELS.items():

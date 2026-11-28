@@ -48,9 +48,16 @@ _NAMES_SHOWN = 12
 def _company_names_html(slug: str) -> str:
     companies = companies_for_theme(slug)
     shown = companies[:_NAMES_SHOWN]
+    # English name and native name go inside ONE span, not two siblings.
+    # The container is a wrapping flex row, so two siblings are two flex
+    # items and the native name wraps away from its own company — which
+    # renders "FANUC CORPORATION" and "ファナック株式会社" as two separate
+    # companies in the list.
     names = [
-        f'<span class="er-theme-company">{esc(c.legal_name)}</span>'
+        '<span class="er-theme-company">'
+        + esc(c.legal_name)
         + (f'<span class="er-theme-company-native">{cjk_html(c.native_name)}</span>' if c.native_name else "")
+        + "</span>"
         for c in shown
     ]
     rest = len(companies) - len(shown)

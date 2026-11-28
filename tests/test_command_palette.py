@@ -66,25 +66,32 @@ def test_no_bare_signals_group_exists_anywhere_in_the_index():
     ))
     groups = {i["group"] for i in items}
     assert "Signals" not in groups
-    # "Companies" is back (UI redesign item 1), and the curated-narrative
-    # group is now labelled "Research Theses" rather than "Themes", since
-    # "Themes" is the tag taxonomy's own nav item — see
-    # src/logic/theme_taxonomy.py for the naming split.
-    assert groups == {"Companies", "Research Theses", "Radar Signals", "Actions", "Switch theme"}
+    # "Companies" is back (UI redesign item 1), and "Themes" is the real
+    # tag taxonomy rather than demo rows — see below.
+    assert groups == {"Companies", "Themes", "Radar Signals", "Actions", "Switch theme"}
 
 
-def test_curated_narratives_are_indexed_as_research_theses_not_themes():
-    """The group that routes at the "themes" key holds the curated
-    research narratives. It must not be labelled "Themes", which is now
-    the tag-taxonomy index (route key "theme_index") — a reader typing
-    "memory" would otherwise be offered a thesis under the same word the
-    nav uses for the tag."""
-    items = command_palette._index(_ctx(themes=[_theme(name="My Theme")]))
-    theme_items = [i for i in items if i["label"] == "My Theme"]
-    assert len(theme_items) == 1
-    assert theme_items[0]["group"] == "Research Theses"
-    assert theme_items[0]["go"] == "themes"
-    assert "Themes" not in {i["group"] for i in items}
+def test_the_themes_group_is_the_real_taxonomy_and_never_demo_rows():
+    """This group used to read ctx.theme_repository, which is
+    DemoThemeRepository (src/data_access/container.py) — demo data,
+    routed at the Research Theses page, which has nothing to do with it.
+    It now reads the registry-backed taxonomy and routes at the Themes
+    index, so a demo row can no longer reach the palette at all."""
+    from src.logic.theme_taxonomy import company_counts_by_theme, theme_display_name
+
+    # A demo theme named something unmistakable must NOT appear, even
+    # when the context supplies one.
+    items = command_palette._index(_ctx(themes=[_theme(name="A Demo Theme Row")]))
+    assert "A Demo Theme Row" not in [i["label"] for i in items]
+
+    theme_items = [i for i in items if i["group"] == "Themes"]
+    counts = company_counts_by_theme()
+    assert [i["label"] for i in theme_items] == [theme_display_name(s) for s in counts]
+    assert {i["go"] for i in theme_items} == {"theme_index"}
+    assert theme_items[0]["sub"] == f"{list(counts.values())[0]} companies"
+    # Nothing in the palette routes at the Research Theses page any more;
+    # indexing published theses is a separate capability.
+    assert "themes" not in {i["go"] for i in items}
 
 
 def test_every_tracked_company_is_searchable_by_name_and_by_ticker():
@@ -159,9 +166,13 @@ def test_empty_repositories_produce_only_companies_actions_and_theme_commands():
     static registry-backed Companies group plus the fixed commands —
     never an invented row."""
     items = command_palette._index(_ctx())
+    from src.logic.theme_taxonomy import company_counts_by_theme, theme_display_name
+
     non_company = [i["label"] for i in items if i["group"] != "Companies"]
+    non_company = [l for l in non_company if l not in
+                   {theme_display_name(s) for s in company_counts_by_theme()}]
     assert non_company == [
-        "Open Filings", "Open Themes", "Open Methodology",
+        "Open Filings", "Open Methodology",
         "Switch theme: System", "Switch theme: Dark", "Switch theme: Light",
     ]
     assert [i["go"] for i in items if i["go"].startswith("theme:")] == [
