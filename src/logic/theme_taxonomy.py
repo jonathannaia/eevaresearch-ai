@@ -75,3 +75,42 @@ def company_counts_by_theme() -> dict[str, int]:
     size (deliberate: `allow_multi_theme_assignment: true` in
     config/eevaresearch_theme_registry.yaml)."""
     return {slug: len(companies_for_theme(slug)) for slug in known_theme_slugs()}
+
+
+# company name -> its themes, built once from the registry. The key is
+# the issuer's legal_name, which is exactly what a filing candidate
+# carries: daily_news_models.CandidateSignal documents company_name as
+# "matches a real TrackedCompany.name from tracked_companies.py", and
+# SEED_ISSUERS.legal_name was migrated from that same tuple losslessly
+# (see src/config/issuer_registry.py). Aliases are included so a filing
+# that carries a registered alternate name still resolves; an alias is
+# only ever added to the map when it does not collide with a different
+# issuer's name, because a wrong theme is worse than no theme.
+def _company_theme_map() -> dict[str, tuple[str, ...]]:
+    by_name: dict[str, tuple[str, ...]] = {}
+    for issuer in SEED_ISSUERS:
+        if issuer.legal_name:
+            by_name[issuer.legal_name] = issuer.themes
+    for issuer in SEED_ISSUERS:
+        for alias in issuer.aliases:
+            if alias and alias not in by_name:
+                by_name[alias] = issuer.themes
+    return by_name
+
+
+_COMPANY_THEMES = _company_theme_map()
+
+
+def themes_for_company(company_name: str) -> tuple[str, ...]:
+    """The themes a tracked company carries, for tagging a story about
+    it. Returns () for a name the registry does not hold.
+
+    FAILS OPEN, DELIBERATELY. An unrecognised name yields no themes
+    rather than a guess: these tags drive what a reader is shown under
+    a theme, and a filing filed under the wrong theme is worse than one
+    filed under none. The match is exact — no fuzzy matching, no
+    substring, no normalisation beyond stripping surrounding whitespace
+    — because "Coherent Corp" and "Coherent Inc" are different
+    companies and nothing here can tell which was meant.
+    """
+    return _COMPANY_THEMES.get((company_name or "").strip(), ())

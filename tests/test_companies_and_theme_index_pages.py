@@ -277,3 +277,24 @@ def test_a_native_name_can_never_wrap_away_from_its_own_company():
         f'<span class="er-theme-company">{fanuc.legal_name}'
         f'<span class="er-theme-company-native">' in html
     ), "the native name must be nested inside the company's own span"
+
+
+def test_themes_for_company_resolves_every_tracked_issuer_by_its_own_name():
+    """The join key the filing bridge will use: CandidateSignal.
+    company_name is documented as "matches a real TrackedCompany.name",
+    and SEED_ISSUERS.legal_name is that tuple migrated losslessly. If
+    any issuer fails to resolve here, its filings would be tagged with
+    no theme at all."""
+    for issuer in SEED_ISSUERS:
+        assert theme_taxonomy.themes_for_company(issuer.legal_name) == issuer.themes, issuer.legal_name
+
+
+def test_themes_for_company_fails_open_on_an_unknown_name():
+    """No guess, no fuzzy match: a filing tagged with the wrong theme is
+    worse than one tagged with none."""
+    for unknown in ("Not A Tracked Company", "NVIDIA Corporation", "nvidia", ""):
+        assert theme_taxonomy.themes_for_company(unknown) == (), unknown
+
+
+def test_themes_for_company_ignores_surrounding_whitespace_only():
+    assert theme_taxonomy.themes_for_company("  NVIDIA  ") == theme_taxonomy.themes_for_company("NVIDIA")
