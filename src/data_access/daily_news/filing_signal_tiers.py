@@ -30,6 +30,7 @@ import re
 from src.data_access.daily_news.dart_structured_fields import (
     CASH_DIVIDEND,
     FACILITY_INVESTMENT,
+    DividendChange,
     PROVISIONAL_RESULTS,
     SUPPLY_CONTRACT,
     TREASURY_ACQUISITION,
@@ -211,7 +212,10 @@ LARGE_TREASURY_ACTION_WON = 1_000_000_000_000
 #: exact; the ratio test would be a coin flip dressed as arithmetic.
 
 
-def tier_for_structured_facts(facts: StructuredFilingFacts | None) -> NewsMaterialityTier | None:
+def tier_for_structured_facts(
+    facts: StructuredFilingFacts | None,
+    dividend_change: DividendChange | None = None,
+) -> NewsMaterialityTier | None:
     """The tier this filing's own figures justify, or None to leave
     the document-type table in charge.
 
@@ -225,12 +229,16 @@ def tier_for_structured_facts(facts: StructuredFilingFacts | None) -> NewsMateri
         return NewsMaterialityTier.HIGH_SIGNAL
 
     if facts.template == CASH_DIVIDEND:
-        # Early unless the filing calls it special. See
-        # StructuredFilingFacts.is_special_dividend for why the
-        # "changed against last year" half of this rule is not
-        # implemented here rather than guessed at.
+        # Early by default. High when the filing says it is special —
+        # which nothing in this corpus does — or when it is at least
+        # twice, or at most half, the issuer's previous rate. That
+        # second test is what catches Samsung's ₩4,601 against its own
+        # ₩374: the filing itself still calls it 분기배당, so only the
+        # comparison can tell the two apart.
+        material_change = dividend_change is not None and dividend_change.is_material
         return (
-            NewsMaterialityTier.HIGH_SIGNAL if facts.is_special_dividend
+            NewsMaterialityTier.HIGH_SIGNAL
+            if facts.is_special_dividend or material_change
             else NewsMaterialityTier.WATCHLIST
         )
 

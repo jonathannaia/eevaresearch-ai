@@ -445,3 +445,121 @@ def test_the_two_shipped_templates_keep_their_category_tier(template):
     """Nobody asked for those to move, and a threshold nobody has
     reviewed is worse than a consistent rule."""
     assert tier_for_structured_facts(_facts(template, amount_won=10**15)) is None
+
+
+# ============================================================
+# A dividend against the issuer's last one
+# ============================================================
+
+#: Every dividend filing in the store, as (corp_code, period, per share).
+REAL_DIVIDEND_HISTORY = [
+    ("00126380", "2026-06-30", 374),      # Samsung, Q2
+    ("00126380", "2026-09-30", 4601),     # Samsung, Q3
+    ("00164779", "2026-08-31", 375),      # SK Hynix
+    ("00164779", "2026-11-30", 20000),    # SK Hynix
+    ("00358271", "2026-06-30", 365),      # SFA, its only one
+]
+
+
+def _history():
+    return D.build_dividend_history(REAL_DIVIDEND_HISTORY)
+
+
+def _dividend(per_share, record_date, total=1_000_000_000, yield_="1.0"):
+    return D.StructuredFilingFacts(
+        template=D.CASH_DIVIDEND, amount_won=total, per_share_won=per_share,
+        ratio_percent=Decimal(yield_), record_date=record_date, kind="분기배당",
+    )
+
+
+@pytest.mark.parametrize("corp,period,expected_prior", [
+    ("00126380", "2026-09-30", 374),
+    ("00164779", "2026-11-30", 375),
+])
+def test_the_previous_filing_is_found(corp, period, expected_prior):
+    prior = D.prior_dividend(_history(), corp, period)
+    assert prior is not None and prior.per_share_won == expected_prior
+
+
+def test_the_first_dividend_an_issuer_files_has_nothing_to_compare_to():
+    assert D.prior_dividend(_history(), "00358271", "2026-06-30") is None
+    assert D.prior_dividend(_history(), "00126380", "2026-06-30") is None
+
+
+def test_a_later_filing_is_never_treated_as_the_prior_one():
+    """Strictly before, so running the pass twice cannot make a
+    dividend its own predecessor."""
+    prior = D.prior_dividend(_history(), "00126380", "2026-06-30")
+    assert prior is None
+
+
+def test_filing_dates_are_stored_in_two_formats_and_must_still_order():
+    """The store holds both "2026-10-29" and "20260730" for rcept_dt.
+    As plain strings those sort the wrong way round, because "-" is
+    below "0" in ASCII, which would make Samsung's October filing look
+    older than its July one and run the comparison backwards."""
+    assert "2026-10-29" < "20260730", "the trap this normalisation exists for"
+    history = D.build_dividend_history([
+        ("x", "20260730", 374), ("x", "2026-10-29", 4601),
+    ])
+    prior = D.prior_dividend(history, "x", "2026-10-29")
+    assert prior is not None and prior.per_share_won == 374
+
+
+def test_samsung_is_material_and_the_headline_says_what_it_rose_from():
+    facts = _dividend(4601, "2026-09-30", total=30_003_024_457_217, yield_="1.7")
+    change = D.dividend_change(facts, D.prior_dividend(_history(), "00126380", "2026-09-30"))
+    assert change.is_material and change.direction == "up"
+    assert D.structured_headline("Samsung Electronics", facts, change) == (
+        "Samsung Electronics — ₩30.0tn dividend, ₩4,601 per common share, "
+        "up from ₩374 (1.7% dividend yield)"
+    )
+    assert tier_for_structured_facts(facts, change) is NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_sk_hynix_is_material_too():
+    facts = _dividend(20000, "2026-11-30", total=14_103_466_480_000, yield_="1.56")
+    change = D.dividend_change(facts, D.prior_dividend(_history(), "00164779", "2026-11-30"))
+    assert change.is_material
+    assert "up from ₩375" in D.structured_headline("SK Hynix", facts, change)
+    assert tier_for_structured_facts(facts, change) is NewsMaterialityTier.HIGH_SIGNAL
+
+
+def test_a_first_dividend_stays_early_and_says_nothing_about_a_change():
+    facts = _dividend(374, "2026-06-30", total=2_455_894_601_644, yield_="0.1")
+    change = D.dividend_change(facts, D.prior_dividend(_history(), "00126380", "2026-06-30"))
+    assert change is None
+    assert "up from" not in D.structured_headline("Samsung Electronics", facts, change)
+    assert tier_for_structured_facts(facts, change) is NewsMaterialityTier.WATCHLIST
+
+
+@pytest.mark.parametrize("current,prior,material,direction", [
+    (800, 400, True, "up"),       # exactly 2x
+    (799, 400, False, "up"),      # just under
+    (200, 400, True, "down"),     # exactly halved
+    (201, 400, False, "down"),    # just above half
+])
+def test_the_threshold_is_symmetric_and_sits_at_two_times(current, prior, material, direction):
+    """A halving is treated as the same size of event as a doubling.
+    The brief named "increase/cut" together, and a dividend cut in
+    half is not an Early-tier fact."""
+    change = D.dividend_change(
+        _dividend(current, "2026-09-30"), D.PriorDividend(per_share_won=prior, period="20260630"),
+    )
+    assert change.is_material is material and change.direction == direction
+
+
+def test_an_unchanged_rate_is_not_a_change():
+    change = D.dividend_change(
+        _dividend(374, "2026-09-30"), D.PriorDividend(per_share_won=374, period="20260630"),
+    )
+    assert change is None
+
+
+def test_no_year_ago_comparison_is_possible_in_this_store():
+    """"The first increase or cut versus the same period last year" is
+    deliberately absent: every DART filing in the store falls between
+    2026-07 and 2026-10, so the rule could be written but never
+    exercised. This pins the reason rather than the absence."""
+    periods = sorted(D._period_key(p) for _, p, _ in REAL_DIVIDEND_HISTORY)
+    assert periods[0][:4] == periods[-1][:4] == "2026"

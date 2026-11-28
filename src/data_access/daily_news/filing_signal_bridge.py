@@ -238,6 +238,20 @@ _ENGLISH_NATIVE_SOURCE = "SEC EDGAR"
 _DART_SOURCE = "OpenDART / DART"
 
 
+def _dividend_change(filing: FilingEvent, facts, dividend_history):
+    """How this dividend compares with the issuer's previous one.
+
+    None for every filing that is not a dividend, and for the first
+    dividend an issuer files — there is nothing to compare to, and a
+    first filing is not a change."""
+    if facts is None or dividend_history is None:
+        return None
+    prior = dart_structured_fields.prior_dividend(
+        dividend_history, filing.corp_code, facts.record_date,
+    )
+    return dart_structured_fields.dividend_change(facts, prior)
+
+
 def _dart_facts(filing: FilingEvent, excerpt: str | None):
     """The filing's own field table, parsed once per story.
 
@@ -249,7 +263,7 @@ def _dart_facts(filing: FilingEvent, excerpt: str | None):
     return dart_structured_fields.parse_structured_fields(excerpt)
 
 
-def _structured_dart_headline(company: str, facts):
+def _structured_dart_headline(company: str, facts, change=None):
     """A headline built from the filing's own field table, or None.
 
     Tried before the curated document-type phrase because it is
@@ -262,7 +276,7 @@ def _structured_dart_headline(company: str, facts):
     rather than the exception."""
     if facts is None:
         return None
-    headline = dart_structured_fields.structured_headline(company, facts)
+    headline = dart_structured_fields.structured_headline(company, facts, change)
     if headline is None:
         return None
     return filing_event_headline.HeadlineResult(
@@ -277,6 +291,7 @@ def _event_headline(
     excerpt: str | None,
     item_anchor: str | None,
     facts=None,
+    change=None,
 ) -> filing_event_headline.HeadlineResult:
     """The card's title line. Never the bare form name.
 
@@ -286,7 +301,7 @@ def _event_headline(
     English document-type phrase joined to their own title."""
     company = candidate.company_name
     if filing.source_name == _DART_SOURCE:
-        structured = _structured_dart_headline(company, facts)
+        structured = _structured_dart_headline(company, facts, change)
         if structured is not None:
             return structured
     if filing.source_name == _ENGLISH_NATIVE_SOURCE:
@@ -436,6 +451,7 @@ def build_filing_signal_story(
     excerpt: str | None = None,
     excerpt_translated: str | None = None,
     item_anchor: str | None = None,
+    dividend_history: dict[str, list[tuple[str, int]]] | None = None,
 ) -> EditorialStory | None:
     """One filing -> one EditorialStory, or None.
 
@@ -459,13 +475,14 @@ def build_filing_signal_story(
 
     category = candidate.event_category
     facts = _dart_facts(filing, excerpt)
+    change = _dividend_change(filing, facts, dividend_history)
 
     # The filing's own figures come first: a treasury-share decision is
     # routine at ₩1bn and front-page at ₩15tn under one document type,
     # so where the filing states the size, the size decides. None from
     # here leaves the document-type table in charge, which is every
     # EDGAR and EDINET filing and most Korean ones.
-    tier = tier_for_structured_facts(facts)
+    tier = tier_for_structured_facts(facts, change)
     if tier is None:
         if is_amendment_category(category) or _DART_AMENDMENT_MARKER in (filing.report_nm or ""):
             tier = tier_for_amendment(category, filing.report_nm or "")
@@ -483,7 +500,9 @@ def build_filing_signal_story(
     if matched_rules:
         reasons.append(f"filing_rules:{','.join(matched_rules)}")
 
-    headline_result = _event_headline(filing, candidate, category, excerpt, item_anchor, facts)
+    headline_result = _event_headline(
+        filing, candidate, category, excerpt, item_anchor, facts, change,
+    )
     reasons.append(f"filing_headline:{headline_result.provenance}")
 
     company = candidate.company_name
@@ -514,6 +533,7 @@ def project_filing_signals(
     *,
     retrieved_at: str,
     documents_by_story_id: dict[str, FilingDocumentContext] | None = None,
+    dividend_history: dict[str, list[tuple[str, int]]] | None = None,
 ) -> tuple[EditorialStory, ...]:
     """Every projectable filing, in input order, one story per filing.
 
@@ -550,6 +570,7 @@ def project_filing_signals(
             excerpt=document.excerpt,
             excerpt_translated=document.excerpt_translated,
             item_anchor=document.item_anchor,
+            dividend_history=dividend_history,
         )
         if story is None:
             continue
