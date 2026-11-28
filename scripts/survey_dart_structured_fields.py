@@ -48,6 +48,21 @@ def main(argv: list[str] | None = None) -> int:
         for c in candidate_repository.load_candidates().values()
     }
 
+    # Built from every dividend filing before anything is judged: a
+    # dividend is compared against the issuer's previous one, and that
+    # is precisely the filing a recent-window filter would remove.
+    dividend_entries = []
+    for filing in filing_repository.load_filing_events():
+        candidate = candidates_by_key.get((filing.corp_code, filing.rcept_no))
+        if candidate is None:
+            continue
+        facts = D.parse_structured_fields(candidate.excerpt_original)
+        if facts is not None and facts.template == D.CASH_DIVIDEND and facts.per_share_won:
+            dividend_entries.append(
+                (filing.corp_code, facts.record_date or filing.rcept_dt, facts.per_share_won),
+            )
+    history = D.build_dividend_history(dividend_entries)
+
     outcomes: Counter[str] = Counter()
     rows = []
     for filing in filing_repository.load_filing_events():
@@ -65,12 +80,15 @@ def main(argv: list[str] | None = None) -> int:
             outcomes["no field table (periodic report etc.)"] += 1
             continue
         company = filing.corp_name or filing.flr_nm or ""
-        headline = D.structured_headline(company, facts)
+        change = D.dividend_change(
+            facts, D.prior_dividend(history, filing.corp_code, facts.record_date),
+        )
+        headline = D.structured_headline(company, facts, change)
         if headline is None:
             outcomes["field table, but every headline figure withheld"] += 1
         else:
             outcomes["structured headline produced"] += 1
-        rows.append((filing, facts, headline, text, candidate))
+        rows.append((filing, facts, headline, text, candidate, change))
 
     print("OpenDART filings in the store:", sum(outcomes.values()))
     for name, count in outcomes.most_common():
@@ -80,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     shown = [r for r in rows if r[2] is not None] if args.with_headline else rows
     if args.limit:
         shown = shown[: args.limit]
-    for i, (filing, facts, headline, text, candidate) in enumerate(shown, 1):
-        structured_tier = tier_for_structured_facts(facts)
+    for i, (filing, facts, headline, text, candidate, change) in enumerate(shown, 1):
+        structured_tier = tier_for_structured_facts(facts, change)
         tier = structured_tier or tier_for_filing_category(
             next((r.split(":", 1)[0] for r in candidate.matched_rules if ":" in r), ""),
         )
