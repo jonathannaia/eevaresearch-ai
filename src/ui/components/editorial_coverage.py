@@ -36,6 +36,7 @@ from src.data_access.daily_news.editorial_pipeline import (
     select_visible_editorial_stories_for_company,
 )
 from src.logic.formatting import fmt_datetime_local, fmt_time_local
+from src.ui.components.tier_labels import tier_display_label
 from src.models.daily_news_models import EditorialStory, NewsMaterialityTier
 
 _THEME_DISPLAY_NAMES: dict[str, str] = {
@@ -64,7 +65,7 @@ _TIER_BADGE_CLASS: dict[NewsMaterialityTier, str] = {
 
 def _tier_badge_html(tier: NewsMaterialityTier) -> str:
     css_class = _TIER_BADGE_CLASS.get(tier, "er-tag-neutral")
-    return f'<span class="er-status-tag {css_class}">{tier.value}</span>'
+    return f'<span class="er-status-tag {css_class}">{tier_display_label(tier)}</span>'
 
 # Government / Public Sector Daily News lane (design/DECISIONS.md) —
 # badge label derived at render time from the story's own already-
