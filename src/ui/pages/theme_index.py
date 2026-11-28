@@ -17,12 +17,16 @@ Read-only and static: counts come from the issuer registry, so this page
 makes no repository read, no source request and no write.
 
 COUNTS ARE COMPANIES, NOT EVENTS, and the label says so. A per-theme
-event count is the number a reader actually wants, and it cannot be
-computed honestly today: `filing_signal_bridge.project_filing_signals()`
-sets `matched_themes=()` on every filing-derived story, so counting
-stories per theme would silently report the news lane only and omit
-every filing. Projecting themes onto filing stories comes first; until
-then this page counts the tracked universe, which is exact.
+event count is the number a reader actually wants, and it is now
+possible but not yet correct: `project_filing_signals()` does tag every
+filing-derived story with its issuer's themes, but stories persisted
+BEFORE that change still carry an empty list, because
+`upsert_new_stories()` skips rows that already exist. Until
+`scripts/backfill_filing_story_themes.py` has run against the store, an
+event count would under-report every theme by however many filings
+predate the change. This page counts the tracked universe meanwhile,
+which is exact, and item 4's theme pages are where the event count
+belongs.
 
 NO THEME DETAIL PAGES YET. Per-theme pages are UI redesign item 4, which
 also fixes the theme "View" links that currently open external articles.

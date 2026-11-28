@@ -53,6 +53,7 @@ from src.logic.filing_display import (
     strip_edinet_summary_artifacts,
     summary_is_substantive,
 )
+from src.logic.theme_taxonomy import themes_for_company
 from src.models.daily_news_models import EditorialStory
 from src.models.models import FilingEvent
 
@@ -520,7 +521,19 @@ def build_filing_signal_story(
             facts=facts,
         ),
         matched_companies=(company,),
-        matched_themes=(),
+        # The themes the tracked company carries, from the issuer
+        # registry — NOT inferred from the filing's text. A filing is
+        # about its issuer, and the issuer's themes are already curated
+        # and reviewed; classifying the prose instead would invent a
+        # second, unreviewed taxonomy over the same companies.
+        #
+        # This was `()` until now, which quietly meant every per-theme
+        # count across the app reported the news lane only and omitted
+        # every filing. Stories persisted before this change keep their
+        # empty list — upsert_new_stories() skips rows that already
+        # exist — which is what scripts/backfill_filing_story_themes.py
+        # is for.
+        matched_themes=themes_for_company(company),
         source_feed_id=_FEED_ID_BY_SOURCE.get(filing.source_name, "filing-unknown"),
         materiality_tier=tier,
         materiality_reasons=tuple(reasons),
