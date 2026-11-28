@@ -38,6 +38,7 @@ detects them and parse_structured_fields() returns None."""
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -501,7 +502,11 @@ _WITHHELD_NOTES: dict[str, str] = {
 }
 
 
-def structured_headline(company: str, facts: StructuredFilingFacts) -> str | None:
+def structured_headline(
+    company: str,
+    facts: StructuredFilingFacts,
+    change: DividendChange | None = None,
+) -> str | None:
     """A headline built from the field table, or None when there is
     nothing in it worth putting on a card.
 
@@ -537,6 +542,11 @@ def structured_headline(company: str, facts: StructuredFilingFacts) -> str | Non
     # rate, and a buyback reader wants both the spend and the float.
     if facts.per_share_won is not None:
         lead = f"{lead}, {exact_won(facts.per_share_won)} per common share"
+        if change is not None:
+            # Named only when there is a change; an unchanged rate is
+            # not news and saying "unchanged from ₩374" pads the card.
+            moved = "up from" if change.direction == "up" else "down from"
+            lead = f"{lead}, {moved} {exact_won(change.prior_per_share_won)}"
     elif facts.shares is not None:
         lead = f"{lead} ({facts.shares:,} shares)"
 
@@ -730,3 +740,121 @@ def _year_on_year_percent(row: str) -> Decimal | None:
         if bool(_NUMBER_RE.match(token)) is not should_be_numeric:
             return None
     return _as_decimal(tokens[_YEAR_ON_YEAR_COLUMN])
+
+
+# ============================================================
+# A dividend against the issuer's last one
+# ============================================================
+#
+# A dividend filing states this quarter's rate and nothing else, so a
+# field table cannot tell a routine payout from Samsung's ₩4,601 a
+# share against its own ₩374 the quarter before. That comparison needs
+# the issuer's PREVIOUS filing, which the store has — so it is a
+# lookup, not an inference, and it stays pure here: the caller supplies
+# the history, this module only reads it.
+#
+# ORDER BY RECORD DATE, NOT FILING DATE. rcept_dt is not stored in one
+# format — the same store holds "2026-10-29" and "20260730" — and
+# those two sort the wrong way round as plain strings, because "-" is
+# below "0" in ASCII. Samsung's October filing would then look older
+# than its July one and the comparison would run backwards. 배당기준일
+# is consistently ISO and is the economically right key anyway: it is
+# the period the dividend is for, not the day the form was lodged.
+# _period_key() normalises either shape to digits as a last resort.
+#
+# "THE FIRST INCREASE OR CUT VERSUS THE SAME PERIOD LAST YEAR" IS NOT
+# IMPLEMENTED. Every DART filing in the store falls between 2026-07
+# and 2026-10; there is no same period last year to compare against,
+# so the rule could only ever be written and never exercised. It
+# belongs here once the store spans a year.
+
+#: A dividend at or above twice the issuer's last one — or at or below
+#: half of it — is a change a reader should be told about rather than
+#: a quarterly rate. Samsung filed 12.3x its own previous rate and SK
+#: Hynix 53.3x; nothing in this corpus sits near the boundary.
+DIVIDEND_CHANGE_MULTIPLE = 2
+
+
+@dataclass(frozen=True)
+class PriorDividend:
+    """What the issuer paid last time, as filed."""
+
+    per_share_won: int
+    period: str
+
+
+@dataclass(frozen=True)
+class DividendChange:
+    """`is_material` is the tier test; `prior_per_share_won` is what
+    the headline says it rose or fell from."""
+
+    prior_per_share_won: int
+    direction: str
+    is_material: bool
+
+
+def _period_key(value: str | None) -> str:
+    """Digits only, so "2026-10-29" and "20261029" compare equal and
+    both sort above "20260730"."""
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def build_dividend_history(
+    entries: Iterable[tuple[str, str, int]],
+) -> dict[str, list[tuple[str, int]]]:
+    """corp_code -> [(period key, per-share), ...] oldest first.
+
+    `entries` is (corp_code, period, per_share_won) for every dividend
+    filing the caller can see — the WHOLE store, not a recent window,
+    or the previous filing is exactly the one that gets left out."""
+    history: dict[str, list[tuple[str, int]]] = {}
+    for corp_code, period, per_share in entries:
+        key = _period_key(period)
+        if not corp_code or not key or per_share is None:
+            continue
+        history.setdefault(corp_code, []).append((key, per_share))
+    for rows in history.values():
+        rows.sort()
+    return history
+
+
+def prior_dividend(
+    history: dict[str, list[tuple[str, int]]] | None,
+    corp_code: str | None,
+    period: str | None,
+) -> PriorDividend | None:
+    """The issuer's most recent dividend STRICTLY BEFORE this one, or
+    None when this is the first the store has seen."""
+    rows = (history or {}).get(corp_code or "")
+    key = _period_key(period)
+    if not rows or not key:
+        return None
+    earlier = [row for row in rows if row[0] < key]
+    if not earlier:
+        return None
+    previous_period, per_share = earlier[-1]
+    return PriorDividend(per_share_won=per_share, period=previous_period)
+
+
+def dividend_change(
+    facts: StructuredFilingFacts, prior: PriorDividend | None,
+) -> DividendChange | None:
+    """How this dividend compares with the issuer's last one, or None
+    when either rate is missing or there is nothing to compare to."""
+    if facts.template != CASH_DIVIDEND or prior is None:
+        return None
+    current = facts.per_share_won
+    if current is None or current <= 0 or prior.per_share_won <= 0:
+        return None
+    if current == prior.per_share_won:
+        return None
+    direction = "up" if current > prior.per_share_won else "down"
+    material = (
+        current >= prior.per_share_won * DIVIDEND_CHANGE_MULTIPLE
+        or current * DIVIDEND_CHANGE_MULTIPLE <= prior.per_share_won
+    )
+    return DividendChange(
+        prior_per_share_won=prior.per_share_won,
+        direction=direction,
+        is_material=material,
+    )

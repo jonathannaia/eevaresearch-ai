@@ -143,6 +143,7 @@ from src.data_access.daily_news.daily_news_backend import (
     DailyNewsScanStatusRepositoryProtocol,
     PostgresDailyNewsScanStatusRepository,
 )
+from src.data_access.daily_news import dart_structured_fields
 from src.data_access.daily_news.feed_registry import DailyNewsFeedSource, PILOT_FEEDS
 from src.data_access.state_db.daily_news_scan_status_repository import (
     WORKER_STATUS_KEY,
@@ -488,6 +489,8 @@ def _run_editorial_tick(worker_settings: Settings) -> None:
 #: should appear when timestamps tie.
 _FILING_SIGNAL_SOURCES: tuple[str, ...] = ("SEC EDGAR", "OpenDART / DART", "EDINET")
 
+_DART_SOURCE_NAME = "OpenDART / DART"
+
 
 def _run_filing_signal_projection(worker_settings) -> None:
     """Projects recent filings into the Signals feed, behind
@@ -517,6 +520,11 @@ def _run_filing_signal_projection(worker_settings) -> None:
 
         filings_with_rules: list[tuple[object, tuple[str, ...]]] = []
         documents: dict[str, filing_signal_bridge.FilingDocumentContext] = {}
+        # Built from EVERY dividend filing in the store, deliberately
+        # outside the lookback window below: a dividend is compared
+        # against the issuer's PREVIOUS one, and that is precisely the
+        # filing a recent-window filter removes.
+        dividend_entries: list[tuple[str, str, int]] = []
         for source in _FILING_SIGNAL_SOURCES:
             filing_repository = backend_factory.get_filing_event_repository(worker_settings, source)
             candidate_repository = backend_factory.get_candidate_repository(worker_settings, source)
@@ -525,9 +533,22 @@ def _run_filing_signal_projection(worker_settings) -> None:
                 for c in candidate_repository.load_candidates().values()
             }
             for filing in filing_repository.load_filing_events():
+                candidate = candidates_by_key.get((filing.corp_code, filing.rcept_no))
+                if source == _DART_SOURCE_NAME and candidate is not None:
+                    facts = dart_structured_fields.parse_structured_fields(
+                        candidate.excerpt_original,
+                    )
+                    if (
+                        facts is not None
+                        and facts.template == dart_structured_fields.CASH_DIVIDEND
+                        and facts.per_share_won is not None
+                    ):
+                        dividend_entries.append(
+                            (filing.corp_code, facts.record_date or filing.rcept_dt,
+                             facts.per_share_won),
+                        )
                 if (filing.filed_at or filing.rcept_dt or "") < cutoff:
                     continue
-                candidate = candidates_by_key.get((filing.corp_code, filing.rcept_no))
                 matched_rules = tuple(candidate.matched_rules) if candidate else ()
                 filings_with_rules.append((filing, matched_rules))
                 if candidate is not None:
@@ -547,6 +568,7 @@ def _run_filing_signal_projection(worker_settings) -> None:
             tuple(filings_with_rules),
             retrieved_at=datetime.now(timezone.utc).isoformat(),
             documents_by_story_id=documents,
+            dividend_history=dart_structured_fields.build_dividend_history(dividend_entries),
         )
         if stories:
             editorial_repository.upsert_new_stories(list(stories))
