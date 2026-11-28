@@ -1065,13 +1065,52 @@ table.er-table td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--bord
 table.er-table tr:last-child td { border-bottom: none; }
 table.er-table .er-mono { font-size: 0.8rem; }
 /* Sidebar count badge + status block. */
-.er-rail-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary); background: var(--surface-chip); border-radius: var(--r-sm); padding: 0.05rem 0.4rem; margin-left: auto; }
+/* white-space:nowrap because the badge is absolutely positioned now
+   and shrink-wraps to the space left of the rail's edge: without it
+   a two-digit count wraps to one digit per line. */
+.er-rail-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary); background: var(--surface-chip); border-radius: var(--r-sm); padding: 0.05rem 0.4rem; margin-left: auto; white-space: nowrap; }
 .er-rail-status-block { margin: var(--space-3) 0 0 0; padding: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); }
 .er-rail-status-block .er-rail-status-title { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: var(--text); font-weight: 500; }
 
 /* ---------- v2 shell (sidebar groups, count badges, identity, top bar) ---------- */
 [class*="st-key-navitem-"] { position: relative; }
-[class*="st-key-navitem-"] [data-testid="stMarkdown"] { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: auto; }
+/* The count badge is pulled out of the flow and pinned to the right of
+   its OWN nav row. It is the stElementContainer that is positioned, not
+   the stMarkdown inside it, and that distinction is the whole bug this
+   replaces: Streamlit gives stElementContainer a position of its own, so
+   absolutely positioning the inner stMarkdown anchored it to that
+   container rather than to the nav row. The badge then sat at the
+   BOTTOM of its own row — visually beside the NEXT item — and, because
+   the element container stayed in the flow, made that row 48px tall
+   against 33px for every other one. Live result: "14" (Feed's High
+   Signals) appeared against Companies and "2" (published Theses)
+   against Coverage, each reading as a count of the wrong thing.
+   Positioning the element container takes it out of the flow, so the
+   row keeps its height and the badge lands on its own row's right
+   edge. */
+[class*="st-key-navitem-"] [data-testid="stElementContainer"]:has(.er-rail-count) {
+    /* Stretched over the row so it becomes the badge's containing
+       block, and out of the flow so the row keeps its height. */
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: auto; margin: 0; z-index: 1;
+}
+/* The badge SPAN does the centring, not any wrapper. Streamlit styles
+   stElementContainer and stMarkdown — including a transform of its own
+   on the container, which beat ours and left the badge ~10px low, most
+   of the way to the next row — but it does not style this span, so
+   top/transform here behave. Measured dead-centre in the browser. */
+[class*="st-key-navitem-"] .er-rail-count {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+}
+[class*="st-key-navitem-"] [data-testid="stMarkdown"] { position: static; width: auto; }
+/* stMarkdown computes to height 0 here, so centring IT centres an empty
+   box and the badge hangs below the midpoint by half its own height —
+   10px, which is most of the gap to the next row. display:contents
+   drops the wrapper out of the box tree so the paragraph itself is the
+   flex item being centred. */
+[class*="st-key-navitem-"] [data-testid="stElementContainer"]:has(.er-rail-count) [data-testid="stMarkdown"] {
+    display: contents;
+}
 [class*="st-key-navitem-"] [data-testid="stMarkdown"] p { margin: 0; line-height: 1; }
 [class*="st-key-navitem-"][class*="-active"] .er-rail-count { background: var(--selected-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--selected-ring); }
 [data-testid="stSidebar"] [data-testid="stPageLink"] a p { font-size: 0.9rem; }
