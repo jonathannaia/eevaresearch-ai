@@ -86,10 +86,10 @@ def main(argv: list[str] | None = None) -> int:
             next((r.split(":", 1)[0] for r in candidate.matched_rules if ":" in r), ""),
         )
         print(f"--- [{i}] {filing.corp_name} / {filing.rcept_dt} / {filing.rcept_no}")
-        print(f"    tier:       {tier.value if tier else 'NOT PROJECTED'}"
-              f"{'  (from the filing\'s own figures)' if structured_tier else '  (document type)'}")
         print(f"    today:      {(filing.report_nm or '')!r}")
         print(f"    structured: {headline!r}")
+        print(f"    tier:       {tier.value if tier else 'NOT PROJECTED'}"
+              f"{'  (from the filing\'s own figures)' if structured_tier else '  (document type)'}")
         if facts is not None:
             print(f"    template={facts.template} amount={facts.amount_won} "
                   f"ratio={facts.ratio_percent} withheld={facts.withheld}")
