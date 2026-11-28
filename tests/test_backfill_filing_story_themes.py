@@ -210,3 +210,28 @@ def test_a_story_with_no_tier_is_skipped_rather_than_crashing_the_run(pg_isolate
     assert backfill.main(["--apply"]) == 0
     assert _themes(pg_isolated_dsn, f"{prefix}:fine") == list(_NVIDIA.themes)
     assert _themes(pg_isolated_dsn, f"{prefix}:no-tier") == [], "a row that cannot be logged was still updated"
+
+
+def test_apply_refuses_on_a_database_below_v32_rather_than_half_finishing(pg_isolated_dsn, monkeypatch):  # noqa: F811
+    """The revision insert needs old_themes_json. On a database that
+    predates V32 the insert raises partway through the loop, leaving
+    some rows updated and some not. The run must refuse up front."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    prefix = filing_signal_bridge.STORY_ID_PREFIX
+    with psycopg.connect(pg_isolated_dsn, row_factory=dict_row) as conn:
+        postgres_schema.migrate(conn)
+        _insert_story(conn, f"{prefix}:untagged", [_NVIDIA.legal_name], [])
+        # Wind the schema back to V31 for this one table.
+        conn.execute("ALTER TABLE editorial_story_revisions DROP COLUMN old_themes_json")
+        conn.commit()
+
+    class _S:
+        state_db_url = pg_isolated_dsn
+
+    monkeypatch.setattr(backfill, "get_settings", lambda: _S())
+    assert backfill.main(["--apply"]) == 2
+    assert _themes(pg_isolated_dsn, f"{prefix}:untagged") == [], "rows were written despite the refusal"
+    # A dry run is still fine: it only reads.
+    assert backfill.main([]) == 0

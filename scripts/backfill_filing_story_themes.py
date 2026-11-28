@@ -99,6 +99,33 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     with connect(dsn) as conn:
+        # Preflight: the revision insert needs schema V32's
+        # old_themes_json. Without it --apply would raise partway
+        # through the loop, after some rows had been updated and others
+        # had not. Checked up front so the run either does all of its
+        # work or none of it, and says which.
+        #
+        # current_schema() matters: information_schema spans every
+        # schema on the database, so an unqualified lookup is
+        # happily satisfied by a same-named table in another one
+        # and reports a column this connection cannot see.
+        has_column = conn.execute(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'editorial_story_revisions'
+              AND column_name = 'old_themes_json'
+            """
+        ).fetchone()
+        if args.apply and has_column is None:
+            print(
+                "editorial_story_revisions.old_themes_json is missing: this database is "
+                "below schema V32, so a change here could not be recorded. Deploy the "
+                "migration first, then re-run.",
+                file=sys.stderr,
+            )
+            return 2
+
         rows = _candidates(conn)
         planned: list[tuple[dict, tuple[str, ...]]] = []
         unresolved: list[str] = []
