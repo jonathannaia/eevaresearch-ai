@@ -233,7 +233,7 @@ def test_sidebar_theme_control_switches_the_rendered_theme(monkeypatch):
     control.set_value("light").run()
     assert not at.exception
     css = _style_block(at)
-    assert css.split(":root{", 1)[1].startswith("color-scheme:light;--bg:#F6F4EF;")
+    assert css.split(":root{", 1)[1].startswith("color-scheme:light;--bg:#F5F7FB;")
     assert "@media (prefers-color-scheme" not in css
     assert at.session_state["sidebar-theme-control"] == "light"
 

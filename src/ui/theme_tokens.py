@@ -30,65 +30,103 @@ THEMES: tuple[ThemeName, ...] = ("dark", "light")
 PREFERENCES: tuple[ThemePreference, ...] = ("system", "dark", "light")
 
 # token name (without the leading --) -> (dark, light)
+#
+# DARK is the designed theme. Every surface, border, text, accent and
+# status value below is taken verbatim from the three mockups in
+# design/ui-redesign/ — see that directory's README for which hex sits
+# where. The families the mockups never show (evidence, filing venues,
+# taxonomy categories) keep the HUES they already had, because those
+# hues carry meaning a reader has learned, and only their lightness and
+# chroma are re-seated onto the new, cooler ground.
+#
+# LIGHT is DERIVED from Dark, not designed separately — the mockups
+# define no light palette and inventing one would be guessing. The rule,
+# applied per role rather than per colour:
+#   * surfaces and borders keep the dark hue and take a lightness from
+#     the light ladder that preserves each role's RELATIONSHIP to the
+#     page ground (a card sits above the ground in both themes, the rail
+#     below it, borders step away from it). A literal lightness mirror
+#     does not work: --bg at L=0.17 mirrors to a mid grey, not a page.
+#   * text keeps its hue and steps down a mirrored ladder.
+#   * chromatic tokens keep their hue and are darkened until they clear
+#     the contrast floor their role needs on the surface they land on —
+#     4.5:1 for text, 3:1 for dots, bars and rails. The floor is measured
+#     against the DARKEST surface each token actually renders on (see
+#     _TEXT_PAIRS in tests/test_theme_tokens.py), not against the
+#     lightest card: deriving --accent against --surface alone left it at
+#     3.79:1 on --nav-active-bg, which is exactly where the active nav
+#     item paints it.
+# The derivation ran in OKLCH so hue survives the lightness change; the
+# contrast floors are enforced for real by this module's own tests
+# (tests/test_theme_tokens.py), not by the script that produced them.
 _PAIRS: dict[str, tuple[str, str]] = {
     # Surfaces
-    "bg": ("#111110", "#F6F4EF"),
-    "bg-sidebar": ("#141412", "#EFECE5"),
-    "surface": ("#1A1917", "#FCFBF8"),
-    "surface-input": ("#161513", "#FFFFFF"),
-    "surface-chip": ("#22211E", "#F0EDE6"),
-    "nav-active-bg": ("#1D2230", "#E4E8F2"),
-    "selected-bg": ("#1C2130", "#EEF1F8"),
-    "selected-ring": ("#34466B", "#C3CDE6"),
+    "bg": ("#0E1013", "#F5F7FB"),
+    "bg-sidebar": ("#0B0D10", "#EEF0F4"),
+    "surface": ("#121418", "#FBFDFF"),
+    "surface-input": ("#0F1215", "#FCFFFF"),
+    "surface-chip": ("#1A1E25", "#E6EBF3"),
+    "nav-active-bg": ("#1A1E25", "#E2E7EF"),
+    "selected-bg": ("#161A20", "#EBEFF6"),
+    "selected-ring": ("#1B5C51", "#6EB5A1"),
     # Borders
-    "border-subtle": ("#23221F", "#E9E5DD"),
-    "border": ("#2A2825", "#E2DED5"),
-    "border-strong": ("#302E2A", "#D6D1C7"),
+    "border-subtle": ("#1D2127", "#E0E4EB"),
+    "border": ("#23272E", "#D3D7DF"),
+    "border-strong": ("#2A2F37", "#C0C5CD"),
     # Text
-    "text": ("#ECE9E4", "#1C1B19"),
-    "text-secondary": ("#C2BDB5", "#45423D"),
-    "text-muted": ("#9C978F", "#625E57"),
-    "text-label": ("#88837B", "#6E6961"),
+    "text": ("#E7E9EC", "#222427"),
+    "text-secondary": ("#B8BEC7", "#4A5059"),
+    "text-muted": ("#9AA1AC", "#5E6571"),
+    "text-label": ("#848B97", "#646B77"),
     # Accent — interactive only, never evidence
-    "accent": ("#8AA8E0", "#23386E"),
-    "accent-contrast": ("#0C1424", "#FFFFFF"),
-    "link": ("#9DB6EA", "#2F4F9E"),
-    "link-hover": ("#BFD0F2", "#1F3A7A"),
-    "brand": ("#6FD3BC", "#6FD3BC"),
+    "accent": ("#2DBFA8", "#00715B"),
+    "accent-contrast": ("#0B0D10", "#FFFFFF"),
+    # The mockups make links plain body text (`a{color:#E7E9EC}`), which
+    # leaves a link indistinguishable from the prose around it. #6AA8F0
+    # is the mockups' own second accent (it is in the accent picker's
+    # option list and draws the company-page timeline dots), so links
+    # take that rather than a colour from nowhere or no colour at all.
+    "link": ("#6AA8F0", "#1C68B6"),
+    "link-hover": ("#83C2FF", "#0058A4"),
+    # The logo tile behind the "e" mark in every mockup header.
+    "brand": ("#13233A", "#13233A"),
     # Evidence — reserved for evidence meaning
-    "ev-supports": ("#5FC88A", "#3A9A62"),
-    "ev-mixed": ("#E0B060", "#C08A2A"),
-    "ev-contradicts": ("#E07A6F", "#B5483C"),
-    "ev-context": ("#3E434A", "#C9C4BA"),
+    "ev-supports": ("#5FC88A", "#14A863"),
+    "ev-mixed": ("#E0B060", "#BE881E"),
+    "ev-contradicts": ("#E07A6F", "#E57065"),
+    # The one evidence value the mockups do pin down, by role if not by
+    # name: the inert bar on the company page's thesis list.
+    "ev-context": ("#4A505A", "#4A505A"),
     # Status
-    "live": ("#5FD08F", "#2E9E5B"),
-    "high-signal-bg": ("#152A22", "#E4F2E8"),
-    "high-signal-text": ("#7FE0A6", "#256B41"),
+    "live": ("#2DBFA8", "#00715B"),
+    "high-signal-bg": ("#4A2E07", "#FCEEDE"),
+    "high-signal-text": ("#F5B66A", "#A55900"),
+    # New: the Early tier had no colour of its own — its badge rendered
+    # in the neutral chip style, so High was the only tier a reader could
+    # pick out at a glance. The mockups give it #8DBDF5.
+    "early-bg": ("#1F354D", "#E7F1FE"),
+    "early-text": ("#8DBDF5", "#316FB3"),
     # Filing venues (tint / text)
-    "venue-edgar-bg": ("#18233A", "#E3EAF7"),
-    "venue-edgar-text": ("#9CBCF0", "#2D4A85"),
-    "venue-dart-bg": ("#2A1D33", "#F0E6F5"),
-    "venue-dart-text": ("#D4AEF0", "#6B3F87"),
-    "venue-edinet-bg": ("#172A2C", "#E2F2F3"),
-    "venue-edinet-text": ("#93D2D8", "#256A70"),
-    "venue-tdnet-bg": ("#2B1F24", "#F6E8ED"),
-    "venue-tdnet-text": ("#E8B4C4", "#8A3F58"),
-    "venue-cninfo-bg": ("#2A201C", "#F6EBE4"),
-    "venue-cninfo-text": ("#E8B79C", "#8A4B2E"),
-    "venue-hkex-bg": ("#25271B", "#F1F2E2"),
-    "venue-hkex-text": ("#CFD39A", "#5E6328"),
+    "venue-edgar-bg": ("#233147", "#E9F1FD"),
+    "venue-edgar-text": ("#9CBCF0", "#466BA9"),
+    "venue-dart-bg": ("#3A2946", "#F5ECFB"),
+    "venue-dart-text": ("#D4AEF0", "#8858A8"),
+    "venue-edinet-bg": ("#1A383A", "#E6F3F4"),
+    "venue-edinet-text": ("#93D2D8", "#167880"),
+    "venue-tdnet-bg": ("#412B32", "#F9ECF0"),
+    "venue-tdnet-text": ("#E8B4C4", "#965A6F"),
+    "venue-cninfo-bg": ("#412C20", "#F9EEE7"),
+    "venue-cninfo-text": ("#E8B79C", "#975E3D"),
+    "venue-hkex-bg": ("#34361C", "#F0F1E5"),
+    "venue-hkex-text": ("#CFD39A", "#6E7125"),
     # Taxonomy categories — never evidence. One distinct hue per theme in
-    # src/logic/theme_taxonomy.py, and all five must stay mutually
-    # distinguishable: these render as the only differentiator between
-    # otherwise identical dots on the Companies and Themes indexes.
-    # Photonics was #E0B060, an amber a reader could not tell apart from
-    # AI Buildout's orange at 8px; Humanoids had no token at all and fell
-    # through to the grey "other" dot.
-    "cat-ai-buildout": ("#D39A68", "#B87A45"),
-    "cat-memory": ("#8FB4E8", "#4F74B8"),
-    "cat-space": ("#C9A0E8", "#8E62B0"),
-    "cat-photonics": ("#5FC2C8", "#2E7F85"),
-    "cat-humanoids": ("#D98FA8", "#A34D68"),
+    # src/logic/theme_taxonomy.py; all five must stay mutually
+    # distinguishable in both themes (tests/test_theme_tokens.py).
+    "cat-ai-buildout": ("#D39A68", "#C5854A"),
+    "cat-memory": ("#8FB4E8", "#6B95CF"),
+    "cat-space": ("#C9A0E8", "#AC7ECE"),
+    "cat-photonics": ("#5FC2C8", "#14A1A9"),
+    "cat-humanoids": ("#D98FA8", "#CB7896"),
 }
 
 TOKENS: dict[ThemeName, dict[str, str]] = {

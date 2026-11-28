@@ -200,11 +200,11 @@ def test_dark_theme_tokens_are_loaded_into_the_page():
     css_in_page = style_blocks[0]
     # Web-font @import rules come first — a browser ignores an @import
     # that follows any other rule in the same stylesheet.
-    assert css_in_page.startswith("<style>@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:")
+    assert css_in_page.startswith("<style>@import url('https://fonts.googleapis.com/css2?family=Inter:")
     assert css_in_page.count("@import") == 1
-    assert "--bg:#111110;" in css_in_page
-    assert "--accent:#8AA8E0;" in css_in_page
-    assert ':root[data-theme="light"]{color-scheme:light;--bg:#F6F4EF;' in css_in_page
+    assert "--bg:#0E1013;" in css_in_page
+    assert "--accent:#2DBFA8;" in css_in_page
+    assert ':root[data-theme="light"]{color-scheme:light;--bg:#F5F7FB;' in css_in_page
     assert 'base = "light"' not in css_in_page  # sanity: this is CSS, not the toml, but guards against a copy/paste mixup
 
 

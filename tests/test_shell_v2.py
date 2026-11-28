@@ -129,3 +129,34 @@ def test_breadcrumb_labels_cover_every_registered_nav_key():
         assert ui_module._BREADCRUMB_LABELS[key] == label
     assert ui_module._BREADCRUMB_GROUPS["admin_users"] == "Admin"
     assert ui_module._BREADCRUMB_GROUPS["coverage"] == "System"
+
+
+def test_every_nav_item_has_its_own_line_icon():
+    """A nav key with no `.st-key-navitem-{key} ... a::before` rule is
+    not iconless: the shared ::before paints a 16x16 box from
+    background-color with no mask, so it renders as a SOLID SQUARE next
+    to the line icons on every other row. Companies and Themes shipped
+    that way in the six-item nav.
+
+    Also checks each icon really is a line icon — stroke-only, no fill —
+    so a filled glyph cannot slip in and read as another solid block."""
+    import re
+    from pathlib import Path
+
+    css = (Path(__file__).parent.parent / "assets" / "styles.css").read_text(encoding="utf-8")
+    keys = [k for k, _ in ui_module.PRIMARY_NAV + ui_module.SYSTEM_NAV]
+    for key in keys:
+        rule = f'[class*="st-key-navitem-{key}"] [data-testid="stPageLink"] a::before'
+        assert rule in css, f"{key} has no icon and renders as a solid square"
+        body = css.split(rule, 1)[1].split("}", 1)[0]
+        assert "mask-image" in body, key
+        assert "fill%3D%22none%22" in body, f"{key}'s icon is not stroke-only"
+        assert "stroke%3D%22currentColor%22" in body, key
+        # An exact-class selector (.st-key-navitem-{key}) stops matching
+        # the instant the item becomes the current page, because the
+        # active container's key is "navitem-{key}-active" — a different
+        # class token. That is how every active item came to paint a
+        # solid accent square instead of its icon.
+        assert f'.st-key-navitem-{key} [data-testid="stPageLink"] a::before' not in css, (
+            f"{key}'s icon uses an exact-class selector and will vanish when active"
+        )

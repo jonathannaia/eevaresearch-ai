@@ -24,51 +24,57 @@ _CSS = (REPO_ROOT / "assets" / "styles.css").read_text(encoding="utf-8")
 _CONFIG = tomllib.loads((REPO_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
 
 # The approved palette, pinned literally: (dark, light).
-_APPROVED = {
-    "bg": ("#111110", "#F6F4EF"),
-    "bg-sidebar": ("#141412", "#EFECE5"),
-    "surface": ("#1A1917", "#FCFBF8"),
-    "surface-input": ("#161513", "#FFFFFF"),
-    "surface-chip": ("#22211E", "#F0EDE6"),
-    "nav-active-bg": ("#1D2230", "#E4E8F2"),
-    "selected-bg": ("#1C2130", "#EEF1F8"),
-    "selected-ring": ("#34466B", "#C3CDE6"),
-    "border-subtle": ("#23221F", "#E9E5DD"),
-    "border": ("#2A2825", "#E2DED5"),
-    "border-strong": ("#302E2A", "#D6D1C7"),
-    "text": ("#ECE9E4", "#1C1B19"),
-    "text-secondary": ("#C2BDB5", "#45423D"),
-    "text-muted": ("#9C978F", "#625E57"),
-    "text-label": ("#88837B", "#6E6961"),
-    "accent": ("#8AA8E0", "#23386E"),
-    "accent-contrast": ("#0C1424", "#FFFFFF"),
-    "link": ("#9DB6EA", "#2F4F9E"),
-    "link-hover": ("#BFD0F2", "#1F3A7A"),
-    "brand": ("#6FD3BC", "#6FD3BC"),
-    "ev-supports": ("#5FC88A", "#3A9A62"),
-    "ev-mixed": ("#E0B060", "#C08A2A"),
-    "ev-contradicts": ("#E07A6F", "#B5483C"),
-    "ev-context": ("#3E434A", "#C9C4BA"),
-    "live": ("#5FD08F", "#2E9E5B"),
-    "high-signal-bg": ("#152A22", "#E4F2E8"),
-    "high-signal-text": ("#7FE0A6", "#256B41"),
-    "venue-edgar-bg": ("#18233A", "#E3EAF7"),
-    "venue-edgar-text": ("#9CBCF0", "#2D4A85"),
-    "venue-dart-bg": ("#2A1D33", "#F0E6F5"),
-    "venue-dart-text": ("#D4AEF0", "#6B3F87"),
-    "venue-edinet-bg": ("#172A2C", "#E2F2F3"),
-    "venue-edinet-text": ("#93D2D8", "#256A70"),
-    "venue-tdnet-bg": ("#2B1F24", "#F6E8ED"),
-    "venue-tdnet-text": ("#E8B4C4", "#8A3F58"),
-    "venue-cninfo-bg": ("#2A201C", "#F6EBE4"),
-    "venue-cninfo-text": ("#E8B79C", "#8A4B2E"),
-    "venue-hkex-bg": ("#25271B", "#F1F2E2"),
-    "venue-hkex-text": ("#CFD39A", "#5E6328"),
-    "cat-ai-buildout": ("#D39A68", "#B87A45"),
-    "cat-memory": ("#8FB4E8", "#4F74B8"),
-    "cat-space": ("#C9A0E8", "#8E62B0"),
-    "cat-photonics": ("#5FC2C8", "#2E7F85"),
-    "cat-humanoids": ("#D98FA8", "#A34D68"),
+_APPROVED: dict[str, tuple[str, str]] = {
+    # The mockup palette (UI redesign: Dark designed, Light derived).
+    # This is an independent second copy of the approved values on
+    # purpose: changing a colour has to be done in two places, so it
+    # cannot happen by accident.
+    "bg": ("#0E1013", "#F5F7FB"),
+    "bg-sidebar": ("#0B0D10", "#EEF0F4"),
+    "surface": ("#121418", "#FBFDFF"),
+    "surface-input": ("#0F1215", "#FCFFFF"),
+    "surface-chip": ("#1A1E25", "#E6EBF3"),
+    "nav-active-bg": ("#1A1E25", "#E2E7EF"),
+    "selected-bg": ("#161A20", "#EBEFF6"),
+    "selected-ring": ("#1B5C51", "#6EB5A1"),
+    "border-subtle": ("#1D2127", "#E0E4EB"),
+    "border": ("#23272E", "#D3D7DF"),
+    "border-strong": ("#2A2F37", "#C0C5CD"),
+    "text": ("#E7E9EC", "#222427"),
+    "text-secondary": ("#B8BEC7", "#4A5059"),
+    "text-muted": ("#9AA1AC", "#5E6571"),
+    "text-label": ("#848B97", "#646B77"),
+    "accent": ("#2DBFA8", "#00715B"),
+    "accent-contrast": ("#0B0D10", "#FFFFFF"),
+    "link": ("#6AA8F0", "#1C68B6"),
+    "link-hover": ("#83C2FF", "#0058A4"),
+    "brand": ("#13233A", "#13233A"),
+    "ev-supports": ("#5FC88A", "#14A863"),
+    "ev-mixed": ("#E0B060", "#BE881E"),
+    "ev-contradicts": ("#E07A6F", "#E57065"),
+    "ev-context": ("#4A505A", "#4A505A"),
+    "live": ("#2DBFA8", "#00715B"),
+    "high-signal-bg": ("#4A2E07", "#FCEEDE"),
+    "high-signal-text": ("#F5B66A", "#A55900"),
+    "early-bg": ("#1F354D", "#E7F1FE"),
+    "early-text": ("#8DBDF5", "#316FB3"),
+    "venue-edgar-bg": ("#233147", "#E9F1FD"),
+    "venue-edgar-text": ("#9CBCF0", "#466BA9"),
+    "venue-dart-bg": ("#3A2946", "#F5ECFB"),
+    "venue-dart-text": ("#D4AEF0", "#8858A8"),
+    "venue-edinet-bg": ("#1A383A", "#E6F3F4"),
+    "venue-edinet-text": ("#93D2D8", "#167880"),
+    "venue-tdnet-bg": ("#412B32", "#F9ECF0"),
+    "venue-tdnet-text": ("#E8B4C4", "#965A6F"),
+    "venue-cninfo-bg": ("#412C20", "#F9EEE7"),
+    "venue-cninfo-text": ("#E8B79C", "#975E3D"),
+    "venue-hkex-bg": ("#34361C", "#F0F1E5"),
+    "venue-hkex-text": ("#CFD39A", "#6E7125"),
+    "cat-ai-buildout": ("#D39A68", "#C5854A"),
+    "cat-memory": ("#8FB4E8", "#6B95CF"),
+    "cat-space": ("#C9A0E8", "#AC7ECE"),
+    "cat-photonics": ("#5FC2C8", "#14A1A9"),
+    "cat-humanoids": ("#D98FA8", "#CB7896"),
 }
 
 
@@ -162,16 +168,15 @@ _TEXT_PAIRS: dict[str, tuple[str, ...]] = {
 
 # Documented shortfalls: pairs the stylesheet never renders.
 _TEXT_EXCEPTIONS = {
-    ("text-label", "nav-active-bg"): "labels never sit on the active nav item (4.21 dark / 4.44 light)",
-    ("text-label", "surface-chip"): "labels never sit on chips (4.28 dark)",
-    ("text-label", "surface-hover"): "labels never sit on a hover surface (4.16 dark)",
-    ("text-label", "surface-pressed"): "labels never sit on a pressed surface",
+    ("text-label", "nav-active-bg"): "labels never sit on the active nav item (4.32 light)",
+    ("text-label", "surface-chip"): "labels never sit on chips (4.48 light)",
+    ("text-label", "surface-pressed"): "labels never sit on a pressed surface (4.25 dark / 4.33 light)",
 }
 
 # Fills, dots, bars, rails and borders only — never text. Several fall
 # below 4.5:1 (and some below 3:1) as text in Light, which is exactly why.
 _NON_TEXT_ONLY = ("brand", "ev-supports", "ev-mixed", "ev-contradicts", "ev-context", "live",
-                  "cat-ai-buildout", "cat-memory", "cat-space", "cat-photonics")
+                  "cat-ai-buildout", "cat-memory", "cat-space", "cat-photonics", "cat-humanoids")
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -191,7 +196,7 @@ def test_paired_foreground_and_fill_tokens_meet_aa(theme):
     t = _resolved(theme)
     pairs = [
         ("accent-contrast", "accent"), ("accent-contrast", "accent-hover"), ("accent-contrast", "accent-pressed"),
-        ("high-signal-text", "high-signal-bg"),
+        ("high-signal-text", "high-signal-bg"), ("early-text", "early-bg"),
         ("bg", "text"),  # the inverted Fact chip
         *[(f"venue-{v}-text", f"venue-{v}-bg") for v in ("edgar", "dart", "edinet", "tdnet", "cninfo", "hkex")],
     ]
@@ -233,10 +238,39 @@ def test_non_text_only_tokens_are_never_used_as_a_text_color():
 
 
 def test_light_theme_indicator_hues_really_would_fail_as_text():
+    """The point of _NON_TEXT_ONLY is that these hues are chosen to be
+    SEEN as a dot or bar, not READ as a word, and in Light several of
+    them genuinely cannot carry text. Checking that keeps the
+    classification honest rather than decorative.
+
+    Two tokens left this list in the mockup-palette pass, for opposite
+    reasons, and both are still in _NON_TEXT_ONLY (the stylesheet still
+    may not use either as a text colour):
+
+      * --live is no longer a hue of its own. The mockups paint "Live ·
+        17:32 EST" in the accent teal, so --live now equals --accent,
+        and --accent is required to clear 4.5:1 as text. Asserting the
+        same value both fails and passes as text is a contradiction, not
+        a guard.
+      * --brand is the dark navy logo tile, with near-white text on it.
+        It fails as text for the opposite reason — too dark against a
+        light card, not too light — so the assertion below would not
+        describe it. Its real contract is with the mark's own label,
+        asserted separately.
+    """
     t = _resolved("light")
-    assert _contrast_ratio(t["brand"], t["surface"]) < 3.0
-    assert _contrast_ratio(t["ev-mixed"], t["surface"]) < 4.5
-    assert _contrast_ratio(t["live"], t["surface"]) < 4.5
+    for name in ("ev-supports", "ev-mixed", "ev-contradicts",
+                 "cat-ai-buildout", "cat-memory", "cat-space", "cat-photonics", "cat-humanoids"):
+        assert _contrast_ratio(t[name], t["surface"]) < 4.5, name
+
+
+def test_the_brand_tile_carries_its_own_mark_legibly_in_both_themes():
+    """--brand is the logo tile behind the "e" in every mockup header,
+    the same dark navy in both themes, and the mark on it is near-white.
+    It is a fill, never text (see _NON_TEXT_ONLY), so what matters is
+    that the mark reads on the tile."""
+    for theme in THEMES:
+        assert _contrast_ratio(_rgb("#F2F2EE"), _resolved(theme)["brand"]) >= 4.5, theme
 
 
 # --- native widget parity -------------------------------------------------------
@@ -272,13 +306,13 @@ def _declarations(css: str, selector: str) -> str:
 
 def test_system_preference_follows_the_os_and_an_explicit_stamp_wins_both_ways():
     css = render_token_css("system")
-    assert "--bg:#111110;" in _declarations(css, ":root")
+    assert "--bg:#0E1013;" in _declarations(css, ":root")
     assert "@media (prefers-color-scheme: light){:root:not([data-theme]){" in css
-    assert "--bg:#F6F4EF;" in _declarations(css, ':root[data-theme="light"]')
-    assert "--bg:#111110;" in _declarations(css, ':root[data-theme="dark"]')
+    assert "--bg:#F5F7FB;" in _declarations(css, ':root[data-theme="light"]')
+    assert "--bg:#0E1013;" in _declarations(css, ':root[data-theme="dark"]')
 
 
-@pytest.mark.parametrize("preference,bg", [("dark", "#111110"), ("light", "#F6F4EF")])
+@pytest.mark.parametrize("preference,bg", [("dark", "#0E1013"), ("light", "#F5F7FB")])
 def test_explicit_preference_is_the_bare_root_and_ignores_the_os(preference, bg):
     css = render_token_css(preference)
     assert f"--bg:{bg};" in _declarations(css, ":root")
@@ -301,7 +335,7 @@ def test_derived_tokens_are_declared_once_and_every_consumed_token_exists():
 
 
 def test_token_helper_reads_the_single_source():
-    assert theme_tokens.token("light", "text-muted") == "#625E57"
+    assert theme_tokens.token("light", "text-muted") == "#5E6571"
 
 
 def test_every_theme_slug_has_its_own_distinct_category_colour():

@@ -12,9 +12,9 @@
 # Fonts: Streamlit accepts one family per source URL and uses the name
 # verbatim as the start of a font-family list, so the KR/JP families are
 # named here as fallbacks and loaded by assets/styles.css's @import.
-font = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
-headingFont = "IBM Plex Sans, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
-codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
+font = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter, IBM Plex Sans KR, IBM Plex Sans JP:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
 
 baseFontSize = 15
 headingFontWeights = [600, 600, 600, 600, 600, 600]
@@ -27,34 +27,34 @@ showWidgetBorder = true
 showSidebarBorder = false
 
 [theme.dark]
-primaryColor = "#8AA8E0"
-backgroundColor = "#111110"
-secondaryBackgroundColor = "#22211E"
-textColor = "#ECE9E4"
-linkColor = "#9DB6EA"
-borderColor = "#2A2825"
-dataframeBorderColor = "#2A2825"
-dataframeHeaderBackgroundColor = "#1A1917"
-codeTextColor = "#ECE9E4"
-codeBackgroundColor = "#161513"
+primaryColor = "#2DBFA8"
+backgroundColor = "#0E1013"
+secondaryBackgroundColor = "#1A1E25"
+textColor = "#E7E9EC"
+linkColor = "#6AA8F0"
+borderColor = "#23272E"
+dataframeBorderColor = "#23272E"
+dataframeHeaderBackgroundColor = "#121418"
+codeTextColor = "#E7E9EC"
+codeBackgroundColor = "#0F1215"
 
 [theme.dark.sidebar]
-backgroundColor = "#141412"
+backgroundColor = "#0B0D10"
 
 [theme.light]
-primaryColor = "#23386E"
-backgroundColor = "#F6F4EF"
-secondaryBackgroundColor = "#F0EDE6"
-textColor = "#1C1B19"
-linkColor = "#2F4F9E"
-borderColor = "#E2DED5"
-dataframeBorderColor = "#E2DED5"
-dataframeHeaderBackgroundColor = "#FCFBF8"
-codeTextColor = "#1C1B19"
-codeBackgroundColor = "#FFFFFF"
+primaryColor = "#00715B"
+backgroundColor = "#F5F7FB"
+secondaryBackgroundColor = "#E6EBF3"
+textColor = "#222427"
+linkColor = "#1C68B6"
+borderColor = "#D3D7DF"
+dataframeBorderColor = "#D3D7DF"
+dataframeHeaderBackgroundColor = "#FBFDFF"
+codeTextColor = "#222427"
+codeBackgroundColor = "#FCFFFF"
 
 [theme.light.sidebar]
-backgroundColor = "#EFECE5"
+backgroundColor = "#EEF0F4"
 
 [server]
 headless = true
