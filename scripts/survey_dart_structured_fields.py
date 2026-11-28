@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             outcomes["field table, but every headline figure withheld"] += 1
         else:
             outcomes["structured headline produced"] += 1
-        rows.append((filing, facts, headline, text))
+        rows.append((filing, facts, headline, text, candidate))
 
     print("OpenDART filings in the store:", sum(outcomes.values()))
     for name, count in outcomes.most_common():
