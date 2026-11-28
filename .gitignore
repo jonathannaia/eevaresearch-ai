@@ -12,3 +12,9 @@ venv/
 exports/
 .cache/
 data/cache/
+
+# Screenshot/preview launch configs are per-machine. .claude/launch.json
+# itself stays tracked (the project's own dev-server entry lives there),
+# so a temporary entry added for a local preview must be removed before
+# committing — one was accidentally shipped in 34e0250, pointing at a
+# scratchpad path that exists on no other machine.
